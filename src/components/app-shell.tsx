@@ -7,6 +7,8 @@ import { clearStoredToken, authedFetch } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,10 +18,15 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import {
   LayoutDashboard, FolderKanban, GitBranch, FileText, ShieldCheck,
   Wrench, DollarSign, CheckCircle2, FileBarChart, TrendingUp,
   Bell, HardHat, LogOut, Menu, X, Globe, User, Settings,
-  AlertTriangle, ChevronLeft, UserPlus
+  AlertTriangle, ChevronLeft, UserPlus, Users, Loader2, Shield
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -60,6 +67,15 @@ const roleLabels: Record<string, { ar: string; en: string }> = {
   accountant: { ar: 'المحاسب', en: 'Accountant' },
 }
 
+const ROLES = [
+  { value: 'top_management', ar: 'الإدارة العليا', en: 'Top Management' },
+  { value: 'project_manager', ar: 'مدير المشروع', en: 'Project Manager' },
+  { value: 'site_engineer', ar: 'مهندس الموقع', en: 'Site Engineer' },
+  { value: 'hse_officer', ar: 'مسؤول السلامة HSE', en: 'HSE Officer' },
+  { value: 'foreman', ar: 'المشرف / الفورمان', en: 'Foreman' },
+  { value: 'accountant', ar: 'المحاسب / الإدارة المالية', en: 'Accountant' },
+]
+
 const DashboardPage = dynamic(() => import('@/components/pages/dashboard-page'), { ssr: false })
 const ProjectsPage = dynamic(() => import('@/components/pages/projects-page'), { ssr: false })
 const DriveLinesPage = dynamic(() => import('@/components/pages/drive-lines-page'), { ssr: false })
@@ -71,7 +87,6 @@ const FinishingsPage = dynamic(() => import('@/components/pages/finishings-page'
 const PerformancePage = dynamic(() => import('@/components/pages/performance-page'), { ssr: false })
 const ReportsPage = dynamic(() => import('@/components/pages/reports-page'), { ssr: false })
 const NotificationsPage = dynamic(() => import('@/components/pages/notifications-page'), { ssr: false })
-const CreateUserDialog = dynamic(() => import('@/components/create-user-dialog'), { ssr: false })
 
 export default function AppShell() {
   const user = useAppStore((s) => s.user)
@@ -84,6 +99,13 @@ export default function AppShell() {
   const [currentPage, setCurrentPage] = useState<PageId>('dashboard')
   const [notifications, setNotifications] = useState<any[]>([])
   const [userDialogOpen, setUserDialogOpen] = useState(false)
+  const [formData, setFormData] = useState({ email: '', name: '', nameEn: '', password: '', role: 'site_engineer', phone: '' })
+  const [createLoading, setCreateLoading] = useState(false)
+  const [createError, setCreateError] = useState('')
+  const [remainingSlots, setRemainingSlots] = useState(6)
+  const [existingUsers, setExistingUsers] = useState<any[]>([])
+  const [listLoading, setListLoading] = useState(false)
+  const [dialogTab, setDialogTab] = useState<'create' | 'list'>('create')
 
   useEffect(() => {
     if (!user || !token) return
@@ -104,6 +126,8 @@ export default function AppShell() {
 
   const allowedItems = navItems.filter(item => hasPermission(user.role, item.resource))
   const isAdmin = user.email.toLowerCase().trim() === 'admin@axis.om'
+  const isAr = language === 'ar'
+  const isRtl = isAr
 
   async function handleLogout() {
     await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
@@ -117,6 +141,70 @@ export default function AppShell() {
     setLanguage(newLang)
     document.documentElement.lang = newLang
     document.documentElement.dir = newLang === 'ar' ? 'rtl' : 'ltr'
+  }
+
+  function openUserDialog() {
+    setDialogTab('create')
+    setFormData({ email: '', name: '', nameEn: '', password: '', role: 'site_engineer', phone: '' })
+    setCreateError('')
+    loadSlotInfo()
+    setUserDialogOpen(true)
+  }
+
+  async function loadSlotInfo() {
+    try {
+      const res = await authedFetch('/api/users/list')
+      const data = await res.json()
+      if (res.ok) {
+        setRemainingSlots(data.remainingSlots ?? 6)
+        setExistingUsers(data.users || [])
+      }
+    } catch {}
+  }
+
+  async function loadUserList() {
+    setListLoading(true)
+    try {
+      const res = await authedFetch('/api/users/list')
+      const data = await res.json()
+      if (res.ok) {
+        setExistingUsers(data.users || [])
+        setRemainingSlots(data.remainingSlots)
+      }
+    } catch {} finally {
+      setListLoading(false)
+    }
+  }
+
+  async function handleCreateUser(e: React.FormEvent) {
+    e.preventDefault()
+    setCreateLoading(true)
+    setCreateError('')
+    if (!formData.email || !formData.password || !formData.name || !formData.role) {
+      setCreateError(isAr ? 'جميع الحقول المطلوبة يجب أن تُملأ' : 'All required fields must be filled')
+      setCreateLoading(false)
+      return
+    }
+    try {
+      const res = await authedFetch('/api/users/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setCreateError(data.error || (isAr ? 'فشل إنشاء المستخدم' : 'Failed to create user'))
+        return
+      }
+      toast.success(isAr ? 'تم إنشاء المستخدم بنجاح' : 'User created successfully')
+      setRemainingSlots(data.remainingSlots)
+      setDialogTab('list')
+      loadUserList()
+    } catch {
+      setCreateError(isAr ? 'خطأ في الاتصال' : 'Connection error')
+    } finally {
+      setCreateLoading(false)
+    }
   }
 
   function renderPage() {
@@ -136,24 +224,17 @@ export default function AppShell() {
     }
   }
 
-  const isRtl = language === 'ar'
-
   return (
     <div className="min-h-screen bg-muted/30" dir={isRtl ? 'rtl' : 'ltr'}>
       {sidebarOpen && (
-        <div
-          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
+        <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setSidebarOpen(false)} />
       )}
 
-      <aside
-        className={cn(
-          "fixed top-0 bottom-0 z-50 w-72 bg-sidebar border-sidebar-border flex flex-col transition-transform duration-300 lg:translate-x-0",
-          isRtl ? "right-0 border-l" : "left-0 border-r",
-          sidebarOpen ? "translate-x-0" : (isRtl ? "translate-x-full" : "-translate-x-full")
-        )}
-      >
+      <aside className={cn(
+        "fixed top-0 bottom-0 z-50 w-72 bg-sidebar border-sidebar-border flex flex-col transition-transform duration-300 lg:translate-x-0",
+        isRtl ? "right-0 border-l" : "left-0 border-r",
+        sidebarOpen ? "translate-x-0" : (isRtl ? "translate-x-full" : "-translate-x-full")
+      )}>
         <div className="p-5 border-b border-sidebar-border">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center text-primary-foreground">
@@ -163,45 +244,36 @@ export default function AppShell() {
               <h1 className="text-lg font-bold text-sidebar-foreground">AXIS</h1>
               <p className="text-xs text-muted-foreground">Pipe Jacking System</p>
             </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              className={cn("lg:hidden", isRtl ? "mr-auto" : "ml-auto")}
-              onClick={() => setSidebarOpen(false)}
-            >
+            <Button variant="ghost" size="icon" className={cn("lg:hidden", isRtl ? "mr-auto" : "ml-auto")} onClick={() => setSidebarOpen(false)}>
               <X className="h-5 w-5" />
             </Button>
           </div>
         </div>
 
         <nav className="flex-1 overflow-y-auto p-3 space-y-1">
+          {isAdmin && (
+            <button
+              onClick={openUserDialog}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-all border border-primary/20 border-dashed"
+            >
+              <UserPlus className="h-5 w-5 shrink-0" />
+              <span className="flex-1 text-start">{isAr ? 'إضافة مستخدم جديد' : 'Add New User'}</span>
+            </button>
+          )}
+          <div className="h-2" />
           {allowedItems.map((item) => {
             const Icon = item.icon
             const isActive = currentPage === item.id
             const label = isRtl ? item.labelAr : item.labelEn
             const unreadCount = item.id === 'notifications' ? notifications.length : 0
-
             return (
-              <button
-                key={item.id}
-                onClick={() => {
-                  setCurrentPage(item.id)
-                  setSidebarOpen(false)
-                }}
-                className={cn(
-                  "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all",
-                  isActive
-                    ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
-                    : "text-sidebar-foreground hover:bg-sidebar-accent"
-                )}
-              >
+              <button key={item.id} onClick={() => { setCurrentPage(item.id); setSidebarOpen(false) }} className={cn(
+                "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all",
+                isActive ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm" : "text-sidebar-foreground hover:bg-sidebar-accent"
+              )}>
                 <Icon className={cn("h-5 w-5 shrink-0", isActive ? "" : "text-muted-foreground")} />
                 <span className="flex-1 text-start">{label}</span>
-                {unreadCount > 0 && (
-                  <Badge variant="destructive" className="h-5 min-w-5 flex items-center justify-center px-1.5 text-xs">
-                    {unreadCount}
-                  </Badge>
-                )}
+                {unreadCount > 0 && <Badge variant="destructive" className="h-5 min-w-5 flex items-center justify-center px-1.5 text-xs">{unreadCount}</Badge>}
                 {isActive && <ChevronLeft className={cn("h-4 w-4", isRtl ? "" : "rotate-180")} />}
               </button>
             )
@@ -217,17 +289,9 @@ export default function AppShell() {
             </Avatar>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium truncate">{isRtl ? user.name : (user.nameEn || user.name)}</p>
-              <p className="text-xs text-muted-foreground">
-                {isRtl ? roleLabels[user.role]?.ar : roleLabels[user.role]?.en}
-              </p>
+              <p className="text-xs text-muted-foreground">{isRtl ? roleLabels[user.role]?.ar : roleLabels[user.role]?.en}</p>
             </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 text-muted-foreground hover:text-destructive shrink-0"
-              onClick={handleLogout}
-              title={isRtl ? 'تسجيل الخروج' : 'Logout'}
-            >
+            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive shrink-0" onClick={handleLogout} title={isRtl ? 'تسجيل الخروج' : 'Logout'}>
               <LogOut className="h-4 w-4" />
             </Button>
           </div>
@@ -236,39 +300,26 @@ export default function AppShell() {
 
       <div className={isRtl ? "lg:pr-72" : "lg:pl-72"}>
         <header className="sticky top-0 z-30 h-16 bg-background/80 backdrop-blur border-b flex items-center px-4 lg:px-6 gap-3">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="lg:hidden"
-            onClick={() => setSidebarOpen(true)}
-          >
+          <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setSidebarOpen(true)}>
             <Menu className="h-5 w-5" />
           </Button>
 
           {isAdmin && (
-            <Button
-              onClick={() => setUserDialogOpen(true)}
-              size="sm"
-              className="gap-1.5 bg-primary hover:bg-primary/90"
-            >
+            <Button onClick={openUserDialog} size="sm" className="gap-1.5 bg-primary hover:bg-primary/90">
               <UserPlus className="h-4 w-4" />
-              <span className="hidden sm:inline text-sm">
-                {isRtl ? '\u0625\u0636\u0627\u0641\u0629 \u0645\u0633\u062a\u062e\u062f\u0645' : 'Add User'}
-              </span>
+              <span className="hidden sm:inline text-sm">{isAr ? 'إضافة مستخدم' : 'Add User'}</span>
             </Button>
           )}
 
           <div className="flex-1">
             <h2 className="text-lg font-semibold">
-              {isRtl
-                ? navItems.find(i => i.id === currentPage)?.labelAr
-                : navItems.find(i => i.id === currentPage)?.labelEn}
+              {isRtl ? navItems.find(i => i.id === currentPage)?.labelAr : navItems.find(i => i.id === currentPage)?.labelEn}
             </h2>
           </div>
 
           <Button variant="ghost" size="sm" onClick={toggleLanguage} className="gap-1.5">
             <Globe className="h-4 w-4" />
-            <span className="text-sm">{isRtl ? 'EN' : '\u0639'}</span>
+            <span className="text-sm">{isRtl ? 'EN' : 'ع'}</span>
           </Button>
 
           <DropdownMenu>
@@ -276,10 +327,7 @@ export default function AppShell() {
               <Button variant="ghost" size="icon" className="relative">
                 <Bell className="h-5 w-5" />
                 {notifications.length > 0 && (
-                  <span className={cn(
-                    "absolute -top-1 h-5 w-5 rounded-full bg-destructive text-destructive-foreground text-xs flex items-center justify-center",
-                    isRtl ? "-left-1" : "-right-1"
-                  )}>
+                  <span className={cn("absolute -top-1 h-5 w-5 rounded-full bg-destructive text-destructive-foreground text-xs flex items-center justify-center", isRtl ? "-left-1" : "-right-1")}>
                     {notifications.length}
                   </span>
                 )}
@@ -287,16 +335,12 @@ export default function AppShell() {
             </DropdownMenuTrigger>
             <DropdownMenuContent align={isRtl ? "start" : "end"} className="w-80">
               <DropdownMenuLabel className="flex items-center justify-between">
-                <span>{isRtl ? '\u0627\u0644\u062a\u0646\u0628\u064a\u0647\u0627\u062a' : 'Notifications'}</span>
-                {notifications.length > 0 && (
-                  <Badge variant="secondary">{notifications.length}</Badge>
-                )}
+                <span>{isAr ? 'التنبيهات' : 'Notifications'}</span>
+                {notifications.length > 0 && <Badge variant="secondary">{notifications.length}</Badge>}
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
               {notifications.length === 0 ? (
-                <div className="p-4 text-center text-sm text-muted-foreground">
-                  {isRtl ? '\u0644\u0627 \u062a\u0648\u062c\u062f \u062a\u0646\u0628\u064a\u0647\u0627\u062a \u062c\u062f\u064a\u062f\u0629' : 'No new notifications'}
-                </div>
+                <div className="p-4 text-center text-sm text-muted-foreground">{isAr ? 'لا توجد تنبيهات جديدة' : 'No new notifications'}</div>
               ) : (
                 notifications.slice(0, 5).map((n) => (
                   <DropdownMenuItem key={n.id} className="flex-col items-start p-3">
@@ -311,9 +355,7 @@ export default function AppShell() {
                 ))
               )}
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => setCurrentPage('notifications')}>
-                {isRtl ? '\u0639\u0631\u0636 \u0627\u0644\u0643\u0644' : 'View all'}
-              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setCurrentPage('notifications')}>{isAr ? 'عرض الكل' : 'View all'}</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
 
@@ -326,11 +368,125 @@ export default function AppShell() {
 
         <main className="p-4 lg:p-6 max-w-[1600px] mx-auto">
           {renderPage()}
-          {isAdmin && (
-            <CreateUserDialog open={userDialogOpen} onOpenChange={setUserDialogOpen} />
-          )}
         </main>
       </div>
+
+      {isAdmin && (
+        <Dialog open={userDialogOpen} onOpenChange={(v) => setUserDialogOpen(v)}>
+          <DialogContent className="sm:max-w-[520px] max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Shield className="h-5 w-5 text-primary" />
+                {isAr ? 'إدارة المستخدمين' : 'User Management'}
+              </DialogTitle>
+              <DialogDescription>
+                {dialogTab === 'create'
+                  ? (isAr ? 'أضف مستخدم جديد (الحد الأقصى 6)' : 'Add a new user (max 6)')
+                  : (isAr ? 'قائمة المستخدمين في النظام' : 'Users list')}
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="flex border rounded-lg overflow-hidden">
+              <button onClick={() => setDialogTab('create')} className={`flex-1 py-2.5 text-sm font-medium transition ${dialogTab === 'create' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}>
+                <UserPlus className="h-4 w-4 inline-block mr-1.5" />
+                {isAr ? 'إنشاء مستخدم' : 'Create User'}
+              </button>
+              <button onClick={() => { setDialogTab('list'); loadUserList(); }} className={`flex-1 py-2.5 text-sm font-medium transition ${dialogTab === 'list' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}>
+                <Users className="h-4 w-4 inline-block mr-1.5" />
+                {isAr ? 'المستخدمون' : 'Users'}
+              </button>
+            </div>
+
+            <div className="flex items-center gap-3 text-sm">
+              <div className="flex-1 h-2.5 bg-muted rounded-full overflow-hidden">
+                <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${((6 - remainingSlots) / 6) * 100}%` }} />
+              </div>
+              <span className="text-muted-foreground shrink-0 font-medium">{remainingSlots} {isAr ? 'متبقي من 6' : 'remaining of 6'}</span>
+            </div>
+
+            {dialogTab === 'create' ? (
+              <form onSubmit={handleCreateUser} className="space-y-4">
+                <div className="space-y-2">
+                  <Label>{isAr ? 'البريد الإلكتروني (اسم المستخدم) *' : 'Email (Username) *'}</Label>
+                  <Input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} placeholder="user@axis.om" dir="ltr" className="h-10" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label>{isAr ? 'الاسم بالعربي *' : 'Name (Arabic) *'}</Label>
+                    <Input value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} placeholder="محمد أحمد" className="h-10" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>{isAr ? 'الاسم بالإنجليزي' : 'Name (English)'}</Label>
+                    <Input value={formData.nameEn} onChange={(e) => setFormData({ ...formData, nameEn: e.target.value })} placeholder="Mohammed Ahmed" dir="ltr" className="h-10" />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>{isAr ? 'كلمة المرور *' : 'Password *'}</Label>
+                  <Input type="password" value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} placeholder="••••••••" dir="ltr" className="h-10" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label>{isAr ? 'نوع الحساب *' : 'Role *'}</Label>
+                    <Select value={formData.role} onValueChange={(val) => setFormData({ ...formData, role: val })}>
+                      <SelectTrigger className="h-10"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {ROLES.map((r) => (
+                          <SelectItem key={r.value} value={r.value}>{isAr ? r.ar : r.en}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>{isAr ? 'رقم الهاتف' : 'Phone'}</Label>
+                    <Input type="tel" value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} placeholder="+968XXXXXXXX" dir="ltr" className="h-10" />
+                  </div>
+                </div>
+                {createError && (
+                  <Alert variant="destructive"><AlertDescription>{createError}</AlertDescription></Alert>
+                )}
+                <DialogFooter className="gap-2">
+                  <Button type="button" variant="outline" onClick={() => setUserDialogOpen(false)}>{isAr ? 'إلغاء' : 'Cancel'}</Button>
+                  <Button type="submit" disabled={createLoading || remainingSlots <= 0} className="gap-2">
+                    {createLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
+                    {createLoading ? (isAr ? 'جارٍ الإنشاء...' : 'Creating...') : (isAr ? 'إنشاء الحساب' : 'Create Account')}
+                  </Button>
+                </DialogFooter>
+              </form>
+            ) : (
+              <div className="space-y-2">
+                {listLoading ? (
+                  <div className="py-8 text-center text-muted-foreground">
+                    <Loader2 className="h-5 w-5 animate-spin mx-auto mb-2" />
+                    <span className="text-sm">{isAr ? 'جارٍ التحميل...' : 'Loading...'}</span>
+                  </div>
+                ) : existingUsers.length === 0 ? (
+                  <div className="py-8 text-center text-muted-foreground">
+                    <Users className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                    <span className="text-sm">{isAr ? 'لا يوجد مستخدمون بعد' : 'No users yet'}</span>
+                  </div>
+                ) : (
+                  <div className="border rounded-lg divide-y max-h-64 overflow-y-auto">
+                    {existingUsers.map((u) => (
+                      <div key={u.id} className="flex items-center gap-3 p-3">
+                        <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                          <span className="text-sm font-semibold text-primary">{(isAr ? u.name : (u.nameEn || u.name)).charAt(0)}</span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{isAr ? u.name : (u.nameEn || u.name)}</p>
+                          <p className="text-xs text-muted-foreground" dir="ltr">{u.email}</p>
+                        </div>
+                        <span className="text-xs px-2 py-1 rounded-full bg-primary/10 text-primary font-medium shrink-0">
+                          {u.roleLabel ? (isAr ? u.roleLabel.ar : u.roleLabel.en) : u.role}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   )
 }
