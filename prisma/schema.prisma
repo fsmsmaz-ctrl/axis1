@@ -1,0 +1,323 @@
+// AXIS Pipe Jacking Management System - Prisma Schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ==================== Users & Auth ====================
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  password     String
+  name         String
+  nameEn       String?
+  phone        String?
+  role         String   @default("site_engineer") // top_management, project_manager, site_engineer, hse_officer, foreman, accountant
+  avatar       String?
+  active       Boolean  @default(true)
+  language     String   @default("ar") // ar, en
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  projectsManaged    Project[]   @relation("ProjectManager")
+  projectsEngineered Project[]   @relation("SiteEngineer")
+  dailyReports       DailyReport[] @relation("ReportCreator")
+  approvedReports    DailyReport[] @relation("ReportApprover")
+  safetyReports      SafetyReport[]  @relation("SafetyReportSigner")
+  costs              Cost[]
+  equipmentsMaint    EquipmentMaintenance[]
+  finishings         Finishing[]
+  notifications      Notification[]
+  auditLogs          AuditLog[]
+}
+
+// ==================== Projects ====================
+model Project {
+  id             String   @id @default(cuid())
+  code           String   @unique
+  name           String
+  client         String
+  location       String
+  contractNumber String?
+  workType       String   // pipe_jacking, microtunneling, hdd, auger_boring
+  pipeDiameter   String   // 800mm, 1000mm, 1200mm, other
+  totalLength    Float    // meters
+  pricePerMeter  Float    // OMR
+  soilType       String   // soft, hard, rocky, mixed
+  startDate      DateTime
+  expectedEnd    DateTime
+  actualEnd      DateTime?
+  status         String   @default("not_started") // not_started, in_progress, suspended, completed
+  progress       Float    @default(0) // 0-100
+  notes          String?
+
+  managerId      String?
+  engineerId     String?
+  manager        User?    @relation("ProjectManager", fields: [managerId], references: [id])
+  engineer       User?    @relation("SiteEngineer", fields: [engineerId], references: [id])
+
+  driveLines     DriveLine[]
+  dailyReports   DailyReport[]
+  safetyReports  SafetyReport[]
+  costs          Cost[]
+  equipments     Equipment[]
+  finishings     Finishing[]
+  notifications  Notification[]
+  auditLogs      AuditLog[]
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+// ==================== Drive Lines ====================
+model DriveLine {
+  id            String   @id @default(cuid())
+  projectId     String
+  lineNumber    String
+  startPoint    String
+  endPoint      String
+  totalLength   Float    // meters
+  diameter      String
+  pipeType      String   // pipe, sleeve
+  soilType      String
+  depth         Float    // meters
+  status        String   @default("not_started") // not_started, in_progress, completed, suspended
+  completedLength Float  @default(0)
+  progress      Float    @default(0) // 0-100
+  problems      String?
+
+  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  dailyReports  DailyReport[]
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// ==================== Daily Reports ====================
+model DailyReport {
+  id              String   @id @default(cuid())
+  projectId       String
+  driveLineId     String?
+  reportDate      DateTime
+  weather         String?  // sunny, cloudy, rainy, windy
+  workStartTime   String?  // HH:mm
+  workEndTime     String?  // HH:mm
+  operatingHours  Float    @default(0)
+  stoppageHours   Float    @default(0)
+  stoppageReason  String?
+  workersCount    Int      @default(0)
+  attendees       String?  // JSON string of workers list
+  absentees       String?
+  attendanceNotes String?
+
+  // Production data
+  startReading    Float    @default(0) // meter
+  endReading      Float    @default(0) // meter
+  dailyMeters     Float    @default(0)
+  totalMeters     Float    @default(0)
+  remainingMeters Float    @default(0)
+  progressPercent Float    @default(0)
+  soilExcavated   String?
+  pipesInstalled  Int      @default(0)
+  productionNotes String?
+  problems        String?
+
+  // Revenue (auto-calculated)
+  dailyRevenue    Float    @default(0)
+
+  status          String   @default("draft") // draft, submitted, approved, rejected
+  approvedById    String?
+  approvedAt      DateTime?
+
+  createdById     String?
+  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  driveLine       DriveLine? @relation(fields: [driveLineId], references: [id])
+  createdBy       User?    @relation("ReportCreator", fields: [createdById], references: [id])
+  approver        User?    @relation("ReportApprover", fields: [approvedById], references: [id])
+  safety          SafetyReport?
+  costs           Cost[]
+  attachments     Attachment[]
+  auditLogs       AuditLog[]
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ==================== Safety Reports ====================
+model SafetyReport {
+  id                  String   @id @default(cuid())
+  dailyReportId       String   @unique
+  projectId           String
+  reportDate          DateTime
+
+  // Checklist items (boolean)
+  ppeAvailable        Boolean  @default(false)
+  helmetCheck         Boolean  @default(false)
+  bootsCheck          Boolean  @default(false)
+  glovesCheck         Boolean  @default(false)
+  glassesCheck        Boolean  @default(false)
+  workAreaCheck       Boolean  @default(false)
+  barriersCheck       Boolean  @default(false)
+  shaftCheck          Boolean  @default(false)
+  ventilationCheck    Boolean  @default(false)
+  electricalCheck     Boolean  @default(false)
+  craneCheck          Boolean  @default(false)
+  hydraulicCheck      Boolean  @default(false)
+  fireExtinguishers   Boolean  @default(false)
+  workPermit          Boolean  @default(false)
+  toolboxTalk         Boolean  @default(false)
+
+  hazards             String?  // JSON list
+  observations        String?
+  violations          String?
+  incidentType        String?  // none, near_miss, incident, accident
+  incidentDescription String?
+
+  signedBy            String?
+  signedById          String?
+  signedAt            DateTime?
+
+  dailyReport         DailyReport @relation(fields: [dailyReportId], references: [id], onDelete: Cascade)
+  project             Project  @relation(fields: [projectId], references: [id])
+  signedByUser        User?    @relation("SafetyReportSigner", fields: [signedById], references: [id])
+
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+// ==================== Equipment ====================
+model Equipment {
+  id              String   @id @default(cuid())
+  projectId       String?
+  name            String
+  number          String   @unique
+  type            String   // jacking_machine, crane, excavator, pump, etc.
+  status          String   @default("operational") // operational, stopped, maintenance_needed
+  dailyHours      Float    @default(0)
+  breakdowns      String?  // JSON list of breakdowns
+  lastMaintenance DateTime?
+  nextMaintenance DateTime?
+  spareParts      String?
+  notes           String?
+
+  project         Project? @relation(fields: [projectId], references: [id])
+  maintenance     EquipmentMaintenance[]
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model EquipmentMaintenance {
+  id            String   @id @default(cuid())
+  equipmentId   String
+  date          DateTime
+  type          String   // routine, repair, emergency
+  description   String
+  cost          Float    @default(0)
+  partsUsed     String?
+  performedById String?
+  performedBy   User?    @relation(fields: [performedById], references: [id])
+  equipment     Equipment @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
+
+  createdAt     DateTime @default(now())
+}
+
+// ==================== Costs ====================
+model Cost {
+  id            String   @id @default(cuid())
+  projectId     String
+  dailyReportId String?
+  date          DateTime
+  category      String   // labor, housing, transport, fuel, maintenance, parts, oil, safety, rental, other
+  description   String
+  amount        Float
+  notes         String?
+
+  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  dailyReport   DailyReport? @relation(fields: [dailyReportId], references: [id])
+  recordedBy    User?    @relation(fields: [recordedById], references: [id])
+  recordedById  String?
+
+  createdAt     DateTime @default(now())
+}
+
+// ==================== Finishing / Handover ====================
+model Finishing {
+  id              String   @id @default(cuid())
+  projectId       String
+  driveLineId     String?
+  date            DateTime
+  siteCleaned     Boolean  @default(false)
+  wasteRemoved    Boolean  @default(false)
+  shaftClosed     Boolean  @default(false)
+  siteRestored    Boolean  @default(false)
+  lineHandover    Boolean  @default(false)
+  clientNotes     String?
+  handoverStatus  String   @default("pending") // pending, accepted, needs_revision, rejected
+  signedBy        String?
+  signedById      String?
+  signedAt        DateTime?
+
+  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  signedByUser    User?    @relation(fields: [signedById], references: [id])
+  attachments     Attachment[]
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ==================== Attachments ====================
+model Attachment {
+  id            String   @id @default(cuid())
+  type          String   // site_photo, drilling_photo, safety_photo, finishing_photo, contract, po, invoice, report, worker_doc, certificate
+  fileName      String
+  fileType      String   // image, pdf, doc
+  url           String   // base64 or path
+  size          Int?
+  dailyReportId String?
+  finishingId   String?
+
+  dailyReport   DailyReport? @relation(fields: [dailyReportId], references: [id], onDelete: Cascade)
+  finishing     Finishing?   @relation(fields: [finishingId], references: [id], onDelete: Cascade)
+
+  createdAt     DateTime @default(now())
+}
+
+// ==================== Notifications ====================
+model Notification {
+  id          String   @id @default(cuid())
+  projectId   String?
+  userId      String?
+  type        String   // safety_missing, work_stopped, low_production, equipment_breakdown, mass_absence, cost_overrun, deadline_near, safety_alert, report_delay
+  title       String
+  message     String
+  severity    String   @default("info") // info, warning, critical
+  read        Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  project     Project? @relation(fields: [projectId], references: [id])
+  user        User?    @relation(fields: [userId], references: [id])
+}
+
+// ==================== Audit Log ====================
+model AuditLog {
+  id          String   @id @default(cuid())
+  userId      String?
+  projectId   String?
+  dailyReportId String?
+  action      String   // create, update, delete, approve, reject
+  entity      String   // project, drive_line, daily_report, safety_report, cost, equipment, finishing
+  entityId    String
+  details     String?
+  createdAt   DateTime @default(now())
+
+  user        User?    @relation(fields: [userId], references: [id])
+  project     Project? @relation(fields: [projectId], references: [id])
+  dailyReport DailyReport? @relation(fields: [dailyReportId], references: [id])
+}

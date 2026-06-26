@@ -1,0 +1,8 @@
+node_modules
+.next
+.git
+db/*.db
+*.log
+.env
+.env.*
+!.env.production.example
