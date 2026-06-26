@@ -102,6 +102,7 @@ export default function AppShell() {
   const [formData, setFormData] = useState({ email: '', name: '', nameEn: '', password: '', role: 'site_engineer', phone: '' })
   const [createLoading, setCreateLoading] = useState(false)
   const [createError, setCreateError] = useState('')
+  const [remainingSlots, setRemainingSlots] = useState(50)
   const [existingUsers, setExistingUsers] = useState<any[]>([])
   const [listLoading, setListLoading] = useState(false)
   const [dialogTab, setDialogTab] = useState<'create' | 'list'>('create')
@@ -155,7 +156,7 @@ export default function AppShell() {
       const res = await authedFetch('/api/users/list')
       const data = await res.json()
       if (res.ok) {
-        setRemainingSlots(data.remainingSlots ?? 6)
+        setRemainingSlots(data.remainingSlots ?? 50)
         setExistingUsers(data.users || [])
       }
     } catch {}
@@ -374,7 +375,7 @@ export default function AppShell() {
               <DialogDescription>
                 {dialogTab === 'create'
                   ? (isAr ? 'أضف مستخدم جديد (الحد الأقصى 50)' : 'Add a new user (max 50)')
-                : (isAr ? 'قائمة المستخدمين في النظام' : 'Users list')}
+                  : (isAr ? 'قائمة المستخدمين في النظام' : 'Users list')}
               </DialogDescription>
             </DialogHeader>
 
@@ -393,7 +394,7 @@ export default function AppShell() {
               <div className="flex-1 h-2.5 bg-muted rounded-full overflow-hidden">
                 <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${((50 - remainingSlots) / 50) * 100}%` }} />
               </div>
-              <span className="text-muted-foreground shrink-0 font-medium">{remainingSlots} {remainingSlots} {isAr ? 'متبقي من 50' : 'remaining of 50'}</span>
+              <span className="text-muted-foreground shrink-0 font-medium">{remainingSlots} {isAr ? 'متبقي من 50' : 'remaining of 50'}</span>
             </div>
 
             {dialogTab === 'create' ? (
