@@ -50,8 +50,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       users: usersWithLabels,
       total: users.length,
-      maxUsers: 6,
-      remainingSlots: 6 - users.length,
+      maxUsers: 50,
+      remainingSlots: 50 - users.length,
     })
   } catch (error) {
     console.error('List users error:', error)
