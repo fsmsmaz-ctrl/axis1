@@ -102,7 +102,6 @@ export default function AppShell() {
   const [formData, setFormData] = useState({ email: '', name: '', nameEn: '', password: '', role: 'site_engineer', phone: '' })
   const [createLoading, setCreateLoading] = useState(false)
   const [createError, setCreateError] = useState('')
-  const [remainingSlots, setRemainingSlots] = useState(6)
   const [existingUsers, setExistingUsers] = useState<any[]>([])
   const [listLoading, setListLoading] = useState(false)
   const [dialogTab, setDialogTab] = useState<'create' | 'list'>('create')
@@ -304,13 +303,6 @@ export default function AppShell() {
             <Menu className="h-5 w-5" />
           </Button>
 
-          {isAdmin && (
-            <Button onClick={openUserDialog} size="sm" className="gap-1.5 bg-primary hover:bg-primary/90">
-              <UserPlus className="h-4 w-4" />
-              <span className="hidden sm:inline text-sm">{isAr ? 'إضافة مستخدم' : 'Add User'}</span>
-            </Button>
-          )}
-
           <div className="flex-1">
             <h2 className="text-lg font-semibold">
               {isRtl ? navItems.find(i => i.id === currentPage)?.labelAr : navItems.find(i => i.id === currentPage)?.labelEn}
@@ -381,8 +373,8 @@ export default function AppShell() {
               </DialogTitle>
               <DialogDescription>
                 {dialogTab === 'create'
-                  ? (isAr ? 'أضف مستخدم جديد (الحد الأقصى 6)' : 'Add a new user (max 6)')
-                  : (isAr ? 'قائمة المستخدمين في النظام' : 'Users list')}
+                  ? (isAr ? 'أضف مستخدم جديد (الحد الأقصى 50)' : 'Add a new user (max 50)')
+                : (isAr ? 'قائمة المستخدمين في النظام' : 'Users list')}
               </DialogDescription>
             </DialogHeader>
 
@@ -399,9 +391,9 @@ export default function AppShell() {
 
             <div className="flex items-center gap-3 text-sm">
               <div className="flex-1 h-2.5 bg-muted rounded-full overflow-hidden">
-                <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${((6 - remainingSlots) / 6) * 100}%` }} />
+                <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${((50 - remainingSlots) / 50) * 100}%` }} />
               </div>
-              <span className="text-muted-foreground shrink-0 font-medium">{remainingSlots} {isAr ? 'متبقي من 6' : 'remaining of 6'}</span>
+              <span className="text-muted-foreground shrink-0 font-medium">{remainingSlots} {remainingSlots} {isAr ? 'متبقي من 50' : 'remaining of 50'}</span>
             </div>
 
             {dialogTab === 'create' ? (
