@@ -4,7 +4,7 @@ import { db } from '@/lib/db'
 import bcrypt from 'bcryptjs'
 
 const ADMIN_EMAIL = 'admin@axis.om'
-const MAX_USERS = 6
+const MAX_USERS = 50
 
 const VALID_ROLES = [
   'top_management',
