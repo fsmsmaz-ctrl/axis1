@@ -26,7 +26,7 @@ import {
   LayoutDashboard, FolderKanban, GitBranch, FileText, ShieldCheck,
   Wrench, DollarSign, CheckCircle2, FileBarChart, TrendingUp,
   Bell, HardHat, LogOut, Menu, X, Globe, User, Settings,
-  AlertTriangle, ChevronLeft, UserPlus, Users, Loader2, Shield
+  AlertTriangle, ChevronLeft, UserPlus, Users, Loader2, Shield, Pencil, Trash2, Check
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -105,7 +105,9 @@ export default function AppShell() {
   const [remainingSlots, setRemainingSlots] = useState(50)
   const [existingUsers, setExistingUsers] = useState<any[]>([])
   const [listLoading, setListLoading] = useState(false)
-  const [dialogTab, setDialogTab] = useState<'create' | 'list'>('create')
+  const [dialogTab, setDialogTab] = useState<'create' | 'list' | 'edit'>('create')
+  const [editingUser, setEditingUser] = useState<any>(null)
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
 
   useEffect(() => {
     if (!user || !token) return
@@ -180,6 +182,32 @@ export default function AppShell() {
     e.preventDefault()
     setCreateLoading(true)
     setCreateError('')
+    if (dialogTab === 'edit') {
+      // Update existing user
+      const { email, ...updateFields } = formData
+      try {
+        const res = await authedFetch('/api/users/update', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: editingUser.id, ...updateFields }),
+        })
+        const data = await res.json()
+        if (!res.ok) {
+          setCreateError(data.error || (isAr ? 'فشل تحديث المستخدم' : 'Failed to update user'))
+          return
+        }
+        toast.success(isAr ? 'تم تحديث المستخدم بنجاح' : 'User updated successfully')
+        setDialogTab('list')
+        setEditingUser(null)
+        loadUserList()
+      } catch {
+        setCreateError(isAr ? 'خطأ في الاتصال' : 'Connection error')
+      } finally {
+        setCreateLoading(false)
+      }
+      return
+    }
+    // Create new user
     if (!formData.email || !formData.password || !formData.name || !formData.role) {
       setCreateError(isAr ? 'جميع الحقول المطلوبة يجب أن تُملأ' : 'All required fields must be filled')
       setCreateLoading(false)
@@ -204,6 +232,37 @@ export default function AppShell() {
       setCreateError(isAr ? 'خطأ في الاتصال' : 'Connection error')
     } finally {
       setCreateLoading(false)
+    }
+  }
+
+  function openEditUser(u: any) {
+    setEditingUser(u)
+    setFormData({
+      email: u.email,
+      name: u.name,
+      nameEn: u.nameEn || '',
+      password: '',
+      role: u.role,
+      phone: u.phone || '',
+    })
+    setCreateError('')
+    setDialogTab('edit')
+  }
+
+  async function handleDeleteUser(userId: string) {
+    try {
+      const res = await authedFetch(`/api/users/delete?id=${userId}`, { method: 'DELETE' })
+      const data = await res.json()
+      if (!res.ok) {
+        toast.error(data.error || (isAr ? 'فشل حذف المستخدم' : 'Failed to delete user'))
+        return
+      }
+      toast.success(isAr ? 'تم حذف المستخدم بنجاح' : 'User deleted successfully')
+      setRemainingSlots(data.remainingSlots)
+      setDeleteConfirm(null)
+      loadUserList()
+    } catch {
+      toast.error(isAr ? 'خطأ في الاتصال' : 'Connection error')
     }
   }
 
@@ -373,36 +432,49 @@ export default function AppShell() {
                 {isAr ? 'إدارة المستخدمين' : 'User Management'}
               </DialogTitle>
               <DialogDescription>
-                {dialogTab === 'create'
+                {dialogTab === 'edit'
+                  ? (isAr ? 'تعديل بيانات المستخدم' : 'Edit user information')
+                  : dialogTab === 'create'
                   ? (isAr ? 'أضف مستخدم جديد (الحد الأقصى 50)' : 'Add a new user (max 50)')
                   : (isAr ? 'قائمة المستخدمين في النظام' : 'Users list')}
               </DialogDescription>
             </DialogHeader>
 
             <div className="flex border rounded-lg overflow-hidden">
-              <button onClick={() => setDialogTab('create')} className={`flex-1 py-2.5 text-sm font-medium transition ${dialogTab === 'create' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}>
+              <button onClick={() => { setDialogTab('create'); setEditingUser(null); setFormData({ email: '', name: '', nameEn: '', password: '', role: 'site_engineer', phone: '' }); setCreateError(''); }} className={`flex-1 py-2.5 text-sm font-medium transition ${dialogTab === 'create' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}>
                 <UserPlus className="h-4 w-4 inline-block mr-1.5" />
                 {isAr ? 'إنشاء مستخدم' : 'Create User'}
               </button>
-              <button onClick={() => { setDialogTab('list'); loadUserList(); }} className={`flex-1 py-2.5 text-sm font-medium transition ${dialogTab === 'list' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}>
+              <button onClick={() => { setDialogTab('list'); setEditingUser(null); loadUserList(); }} className={`flex-1 py-2.5 text-sm font-medium transition ${dialogTab === 'list' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}>
                 <Users className="h-4 w-4 inline-block mr-1.5" />
                 {isAr ? 'المستخدمون' : 'Users'}
               </button>
             </div>
 
-            <div className="flex items-center gap-3 text-sm">
-              <div className="flex-1 h-2.5 bg-muted rounded-full overflow-hidden">
-                <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${((50 - remainingSlots) / 50) * 100}%` }} />
-              </div>
-              <span className="text-muted-foreground shrink-0 font-medium">{remainingSlots} {isAr ? 'متبقي من 50' : 'remaining of 50'}</span>
-            </div>
-
-            {dialogTab === 'create' ? (
-              <form onSubmit={handleCreateUser} className="space-y-4">
-                <div className="space-y-2">
-                  <Label>{isAr ? 'البريد الإلكتروني (اسم المستخدم) *' : 'Email (Username) *'}</Label>
-                  <Input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} placeholder="user@axis.om" dir="ltr" className="h-10" />
+            {dialogTab !== 'edit' && (
+              <div className="flex items-center gap-3 text-sm">
+                <div className="flex-1 h-2.5 bg-muted rounded-full overflow-hidden">
+                  <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${((50 - remainingSlots) / 50) * 100}%` }} />
                 </div>
+                <span className="text-muted-foreground shrink-0 font-medium">{remainingSlots} {isAr ? 'متبقي من 50' : 'remaining of 50'}</span>
+              </div>
+            )}
+
+            {(dialogTab === 'create' || dialogTab === 'edit') ? (
+              <form onSubmit={handleCreateUser} className="space-y-4">
+                {dialogTab === 'edit' && (
+                  <div className="space-y-2">
+                    <Label>{isAr ? 'البريد الإلكتروني' : 'Email'}</Label>
+                    <Input type="email" value={formData.email} disabled dir="ltr" className="h-10 bg-muted cursor-not-allowed opacity-70" />
+                    <p className="text-xs text-muted-foreground">{isAr ? 'لا يمكن تغيير البريد الإلكتروني' : 'Email cannot be changed'}</p>
+                  </div>
+                )}
+                {dialogTab === 'create' && (
+                  <div className="space-y-2">
+                    <Label>{isAr ? 'البريد الإلكتروني (اسم المستخدم) *' : 'Email (Username) *'}</Label>
+                    <Input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} placeholder="user@axis.om" dir="ltr" className="h-10" />
+                  </div>
+                )}
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-2">
                     <Label>{isAr ? 'الاسم بالعربي *' : 'Name (Arabic) *'}</Label>
@@ -414,7 +486,10 @@ export default function AppShell() {
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <Label>{isAr ? 'كلمة المرور *' : 'Password *'}</Label>
+                  <Label>{dialogTab === 'edit'
+                    ? (isAr ? 'كلمة المرور الجديدة (اتركها فارغة للإبقاء)' : 'New password (leave empty to keep current)')
+                    : (isAr ? 'كلمة المرور *' : 'Password *')
+                  }</Label>
                   <Input type="password" value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} placeholder="••••••••" dir="ltr" className="h-10" />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
@@ -438,11 +513,18 @@ export default function AppShell() {
                   <Alert variant="destructive"><AlertDescription>{createError}</AlertDescription></Alert>
                 )}
                 <DialogFooter className="gap-2">
-                  <Button type="button" variant="outline" onClick={() => setUserDialogOpen(false)}>{isAr ? 'إلغاء' : 'Cancel'}</Button>
-                  <Button type="submit" disabled={createLoading || remainingSlots <= 0} className="gap-2">
-                    {createLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
-                    {createLoading ? (isAr ? 'جارٍ الإنشاء...' : 'Creating...') : (isAr ? 'إنشاء الحساب' : 'Create Account')}
-                  </Button>
+                  <Button type="button" variant="outline" onClick={() => { if (dialogTab === 'edit') { setDialogTab('list'); setEditingUser(null); } else { setUserDialogOpen(false) } }}>{isAr ? 'رجوع' : 'Back'}</Button>
+                  {dialogTab === 'edit' ? (
+                    <Button type="submit" disabled={createLoading} className="gap-2">
+                      {createLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                      {createLoading ? (isAr ? 'جارٍ التحديث...' : 'Updating...') : (isAr ? 'حفظ التعديلات' : 'Save Changes')}
+                    </Button>
+                  ) : (
+                    <Button type="submit" disabled={createLoading || remainingSlots <= 0} className="gap-2">
+                      {createLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
+                      {createLoading ? (isAr ? 'جارٍ الإنشاء...' : 'Creating...') : (isAr ? 'إنشاء الحساب' : 'Create Account')}
+                    </Button>
+                  )}
                 </DialogFooter>
               </form>
             ) : (
@@ -458,7 +540,7 @@ export default function AppShell() {
                     <span className="text-sm">{isAr ? 'لا يوجد مستخدمون بعد' : 'No users yet'}</span>
                   </div>
                 ) : (
-                  <div className="border rounded-lg divide-y max-h-64 overflow-y-auto">
+                  <div className="border rounded-lg divide-y max-h-72 overflow-y-auto">
                     {existingUsers.map((u) => (
                       <div key={u.id} className="flex items-center gap-3 p-3">
                         <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
@@ -471,6 +553,27 @@ export default function AppShell() {
                         <span className="text-xs px-2 py-1 rounded-full bg-primary/10 text-primary font-medium shrink-0">
                           {u.roleLabel ? (isAr ? u.roleLabel.ar : u.roleLabel.en) : u.role}
                         </span>
+                        <div className="flex items-center gap-1 shrink-0">
+                          {deleteConfirm === u.id ? (
+                            <>
+                              <Button size="sm" variant="destructive" className="h-7 px-2 text-xs gap-1" onClick={() => handleDeleteUser(u.id)}>
+                                {isAr ? 'تأكيد' : 'Confirm'}
+                              </Button>
+                              <Button size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={() => setDeleteConfirm(null)}>
+                                {isAr ? 'إلغاء' : 'No'}
+                              </Button>
+                            </>
+                          ) : (
+                            <>
+                              <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground hover:text-primary" onClick={() => openEditUser(u)} title={isAr ? 'تعديل' : 'Edit'}>
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => setDeleteConfirm(u.id)} title={isAr ? 'حذف' : 'Delete'}>
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>
