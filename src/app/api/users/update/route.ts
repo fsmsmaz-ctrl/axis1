@@ -21,7 +21,6 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: 'User ID is required' }, { status: 400 })
     }
 
-    // Prevent modifying the admin account
     const targetUser = await db.user.findUnique({ where: { id: userId } })
     if (!targetUser) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
@@ -31,7 +30,6 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: 'Cannot modify admin account' }, { status: 403 })
     }
 
-    // Build update data
     const updateData: Record<string, any> = {}
 
     if (name !== undefined && name.trim()) updateData.name = name.trim()
@@ -44,7 +42,6 @@ export async function PATCH(req: NextRequest) {
       updateData.role = role
     }
 
-    // Handle permissions
     if (permissions !== undefined) {
       const cleanPerms: Record<string, boolean> = {}
       for (const key of TOGGLABLE_PERMISSIONS) {
@@ -55,7 +52,6 @@ export async function PATCH(req: NextRequest) {
       updateData.permissions = cleanPerms
     }
 
-    // Hash password if provided
     if (password && password.trim()) {
       updateData.password = await bcrypt.hash(password.trim(), 12)
     }
@@ -68,22 +64,12 @@ export async function PATCH(req: NextRequest) {
       where: { id: userId },
       data: updateData,
       select: {
-        id: true,
-        email: true,
-        name: true,
-        nameEn: true,
-        role: true,
-        phone: true,
-        active: true,
-        permissions: true,
-        createdAt: true,
+        id: true, email: true, name: true, nameEn: true,
+        role: true, phone: true, active: true, permissions: true, createdAt: true,
       }
     })
 
-    return NextResponse.json({
-      message: 'User updated successfully.',
-      user: updated
-    })
+    return NextResponse.json({ message: 'User updated successfully.', user: updated })
   } catch (error) {
     console.error('Update user error:', error)
     return NextResponse.json({ error: 'internal_error', message: 'Failed to update user' }, { status: 500 })
