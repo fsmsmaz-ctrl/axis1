@@ -27,18 +27,14 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ error: 'Cannot delete admin account' }, { status: 403 })
     }
 
-    await db.user.delete({ where: { id: userId } })
-
-    const remaining = await db.user.count({
-      where: { email: { not: ADMIN_EMAIL } }
+    await db.user.update({
+      where: { id: userId },
+      data: { active: false },
     })
 
-    return NextResponse.json({
-      message: 'User deleted successfully.',
-      remainingSlots: 50 - remaining
-    })
+    return NextResponse.json({ message: 'User deleted successfully' })
   } catch (error) {
     console.error('Delete user error:', error)
-    return NextResponse.json({ error: 'internal_error', message: 'Failed to delete user' }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to delete user' }, { status: 500 })
   }
 }
