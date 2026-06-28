@@ -18,8 +18,7 @@ import {
 import {
   LayoutDashboard, FolderKanban, GitBranch, FileText, ShieldCheck,
   Wrench, DollarSign, CheckCircle2, FileBarChart, TrendingUp,
-  Bell, HardHat, LogOut, Menu, X, Globe, User, Settings,
-  AlertTriangle, ChevronLeft, UserPlus
+  Bell, LogOut, Menu, X, Globe, UserPlus, ChevronLeft,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -60,7 +59,6 @@ const roleLabels: Record<string, { ar: string; en: string }> = {
   accountant: { ar: 'المحاسب', en: 'Accountant' },
 }
 
-// Dynamically import pages to avoid SSR issues
 const DashboardPage = dynamic(() => import('@/components/pages/dashboard-page'), { ssr: false })
 const ProjectsPage = dynamic(() => import('@/components/pages/projects-page'), { ssr: false })
 const DriveLinesPage = dynamic(() => import('@/components/pages/drive-lines-page'), { ssr: false })
@@ -73,6 +71,38 @@ const PerformancePage = dynamic(() => import('@/components/pages/performance-pag
 const ReportsPage = dynamic(() => import('@/components/pages/reports-page'), { ssr: false })
 const NotificationsPage = dynamic(() => import('@/components/pages/notifications-page'), { ssr: false })
 const CreateUserDialog = dynamic(() => import('@/components/create-user-dialog'), { ssr: false })
+
+function AxisLogo({ className, variant = 'default' }: { className?: string; variant?: 'default' | 'white' }) {
+  if (variant === 'white') {
+    return (
+      <div className={cn('flex items-center gap-2.5', className)}>
+        <svg width="38" height="38" viewBox="0 0 38 38" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect width="38" height="38" rx="10" fill="rgba(255,255,255,0.15)" />
+          <path d="M10 28V12l6 4v8l6-4V12l6 4v12" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          <circle cx="19" cy="10" r="2" fill="white" />
+        </svg>
+        <div className="flex flex-col leading-none">
+          <span className="text-[22px] font-extrabold tracking-[0.2em] text-white">AXIS</span>
+          <span className="text-[9px] font-medium tracking-[0.15em] text-white/70 mt-0.5">PIPE JACKING</span>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className={cn('flex items-center gap-2.5', className)}>
+      <svg width="38" height="38" viewBox="0 0 38 38" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect width="38" height="38" rx="10" className="fill-primary" />
+        <path d="M10 28V12l6 4v8l6-4V12l6 4v12" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        <circle cx="19" cy="10" r="2" fill="white" />
+      </svg>
+      <div className="flex flex-col leading-none">
+        <span className="text-[22px] font-extrabold tracking-[0.2em] text-primary">AXIS</span>
+        <span className="text-[9px] font-medium tracking-[0.15em] text-muted-foreground mt-0.5">PIPE JACKING</span>
+      </div>
+    </div>
+  )
+}
 
 export default function AppShell() {
   const user = useAppStore((s) => s.user)
@@ -88,14 +118,12 @@ export default function AppShell() {
 
   useEffect(() => {
     if (!user || !token) return
-    // Fetch notifications count - only when token is available
     authedFetch('/api/notifications?unreadOnly=true')
       .then(r => r.json())
       .then(data => setNotifications(data.notifications || []))
       .catch(() => {})
   }, [user, token, currentPage])
 
-  // Sync document direction and language when language changes
   useEffect(() => {
     if (typeof document !== 'undefined') {
       document.documentElement.lang = language
@@ -106,7 +134,6 @@ export default function AppShell() {
   if (!user) return null
 
   const allowedItems = navItems.filter(item => hasPermission(user.role, item.resource, user.permissions))
-  // Only admin@axis.om can manage users
   const isAdmin = user.email.toLowerCase().trim() === 'admin@axis.om'
 
   async function handleLogout() {
@@ -144,7 +171,6 @@ export default function AppShell() {
 
   return (
     <div className="min-h-screen bg-muted/30" dir={isRtl ? 'rtl' : 'ltr'}>
-      {/* Mobile overlay */}
       {sidebarOpen && (
         <div
           className="fixed inset-0 bg-black/50 z-40 lg:hidden"
@@ -152,7 +178,6 @@ export default function AppShell() {
         />
       )}
 
-      {/* Sidebar */}
       <aside
         className={cn(
           "fixed top-0 bottom-0 z-50 w-72 bg-sidebar border-sidebar-border flex flex-col transition-transform duration-300 lg:translate-x-0",
@@ -162,18 +187,12 @@ export default function AppShell() {
       >
         {/* Logo */}
         <div className="p-5 border-b border-sidebar-border">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center text-primary-foreground">
-              <HardHat className="h-6 w-6" />
-            </div>
-            <div>
-              <h1 className="text-lg font-bold text-sidebar-foreground">AXIS</h1>
-              <p className="text-xs text-muted-foreground">Pipe Jacking System</p>
-            </div>
+          <div className="flex items-center justify-between">
+            <AxisLogo />
             <Button
               variant="ghost"
               size="icon"
-              className={cn("lg:hidden", isRtl ? "mr-auto" : "ml-auto")}
+              className="lg:hidden text-sidebar-foreground"
               onClick={() => setSidebarOpen(false)}
             >
               <X className="h-5 w-5" />
@@ -243,30 +262,17 @@ export default function AppShell() {
         </div>
       </aside>
 
-      {/* Main content - padding depends on language direction */}
+      {/* Main content */}
       <div className={isRtl ? "lg:pr-72" : "lg:pl-72"}>
-        {/* Top header */}
         <header className="sticky top-0 z-30 h-16 bg-background/80 backdrop-blur border-b flex items-center px-4 lg:px-6 gap-3">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="lg:hidden"
-            onClick={() => setSidebarOpen(true)}
-          >
+          <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setSidebarOpen(true)}>
             <Menu className="h-5 w-5" />
           </Button>
 
-          {/* Admin: Add User Button */}
           {isAdmin && (
-            <Button
-              onClick={() => setUserDialogOpen(true)}
-              size="sm"
-              className="gap-1.5 bg-primary hover:bg-primary/90"
-            >
+            <Button onClick={() => setUserDialogOpen(true)} size="sm" className="gap-1.5 bg-primary hover:bg-primary/90">
               <UserPlus className="h-4 w-4" />
-              <span className="hidden sm:inline text-sm">
-                {isRtl ? 'إضافة مستخدم' : 'Add User'}
-              </span>
+              <span className="hidden sm:inline text-sm">{isRtl ? 'إضافة مستخدم' : 'Add User'}</span>
             </Button>
           )}
 
@@ -300,9 +306,7 @@ export default function AppShell() {
             <DropdownMenuContent align={isRtl ? "start" : "end"} className="w-80">
               <DropdownMenuLabel className="flex items-center justify-between">
                 <span>{isRtl ? 'التنبيهات' : 'Notifications'}</span>
-                {notifications.length > 0 && (
-                  <Badge variant="secondary">{notifications.length}</Badge>
-                )}
+                {notifications.length > 0 && <Badge variant="secondary">{notifications.length}</Badge>}
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
               {notifications.length === 0 ? (
@@ -313,8 +317,8 @@ export default function AppShell() {
                 notifications.slice(0, 5).map((n) => (
                   <DropdownMenuItem key={n.id} className="flex-col items-start p-3">
                     <div className="flex items-center gap-2 w-full">
-                      {n.severity === 'critical' && <AlertTriangle className="h-4 w-4 text-destructive" />}
-                      {n.severity === 'warning' && <AlertTriangle className="h-4 w-4 text-yellow-500" />}
+                      {n.severity === 'critical' && <Bell className="h-4 w-4 text-destructive" />}
+                      {n.severity === 'warning' && <Bell className="h-4 w-4 text-yellow-500" />}
                       {n.severity === 'info' && <Bell className="h-4 w-4 text-blue-500" />}
                       <span className="font-medium text-sm">{n.title}</span>
                     </div>
@@ -336,14 +340,9 @@ export default function AppShell() {
           </Avatar>
         </header>
 
-        {/* Page content */}
         <main className="p-4 lg:p-6 max-w-[1600px] mx-auto">
           {renderPage()}
-
-      {/* Admin: Create User Dialog */}
-      {isAdmin && (
-        <CreateUserDialog open={userDialogOpen} onOpenChange={setUserDialogOpen} />
-      )}
+          {isAdmin && <CreateUserDialog open={userDialogOpen} onOpenChange={setUserDialogOpen} />}
         </main>
       </div>
     </div>
