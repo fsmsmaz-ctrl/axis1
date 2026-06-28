@@ -42,10 +42,10 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
     'equipment', 'finishings', 'notifications',
   ],
   hse_officer: [
-    'dashboard', 'projects', 'daily_reports', 'safety', 'notifications',
+    'dashboard', 'projects', 'equipment', 'safety', 'reports', 'notifications',
   ],
   foreman: [
-    'dashboard', 'projects', 'daily_reports', 'equipment', 'notifications',
+    'dashboard', 'projects', 'daily_reports', 'reports', 'notifications',
   ],
   accountant: [
     'dashboard', 'projects', 'costs', 'reports', 'notifications',
