@@ -7,17 +7,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Loader2, Shield, ArrowRight, Globe } from 'lucide-react'
+import { Loader2, ArrowRight, Globe } from 'lucide-react'
 import { toast } from 'sonner'
-
-const demoAccounts = [
-  { email: 'ceo@axis.om', roleAr: 'الإدارة العليا', roleEn: 'Top Management' },
-  { email: 'pm@axis.om', roleAr: 'مدير المشروع', roleEn: 'Project Manager' },
-  { email: 'engineer@axis.om', roleAr: 'مهندس الموقع', roleEn: 'Site Engineer' },
-  { email: 'hse@axis.om', roleAr: 'مسؤول السلامة', roleEn: 'HSE Officer' },
-  { email: 'foreman@axis.om', roleAr: 'المشرف', roleEn: 'Foreman' },
-  { email: 'finance@axis.om', roleAr: 'المحاسب', roleEn: 'Accountant' },
-]
 
 const features = [
   { ar: 'لوحة تحكم مباشرة', en: 'Live Dashboard', icon: '📊' },
@@ -56,7 +47,6 @@ export default function LoginPage() {
     invalidCreds: isAr ? 'بيانات الدخول غير صحيحة' : 'Invalid credentials',
     connectionError: isAr ? 'فشل الاتصال بالخادم' : 'Connection failed',
     welcomeBack: isAr ? 'مرحباً بعودتك، ' : 'Welcome back, ',
-    demoAccounts: isAr ? 'حسابات تجريبية' : 'Demo accounts',
     heroTitle: isAr ? 'نظام إدارة عمليات الحفر الاحترافي' : 'Professional Pipe Jacking Management System',
     heroDesc: isAr
       ? 'منصة متكاملة لإدارة مشاريع Pipe Jacking / Microtunneling - متابعة الإنتاج اليومي، السلامة، المعدات، التكاليف والإيرادات، وتقارير الأداء من خلال لوحة تحكم مباشرة.'
@@ -105,10 +95,6 @@ export default function LoginPage() {
     } finally {
       setLoading(false)
     }
-  }
-
-  function fillDemo(email: string) {
-    setEmail(email)
   }
 
   function toggleLanguage() {
@@ -192,21 +178,6 @@ export default function LoginPage() {
               )}
             </Button>
           </form>
-
-          <div className="mt-8">
-            <div className="flex items-center gap-2 mb-3">
-              <Shield className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm text-muted-foreground">{t.demoAccounts}</span>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              {demoAccounts.map((acc) => (
-                <button key={acc.email} type="button" onClick={() => fillDemo(acc.email)} className={`p-2.5 rounded-lg border border-border hover:border-primary/50 hover:bg-accent/50 transition text-sm ${isRtl ? 'text-right' : 'text-left'}`}>
-                  <div className="font-medium">{isAr ? acc.roleAr : acc.roleEn}</div>
-                  <div className="text-xs text-muted-foreground" dir="ltr">{acc.email}</div>
-                </button>
-              ))}
-            </div>
-          </div>
         </div>
       </div>
     </div>
