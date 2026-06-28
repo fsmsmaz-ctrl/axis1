@@ -1,25 +1,66 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
+import bcrypt from 'bcryptjs'
 
 const ADMIN_EMAIL = 'admin@axis.om'
+const VALID_ROLES = ['top_management', 'project_manager', 'site_engineer', 'hse_officer', 'foreman', 'accountant']
+const TOGGLABLE_PERMISSIONS = ['drive_lines', 'daily_reports', 'safety', 'equipment', 'costs', 'finishings', 'performance']
 
-export async function GET(req: NextRequest) {
+export async function POST(req: NextRequest) {
   try {
     const authUser = await getAuthUser(req)
-    if (!authUser) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    if (!authUser || authUser.email.toLowerCase().trim() !== ADMIN_EMAIL) {
+      return NextResponse.json({ error: 'unauthorized' }, { status: 403 })
     }
 
-    if (authUser.email.toLowerCase().trim() !== ADMIN_EMAIL) {
-      return NextResponse.json(
-        { error: 'Access denied.' },
-        { status: 403 }
-      )
+    const body = await req.json()
+    const { name, nameEn, email, phone, role, password, permissions } = body
+
+    if (!name?.trim() || !email?.trim() || !password?.trim() || !role) {
+      return NextResponse.json({ error: 'Name, email, password and role are required' }, { status: 400 })
     }
 
-    const users = await db.user.findMany({
-      where: { email: { not: ADMIN_EMAIL } },
+    if (!VALID_ROLES.includes(role)) {
+      return NextResponse.json({ error: 'Invalid role' }, { status: 400 })
+    }
+
+    // Check if email already exists
+    const existing = await db.user.findUnique({ where: { email: email.toLowerCase().trim() } })
+    if (existing) {
+      return NextResponse.json({ error: 'Email already exists', message: 'البريد الإلكتروني مستخدم بالفعل' }, { status: 409 })
+    }
+
+    // Check max users
+    const userCount = await db.user.count()
+    if (userCount >= 50) {
+      return NextResponse.json({ error: 'Max users reached', message: 'تم بلوغ الحد الأقصى للمستخدمين (50)' }, { status: 400 })
+    }
+
+    // Clean permissions
+    const cleanPerms: Record<string, boolean> = {}
+    if (permissions) {
+      for (const key of TOGGLABLE_PERMISSIONS) {
+        if (typeof permissions[key] === 'boolean') {
+          cleanPerms[key] = permissions[key]
+        }
+      }
+    }
+
+    const passwordHash = await bcrypt.hash(password.trim(), 12)
+
+    const user = await db.user.create({
+      data: {
+        email: email.toLowerCase().trim(),
+        password: passwordHash,
+        name: name.trim(),
+        nameEn: nameEn?.trim() || null,
+        phone: phone?.trim() || null,
+        role,
+        language: 'ar',
+        active: true,
+        permissions: Object.keys(cleanPerms).length > 0 ? cleanPerms : undefined,
+      },
       select: {
         id: true,
         email: true,
@@ -27,34 +68,15 @@ export async function GET(req: NextRequest) {
         nameEn: true,
         role: true,
         phone: true,
+        permissions: true,
         active: true,
         createdAt: true,
       },
-      orderBy: { createdAt: 'asc' },
     })
 
-    const roleLabels: Record<string, { ar: string; en: string }> = {
-      top_management: { ar: 'الإدارة العليا', en: 'Top Management' },
-      project_manager: { ar: 'مدير المشروع', en: 'Project Manager' },
-      site_engineer: { ar: 'مهندس الموقع', en: 'Site Engineer' },
-      hse_officer: { ar: 'مسؤول السلامة', en: 'HSE Officer' },
-      foreman: { ar: 'المشرف', en: 'Foreman' },
-      accountant: { ar: 'المحاسب', en: 'Accountant' },
-    }
-
-    const usersWithLabels = users.map(u => ({
-      ...u,
-      roleLabel: roleLabels[u.role] || { ar: u.role, en: u.role },
-    }))
-
-    return NextResponse.json({
-      users: usersWithLabels,
-      total: users.length,
-      maxUsers: 50,
-      remainingSlots: 50 - users.length,
-    })
+    return NextResponse.json({ user, message: 'User created successfully' })
   } catch (error) {
-    console.error('List users error:', error)
-    return NextResponse.json({ error: 'Failed to list users.' }, { status: 500 })
+    console.error('Register user error:', error)
+    return NextResponse.json({ error: 'Failed to create user' }, { status: 500 })
   }
 }
