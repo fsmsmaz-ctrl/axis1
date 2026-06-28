@@ -8,15 +8,13 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Progress } from '@/components/ui/progress'
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle
 } from '@/components/ui/dialog'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Plus, FileText, Calendar, Users, Ruler, AlertTriangle,
-  ShieldCheck, CheckCircle2, Clock, DollarSign, Eye, Check, X
+  ShieldCheck, CheckCircle2, Clock, DollarSign, Eye, Check, X, ShieldAlert
 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
@@ -59,16 +57,8 @@ export default function DailyReportsPage() {
     problems: '',
   })
 
-  // Safety checklist state
-  const [safety, setSafety] = useState({
-    ppeAvailable: false, helmetCheck: false, bootsCheck: false, glovesCheck: false,
-    glassesCheck: false, workAreaCheck: false, barriersCheck: false, shaftCheck: false,
-    ventilationCheck: false, electricalCheck: false, craneCheck: false, hydraulicCheck: false,
-    fireExtinguishers: false, workPermit: false, toolboxTalk: false,
-    hazards: '', observations: '', violations: '', incidentType: 'none', incidentDescription: '',
-  })
-
-  const [safetyCompleted, setSafetyCompleted] = useState(false)
+  // Track draft reports (safety completed but no data yet) for each project+date
+  const [draftReports, setDraftReports] = useState<any[]>([])
 
   async function fetchReports() {
     setLoading(true)
@@ -95,11 +85,36 @@ export default function DailyReportsPage() {
 
   useEffect(() => {
     if (formData.projectId) {
-      fetch(`/api/drive-lines?projectId=${formData.projectId}`)
+      authedFetch(`/api/drive-lines?projectId=${formData.projectId}`)
         .then(r => r.json())
         .then(d => setDriveLines(d.driveLines || []))
     }
   }, [formData.projectId])
+
+  // When project or date changes in the form, check if there's a draft report with safety
+  useEffect(() => {
+    if (!formData.projectId || !formData.reportDate) return
+    const dateStart = new Date(formData.reportDate)
+    dateStart.setHours(0, 0, 0, 0)
+    const dateEnd = new Date(formData.reportDate)
+    dateEnd.setHours(23, 59, 59, 999)
+
+    authedFetch('/api/daily-reports?' + new URLSearchParams({
+      projectId: formData.projectId,
+      limit: '200',
+    }).toString())
+      .then(r => r.json())
+      .then(data => {
+        const drafts = (data.reports || []).filter((r: any) => {
+          const d = new Date(r.reportDate)
+          return r.status === 'draft' && r.safety && d >= dateStart && d <= dateEnd
+        })
+        setDraftReports(drafts)
+      })
+      .catch(() => setDraftReports([]))
+  }, [formData.projectId, formData.reportDate, token])
+
+  const activeDraft = draftReports.length > 0 ? draftReports[0] : null
 
   function openCreate() {
     setFormData({
@@ -110,68 +125,34 @@ export default function DailyReportsPage() {
       soilExcavated: 'mixed', pipesInstalled: '0', productionNotes: '',
       problems: '',
     })
-    setSafety({
-      ppeAvailable: false, helmetCheck: false, bootsCheck: false, glovesCheck: false,
-      glassesCheck: false, workAreaCheck: false, barriersCheck: false, shaftCheck: false,
-      ventilationCheck: false, electricalCheck: false, craneCheck: false, hydraulicCheck: false,
-      fireExtinguishers: false, workPermit: false, toolboxTalk: false,
-      hazards: '', observations: '', violations: '', incidentType: 'none', incidentDescription: '',
-    })
-    setSafetyCompleted(false)
+    setDraftReports([])
     setDialogOpen(true)
   }
-
-  const safetyChecklistItems = [
-    { key: 'ppeAvailable', label: isRtl ? 'توفر PPE لجميع العمال' : 'PPE available for all workers' },
-    { key: 'helmetCheck', label: isRtl ? 'فحص الخوذة' : 'Helmet check' },
-    { key: 'bootsCheck', label: isRtl ? 'فحص الحذاء' : 'Boots check' },
-    { key: 'glovesCheck', label: isRtl ? 'فحص القفازات' : 'Gloves check' },
-    { key: 'glassesCheck', label: isRtl ? 'فحص النظارات' : 'Glasses check' },
-    { key: 'workAreaCheck', label: isRtl ? 'فحص منطقة العمل' : 'Work area check' },
-    { key: 'barriersCheck', label: isRtl ? 'وجود حواجز وتحذيرات' : 'Barriers & warnings' },
-    { key: 'shaftCheck', label: isRtl ? 'فحص الحفرة / shaft' : 'Shaft check' },
-    { key: 'ventilationCheck', label: isRtl ? 'فحص التهوية' : 'Ventilation check' },
-    { key: 'electricalCheck', label: isRtl ? 'فحص الكهرباء والكابلات' : 'Electrical check' },
-    { key: 'craneCheck', label: isRtl ? 'فحص الرافعة' : 'Crane check' },
-    { key: 'hydraulicCheck', label: isRtl ? 'فحص نظام الهيدروليك' : 'Hydraulic system check' },
-    { key: 'fireExtinguishers', label: isRtl ? 'توفر طفايات الحريق' : 'Fire extinguishers' },
-    { key: 'workPermit', label: isRtl ? 'وجود تصريح العمل' : 'Work permit' },
-    { key: 'toolboxTalk', label: isRtl ? 'اجتماع toolbox talk' : 'Toolbox talk' },
-  ]
-
-  const safetyPassedCount = safetyChecklistItems.filter(item => safety[item.key as keyof typeof safety] as boolean).length
-  const allSafetyPassed = safetyPassedCount === safetyChecklistItems.length
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
 
-    if (!allSafetyPassed) {
-      toast.error(isRtl ? 'يجب إكمال جميع فحوصات السلامة أولاً' : 'Complete all safety checks first')
+    // Check if there's a completed safety inspection for this project+date
+    if (!activeDraft || !activeDraft.safety) {
+      toast.error(isRtl ? 'يجب إكمال فحص السلامة أولاً من قسم السلامة قبل إنشاء التقرير' : 'Complete safety inspection from the Safety section first')
       return
     }
 
     try {
-      // 1. Create the daily report
-      const res = await authedFetch('/api/daily-reports', {
-        method: 'POST',
+      // Update the existing draft report with data
+      const res = await authedFetch(`/api/daily-reports/${activeDraft.id}`, {
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...formData, status: 'submitted' }),
       })
       const data = await res.json()
 
       if (!res.ok) {
-        toast.error(isRtl ? 'فشل إنشاء التقرير' : 'Failed to create report')
+        toast.error(isRtl ? 'فشل حفظ التقرير' : 'Failed to save report')
         return
       }
 
-      // 2. Save safety checklist
-      await fetch(`/api/daily-reports/${data.report.id}/safety`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(safety),
-      })
-
-      toast.success(isRtl ? 'تم إنشاء التقرير بنجاح' : 'Report created successfully')
+      toast.success(isRtl ? 'تم حفظ التقرير بنجاح' : 'Report saved successfully')
       setDialogOpen(false)
       fetchReports()
     } catch {
@@ -194,7 +175,6 @@ export default function DailyReportsPage() {
   async function viewReportDetails(report: any) {
     setViewReport(report)
     setViewDialogOpen(true)
-    // Fetch full details including safety
     const res = await fetch(`/api/daily-reports/${report.id}`)
     const data = await res.json()
     setViewReport(data.report)
@@ -215,6 +195,17 @@ export default function DailyReportsPage() {
           <Plus className="h-4 w-4 ml-2" />
           {isRtl ? 'تقرير جديد' : 'New Report'}
         </Button>
+      </div>
+
+      {/* Info banner */}
+      <div className="p-3 rounded-lg bg-blue-50 border border-blue-200 flex items-center gap-2">
+        <ShieldAlert className="h-5 w-5 text-blue-600 shrink-0" />
+        <p className="text-sm text-blue-700">
+          {isRtl
+            ? 'ملاحظة: يجب إنشاء فحص السلامة أولاً من قسم السلامة قبل تعبئة بيانات التقرير اليومي.'
+            : 'Note: Safety inspection must be completed first from the Safety section before filling daily report data.'
+          }
+        </p>
       </div>
 
       <Select value={selectedProject} onValueChange={setSelectedProject}>
@@ -242,6 +233,7 @@ export default function DailyReportsPage() {
         <div className="space-y-2">
           {reports.map((r) => {
             const status = statusLabels[r.status]
+            const isDraftOnly = r.status === 'draft' && r.safety && !r.workStartTime
             return (
               <Card key={r.id} className="hover:shadow-sm transition">
                 <CardContent className="p-4">
@@ -256,31 +248,36 @@ export default function DailyReportsPage() {
                         <Badge variant={status.color as any} className="text-xs">
                           {isRtl ? status.ar : status.en}
                         </Badge>
+                        {isDraftOnly && (
+                          <Badge variant="outline" className="text-xs text-orange-600 border-orange-300">
+                            {isRtl ? 'سلامة فقط' : 'Safety Only'}
+                          </Badge>
+                        )}
                       </div>
                       <p className="text-xs text-muted-foreground mt-0.5">
                         {new Date(r.reportDate).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
-                        {' • '}
-                        {r.workStartTime} - {r.workEndTime}
-                        {' • '}
-                        {r.workersCount} {isRtl ? 'عامل' : 'workers'}
+                        {r.workStartTime && (
+                          <>
+                            {' • '}
+                            {r.workStartTime} - {r.workEndTime}
+                            {' • '}
+                            {r.workersCount} {isRtl ? 'عامل' : 'workers'}
+                          </>
+                        )}
                       </p>
                     </div>
-                    <div className="flex items-center gap-4 text-sm">
-                      <div className="text-center">
-                        <p className="text-xs text-muted-foreground">{isRtl ? 'الإنتاج' : 'Production'}</p>
-                        <p className="font-semibold">{r.dailyMeters} {isRtl ? 'م' : 'm'}</p>
-                      </div>
-                      <div className="text-center">
-                        <p className="text-xs text-muted-foreground">{isRtl ? 'الإيراد' : 'Revenue'}</p>
-                        <p className="font-semibold text-emerald-600">{r.dailyRevenue} {isRtl ? 'ر.ع' : 'OMR'}</p>
-                      </div>
-                      {r.safety && (
+                    {!isDraftOnly && (
+                      <div className="flex items-center gap-4 text-sm">
                         <div className="text-center">
-                          <p className="text-xs text-muted-foreground">{isRtl ? 'السلامة' : 'Safety'}</p>
-                          <ShieldCheck className="h-5 w-5 text-emerald-600 mx-auto" />
+                          <p className="text-xs text-muted-foreground">{isRtl ? 'الإنتاج' : 'Production'}</p>
+                          <p className="font-semibold">{r.dailyMeters} {isRtl ? 'م' : 'm'}</p>
                         </div>
-                      )}
-                    </div>
+                        <div className="text-center">
+                          <p className="text-xs text-muted-foreground">{isRtl ? 'الإيراد' : 'Revenue'}</p>
+                          <p className="font-semibold text-emerald-600">{r.dailyRevenue} {isRtl ? 'ر.ع' : 'OMR'}</p>
+                        </div>
+                      </div>
+                    )}
                     <div className="flex gap-1">
                       <Button variant="outline" size="sm" onClick={() => viewReportDetails(r)}>
                         <Eye className="h-4 w-4" />
@@ -304,220 +301,147 @@ export default function DailyReportsPage() {
         </div>
       )}
 
-      {/* Create Dialog with tabs */}
+      {/* Create/Update Report Dialog - NO safety tab */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{isRtl ? 'تقرير يومي جديد' : 'New Daily Report'}</DialogTitle>
+            <DialogTitle>{isRtl ? 'بيانات التقرير اليومي' : 'Daily Report Data'}</DialogTitle>
             <DialogDescription>
-              {isRtl ? 'يجب إكمال فحص السلامة قبل حفظ التقرير' : 'Safety checklist must be completed first'}
+              {isRtl
+                ? 'تعبئة بيانات الإنتاج والعمل. يجب إكمال فحص السلامة من قسم السلامة أولاً.'
+                : 'Fill in production and work data. Safety inspection must be completed from the Safety section first.'
+              }
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
-            {/* Safety checklist warning banner */}
-            <div className={`p-3 rounded-lg border-2 ${allSafetyPassed ? 'bg-emerald-50 border-emerald-200' : 'bg-orange-50 border-orange-200'}`}>
-              <div className="flex items-center gap-2">
-                {allSafetyPassed ? (
-                  <CheckCircle2 className="h-5 w-5 text-emerald-600" />
-                ) : (
-                  <ShieldCheck className="h-5 w-5 text-orange-600" />
-                )}
-                <div className="flex-1">
-                  <p className={`font-medium text-sm ${allSafetyPassed ? 'text-emerald-700' : 'text-orange-700'}`}>
-                    {allSafetyPassed
-                      ? (isRtl ? 'اكتمل فحص السلامة - يمكنك حفظ التقرير' : 'Safety check complete - you can save the report')
-                      : (isRtl ? `فحص السلامة: ${safetyPassedCount}/${safetyChecklistItems.length}` : `Safety checklist: ${safetyPassedCount}/${safetyChecklistItems.length}`)
+            {/* Safety status indicator */}
+            {activeDraft && activeDraft.safety ? (
+              <div className="p-3 rounded-lg bg-emerald-50 border-2 border-emerald-200">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
+                  <p className="text-sm font-medium text-emerald-700">
+                    {isRtl ? 'فحص السلامة مكتمل - يمكنك تعبئة بيانات التقرير' : 'Safety inspection complete - you can fill report data'}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="p-3 rounded-lg bg-orange-50 border-2 border-orange-200">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="h-5 w-5 text-orange-600 shrink-0" />
+                  <p className="text-sm font-medium text-orange-700">
+                    {isRtl
+                      ? 'لم يتم إنشاء فحص السلامة بعد. يجب إنشاؤه من قسم السلامة لهذا المشروع والتاريخ.'
+                      : 'Safety inspection not yet created. It must be created from the Safety section for this project and date.'
                     }
                   </p>
                 </div>
-                <Progress value={(safetyPassedCount / safetyChecklistItems.length) * 100} className="w-24 h-2" />
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>{isRtl ? 'المشروع' : 'Project'} *</Label>
+                <Select value={formData.projectId} onValueChange={(v) => setFormData({ ...formData, projectId: v, driveLineId: '' })}>
+                  <SelectTrigger><SelectValue placeholder={isRtl ? 'اختر' : 'Select'} /></SelectTrigger>
+                  <SelectContent>
+                    {projects.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>{isRtl ? 'خط الحفر' : 'Drive Line'}</Label>
+                <Select value={formData.driveLineId} onValueChange={(v) => setFormData({ ...formData, driveLineId: v })}>
+                  <SelectTrigger><SelectValue placeholder={isRtl ? 'اختر' : 'Select'} /></SelectTrigger>
+                  <SelectContent>
+                    {driveLines.map((l) => (
+                      <SelectItem key={l.id} value={l.id}>{l.lineNumber} - {l.startPoint} → {l.endPoint}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>{isRtl ? 'التاريخ' : 'Date'} *</Label>
+                <Input type="date" value={formData.reportDate} onChange={(e) => setFormData({ ...formData, reportDate: e.target.value })} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>{isRtl ? 'الطقس' : 'Weather'}</Label>
+                <Select value={formData.weather} onValueChange={(v) => setFormData({ ...formData, weather: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="sunny">{isRtl ? 'مشمس' : 'Sunny'}</SelectItem>
+                    <SelectItem value="cloudy">{isRtl ? 'غائم' : 'Cloudy'}</SelectItem>
+                    <SelectItem value="rainy">{isRtl ? 'ممطر' : 'Rainy'}</SelectItem>
+                    <SelectItem value="windy">{isRtl ? 'عاصف' : 'Windy'}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>{isRtl ? 'بداية العمل' : 'Work Start'}</Label>
+                <Input type="time" value={formData.workStartTime} onChange={(e) => setFormData({ ...formData, workStartTime: e.target.value })} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>{isRtl ? 'نهاية العمل' : 'Work End'}</Label>
+                <Input type="time" value={formData.workEndTime} onChange={(e) => setFormData({ ...formData, workEndTime: e.target.value })} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>{isRtl ? 'ساعات التشغيل' : 'Operating Hours'}</Label>
+                <Input type="number" step="0.1" value={formData.operatingHours} onChange={(e) => setFormData({ ...formData, operatingHours: e.target.value })} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>{isRtl ? 'ساعات التوقف' : 'Stoppage Hours'}</Label>
+                <Input type="number" step="0.1" value={formData.stoppageHours} onChange={(e) => setFormData({ ...formData, stoppageHours: e.target.value })} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>{isRtl ? 'عدد العمال' : 'Workers Count'}</Label>
+                <Input type="number" value={formData.workersCount} onChange={(e) => setFormData({ ...formData, workersCount: e.target.value })} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>{isRtl ? 'سبب التوقف' : 'Stoppage Reason'}</Label>
+                <Input value={formData.stoppageReason} onChange={(e) => setFormData({ ...formData, stoppageReason: e.target.value })} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>{isRtl ? 'قراءة البداية (م)' : 'Start Reading (m)'}</Label>
+                <Input type="number" step="0.01" value={formData.startReading} onChange={(e) => setFormData({ ...formData, startReading: e.target.value })} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>{isRtl ? 'قراءة النهاية (م)' : 'End Reading (m)'}</Label>
+                <Input type="number" step="0.01" value={formData.endReading} onChange={(e) => setFormData({ ...formData, endReading: e.target.value })} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>{isRtl ? 'التربة المحفورة' : 'Soil Excavated'}</Label>
+                <Select value={formData.soilExcavated} onValueChange={(v) => setFormData({ ...formData, soilExcavated: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="soft">{isRtl ? 'طرية' : 'Soft'}</SelectItem>
+                    <SelectItem value="hard">{isRtl ? 'صلبة' : 'Hard'}</SelectItem>
+                    <SelectItem value="rocky">{isRtl ? 'صخرية' : 'Rocky'}</SelectItem>
+                    <SelectItem value="mixed">{isRtl ? 'مختلطة' : 'Mixed'}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>{isRtl ? 'الأنابيب المركبة' : 'Pipes Installed'}</Label>
+                <Input type="number" value={formData.pipesInstalled} onChange={(e) => setFormData({ ...formData, pipesInstalled: e.target.value })} />
               </div>
             </div>
-
-            <Tabs defaultValue="safety">
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="safety" className="gap-1.5">
-                  <ShieldCheck className="h-4 w-4" />
-                  {isRtl ? 'فحص السلامة' : 'Safety'}
-                </TabsTrigger>
-                <TabsTrigger value="report" className="gap-1.5">
-                  <FileText className="h-4 w-4" />
-                  {isRtl ? 'بيانات التقرير' : 'Report'}
-                </TabsTrigger>
-              </TabsList>
-
-              {/* Safety Tab */}
-              <TabsContent value="safety" className="space-y-4 mt-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {safetyChecklistItems.map((item) => (
-                    <label
-                      key={item.key}
-                      className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition ${
-                        safety[item.key as keyof typeof safety]
-                          ? 'bg-emerald-50 border-emerald-200'
-                          : 'bg-card border-border hover:bg-muted/50'
-                      }`}
-                    >
-                      <Checkbox
-                        checked={safety[item.key as keyof typeof safety] as boolean}
-                        onCheckedChange={(checked) => {
-                          setSafety({ ...safety, [item.key]: !!checked })
-                        }}
-                      />
-                      <span className="text-sm">{item.label}</span>
-                    </label>
-                  ))}
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label>{isRtl ? 'المخاطر' : 'Hazards'}</Label>
-                    <Textarea
-                      value={safety.hazards}
-                      onChange={(e) => setSafety({ ...safety, hazards: e.target.value })}
-                      rows={2}
-                      placeholder={isRtl ? 'اذكر أي مخاطر ملاحظة' : 'Any hazards observed'}
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>{isRtl ? 'الملاحظات' : 'Observations'}</Label>
-                    <Textarea
-                      value={safety.observations}
-                      onChange={(e) => setSafety({ ...safety, observations: e.target.value })}
-                      rows={2}
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>{isRtl ? 'المخالفات' : 'Violations'}</Label>
-                    <Textarea
-                      value={safety.violations}
-                      onChange={(e) => setSafety({ ...safety, violations: e.target.value })}
-                      rows={2}
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>{isRtl ? 'نوع الحادث' : 'Incident Type'}</Label>
-                    <Select value={safety.incidentType} onValueChange={(v) => setSafety({ ...safety, incidentType: v })}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">{isRtl ? 'لا يوجد' : 'None'}</SelectItem>
-                        <SelectItem value="near_miss">{isRtl ? 'Near miss' : 'Near miss'}</SelectItem>
-                        <SelectItem value="incident">{isRtl ? 'حادث' : 'Incident'}</SelectItem>
-                        <SelectItem value="accident">{isRtl ? 'إصابة' : 'Accident'}</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-              </TabsContent>
-
-              {/* Report Tab */}
-              <TabsContent value="report" className="space-y-4 mt-4">
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label>{isRtl ? 'المشروع' : 'Project'} *</Label>
-                    <Select value={formData.projectId} onValueChange={(v) => setFormData({ ...formData, projectId: v, driveLineId: '' })}>
-                      <SelectTrigger><SelectValue placeholder={isRtl ? 'اختر' : 'Select'} /></SelectTrigger>
-                      <SelectContent>
-                        {projects.map((p) => (
-                          <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>{isRtl ? 'خط الحفر' : 'Drive Line'}</Label>
-                    <Select value={formData.driveLineId} onValueChange={(v) => setFormData({ ...formData, driveLineId: v })}>
-                      <SelectTrigger><SelectValue placeholder={isRtl ? 'اختر' : 'Select'} /></SelectTrigger>
-                      <SelectContent>
-                        {driveLines.map((l) => (
-                          <SelectItem key={l.id} value={l.id}>{l.lineNumber} - {l.startPoint} → {l.endPoint}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>{isRtl ? 'التاريخ' : 'Date'} *</Label>
-                    <Input type="date" value={formData.reportDate} onChange={(e) => setFormData({ ...formData, reportDate: e.target.value })} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>{isRtl ? 'الطقس' : 'Weather'}</Label>
-                    <Select value={formData.weather} onValueChange={(v) => setFormData({ ...formData, weather: v })}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="sunny">{isRtl ? 'مشمس' : 'Sunny'}</SelectItem>
-                        <SelectItem value="cloudy">{isRtl ? 'غائم' : 'Cloudy'}</SelectItem>
-                        <SelectItem value="rainy">{isRtl ? 'ممطر' : 'Rainy'}</SelectItem>
-                        <SelectItem value="windy">{isRtl ? 'عاصف' : 'Windy'}</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>{isRtl ? 'بداية العمل' : 'Work Start'}</Label>
-                    <Input type="time" value={formData.workStartTime} onChange={(e) => setFormData({ ...formData, workStartTime: e.target.value })} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>{isRtl ? 'نهاية العمل' : 'Work End'}</Label>
-                    <Input type="time" value={formData.workEndTime} onChange={(e) => setFormData({ ...formData, workEndTime: e.target.value })} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>{isRtl ? 'ساعات التشغيل' : 'Operating Hours'}</Label>
-                    <Input type="number" step="0.1" value={formData.operatingHours} onChange={(e) => setFormData({ ...formData, operatingHours: e.target.value })} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>{isRtl ? 'ساعات التوقف' : 'Stoppage Hours'}</Label>
-                    <Input type="number" step="0.1" value={formData.stoppageHours} onChange={(e) => setFormData({ ...formData, stoppageHours: e.target.value })} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>{isRtl ? 'عدد العمال' : 'Workers Count'}</Label>
-                    <Input type="number" value={formData.workersCount} onChange={(e) => setFormData({ ...formData, workersCount: e.target.value })} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>{isRtl ? 'سبب التوقف' : 'Stoppage Reason'}</Label>
-                    <Input value={formData.stoppageReason} onChange={(e) => setFormData({ ...formData, stoppageReason: e.target.value })} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>{isRtl ? 'قراءة البداية (م)' : 'Start Reading (m)'}</Label>
-                    <Input type="number" step="0.01" value={formData.startReading} onChange={(e) => setFormData({ ...formData, startReading: e.target.value })} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>{isRtl ? 'قراءة النهاية (م)' : 'End Reading (m)'}</Label>
-                    <Input type="number" step="0.01" value={formData.endReading} onChange={(e) => setFormData({ ...formData, endReading: e.target.value })} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>{isRtl ? 'التربة المحفورة' : 'Soil Excavated'}</Label>
-                    <Select value={formData.soilExcavated} onValueChange={(v) => setFormData({ ...formData, soilExcavated: v })}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="soft">{isRtl ? 'طرية' : 'Soft'}</SelectItem>
-                        <SelectItem value="hard">{isRtl ? 'صلبة' : 'Hard'}</SelectItem>
-                        <SelectItem value="rocky">{isRtl ? 'صخرية' : 'Rocky'}</SelectItem>
-                        <SelectItem value="mixed">{isRtl ? 'مختلطة' : 'Mixed'}</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>{isRtl ? 'الأنابيب المركبة' : 'Pipes Installed'}</Label>
-                    <Input type="number" value={formData.pipesInstalled} onChange={(e) => setFormData({ ...formData, pipesInstalled: e.target.value })} />
-                  </div>
-                </div>
-                <div className="space-y-1.5">
-                  <Label>{isRtl ? 'ملاحظات الإنتاج' : 'Production Notes'}</Label>
-                  <Textarea value={formData.productionNotes} onChange={(e) => setFormData({ ...formData, productionNotes: e.target.value })} rows={2} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>{isRtl ? 'المشاكل' : 'Problems'}</Label>
-                  <Textarea value={formData.problems} onChange={(e) => setFormData({ ...formData, problems: e.target.value })} rows={2} />
-                </div>
-              </TabsContent>
-            </Tabs>
+            <div className="space-y-1.5">
+              <Label>{isRtl ? 'ملاحظات الإنتاج' : 'Production Notes'}</Label>
+              <Textarea value={formData.productionNotes} onChange={(e) => setFormData({ ...formData, productionNotes: e.target.value })} rows={2} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>{isRtl ? 'المشاكل' : 'Problems'}</Label>
+              <Textarea value={formData.problems} onChange={(e) => setFormData({ ...formData, problems: e.target.value })} rows={2} />
+            </div>
           </div>
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
               {isRtl ? 'إلغاء' : 'Cancel'}
             </Button>
-            <Button type="button" onClick={handleSubmit} disabled={!allSafetyPassed}>
+            <Button type="button" onClick={handleSubmit} disabled={!activeDraft || !activeDraft.safety}>
               {isRtl ? 'حفظ التقرير' : 'Save Report'}
             </Button>
           </DialogFooter>
