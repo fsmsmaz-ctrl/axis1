@@ -21,7 +21,7 @@ model User {
   role         String   @default("site_engineer") // top_management, project_manager, site_engineer, hse_officer, foreman, accountant
   avatar       String?
   active       Boolean  @default(true)
-permissions     Json?     @default(null)
+permissions     Json?
   language     String   @default("ar") // ar, en
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
