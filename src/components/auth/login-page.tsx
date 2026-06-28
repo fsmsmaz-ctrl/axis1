@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Loader2, ArrowRight, Globe } from 'lucide-react'
+import { Loader2, Shield, ArrowRight, Globe } from 'lucide-react'
 import { toast } from 'sonner'
 
 const features = [
@@ -103,28 +103,35 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex flex-col lg:flex-row" dir={isRtl ? 'rtl' : 'ltr'}>
-      <div className="lg:flex-1 bg-gradient-to-br from-primary to-primary/80 text-primary-foreground p-8 lg:p-16 flex flex-col justify-between relative overflow-hidden">
-        <div className="absolute inset-0 opacity-10">
+      {/* Hero Side */}
+      <div className="lg:flex-1 bg-gradient-to-br from-primary via-primary/90 to-primary/80 text-primary-foreground p-8 lg:p-16 flex flex-col justify-between relative overflow-hidden">
+        <div className="absolute inset-0 opacity-[0.07]">
           <div className="absolute top-10 right-10 w-72 h-72 rounded-full bg-white blur-3xl" />
           <div className="absolute bottom-10 left-10 w-96 h-96 rounded-full bg-white blur-3xl" />
         </div>
 
+        {/* Logo */}
         <div className="relative z-10">
-          <div className="flex items-center gap-3 mb-2">
-            <img src="/axis-logo-white.png" alt="AXIS" className="h-12 w-auto object-contain" />
+          <div className="flex items-center gap-4">
+            <div className="w-14 h-14 rounded-2xl bg-white/15 backdrop-blur-sm flex items-center justify-center border border-white/20">
+              <svg width="34" height="34" viewBox="0 0 38 38" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M10 28V12l6 4v8l6-4V12l6 4v12" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+                <circle cx="19" cy="10" r="2" fill="white" />
+              </svg>
+            </div>
+            <div className="flex flex-col">
+              <span className="text-[32px] font-extrabold tracking-[0.25em] text-white leading-none">AXIS</span>
+              <span className="text-xs font-medium tracking-[0.2em] text-white/60 mt-1">PIPE JACKING SYSTEM</span>
+            </div>
           </div>
         </div>
 
         <div className="relative z-10 space-y-6">
-          <h2 className="text-3xl lg:text-4xl font-bold leading-tight">
-            {t.heroTitle}
-          </h2>
-          <p className="text-lg text-primary-foreground/90 leading-relaxed">
-            {t.heroDesc}
-          </p>
+          <h2 className="text-3xl lg:text-4xl font-bold leading-tight">{t.heroTitle}</h2>
+          <p className="text-lg text-primary-foreground/85 leading-relaxed">{t.heroDesc}</p>
           <div className="grid grid-cols-2 gap-3 max-w-md">
             {features.map((item) => (
-              <div key={item.en} className="flex items-center gap-2 bg-white/10 backdrop-blur rounded-lg px-3 py-2">
+              <div key={item.en} className="flex items-center gap-2.5 bg-white/10 backdrop-blur-sm rounded-xl px-4 py-2.5 border border-white/10">
                 <span className="text-lg">{item.icon}</span>
                 <span className="text-sm">{isAr ? item.ar : item.en}</span>
               </div>
@@ -132,11 +139,10 @@ export default function LoginPage() {
           </div>
         </div>
 
-        <div className="relative z-10 text-sm text-primary-foreground/70">
-          {t.copyright}
-        </div>
+        <div className="relative z-10 text-sm text-primary-foreground/50">{t.copyright}</div>
       </div>
 
+      {/* Login Form Side */}
       <div className="lg:flex-1 flex items-center justify-center p-6 lg:p-16 bg-background">
         <div className="w-full max-w-md">
           <div className="flex items-center justify-between mb-8">
@@ -155,7 +161,6 @@ export default function LoginPage() {
               <Label htmlFor="email">{t.email}</Label>
               <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="example@axis.om" required className="h-11" dir="ltr" />
             </div>
-
             <div className="space-y-2">
               <Label htmlFor="password">{t.password}</Label>
               <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" required className="h-11" dir="ltr" />
@@ -178,6 +183,33 @@ export default function LoginPage() {
               )}
             </Button>
           </form>
+
+          <div className="mt-8">
+            <div className="flex items-center gap-2 mb-3">
+              <Shield className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm text-muted-foreground">{isAr ? 'حسابات تجريبية' : 'Demo accounts'}</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { email: 'admin@axis.om', roleAr: 'مدير النظام', roleEn: 'System Admin' },
+                { email: 'pm@axis.om', roleAr: 'مدير المشروع', roleEn: 'Project Manager' },
+                { email: 'engineer@axis.om', roleAr: 'مهندس الموقع', roleEn: 'Site Engineer' },
+                { email: 'hse@axis.om', roleAr: 'مسؤول السلامة', roleEn: 'HSE Officer' },
+                { email: 'foreman@axis.om', roleAr: 'المشرف', roleEn: 'Foreman' },
+                { email: 'finance@axis.om', roleAr: 'المحاسب', roleEn: 'Accountant' },
+              ].map((acc) => (
+                <button
+                  key={acc.email}
+                  type="button"
+                  onClick={() => setEmail(acc.email)}
+                  className={`p-2.5 rounded-lg border border-border hover:border-primary/50 hover:bg-accent/50 transition text-sm ${isRtl ? 'text-right' : 'text-left'}`}
+                >
+                  <div className="font-medium">{isAr ? acc.roleAr : acc.roleEn}</div>
+                  <div className="text-xs text-muted-foreground" dir="ltr">{acc.email}</div>
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     </div>
