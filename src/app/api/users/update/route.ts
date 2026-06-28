@@ -5,6 +5,7 @@ import bcrypt from 'bcryptjs'
 
 const ADMIN_EMAIL = 'admin@axis.om'
 const VALID_ROLES = ['top_management', 'project_manager', 'site_engineer', 'hse_officer', 'foreman', 'accountant']
+const TOGGLABLE_PERMISSIONS = ['drive_lines', 'daily_reports', 'safety', 'equipment', 'costs', 'finishings', 'performance']
 
 export async function PATCH(req: NextRequest) {
   try {
@@ -14,12 +15,13 @@ export async function PATCH(req: NextRequest) {
     }
 
     const body = await req.json()
-    const { userId, name, nameEn, role, phone, password } = body
+    const { userId, name, nameEn, role, phone, password, permissions } = body
 
     if (!userId) {
       return NextResponse.json({ error: 'User ID is required' }, { status: 400 })
     }
 
+    // Prevent modifying the admin account
     const targetUser = await db.user.findUnique({ where: { id: userId } })
     if (!targetUser) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
@@ -29,7 +31,8 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: 'Cannot modify admin account' }, { status: 403 })
     }
 
-    const updateData: Record<string, string> = {}
+    // Build update data
+    const updateData: Record<string, any> = {}
 
     if (name !== undefined && name.trim()) updateData.name = name.trim()
     if (nameEn !== undefined && nameEn.trim()) updateData.nameEn = nameEn.trim()
@@ -41,6 +44,18 @@ export async function PATCH(req: NextRequest) {
       updateData.role = role
     }
 
+    // Handle permissions
+    if (permissions !== undefined) {
+      const cleanPerms: Record<string, boolean> = {}
+      for (const key of TOGGLABLE_PERMISSIONS) {
+        if (typeof permissions[key] === 'boolean') {
+          cleanPerms[key] = permissions[key]
+        }
+      }
+      updateData.permissions = cleanPerms
+    }
+
+    // Hash password if provided
     if (password && password.trim()) {
       updateData.password = await bcrypt.hash(password.trim(), 12)
     }
@@ -60,6 +75,7 @@ export async function PATCH(req: NextRequest) {
         role: true,
         phone: true,
         active: true,
+        permissions: true,
         createdAt: true,
       }
     })
