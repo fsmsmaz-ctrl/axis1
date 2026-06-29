@@ -33,7 +33,7 @@ export function getCookieOptions() {
 
 // Resources that admin can toggle per-user
 export const TOGGLABLE_PERMISSIONS = [
-  'drive_lines', 'daily_reports', 'safety', 'equipment', 'costs', 'finishings', 'performance',
+  'drive_lines', 'daily_reports', 'safety', 'equipment', 'costs', 'finishings', 'performance', 'reports',
 ] as const
 
 export type TogglablePermission = typeof TOGGLABLE_PERMISSIONS[number]
@@ -46,6 +46,7 @@ export const TOGGLABLE_PERMISSION_LABELS: Record<string, { ar: string; en: strin
   costs: { ar: 'التكاليف والإيرادات', en: 'Costs & Revenue' },
   finishings: { ar: 'التشطيبات', en: 'Finishings' },
   performance: { ar: 'تقييم الأداء', en: 'Performance' },
+  reports: { ar: 'التقارير', en: 'Reports' },
 }
 
 // Role permissions matrix (base permissions per role)
