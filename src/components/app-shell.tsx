@@ -128,8 +128,7 @@ export default function AppShell() {
 
   if (!user) return null
 
-  const allowedItems = navItems.filter(item => hasPermission(user.role, item.resource))
-  const isAdmin = user.email.toLowerCase().trim() === 'admin@axis.om'
+  const allowedItems = navItems.filter(item => hasPermission(user.role, item.resource, user.permissions))
   const isAr = language === 'ar'
   const isRtl = isAr
 
