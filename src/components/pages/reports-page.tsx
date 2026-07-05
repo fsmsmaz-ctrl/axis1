@@ -50,6 +50,7 @@ export default function ReportsPage() {
   const isRtl = language === 'ar'
 
   useEffect(() => {
+    if (!token) return
     authedFetch('/api/projects/list').then(r => r.json()).then(d => setProjects(d.projects || []))
     // Default to last 30 days
     const today = new Date()
@@ -57,7 +58,7 @@ export default function ReportsPage() {
     thirtyAgo.setDate(thirtyAgo.getDate() - 30)
     setToDate(today.toISOString().split('T')[0])
     setFromDate(thirtyAgo.toISOString().split('T')[0])
-  }, [])
+  }, [token])
 
   async function generateReport() {
     if (!selectedReport) {
@@ -88,7 +89,7 @@ export default function ReportsPage() {
         endpoint = '/api/dashboard'
       }
 
-      const res = await fetch(endpoint)
+      const res = await authedFetch(endpoint)
       const data = await res.json()
       setReportData({ type: selectedReport, data, project: projects.find(p => p.id === selectedProject), fromDate, toDate })
       toast.success(isRtl ? 'تم توليد التقرير' : 'Report generated')
