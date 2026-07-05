@@ -53,8 +53,6 @@ export default function ProjectsPage() {
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const language = useAppStore((s) => s.language)
   const token = useAppStore((s) => s.token)
-  const user = useAppStore((s) => s.user)
-  const canCreateProject = user?.role === 'top_management' || user?.role === 'project_manager' || user?.email?.toLowerCase().trim() === 'admin@axis.om'
   const isRtl = language === 'ar'
 
   const [formData, setFormData] = useState({
@@ -110,6 +108,7 @@ export default function ProjectsPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
 
+    // Validate required fields before sending
     if (!formData.code || !formData.name || !formData.client || !formData.location) {
       toast.error(isRtl ? 'يرجى ملء جميع الحقول المطلوبة' : 'Please fill all required fields')
       return
@@ -174,12 +173,10 @@ export default function ProjectsPage() {
             {isRtl ? `${projects.length} مشروع` : `${projects.length} projects`}
           </p>
         </div>
-        {canCreateProject && (
-          <Button onClick={openCreate}>
-            <Plus className="h-4 w-4 ml-2" />
-            {isRtl ? 'مشروع جديد' : 'New Project'}
-          </Button>
-        )}
+        <Button onClick={openCreate}>
+          <Plus className="h-4 w-4 ml-2" />
+          {isRtl ? 'مشروع جديد' : 'New Project'}
+        </Button>
       </div>
 
       {/* Filters */}
@@ -450,7 +447,7 @@ function ProjectDetails({ id }: { id: string | null }) {
 
   useEffect(() => {
     if (!id) return
-    fetch(`/api/projects/${id}`)
+    authedFetch(`/api/projects/${id}`)
       .then(r => r.json())
       .then(d => setProject(d.project))
       .finally(() => setLoading(false))
