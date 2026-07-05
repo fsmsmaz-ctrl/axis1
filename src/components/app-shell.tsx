@@ -19,7 +19,7 @@ import {
   LayoutDashboard, FolderKanban, GitBranch, FileText, ShieldCheck,
   Wrench, DollarSign, CheckCircle2, FileBarChart, TrendingUp,
   Bell, HardHat, LogOut, Menu, X, Globe,
-  AlertTriangle, ChevronLeft
+  AlertTriangle, ChevronLeft, UserPlus
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
