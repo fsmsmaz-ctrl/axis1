@@ -14,8 +14,8 @@ import { Separator } from '@/components/ui/separator'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
 import { toast } from 'sonner'
-import { UserPlus, ShieldAlert, Trash2, Edit3, Save, ArrowLeft, Users } from 'lucide-react'
-import { TOGGLABLE_PERMISSIONS, TOGGLABLE_PERMISSION_LABELS, ROLE_PERMISSIONS } from '@/lib/auth'
+import { UserPlus, ShieldAlert, Trash2, Edit3, Save, ArrowLeft, Users, FolderKanban, FileBarChart } from 'lucide-react'
+import { TOGGLABLE_PERMISSIONS, TOGGLABLE_PERMISSION_LABELS, MODULE_PERMISSIONS, REPORT_PERMISSIONS, ROLE_PERMISSIONS } from '@/lib/auth'
 
 const VALID_ROLES = [
   { value: 'top_management', ar: 'الإدارة العليا', en: 'Top Management' },
@@ -210,30 +210,40 @@ export default function CreateUserDialog({ open, onOpenChange }: CreateUserDialo
     if (customPerms && typeof customPerms[permKey] === 'boolean') {
       return customPerms[permKey]
     }
+    // For report permissions, check if role has general "reports" access
+    if (permKey.startsWith('report_')) {
+      const perms = ROLE_PERMISSIONS[role] || []
+      return perms.includes('*') || perms.includes('reports')
+    }
     return getRoleDefault(role, permKey)
   }
 
-  function renderPermissionSwitches(customPerms: Record<string, boolean>, role: string, isEdit: boolean) {
+  function renderPermissionGroup(
+    groupKeys: readonly string[],
+    customPerms: Record<string, boolean>,
+    role: string,
+    isEdit: boolean,
+    groupLabel: string
+  ) {
     return (
-      <div className="space-y-3">
-        <div className="flex items-center gap-2 mb-1">
-          <ShieldAlert className="h-4 w-4 text-orange-500" />
-          <p className="text-sm font-medium text-orange-600">
-            {isRtl ? 'تحكم بالصلاحيات' : 'Permissions Control'}
+      <div className="space-y-2">
+        <div className="flex items-center gap-2 mt-1">
+          {groupLabel === (isRtl ? 'صلاحية الأقسام' : 'Module Access') ? (
+            <FolderKanban className="h-4 w-4 text-blue-500" />
+          ) : (
+            <FileBarChart className="h-4 w-4 text-purple-500" />
+          )}
+          <p className="text-sm font-semibold">
+            {groupLabel}
           </p>
         </div>
-        <p className="text-xs text-muted-foreground mb-3">
-          {isRtl
-            ? 'فعّل أو عطّل صلاحية الوصول لكل قسم. الصلاحيات المعدّلة تظهر عليها علامة "مخصص".'
-            : 'Toggle access for each section. Modified permissions show a "Custom" badge.'
-          }
-        </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          {(TOGGLABLE_PERMISSIONS as readonly string[]).map((key) => {
+          {groupKeys.map((key) => {
             const labels = TOGGLABLE_PERMISSION_LABELS[key]
+            if (!labels) return null
             const isCustom = customPerms && typeof customPerms[key] === 'boolean'
             const effective = getEffectivePermission(key, customPerms, role)
-            const isOverridden = isCustom && effective !== getRoleDefault(role, key)
+            const isOverridden = isCustom && effective !== getEffectivePermission(key, {}, role)
             return (
               <div
                 key={key}
@@ -262,6 +272,44 @@ export default function CreateUserDialog({ open, onOpenChange }: CreateUserDialo
             )
           })}
         </div>
+      </div>
+    )
+  }
+
+  function renderPermissionSwitches(customPerms: Record<string, boolean>, role: string, isEdit: boolean) {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center gap-2 mb-1">
+          <ShieldAlert className="h-4 w-4 text-orange-500" />
+          <p className="text-sm font-medium text-orange-600">
+            {isRtl ? 'تحكم بالصلاحيات' : 'Permissions Control'}
+          </p>
+        </div>
+        <p className="text-xs text-muted-foreground mb-2">
+          {isRtl
+            ? 'فعّل أو عطّل صلاحية الوصول لكل قسم وتقرير. الصلاحيات المعدّلة تظهر عليها علامة "مخصص".'
+            : 'Toggle access for each section and report type. Modified permissions show a "Custom" badge.'}
+        </p>
+
+        {/* Module permissions */}
+        {renderPermissionGroup(
+          MODULE_PERMISSIONS,
+          customPerms,
+          role,
+          isEdit,
+          isRtl ? 'صلاحية الأقسام' : 'Module Access'
+        )}
+
+        <Separator />
+
+        {/* Report permissions */}
+        {renderPermissionGroup(
+          REPORT_PERMISSIONS,
+          customPerms,
+          role,
+          isEdit,
+          isRtl ? 'صلاحية التقارير' : 'Report Access'
+        )}
       </div>
     )
   }
