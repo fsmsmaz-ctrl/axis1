@@ -57,7 +57,7 @@ export default function FinishingsPage() {
 
   useEffect(() => {
     if (formData.projectId) {
-      fetch(`/api/drive-lines?projectId=${formData.projectId}`)
+      authedFetch(`/api/drive-lines?projectId=${formData.projectId}`)
         .then(r => r.json())
         .then(d => setDriveLines(d.driveLines || []))
     }
