@@ -9,7 +9,7 @@ import {
   ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip
 } from 'recharts'
-import { TrendingUp, Award, AlertTriangle, Clock, Users, ShieldCheck, DollarSign, Activity } from 'lucide-react'
+import { TrendingUp, AlertTriangle, Clock, Users, ShieldCheck, DollarSign, Activity } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
 
