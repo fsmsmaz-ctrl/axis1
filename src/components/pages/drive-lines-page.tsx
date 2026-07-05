@@ -12,7 +12,6 @@ import { Textarea } from '@/components/ui/textarea'
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle
 } from '@/components/ui/dialog'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Plus, GitBranch, MapPin, Ruler, Layers, AlertCircle } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
@@ -83,12 +82,13 @@ export default function DriveLinesPage() {
   }
 
   // Group drive lines by project
+  type GroupedItem = { project: any; lines: any[] }
   const grouped = driveLines.reduce((acc, line) => {
     const key = line.project?.id || 'unknown'
     if (!acc[key]) acc[key] = { project: line.project, lines: [] }
     acc[key].lines.push(line)
     return acc
-  }, {} as Record<string, { project: any; lines: any[] }>)
+  }, {} as Record<string, GroupedItem>)
 
   return (
     <div className="space-y-4">
@@ -135,7 +135,7 @@ export default function DriveLinesPage() {
         </Card>
       ) : (
         <div className="space-y-4">
-          {Object.values(grouped).map((group: any) => (
+          {(Object.values(grouped) as GroupedItem[]).map((group) => (
             <Card key={group.project?.id}>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-base">
