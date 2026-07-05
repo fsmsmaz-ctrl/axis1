@@ -35,7 +35,7 @@ export async function verifyCredentials(email: string, password: string): Promis
       role: user.role,
       phone: user.phone,
       language: user.language,
-      permissions: (user.permissions as Record<string, boolean>) || null,
+      permissions: user.permissions ? JSON.parse(JSON.stringify(user.permissions)) : null,
     }
   } catch (error) {
     console.error('verifyCredentials error:', error)
@@ -53,7 +53,6 @@ export async function createSession(user: SessionUser): Promise<string> {
       role: user.role,
       phone: user.phone || null,
       language: user.language,
-      permissions: user.permissions || null,
     })
       .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
       .setIssuedAt()
@@ -94,7 +93,7 @@ export async function getSessionUser(token: string | undefined): Promise<Session
       role: user.role,
       phone: user.phone,
       language: user.language,
-      permissions: (user.permissions as Record<string, boolean>) || null,
+      permissions: user.permissions ? JSON.parse(JSON.stringify(user.permissions)) : null,
     }
   } catch (error) {
     return null
