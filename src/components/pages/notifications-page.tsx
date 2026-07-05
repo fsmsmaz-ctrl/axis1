@@ -48,7 +48,7 @@ export default function NotificationsPage() {
   }, [token])
 
   async function markAsRead(id: string) {
-    await fetch(`/api/notifications/${id}`, {
+    await authedFetch(`/api/notifications/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ read: true }),
@@ -59,7 +59,7 @@ export default function NotificationsPage() {
   async function markAllAsRead() {
     await Promise.all(
       notifications.filter(n => !n.read).map(n =>
-        fetch(`/api/notifications/${n.id}`, {
+        authedFetch(`/api/notifications/${n.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ read: true }),
