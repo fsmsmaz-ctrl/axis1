@@ -31,22 +31,47 @@ export function getCookieOptions() {
   }
 }
 
-// Resources that admin can toggle per-user
+// ─── Module access permissions (sidebar navigation) ───
+export const MODULE_PERMISSIONS = [
+  'drive_lines', 'daily_reports', 'safety', 'equipment', 'costs', 'finishings', 'performance',
+] as const
+
+// ─── Report type permissions ───
+export const REPORT_PERMISSIONS = [
+  'report_daily_site', 'report_production', 'report_safety', 'report_attendance',
+  'report_revenue', 'report_costs', 'report_profit', 'report_equipment',
+  'report_weekly', 'report_monthly', 'report_handover',
+] as const
+
+// ─── All togglable permissions combined ───
 export const TOGGLABLE_PERMISSIONS = [
-  'drive_lines', 'daily_reports', 'safety', 'equipment', 'costs', 'finishings', 'performance', 'reports',
+  ...MODULE_PERMISSIONS,
+  ...REPORT_PERMISSIONS,
 ] as const
 
 export type TogglablePermission = typeof TOGGLABLE_PERMISSIONS[number]
 
-export const TOGGLABLE_PERMISSION_LABELS: Record<string, { ar: string; en: string }> = {
-  drive_lines: { ar: 'خطوط الحفر', en: 'Drive Lines' },
-  daily_reports: { ar: 'التقارير اليومية', en: 'Daily Reports' },
-  safety: { ar: 'السلامة', en: 'Safety' },
-  equipment: { ar: 'المعدات', en: 'Equipment' },
-  costs: { ar: 'التكاليف والإيرادات', en: 'Costs & Revenue' },
-  finishings: { ar: 'التشطيبات', en: 'Finishings' },
-  performance: { ar: 'تقييم الأداء', en: 'Performance' },
-  reports: { ar: 'التقارير', en: 'Reports' },
+export const TOGGLABLE_PERMISSION_LABELS: Record<string, { ar: string; en: string; group: 'modules' | 'reports' }> = {
+  // ─── Modules ───
+  drive_lines:       { ar: 'خطوط الحفر', en: 'Drilling Lines', group: 'modules' },
+  daily_reports:     { ar: 'التقارير اليومية', en: 'Daily Reports', group: 'modules' },
+  safety:            { ar: 'السلامة', en: 'Safety', group: 'modules' },
+  equipment:         { ar: 'المعدات', en: 'Equipment', group: 'modules' },
+  costs:             { ar: 'التكاليف والإيرادات', en: 'Costs & Revenue', group: 'modules' },
+  finishings:        { ar: 'التشطيبات', en: 'Finishings', group: 'modules' },
+  performance:       { ar: 'تقييم الأداء', en: 'Performance', group: 'modules' },
+  // ─── Reports ───
+  report_daily_site: { ar: 'تقرير الموقع اليومي', en: 'Daily Site Report', group: 'reports' },
+  report_production: { ar: 'تقرير الإنتاج اليومي', en: 'Production Report', group: 'reports' },
+  report_safety:     { ar: 'تقرير السلامة', en: 'Safety Report', group: 'reports' },
+  report_attendance: { ar: 'تقرير الحضور', en: 'Attendance Report', group: 'reports' },
+  report_revenue:    { ar: 'تقرير الإيرادات', en: 'Revenue Report', group: 'reports' },
+  report_costs:      { ar: 'تقرير التكاليف', en: 'Cost Report', group: 'reports' },
+  report_profit:     { ar: 'تقرير صافي الربح', en: 'Profit Report', group: 'reports' },
+  report_equipment:  { ar: 'تقرير المعدات', en: 'Equipment Report', group: 'reports' },
+  report_weekly:     { ar: 'تقرير الإنجاز الأسبوعي', en: 'Weekly Progress', group: 'reports' },
+  report_monthly:    { ar: 'تقرير شهري للإدارة', en: 'Monthly Management', group: 'reports' },
+  report_handover:   { ar: 'تقرير تسليم الأعمال', en: 'Handover Report', group: 'reports' },
 }
 
 // Role permissions matrix (base permissions per role)
@@ -71,8 +96,13 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
   ],
 }
 
+/**
+ * Check if a user has access to a resource.
+ * For togglable resources: custom permissions override role defaults.
+ * For non-togglable resources (dashboard, projects, notifications): role only.
+ */
 export function hasPermission(role: string, resource: string, userPermissions?: Record<string, boolean> | null): boolean {
-  // If resource is non-togglable (dashboard, projects, notifications), use role only
+  // If resource is togglable, check custom permissions first
   const isTogglable = (TOGGLABLE_PERMISSIONS as readonly string[]).includes(resource)
 
   if (isTogglable && userPermissions && typeof userPermissions[resource] === 'boolean') {
@@ -81,4 +111,25 @@ export function hasPermission(role: string, resource: string, userPermissions?: 
 
   const perms = ROLE_PERMISSIONS[role] || []
   return perms.includes('*') || perms.includes(resource)
+}
+
+/**
+ * Check if a user has access to a specific report type.
+ * Falls back to role-based "reports" permission if no custom report permission is set.
+ */
+export function hasReportPermission(
+  role: string,
+  reportId: string,
+  userPermissions?: Record<string, boolean> | null
+): boolean {
+  const permKey = `report_${reportId}`
+
+  // If custom permission is explicitly set, use it
+  if (userPermissions && typeof userPermissions[permKey] === 'boolean') {
+    return userPermissions[permKey]
+  }
+
+  // Otherwise, if the role has general "reports" access, allow all reports
+  const perms = ROLE_PERMISSIONS[role] || []
+  return perms.includes('*') || perms.includes('reports')
 }
