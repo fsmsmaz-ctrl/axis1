@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
+import { hasReportPermission } from '@/lib/auth'
 import { toast } from 'sonner'
 
 interface ReportType {
@@ -41,6 +42,7 @@ export default function ReportsPage() {
   const [projects, setProjects] = useState<any[]>([])
   const [selectedReport, setSelectedReport] = useState<string>('')
   const [selectedProject, setSelectedProject] = useState<string>('all')
+  const user = useAppStore((s) => s.user)
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
   const [reportData, setReportData] = useState<any>(null)
@@ -124,7 +126,9 @@ export default function ReportsPage() {
       <div>
         <Label className="mb-2 block">{isRtl ? 'اختر نوع التقرير' : 'Select Report Type'}</Label>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {reportTypes.map((r) => {
+          {reportTypes
+            .filter((r) => user && hasReportPermission(user.role, r.id, user.permissions))
+            .map((r) => {
             const Icon = r.icon
             const isSelected = selectedReport === r.id
             return (
