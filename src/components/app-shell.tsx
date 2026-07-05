@@ -72,6 +72,7 @@ const FinishingsPage = dynamic(() => import('@/components/pages/finishings-page'
 const PerformancePage = dynamic(() => import('@/components/pages/performance-page'), { ssr: false })
 const ReportsPage = dynamic(() => import('@/components/pages/reports-page'), { ssr: false })
 const NotificationsPage = dynamic(() => import('@/components/pages/notifications-page'), { ssr: false })
+const CreateUserDialog = dynamic(() => import('@/components/create-user-dialog'), { ssr: false })
 
 export default function AppShell() {
   const user = useAppStore((s) => s.user)
@@ -83,6 +84,7 @@ export default function AppShell() {
   const setSidebarOpen = useAppStore((s) => s.setSidebarOpen)
   const [currentPage, setCurrentPage] = useState<PageId>('dashboard')
   const [notifications, setNotifications] = useState<any[]>([])
+  const [userDialogOpen, setUserDialogOpen] = useState(false)
 
   useEffect(() => {
     if (!user || !token) return
@@ -104,6 +106,8 @@ export default function AppShell() {
   if (!user) return null
 
   const allowedItems = navItems.filter(item => hasPermission(user.role, item.resource, user.permissions))
+  // Only admin@axis.om can manage users
+  const isAdmin = user.email.toLowerCase().trim() === 'admin@axis.om'
 
   async function handleLogout() {
     await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
@@ -252,6 +256,20 @@ export default function AppShell() {
             <Menu className="h-5 w-5" />
           </Button>
 
+          {/* Admin: Add User Button */}
+          {isAdmin && (
+            <Button
+              onClick={() => setUserDialogOpen(true)}
+              size="sm"
+              className="gap-1.5 bg-primary hover:bg-primary/90"
+            >
+              <UserPlus className="h-4 w-4" />
+              <span className="hidden sm:inline text-sm">
+                {isRtl ? 'إضافة مستخدم' : 'Add User'}
+              </span>
+            </Button>
+          )}
+
           <div className="flex-1">
             <h2 className="text-lg font-semibold">
               {isRtl
@@ -321,6 +339,11 @@ export default function AppShell() {
         {/* Page content */}
         <main className="p-4 lg:p-6 max-w-[1600px] mx-auto">
           {renderPage()}
+
+      {/* Admin: Create User Dialog */}
+      {isAdmin && (
+        <CreateUserDialog open={userDialogOpen} onOpenChange={setUserDialogOpen} />
+      )}
         </main>
       </div>
     </div>
