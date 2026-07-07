@@ -109,11 +109,10 @@ export default function CostsPage() {
     setDialogOpen(true)
   }
 
-  async function (id: string) {
+  async function deleteCost(id: string) {
     const res = await authedFetch(`/api/costs/${id}`, { method: 'DELETE' })
     if (res.ok) {
       toast.success(isRtl ? 'تم حذف التكلفة' : 'Cost deleted')
-      clearApiCache('costs')
       fetchCosts()
     }
   }
@@ -351,7 +350,7 @@ export default function CostsPage() {
                     <Button variant="ghost" size="sm" onClick={() => openEditCost(c)}>
                       <Pencil className="h-3.5 w-3.5" />
                     </Button>
-                    <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => (c.id)}>
+                    <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => deleteCost(c.id)}>
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
                   </div>
