@@ -75,7 +75,6 @@ export default function NotificationsPage() {
       )
     )
     toast.success(isRtl ? 'تم تعليم الكل كمقروء' : 'All marked as read')
-    clearApiCache('notifications')
     fetchNotifications()
   }
 
