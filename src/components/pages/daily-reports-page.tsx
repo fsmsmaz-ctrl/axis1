@@ -19,7 +19,7 @@ import {
   ShieldCheck, CheckCircle2, Clock, DollarSign, Eye, Check, X, Pencil, Trash2
 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
-import { authedFetch, clearApiCache } from '@/lib/api-client'
+import { authedFetch } from '@/lib/api-client'
 import { toast } from 'sonner'
 
 const statusLabels: Record<string, { ar: string; en: string; color: string }> = {
@@ -151,8 +151,7 @@ export default function DailyReportsPage() {
     const res = await authedFetch(`/api/daily-reports/${id}`, { method: 'DELETE' })
     if (res.ok) {
       toast.success(isRtl ? 'تم حذف التقرير' : 'Report deleted')
-      clearApiCache('daily-reports')
-      fetchReports()
+        fetchReports()
     } else {
       const data = await res.json().catch(() => ({}))
       toast.error(data.error || (isRtl ? 'فشل الحذف' : 'Delete failed'))
@@ -221,8 +220,7 @@ export default function DailyReportsPage() {
 
       setDialogOpen(false)
       setEditingReportId(null)
-      clearApiCache('daily-reports')
-      fetchReports()
+        fetchReports()
     } catch {
       toast.error(isRtl ? 'حدث خطأ' : 'Error')
     }
@@ -236,8 +234,7 @@ export default function DailyReportsPage() {
     })
     if (res.ok) {
       toast.success(action === 'approve' ? (isRtl ? 'تم الاعتماد' : 'Approved') : (isRtl ? 'تم الرفض' : 'Rejected'))
-      clearApiCache('daily-reports')
-      fetchReports()
+        fetchReports()
     }
   }
 
