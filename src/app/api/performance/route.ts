@@ -1,256 +1,119 @@
-'use client'
+import { NextRequest, NextResponse } from 'next/server'
+import { getAuthUser } from '@/lib/auth-server'
+import { db } from '@/lib/db'
 
-import { useEffect, useState } from 'react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { Progress } from '@/components/ui/progress'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import {
-  ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip
-} from 'recharts'
-import { TrendingUp, AlertTriangle, Clock, Users, ShieldCheck, DollarSign, Activity } from 'lucide-react'
-import { useAppStore } from '@/lib/store'
-import { authedFetch } from '@/lib/api-client'
+export async function GET(req: NextRequest) {
+  const user = await getAuthUser(req)
 
-export default function PerformancePage() {
-  const [performance, setPerformance] = useState<any[]>([])
-  const [projects, setProjects] = useState<any[]>([])
-  const [selectedProject, setSelectedProject] = useState<string>('all')
-  const [loading, setLoading] = useState(true)
-  const language = useAppStore((s) => s.language)
-  const token = useAppStore((s) => s.token)
-  const isRtl = language === 'ar'
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
 
-  useEffect(() => {
-    setLoading(true)
-    authedFetch('/api/performance' + (selectedProject !== 'all' ? `?projectId=${selectedProject}` : ''))
-      .then(r => r.json())
-      .then(d => setPerformance(d.performance || []))
-      .finally(() => setLoading(false))
-    authedFetch('/api/projects/list').then(r => r.json()).then(d => setProjects(d.projects || []))
-  }, [selectedProject, token])
+  const { searchParams } = new URL(req.url)
+  const projectId = searchParams.get('projectId')
 
-  // Aggregates
-  const totals = performance.reduce((acc, p) => ({
-    totalMeters: acc.totalMeters + p.totalMeters,
-    totalRevenue: acc.totalRevenue + p.totalRevenue,
-    totalCost: acc.totalCost + p.totalCost,
-    totalProfit: acc.totalProfit + (p.totalRevenue - p.totalCost),
-    totalDays: acc.totalDays + p.daysCount,
-    totalWorkers: acc.totalWorkers + p.totalWorkers,
-  }), { totalMeters: 0, totalRevenue: 0, totalCost: 0, totalProfit: 0, totalDays: 0, totalWorkers: 0 })
+  const where: any = { status: 'approved' }
+  if (projectId) where.projectId = projectId
 
-  const avgDailyMeters = totals.totalDays > 0 ? totals.totalMeters / totals.totalDays : 0
-  const overallProfitMargin = totals.totalRevenue > 0 ? (totals.totalProfit / totals.totalRevenue) * 100 : 0
-  const avgSafety = performance.length > 0 ? performance.reduce((s, p) => s + p.safetyRate, 0) / performance.length : 0
-  const avgAttendance = performance.length > 0 ? performance.reduce((s, p) => s + p.attendanceRate, 0) / performance.length : 0
+  const safetyWhere: any = {}
+  if (projectId) safetyWhere.projectId = projectId
 
-  // Chart data - comparison
-  const comparisonData = performance.map(p => ({
-    name: p.projectCode,
-    meters: Number(p.totalMeters.toFixed(0)),
-    revenue: Number(p.totalRevenue.toFixed(0)),
-    profit: Number((p.totalRevenue - p.totalCost).toFixed(0)),
-    safety: Number(p.safetyRate.toFixed(0)),
-  }))
+  const costWhere: any = {}
+  if (projectId) costWhere.projectId = projectId
 
-  // Radar data for first project (or selected)
-  const radarData = performance[0] ? [
-    { metric: isRtl ? 'الإنتاج' : 'Production', value: Math.min(100, (performance[0].avgDaily / 10) * 100) },
-    { metric: isRtl ? 'السلامة' : 'Safety', value: performance[0].safetyRate },
-    { metric: isRtl ? 'الحضور' : 'Attendance', value: performance[0].attendanceRate },
-    { metric: isRtl ? 'الربحية' : 'Profitability', value: Math.max(0, performance[0].profitMargin) },
-    { metric: isRtl ? 'كفاءة المعدات' : 'Equipment', value: 85 },
-    { metric: isRtl ? 'الالتزام' : 'Compliance', value: 90 },
-  ] : []
+  const [reports, safetyReports, costs] = await Promise.all([
+    db.dailyReport.findMany({
+      where,
+      include: {
+        project: { select: { id: true, name: true, code: true } },
+        driveLine: { select: { lineNumber: true } },
+      },
+      orderBy: { reportDate: 'asc' },
+    }),
+    db.safetyReport.findMany({
+      where: safetyWhere,
+      select: { projectId: true, ppeAvailable: true, helmetCheck: true, bootsCheck: true, glovesCheck: true, glassesCheck: true, workAreaCheck: true, barriersCheck: true, shaftCheck: true, ventilationCheck: true, electricalCheck: true, craneCheck: true, hydraulicCheck: true, fireExtinguishers: true, workPermit: true, toolboxTalk: true },
+    }),
+    db.cost.findMany({
+      where: costWhere,
+      select: { projectId: true, amount: true },
+    }),
+  ])
 
-  return (
-    <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-bold">{isRtl ? 'تقييم الأداء' : 'Performance'}</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          {isRtl ? 'مؤشرات الأداء الرئيسية للمشاريع والفرق' : 'KPIs for projects and teams'}
-        </p>
-      </div>
+  const projectStats = new Map<string, any>()
 
-      <Select value={selectedProject} onValueChange={setSelectedProject}>
-        <SelectTrigger className="w-full sm:w-[300px]">
-          <SelectValue placeholder={isRtl ? 'اختر المشروع' : 'Select project'} />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">{isRtl ? 'كل المشاريع' : 'All Projects'}</SelectItem>
-          {projects.map((p) => (
-            <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+  for (const r of reports) {
+    const key = r.projectId
+    if (!projectStats.has(key)) {
+      projectStats.set(key, {
+        projectId: r.projectId,
+        projectName: r.project?.name || '',
+        projectCode: r.project?.code || '',
+        reports: [],
+        totalMeters: 0,
+        totalRevenue: 0,
+        avgDaily: 0,
+        bestDay: 0,
+        worstDay: Infinity,
+        stoppageDays: 0,
+        stoppageReasons: [] as string[],
+        totalWorkers: 0,
+        daysCount: 0,
+      })
+    }
+    const stat = projectStats.get(key)!
+    stat.reports.push(r)
+    stat.totalMeters += r.dailyMeters
+    stat.totalRevenue += r.dailyRevenue
+    stat.bestDay = Math.max(stat.bestDay, r.dailyMeters)
+    stat.worstDay = Math.min(stat.worstDay, r.dailyMeters)
+    if (r.stoppageHours > 2) {
+      stat.stoppageDays++
+      if (r.stoppageReason) stat.stoppageReasons.push(r.stoppageReason)
+    }
+    stat.totalWorkers += r.workersCount
+    stat.daysCount++
+  }
 
-      {/* Overall KPIs */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2 mb-1">
-              <Activity className="h-4 w-4 text-blue-600" />
-              <span className="text-xs text-muted-foreground">{isRtl ? 'متوسط الحفر اليومي' : 'Avg Daily Meters'}</span>
-            </div>
-            <p className="text-xl font-bold">{avgDailyMeters.toFixed(1)} <span className="text-sm font-normal">{isRtl ? 'م/يوم' : 'm/day'}</span></p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2 mb-1">
-              <ShieldCheck className="h-4 w-4 text-emerald-600" />
-              <span className="text-xs text-muted-foreground">{isRtl ? 'الالتزام بالسلامة' : 'Safety Compliance'}</span>
-            </div>
-            <p className="text-xl font-bold text-emerald-700">{avgSafety.toFixed(1)}%</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2 mb-1">
-              <Users className="h-4 w-4 text-purple-600" />
-              <span className="text-xs text-muted-foreground">{isRtl ? 'نسبة الحضور' : 'Attendance Rate'}</span>
-            </div>
-            <p className="text-xl font-bold text-purple-700">{avgAttendance.toFixed(1)}%</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2 mb-1">
-              <DollarSign className="h-4 w-4 text-orange-600" />
-              <span className="text-xs text-muted-foreground">{isRtl ? 'هامش الربح' : 'Profit Margin'}</span>
-            </div>
-            <p className={`text-xl font-bold ${overallProfitMargin >= 0 ? 'text-orange-700' : 'text-red-700'}`}>
-              {overallProfitMargin.toFixed(1)}%
-            </p>
-          </CardContent>
-        </Card>
-      </div>
+  const projectStatsArr = Array.from(projectStats.values()).map((s: any) => {
+    s.avgDaily = s.daysCount > 0 ? s.totalMeters / s.daysCount : 0
+    s.worstDay = s.worstDay === Infinity ? 0 : s.worstDay
+    return s
+  })
 
-      {/* Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Comparison bar chart */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <TrendingUp className="h-5 w-5 text-primary" />
-              {isRtl ? 'مقارنة المشاريع' : 'Projects Comparison'}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {comparisonData.length === 0 ? (
-              <div className="h-64 flex items-center justify-center text-muted-foreground text-sm">
-                {isRtl ? 'لا توجد بيانات' : 'No data'}
-              </div>
-            ) : (
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={comparisonData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                  <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 11 }} />
-                  <Tooltip
-                    contentStyle={{ direction: isRtl ? 'rtl' : 'ltr', borderRadius: 8, fontSize: 12 }}
-                  />
-                  <Bar dataKey="meters" fill="#f97316" name={isRtl ? 'أمتار' : 'Meters'} radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="profit" fill="#10b981" name={isRtl ? 'ربح' : 'Profit'} radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            )}
-          </CardContent>
-        </Card>
+  const safetyByProject = new Map<string, { total: number; passed: number }>()
+  for (const s of safetyReports) {
+    if (!safetyByProject.has(s.projectId)) safetyByProject.set(s.projectId, { total: 0, passed: 0 })
+    const stat = safetyByProject.get(s.projectId)!
+    stat.total += 15
+    const checks = [s.ppeAvailable, s.helmetCheck, s.bootsCheck, s.glovesCheck, s.glassesCheck, s.workAreaCheck, s.barriersCheck, s.shaftCheck, s.ventilationCheck, s.electricalCheck, s.craneCheck, s.hydraulicCheck, s.fireExtinguishers, s.workPermit, s.toolboxTalk]
+    stat.passed += checks.filter(Boolean).length
+  }
 
-        {/* Radar chart */}
-        <Card>
-          <CardHeader>
-            <CardTitle>{isRtl ? 'تحليل أداء شامل' : 'Performance Radar'}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {radarData.length === 0 ? (
-              <div className="h-64 flex items-center justify-center text-muted-foreground text-sm">
-                {isRtl ? 'لا توجد بيانات' : 'No data'}
-              </div>
-            ) : (
-              <ResponsiveContainer width="100%" height={300}>
-                <RadarChart data={radarData}>
-                  <PolarGrid stroke="#e5e7eb" />
-                  <PolarAngleAxis dataKey="metric" tick={{ fontSize: 11 }} />
-                  <PolarRadiusAxis angle={90} domain={[0, 100]} tick={{ fontSize: 10 }} />
-                  <Radar name="Performance" dataKey="value" stroke="#f97316" fill="#f97316" fillOpacity={0.4} />
-                  <Tooltip contentStyle={{ direction: isRtl ? 'rtl' : 'ltr', borderRadius: 8, fontSize: 12 }} />
-                </RadarChart>
-              </ResponsiveContainer>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+  const costByProject = new Map<string, number>()
+  for (const c of costs) {
+    costByProject.set(c.projectId, (costByProject.get(c.projectId) || 0) + c.amount)
+  }
 
-      {/* Detailed table */}
-      <Card>
-        <CardHeader>
-          <CardTitle>{isRtl ? 'تفاصيل أداء المشاريع' : 'Project Performance Details'}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <div className="h-32 bg-muted animate-pulse rounded" />
-          ) : performance.length === 0 ? (
-            <div className="py-8 text-center text-muted-foreground text-sm">
-              {isRtl ? 'لا توجد بيانات' : 'No data'}
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b text-right">
-                    <th className="p-2 font-medium text-muted-foreground">{isRtl ? 'المشروع' : 'Project'}</th>
-                    <th className="p-2 font-medium text-muted-foreground">{isRtl ? 'متوسط يومي' : 'Avg Daily'}</th>
-                    <th className="p-2 font-medium text-muted-foreground">{isRtl ? 'أعلى يوم' : 'Best Day'}</th>
-                    <th className="p-2 font-medium text-muted-foreground">{isRtl ? 'أقل يوم' : 'Worst Day'}</th>
-                    <th className="p-2 font-medium text-muted-foreground">{isRtl ? 'أيام التوقف' : 'Stop Days'}</th>
-                    <th className="p-2 font-medium text-muted-foreground">{isRtl ? 'السلامة' : 'Safety'}</th>
-                    <th className="p-2 font-medium text-muted-foreground">{isRtl ? 'تكلفة/م' : 'Cost/m'}</th>
-                    <th className="p-2 font-medium text-muted-foreground">{isRtl ? 'هامش الربح' : 'Margin'}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {performance.map((p) => (
-                    <tr key={p.projectId} className="border-b hover:bg-muted/30">
-                      <td className="p-2">
-                        <div>
-                          <p className="font-medium text-xs">{p.projectName}</p>
-                          <p className="text-xs text-muted-foreground font-mono">{p.projectCode}</p>
-                        </div>
-                      </td>
-                      <td className="p-2 text-xs">{p.avgDaily.toFixed(1)} م</td>
-                      <td className="p-2 text-xs text-emerald-600 font-medium">{p.bestDay} م</td>
-                      <td className="p-2 text-xs text-orange-600 font-medium">{p.worstDay} م</td>
-                      <td className="p-2 text-xs">
-                        {p.stoppageDays > 0 ? (
-                          <Badge variant="secondary" className="text-xs">{p.stoppageDays}</Badge>
-                        ) : (
-                          <span className="text-emerald-600">0</span>
-                        )}
-                      </td>
-                      <td className="p-2">
-                        <div className="flex items-center gap-1.5">
-                          <Progress value={p.safetyRate} className="h-1.5 w-12" />
-                          <span className="text-xs">{p.safetyRate.toFixed(0)}%</span>
-                        </div>
-                      </td>
-                      <td className="p-2 text-xs">{p.costPerMeter.toFixed(1)} ر.ع</td>
-                      <td className="p-2">
-                        <Badge variant={p.profitMargin >= 20 ? 'default' : p.profitMargin >= 0 ? 'secondary' : 'destructive'} className="text-xs">
-                          {p.profitMargin.toFixed(1)}%
-                        </Badge>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    </div>
-  )
+  const performance = projectStatsArr.map((p: any) => {
+    const safety = safetyByProject.get(p.projectId)
+    const safetyRate = safety && safety.total > 0 ? (safety.passed / safety.total) * 100 : 100
+    const totalCost = costByProject.get(p.projectId) || 0
+    const costPerMeter = p.totalMeters > 0 ? totalCost / p.totalMeters : 0
+    const profitMargin = p.totalRevenue > 0 ? ((p.totalRevenue - totalCost) / p.totalRevenue) * 100 : 0
+    const avgWorkers = p.daysCount > 0 ? p.totalWorkers / p.daysCount : 0
+
+    return {
+      ...p,
+      safetyRate,
+      totalCost,
+      costPerMeter,
+      profit: p.totalRevenue - totalCost,
+      profitMargin,
+      avgWorkers,
+      attendanceRate: avgWorkers > 0 ? 100 : 0,
+    }
+  })
+
+  return NextResponse.json({ performance })
 }
