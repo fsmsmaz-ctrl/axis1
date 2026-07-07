@@ -33,7 +33,7 @@ export function getCookieOptions() {
 
 // ─── Module access permissions (sidebar navigation) ───
 export const MODULE_PERMISSIONS = [
-  'drive_lines', 'daily_reports', 'safety', 'equipment', 'costs', 'finishings', 'performance',
+  'dashboard', 'projects', 'drive_lines', 'daily_reports', 'safety', 'equipment', 'costs', 'finishings', 'performance',
 ] as const
 
 // ─── Report type permissions ───
@@ -53,6 +53,8 @@ export type TogglablePermission = typeof TOGGLABLE_PERMISSIONS[number]
 
 export const TOGGLABLE_PERMISSION_LABELS: Record<string, { ar: string; en: string; group: 'modules' | 'reports' }> = {
   // ─── Modules ───
+  dashboard:         { ar: 'لوحة التحكم', en: 'Dashboard', group: 'modules' },
+  projects:          { ar: 'المشاريع', en: 'Projects', group: 'modules' },
   drive_lines:       { ar: 'خطوط الحفر', en: 'Drilling Lines', group: 'modules' },
   daily_reports:     { ar: 'التقارير اليومية', en: 'Daily Reports', group: 'modules' },
   safety:            { ar: 'السلامة', en: 'Safety', group: 'modules' },
@@ -99,7 +101,7 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
 /**
  * Check if a user has access to a resource.
  * For togglable resources: custom permissions override role defaults.
- * For non-togglable resources (dashboard, projects, notifications): role only.
+ * For non-togglable resources (notifications): role only.
  */
 export function hasPermission(role: string, resource: string, userPermissions?: Record<string, boolean> | null): boolean {
   // If resource is togglable, check custom permissions first
