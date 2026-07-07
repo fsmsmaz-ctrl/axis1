@@ -107,7 +107,7 @@ export default function AppShell() {
 
   if (!user) return null
 
-  const allowedItems = navItems.filter(item => hasPermission(user.role, item.resource))
+  const allowedItems = navItems.filter(item => hasPermission(user.role, item.resource, user.permissions))
   // Only admin@axis.om can manage users
   const isAdmin = user.email.toLowerCase().trim() === 'admin@axis.om'
 
