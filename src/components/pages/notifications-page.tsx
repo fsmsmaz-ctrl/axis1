@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { AlertTriangle, Bell, CheckCircle2, Info, XCircle, Trash2 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
-import { authedFetch } from '@/lib/api-client'
+import { authedFetch, clearApiCache } from '@/lib/api-client'
 import { toast } from 'sonner'
 
 const severityConfig = {
@@ -60,6 +60,7 @@ export default function NotificationsPage() {
     const res = await authedFetch(`/api/notifications/${id}`, { method: 'DELETE' })
     if (res.ok) {
       toast.success(isRtl ? 'تم حذف التنبيه' : 'Notification deleted')
+      clearApiCache('notifications')
       fetchNotifications()
     }
   }
@@ -75,6 +76,7 @@ export default function NotificationsPage() {
       )
     )
     toast.success(isRtl ? 'تم تعليم الكل كمقروء' : 'All marked as read')
+    clearApiCache('notifications')
     fetchNotifications()
   }
 
