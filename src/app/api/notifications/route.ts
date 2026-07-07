@@ -16,20 +16,22 @@ export async function GET(req: NextRequest) {
   const where: any = {}
   if (unreadOnly) where.read = false
 
-  const result = await safeDbOp(
-    () => db.notification.findMany({
-      where,
-      include: { project: { select: { name: true, code: true } } },
-      orderBy: { createdAt: 'desc' },
-      take: 50,
-    }),
-    'جلب التنبيهات'
-  )
-
-  const countResult = await safeDbOp(
-    () => db.notification.count({ where: { read: false } }),
-    'عد التنبيهات غير المقروءة'
-  )
+  // Run both queries in parallel
+  const [result, countResult] = await Promise.all([
+    safeDbOp(
+      () => db.notification.findMany({
+        where,
+        include: { project: { select: { name: true, code: true } } },
+        orderBy: { createdAt: 'desc' },
+        take: 50,
+      }),
+      'جلب التنبيهات'
+    ),
+    safeDbOp(
+      () => db.notification.count({ where: { read: false } }),
+      'عد التنبيهات غير المقروءة'
+    ),
+  ])
 
   if (!result.success) return result.response
 
