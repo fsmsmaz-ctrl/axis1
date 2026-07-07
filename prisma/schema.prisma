@@ -23,6 +23,7 @@ model User {
   active       Boolean  @default(true)
 permissions     Json?
   language     String   @default("ar") // ar, en
+  permissions  Json?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
