@@ -2,27 +2,26 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 
-const ADMIN_EMAIL = 'admin@axis.om'
-
 export async function GET(req: NextRequest) {
-  try {
-    const authUser = await getAuthUser(req)
-    if (!authUser || authUser.email.toLowerCase().trim() !== ADMIN_EMAIL) {
-      return NextResponse.json({ error: 'unauthorized' }, { status: 403 })
-    }
+  const user = await getAuthUser(req)
 
+  if (!user) {
+    return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
+  }
+
+  if (user.email.toLowerCase().trim() !== 'admin@axis.om') {
+    return NextResponse.json({ error: 'forbidden', message: 'فقط المدير يمكنه عرض المستخدمين' }, { status: 403 })
+  }
+
+  try {
     const users = await db.user.findMany({
-      where: { active: true },
-      select: {
-        id: true, email: true, name: true, nameEn: true,
-        role: true, phone: true, permissions: true, active: true, createdAt: true,
-      },
-      orderBy: { createdAt: 'desc' },
+      select: { id: true, email: true, name: true, nameEn: true, phone: true, role: true, active: true, language: true, permissions: true, createdAt: true },
+      orderBy: { createdAt: 'asc' },
     })
 
     return NextResponse.json({ users })
-  } catch (error) {
-    console.error('List users error:', error)
-    return NextResponse.json({ error: 'Failed to fetch users' }, { status: 500 })
+  } catch (error: any) {
+    console.error('User list error:', error)
+    return NextResponse.json({ error: 'server_error', message: 'فشل جلب المستخدمين' }, { status: 500 })
   }
 }
