@@ -60,7 +60,6 @@ export default function NotificationsPage() {
     const res = await authedFetch(`/api/notifications/${id}`, { method: 'DELETE' })
     if (res.ok) {
       toast.success(isRtl ? 'تم حذف التنبيه' : 'Notification deleted')
-      clearApiCache('notifications')
       fetchNotifications()
     }
   }
