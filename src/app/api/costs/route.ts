@@ -16,29 +16,31 @@ export async function GET(req: NextRequest) {
   const where: any = {}
   if (projectId) where.projectId = projectId
 
-  const costsResult = await safeDbOp(
-    () => db.cost.findMany({
-      where,
-      orderBy: { date: 'desc' },
-      include: {
-        project: { select: { id: true, name: true, code: true } },
-        dailyReport: { select: { id: true, reportDate: true } },
-        recordedBy: { select: { name: true, nameEn: true } },
-      },
-      take: 200,
-    }),
-    'جلب التكاليف'
-  )
+  // Run both queries in parallel
+  const [costsResult, byCategoryResult] = await Promise.all([
+    safeDbOp(
+      () => db.cost.findMany({
+        where,
+        orderBy: { date: 'desc' },
+        include: {
+          project: { select: { id: true, name: true, code: true } },
+          dailyReport: { select: { id: true, reportDate: true } },
+          recordedBy: { select: { name: true, nameEn: true } },
+        },
+        take: 200,
+      }),
+      'جلب التكاليف'
+    ),
+    safeDbOp(
+      () => db.cost.groupBy({
+        by: ['category'],
+        where,
+        _sum: { amount: true },
+      }),
+      'تجميع التكاليف حسب الفئة'
+    ),
+  ])
   if (!costsResult.success) return costsResult.response
-
-  const byCategoryResult = await safeDbOp(
-    () => db.cost.groupBy({
-      by: ['category'],
-      where,
-      _sum: { amount: true },
-    }),
-    'تجميع التكاليف حسب الفئة'
-  )
 
   const costs = costsResult.data
   const byCategory = byCategoryResult.success
