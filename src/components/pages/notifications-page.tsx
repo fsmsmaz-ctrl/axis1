@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { AlertTriangle, Bell, CheckCircle2, Info, XCircle } from 'lucide-react'
+import { AlertTriangle, Bell, CheckCircle2, Info, XCircle, Trash2 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
 import { toast } from 'sonner'
@@ -48,7 +48,7 @@ export default function NotificationsPage() {
   }, [token])
 
   async function markAsRead(id: string) {
-    await authedFetch(`/api/notifications/${id}`, {
+    await fetch(`/api/notifications/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ read: true }),
@@ -56,10 +56,18 @@ export default function NotificationsPage() {
     fetchNotifications()
   }
 
+  async function deleteNotification(id: string) {
+    const res = await authedFetch(`/api/notifications/${id}`, { method: 'DELETE' })
+    if (res.ok) {
+      toast.success(isRtl ? 'تم حذف التنبيه' : 'Notification deleted')
+      fetchNotifications()
+    }
+  }
+
   async function markAllAsRead() {
     await Promise.all(
       notifications.filter(n => !n.read).map(n =>
-        authedFetch(`/api/notifications/${n.id}`, {
+        fetch(`/api/notifications/${n.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ read: true }),
@@ -139,11 +147,16 @@ export default function NotificationsPage() {
                         {new Date(n.createdAt).toLocaleString(isRtl ? 'ar-EG' : 'en-US')}
                       </p>
                     </div>
-                    {!n.read && (
-                      <Button variant="ghost" size="sm" onClick={() => markAsRead(n.id)}>
-                        <CheckCircle2 className="h-4 w-4" />
+                    <div className="flex gap-1 shrink-0">
+                      {!n.read && (
+                        <Button variant="ghost" size="sm" onClick={() => markAsRead(n.id)}>
+                          <CheckCircle2 className="h-4 w-4" />
+                        </Button>
+                      )}
+                      <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => deleteNotification(n.id)}>
+                        <Trash2 className="h-4 w-4" />
                       </Button>
-                    )}
+                    </div>
                   </div>
                 </CardContent>
               </Card>
