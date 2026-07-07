@@ -17,7 +17,7 @@ import {
 } from 'recharts'
 import { Plus, DollarSign, TrendingUp, TrendingDown, Wallet, BarChart3, Pencil, Trash2 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
-import { authedFetch, clearApiCache } from '@/lib/api-client'
+import { authedFetch } from '@/lib/api-client'
 import { toast } from 'sonner'
 
 const categoryLabels: Record<string, { ar: string; en: string }> = {
@@ -109,7 +109,7 @@ export default function CostsPage() {
     setDialogOpen(true)
   }
 
-  async function deleteCost(id: string) {
+  async function (id: string) {
     const res = await authedFetch(`/api/costs/${id}`, { method: 'DELETE' })
     if (res.ok) {
       toast.success(isRtl ? 'تم حذف التكلفة' : 'Cost deleted')
@@ -138,8 +138,7 @@ export default function CostsPage() {
           projectId: projects[0]?.id || '', date: new Date().toISOString().split('T')[0],
           category: 'labor', description: '', amount: '', notes: '',
         })
-        clearApiCache('costs')
-        fetchCosts()
+          fetchCosts()
       }
     } catch {
       toast.error(isRtl ? 'حدث خطأ' : 'Error')
@@ -352,7 +351,7 @@ export default function CostsPage() {
                     <Button variant="ghost" size="sm" onClick={() => openEditCost(c)}>
                       <Pencil className="h-3.5 w-3.5" />
                     </Button>
-                    <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => deleteCost(c.id)}>
+                    <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => (c.id)}>
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
                   </div>
