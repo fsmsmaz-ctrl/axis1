@@ -15,7 +15,7 @@ import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   PieChart, Pie, Cell, Legend
 } from 'recharts'
-import { Plus, DollarSign, TrendingUp, TrendingDown, Wallet, BarChart3 } from 'lucide-react'
+import { Plus, DollarSign, TrendingUp, TrendingDown, Wallet, BarChart3, Pencil, Trash2 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
 import { toast } from 'sonner'
@@ -54,6 +54,7 @@ export default function CostsPage() {
   const [loading, setLoading] = useState(true)
   const [selectedProject, setSelectedProject] = useState<string>('all')
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [editingCostId, setEditingCostId] = useState<string | null>(null)
   const language = useAppStore((s) => s.language)
   const token = useAppStore((s) => s.token)
   const isRtl = language === 'ar'
@@ -95,17 +96,43 @@ export default function CostsPage() {
     authedFetch('/api/projects/list').then(r => r.json()).then(d => setProjects(d.projects || []))
   }, [selectedProject, token])
 
+  async function openEditCost(cost: any) {
+    setEditingCostId(cost.id)
+    setFormData({
+      projectId: cost.projectId || '',
+      date: cost.date,
+      category: cost.category,
+      description: cost.description || '',
+      amount: String(cost.amount),
+      notes: cost.notes || '',
+    })
+    setDialogOpen(true)
+  }
+
+  async function deleteCost(id: string) {
+    const res = await authedFetch(`/api/costs/${id}`, { method: 'DELETE' })
+    if (res.ok) {
+      toast.success(isRtl ? 'تم حذف التكلفة' : 'Cost deleted')
+      fetchCosts()
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     try {
-      const res = await authedFetch('/api/costs', {
-        method: 'POST',
+      const url = editingCostId ? `/api/costs/${editingCostId}` : '/api/costs'
+      const method = editingCostId ? 'PUT' : 'POST'
+      const res = await authedFetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),
       })
       if (res.ok) {
-        toast.success(isRtl ? 'تم إضافة التكلفة' : 'Cost added')
+        toast.success(editingCostId
+          ? (isRtl ? 'تم تحديث التكلفة' : 'Cost updated')
+          : (isRtl ? 'تم إضافة التكلفة' : 'Cost added'))
         setDialogOpen(false)
+        setEditingCostId(null)
         setFormData({
           projectId: projects[0]?.id || '', date: new Date().toISOString().split('T')[0],
           category: 'labor', description: '', amount: '', notes: '',
@@ -139,6 +166,7 @@ export default function CostsPage() {
           </p>
         </div>
         <Button onClick={() => {
+          setEditingCostId(null)
           setFormData({
             projectId: projects[0]?.id || '', date: new Date().toISOString().split('T')[0],
             category: 'labor', description: '', amount: '', notes: '',
@@ -318,7 +346,15 @@ export default function CostsPage() {
                       {c.project && ` • ${c.project.name}`}
                     </p>
                   </div>
-                  <p className="font-semibold text-sm text-red-600">
+                  <div className="flex items-center gap-1 shrink-0">
+                    <Button variant="ghost" size="sm" onClick={() => openEditCost(c)}>
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => deleteCost(c.id)}>
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                  <p className="font-semibold text-sm text-red-600 shrink-0">
                     {c.amount.toLocaleString()} {isRtl ? 'ر.ع' : 'OMR'}
                   </p>
                 </div>
@@ -328,13 +364,22 @@ export default function CostsPage() {
         </CardContent>
       </Card>
 
-      {/* Add Dialog */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      {/* Add/Edit Dialog */}
+      <Dialog open={dialogOpen} onOpenChange={(open) => {
+        setDialogOpen(open)
+        if (!open) setEditingCostId(null)
+      }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>{isRtl ? 'إضافة تكلفة' : 'Add Cost'}</DialogTitle>
+            <DialogTitle>
+              {editingCostId
+                ? (isRtl ? 'تعديل التكلفة' : 'Edit Cost')
+                : (isRtl ? 'إضافة تكلفة' : 'Add Cost')}
+            </DialogTitle>
             <DialogDescription>
-              {isRtl ? 'سجل تكلفة جديدة' : 'Record a new cost'}
+              {editingCostId
+                ? (isRtl ? 'عدّل بيانات التكلفة' : 'Edit cost details')
+                : (isRtl ? 'سجل تكلفة جديدة' : 'Record a new cost')}
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-3">
@@ -379,10 +424,12 @@ export default function CostsPage() {
               <Textarea value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} rows={2} />
             </div>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
+              <Button type="button" variant="outline" onClick={() => { setDialogOpen(false); setEditingCostId(null) }}>
                 {isRtl ? 'إلغاء' : 'Cancel'}
               </Button>
-              <Button type="submit">{isRtl ? 'حفظ' : 'Save'}</Button>
+              <Button type="submit">
+                {editingCostId ? (isRtl ? 'تحديث' : 'Update') : (isRtl ? 'حفظ' : 'Save')}
+              </Button>
             </DialogFooter>
           </form>
         </DialogContent>
