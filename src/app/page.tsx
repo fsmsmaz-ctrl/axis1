@@ -44,9 +44,10 @@ export default function Home() {
     checkSession()
   }, [setUser, setLanguage])
 
-  // Check if database needs initialization - only once per session
+  // Check if database needs initialization - only once per session (stored in sessionStorage)
   useEffect(() => {
     async function checkInit() {
+      // Skip init check if already verified this session
       try {
         const initChecked = sessionStorage.getItem('axis_init_checked')
         if (initChecked === 'true') return
@@ -60,10 +61,11 @@ export default function Home() {
         if (data.needsInit) {
           setNeedsInit(true)
         } else {
+          // Mark as checked so we don't call again this session
           try { sessionStorage.setItem('axis_init_checked', 'true') } catch {}
         }
       } catch {
-        // ignore - will show login page
+        // ignore
       }
     }
     checkInit()
@@ -88,13 +90,8 @@ export default function Home() {
     }
   }
 
-  // If user is logged in, ALWAYS show AppShell (this is the key navigation logic)
-  if (user) {
-    return <AppShell />
-  }
-
   // Show loader on initial load only
-  if (loading) {
+  if (loading && !user) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-3">
@@ -105,8 +102,8 @@ export default function Home() {
     )
   }
 
-  // Show initialization screen if database is empty (only when no user)
-  if (needsInit) {
+  // Show initialization screen if database is empty
+  if (needsInit && !user) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-muted/30 p-4" dir="rtl">
         <Card className="max-w-lg w-full">
@@ -158,7 +155,7 @@ export default function Home() {
                     </div>
                   )}
                   {initResult.hint && (
-                    <p className="text-xs italic">{initResult.hint}</p>
+                    <p className="text-xs italic">💡 {initResult.hint}</p>
                   )}
                 </AlertDescription>
               </Alert>
@@ -193,5 +190,9 @@ export default function Home() {
   }
 
   // If no user, show login
-  return <LoginPage />
+  if (!user) {
+    return <LoginPage />
+  }
+
+  return <AppShell />
 }
