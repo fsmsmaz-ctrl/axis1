@@ -43,9 +43,9 @@ export default function DailyReportsPage() {
   const [loading, setLoading] = useState(true)
   const [selectedProject, setSelectedProject] = useState<string>('all')
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [editingReportId, setEditingReportId] = useState<string | null>(null)
   const [viewReport, setViewReport] = useState<any | null>(null)
   const [viewDialogOpen, setViewDialogOpen] = useState(false)
-  const [editingReportId, setEditingReportId] = useState<string | null>(null)
   const language = useAppStore((s) => s.language)
   const token = useAppStore((s) => s.token)
   const user = useAppStore((s) => s.user)
@@ -60,7 +60,6 @@ export default function DailyReportsPage() {
     problems: '',
   })
 
-  // Safety checklist state
   const [safety, setSafety] = useState({
     ppeAvailable: false, helmetCheck: false, bootsCheck: false, glovesCheck: false,
     glassesCheck: false, workAreaCheck: false, barriersCheck: false, shaftCheck: false,
@@ -103,6 +102,7 @@ export default function DailyReportsPage() {
   }, [formData.projectId])
 
   function openCreate() {
+    setEditingReportId(null)
     setFormData({
       projectId: projects[0]?.id || '', driveLineId: '', reportDate: new Date().toISOString().split('T')[0],
       weather: 'sunny', workStartTime: '06:30', workEndTime: '17:00',
@@ -119,8 +119,42 @@ export default function DailyReportsPage() {
       hazards: '', observations: '', violations: '', incidentType: 'none', incidentDescription: '',
     })
     setSafetyCompleted(false)
-    setEditingReportId(null)
     setDialogOpen(true)
+  }
+
+  async function openEditReport(report: any) {
+    setEditingReportId(report.id)
+    setFormData({
+      projectId: report.projectId || '',
+      driveLineId: report.driveLineId || '',
+      reportDate: report.reportDate ? report.reportDate.split('T')[0] : new Date().toISOString().split('T')[0],
+      weather: report.weather || 'sunny',
+      workStartTime: report.workStartTime || '06:30',
+      workEndTime: report.workEndTime || '17:00',
+      operatingHours: String(report.operatingHours || '8.5'),
+      stoppageHours: String(report.stoppageHours || '0'),
+      stoppageReason: report.stoppageReason || '',
+      workersCount: String(report.workersCount || '12'),
+      attendees: report.attendees || '',
+      startReading: String(report.startReading || ''),
+      endReading: String(report.endReading || ''),
+      soilExcavated: report.soilExcavated || 'mixed',
+      pipesInstalled: String(report.pipesInstalled || '0'),
+      productionNotes: report.productionNotes || '',
+      problems: report.problems || '',
+    })
+    setDialogOpen(true)
+  }
+
+  async function deleteReport(id: string) {
+    const res = await authedFetch(`/api/daily-reports/${id}`, { method: 'DELETE' })
+    if (res.ok) {
+      toast.success(isRtl ? 'تم حذف التقرير' : 'Report deleted')
+      fetchReports()
+    } else {
+      const data = await res.json().catch(() => ({}))
+      toast.error(data.error || (isRtl ? 'فشل الحذف' : 'Delete failed'))
+    }
   }
 
   const safetyChecklistItems = [
@@ -155,15 +189,19 @@ export default function DailyReportsPage() {
     try {
       const url = editingReportId ? `/api/daily-reports/${editingReportId}` : '/api/daily-reports'
       const method = editingReportId ? 'PUT' : 'POST'
+      const body = { ...formData, status: 'submitted' }
+
       const res = await authedFetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...formData, status: editingReportId ? formData.status || 'submitted' : 'submitted' }),
+        body: JSON.stringify(body),
       })
       const data = await res.json()
 
       if (!res.ok) {
-        toast.error(isRtl ? 'فشل حفظ التقرير' : 'Failed to save report')
+        toast.error(editingReportId
+          ? (isRtl ? 'فشل تحديث التقرير' : 'Failed to update report')
+          : (isRtl ? 'فشل إنشاء التقرير' : 'Failed to create report'))
         return
       }
 
@@ -173,9 +211,11 @@ export default function DailyReportsPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(safety),
         })
+        toast.success(isRtl ? 'تم إنشاء التقرير بنجاح' : 'Report created successfully')
+      } else {
+        toast.success(isRtl ? 'تم تحديث التقرير' : 'Report updated successfully')
       }
 
-      toast.success(editingReportId ? (isRtl ? 'تم تعديل التقرير' : 'Report updated') : (isRtl ? 'تم إنشاء التقرير بنجاح' : 'Report created successfully'))
       setDialogOpen(false)
       setEditingReportId(null)
       fetchReports()
@@ -194,37 +234,6 @@ export default function DailyReportsPage() {
       toast.success(action === 'approve' ? (isRtl ? 'تم الاعتماد' : 'Approved') : (isRtl ? 'تم الرفض' : 'Rejected'))
       fetchReports()
     }
-  }
-
-  async function deleteReport(id: string) {
-    const msg = isRtl ? 'هل أنت متأكد من حذف هذا التقرير؟' : 'Are you sure you want to delete this report?'
-    if (!confirm(msg)) return
-    try {
-      const res = await authedFetch(`/api/daily-reports/${id}`, { method: 'DELETE' })
-      if (res.ok) {
-        toast.success(isRtl ? 'تم حذف التقرير' : 'Report deleted')
-        fetchReports()
-      }
-    } catch {
-      toast.error(isRtl ? 'حدث خطأ' : 'Error')
-    }
-  }
-
-  function openEditReport(r: any) {
-    setFormData({
-      projectId: r.projectId || '', driveLineId: r.driveLineId || '',
-      reportDate: r.reportDate?.split('T')[0] || '',
-      weather: r.weather || 'sunny', workStartTime: r.workStartTime || '06:30',
-      workEndTime: r.workEndTime || '17:00',
-      operatingHours: String(r.operatingHours || ''), stoppageHours: String(r.stoppageHours || ''),
-      stoppageReason: r.stoppageReason || '', workersCount: String(r.workersCount || ''),
-      attendees: r.attendees || '', startReading: String(r.startReading || ''),
-      endReading: String(r.endReading || ''), soilExcavated: r.soilExcavated || '',
-      pipesInstalled: String(r.pipesInstalled || ''), productionNotes: r.productionNotes || '',
-      problems: r.problems || '',
-    })
-    setEditingReportId(r.id)
-    setDialogOpen(true)
   }
 
   async function viewReportDetails(report: any) {
@@ -317,16 +326,14 @@ export default function DailyReportsPage() {
                       )}
                     </div>
                     <div className="flex gap-1">
+                      <Button variant="ghost" size="sm" onClick={() => openEditReport(r)}>
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => deleteReport(r.id)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                       <Button variant="outline" size="sm" onClick={() => viewReportDetails(r)}>
                         <Eye className="h-4 w-4" />
-                      </Button>
-                      {(r.status === 'draft' || r.status === 'submitted' || r.status === 'rejected' || user?.role === 'top_management') && (
-                        <Button variant="outline" size="sm" className="text-blue-600" onClick={() => openEditReport(r)}>
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                      )}
-                      <Button variant="outline" size="sm" className="text-destructive hover:text-destructive" onClick={() => deleteReport(r.id)}>
-                        <Trash2 className="h-4 w-4" />
                       </Button>
                       {canApprove && r.status === 'submitted' && (
                         <>
@@ -347,121 +354,127 @@ export default function DailyReportsPage() {
         </div>
       )}
 
-      {/* Create/Edit Dialog with tabs */}
-      <Dialog open={dialogOpen} onOpenChange={(v) => { setDialogOpen(v); if (!v) setEditingReportId(null) }}>
+      {/* Create/Edit Dialog */}
+      <Dialog open={dialogOpen} onOpenChange={(open) => {
+        setDialogOpen(open)
+        if (!open) setEditingReportId(null)
+      }}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editingReportId ? (isRtl ? 'تعديل التقرير' : 'Edit Report') : (isRtl ? 'تقرير يومي جديد' : 'New Daily Report')}</DialogTitle>
+            <DialogTitle>
+              {editingReportId
+                ? (isRtl ? 'تعديل التقرير اليومي' : 'Edit Daily Report')
+                : (isRtl ? 'تقرير يومي جديد' : 'New Daily Report')}
+            </DialogTitle>
             <DialogDescription>
               {editingReportId
                 ? (isRtl ? 'عدّل بيانات التقرير' : 'Edit report details')
-                : (isRtl ? 'يجب إكمال فحص السلامة قبل حفظ التقرير' : 'Safety checklist must be completed first')
-              }
+                : (isRtl ? 'يجب إكمال فحص السلامة قبل حفظ التقرير' : 'Safety checklist must be completed first')}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
-            {/* Safety checklist warning banner */}
-            <div className={`p-3 rounded-lg border-2 ${allSafetyPassed || editingReportId ? 'bg-emerald-50 border-emerald-200' : 'bg-orange-50 border-orange-200'}`}>
-              <div className="flex items-center gap-2">
-                {allSafetyPassed || editingReportId ? (
-                  <CheckCircle2 className="h-5 w-5 text-emerald-600" />
-                ) : (
-                  <ShieldCheck className="h-5 w-5 text-orange-600" />
-                )}
-                <div className="flex-1">
-                  <p className={`font-medium text-sm ${allSafetyPassed || editingReportId ? 'text-emerald-700' : 'text-orange-700'}`}>
-                    {editingReportId
-                      ? (isRtl ? 'تعديل التقرير - فحص السلامة لا يتطلب إعادة تعبئة' : 'Editing report - safety check not required')
-                      : (allSafetyPassed
+            {!editingReportId && (
+              <div className={`p-3 rounded-lg border-2 ${allSafetyPassed ? 'bg-emerald-50 border-emerald-200' : 'bg-orange-50 border-orange-200'}`}>
+                <div className="flex items-center gap-2">
+                  {allSafetyPassed ? (
+                    <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+                  ) : (
+                    <ShieldCheck className="h-5 w-5 text-orange-600" />
+                  )}
+                  <div className="flex-1">
+                    <p className={`font-medium text-sm ${allSafetyPassed ? 'text-emerald-700' : 'text-orange-700'}`}>
+                      {allSafetyPassed
                         ? (isRtl ? 'اكتمل فحص السلامة - يمكنك حفظ التقرير' : 'Safety check complete - you can save the report')
                         : (isRtl ? `فحص السلامة: ${safetyPassedCount}/${safetyChecklistItems.length}` : `Safety checklist: ${safetyPassedCount}/${safetyChecklistItems.length}`)
-                      )
-                    }
-                  </p>
+                      }
+                    </p>
+                  </div>
+                  <Progress value={(safetyPassedCount / safetyChecklistItems.length) * 100} className="w-24 h-2" />
                 </div>
-                <Progress value={(safetyPassedCount / safetyChecklistItems.length) * 100} className="w-24 h-2" />
               </div>
-            </div>
+            )}
 
-            <Tabs defaultValue="safety">
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="safety" className="gap-1.5">
-                  <ShieldCheck className="h-4 w-4" />
-                  {isRtl ? 'فحص السلامة' : 'Safety'}
-                </TabsTrigger>
-                <TabsTrigger value="report" className="gap-1.5">
-                  <FileText className="h-4 w-4" />
-                  {isRtl ? 'بيانات التقرير' : 'Report'}
-                </TabsTrigger>
-              </TabsList>
+            <Tabs defaultValue={!editingReportId ? 'safety' : 'report'}>
+              {!editingReportId && (
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="safety" className="gap-1.5">
+                    <ShieldCheck className="h-4 w-4" />
+                    {isRtl ? 'فحص السلامة' : 'Safety'}
+                  </TabsTrigger>
+                  <TabsTrigger value="report" className="gap-1.5">
+                    <FileText className="h-4 w-4" />
+                    {isRtl ? 'بيانات التقرير' : 'Report'}
+                  </TabsTrigger>
+                </TabsList>
+              )}
 
-              {/* Safety Tab */}
-              <TabsContent value="safety" className="space-y-4 mt-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {safetyChecklistItems.map((item) => (
-                    <label
-                      key={item.key}
-                      className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition ${
-                        safety[item.key as keyof typeof safety]
-                          ? 'bg-emerald-50 border-emerald-200'
-                          : 'bg-card border-border hover:bg-muted/50'
-                      }`}
-                    >
-                      <Checkbox
-                        checked={safety[item.key as keyof typeof safety]}
-                        onCheckedChange={(checked) => {
-                          setSafety({ ...safety, [item.key]: !!checked })
-                        }}
+              {!editingReportId && (
+                <TabsContent value="safety" className="space-y-4 mt-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {safetyChecklistItems.map((item) => (
+                      <label
+                        key={item.key}
+                        className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition ${
+                          safety[item.key as keyof typeof safety]
+                            ? 'bg-emerald-50 border-emerald-200'
+                            : 'bg-card border-border hover:bg-muted/50'
+                        }`}
+                      >
+                        <Checkbox
+                          checked={safety[item.key as keyof typeof safety]}
+                          onCheckedChange={(checked) => {
+                            setSafety({ ...safety, [item.key]: !!checked })
+                          }}
+                        />
+                        <span className="text-sm">{item.label}</span>
+                      </label>
+                    ))}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label>{isRtl ? 'المخاطر' : 'Hazards'}</Label>
+                      <Textarea
+                        value={safety.hazards}
+                        onChange={(e) => setSafety({ ...safety, hazards: e.target.value })}
+                        rows={2}
+                        placeholder={isRtl ? 'اذكر أي مخاطر ملاحظة' : 'Any hazards observed'}
                       />
-                      <span className="text-sm">{item.label}</span>
-                    </label>
-                  ))}
-                </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>{isRtl ? 'الملاحظات' : 'Observations'}</Label>
+                      <Textarea
+                        value={safety.observations}
+                        onChange={(e) => setSafety({ ...safety, observations: e.target.value })}
+                        rows={2}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>{isRtl ? 'المخالفات' : 'Violations'}</Label>
+                      <Textarea
+                        value={safety.violations}
+                        onChange={(e) => setSafety({ ...safety, violations: e.target.value })}
+                        rows={2}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>{isRtl ? 'نوع الحادث' : 'Incident Type'}</Label>
+                      <Select value={safety.incidentType} onValueChange={(v) => setSafety({ ...safety, incidentType: v })}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">{isRtl ? 'لا يوجد' : 'None'}</SelectItem>
+                          <SelectItem value="near_miss">{isRtl ? 'Near miss' : 'Near miss'}</SelectItem>
+                          <SelectItem value="incident">{isRtl ? 'حادث' : 'Incident'}</SelectItem>
+                          <SelectItem value="accident">{isRtl ? 'إصابة' : 'Accident'}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </TabsContent>
+              )}
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label>{isRtl ? 'المخاطر' : 'Hazards'}</Label>
-                    <Textarea
-                      value={safety.hazards}
-                      onChange={(e) => setSafety({ ...safety, hazards: e.target.value })}
-                      rows={2}
-                      placeholder={isRtl ? 'اذكر أي مخاطر ملاحظة' : 'Any hazards observed'}
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>{isRtl ? 'الملاحظات' : 'Observations'}</Label>
-                    <Textarea
-                      value={safety.observations}
-                      onChange={(e) => setSafety({ ...safety, observations: e.target.value })}
-                      rows={2}
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>{isRtl ? 'المخالفات' : 'Violations'}</Label>
-                    <Textarea
-                      value={safety.violations}
-                      onChange={(e) => setSafety({ ...safety, violations: e.target.value })}
-                      rows={2}
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>{isRtl ? 'نوع الحادث' : 'Incident Type'}</Label>
-                    <Select value={safety.incidentType} onValueChange={(v) => setSafety({ ...safety, incidentType: v })}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">{isRtl ? 'لا يوجد' : 'None'}</SelectItem>
-                        <SelectItem value="near_miss">{isRtl ? 'Near miss' : 'Near miss'}</SelectItem>
-                        <SelectItem value="incident">{isRtl ? 'حادث' : 'Incident'}</SelectItem>
-                        <SelectItem value="accident">{isRtl ? 'إصابة' : 'Accident'}</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-              </TabsContent>
-
-              {/* Report Tab */}
-              <TabsContent value="report" className="space-y-4 mt-4">
+              <TabsContent value="report" className={`space-y-4 ${editingReportId ? 'mt-0' : 'mt-4'}`}>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <Label>{isRtl ? 'المشروع' : 'Project'} *</Label>
@@ -567,7 +580,7 @@ export default function DailyReportsPage() {
               {isRtl ? 'إلغاء' : 'Cancel'}
             </Button>
             <Button type="button" onClick={handleSubmit} disabled={!editingReportId && !allSafetyPassed}>
-              {editingReportId ? (isRtl ? 'حفظ التعديلات' : 'Save Changes') : (isRtl ? 'حفظ التقرير' : 'Save Report')}
+              {editingReportId ? (isRtl ? 'تحديث التقرير' : 'Update Report') : (isRtl ? 'حفظ التقرير' : 'Save Report')}
             </Button>
           </DialogFooter>
         </DialogContent>
