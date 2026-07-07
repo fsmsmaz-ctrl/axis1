@@ -21,6 +21,7 @@ export async function GET(req: NextRequest) {
   const costWhere: any = {}
   if (projectId) costWhere.projectId = projectId
 
+  // Run all 3 queries in parallel
   const [reports, safetyReports, costs] = await Promise.all([
     db.dailyReport.findMany({
       where,
@@ -40,6 +41,7 @@ export async function GET(req: NextRequest) {
     }),
   ])
 
+  // Group reports by project
   const projectStats = new Map<string, any>()
 
   for (const r of reports) {
@@ -81,6 +83,7 @@ export async function GET(req: NextRequest) {
     return s
   })
 
+  // Process safety data
   const safetyByProject = new Map<string, { total: number; passed: number }>()
   for (const s of safetyReports) {
     if (!safetyByProject.has(s.projectId)) safetyByProject.set(s.projectId, { total: 0, passed: 0 })
@@ -90,6 +93,7 @@ export async function GET(req: NextRequest) {
     stat.passed += checks.filter(Boolean).length
   }
 
+  // Process cost data
   const costByProject = new Map<string, number>()
   for (const c of costs) {
     costByProject.set(c.projectId, (costByProject.get(c.projectId) || 0) + c.amount)
