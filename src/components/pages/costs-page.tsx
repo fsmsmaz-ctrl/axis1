@@ -17,7 +17,7 @@ import {
 } from 'recharts'
 import { Plus, DollarSign, TrendingUp, TrendingDown, Wallet, BarChart3, Pencil, Trash2 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
-import { authedFetch } from '@/lib/api-client'
+import { authedFetch, clearApiCache } from '@/lib/api-client'
 import { toast } from 'sonner'
 
 const categoryLabels: Record<string, { ar: string; en: string }> = {
@@ -113,6 +113,7 @@ export default function CostsPage() {
     const res = await authedFetch(`/api/costs/${id}`, { method: 'DELETE' })
     if (res.ok) {
       toast.success(isRtl ? 'تم حذف التكلفة' : 'Cost deleted')
+      clearApiCache('costs')
       fetchCosts()
     }
   }
@@ -137,6 +138,7 @@ export default function CostsPage() {
           projectId: projects[0]?.id || '', date: new Date().toISOString().split('T')[0],
           category: 'labor', description: '', amount: '', notes: '',
         })
+        clearApiCache('costs')
         fetchCosts()
       }
     } catch {
