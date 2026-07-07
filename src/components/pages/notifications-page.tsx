@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { AlertTriangle, Bell, CheckCircle2, Info, XCircle, Trash2 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
-import { authedFetch, clearApiCache } from '@/lib/api-client'
+import { authedFetch } from '@/lib/api-client'
 import { toast } from 'sonner'
 
 const severityConfig = {
