@@ -50,10 +50,12 @@ export async function POST(req: NextRequest) {
     const validationError = validateRequired(body, ['projectId', 'reportDate'])
     if (validationError) return validationError
 
+    // Calculate production data
     const startReading = parseNumber(body.startReading, 0)
     const endReading = parseNumber(body.endReading, 0)
     const dailyMeters = Math.max(0, endReading - startReading)
 
+    // Run drive line and project queries in parallel
     const [dlResult, projResult] = await Promise.all([
       body.driveLineId
         ? safeDbOp(
@@ -108,8 +110,10 @@ export async function POST(req: NextRequest) {
     )
     if (!createResult.success) return createResult.response
 
+    // Run non-critical updates in parallel (fire-and-forget style)
     const updatePromises: Promise<void>[] = []
 
+    // Update drive line progress
     if (body.driveLineId) {
       updatePromises.push(
         safeDbOp(
@@ -126,6 +130,7 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    // Update project progress
     if (projResult.success && projResult.data) {
       updatePromises.push(
         (async () => {
@@ -153,6 +158,7 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    // Audit log
     updatePromises.push(
       safeDbOp(
         () => db.auditLog.create({
@@ -170,6 +176,7 @@ export async function POST(req: NextRequest) {
       ).then(() => {})
     )
 
+    // Fire all non-critical updates in parallel (don't await - let them run in background)
     Promise.all(updatePromises).catch(() => {})
 
     return NextResponse.json({ report: createResult.data, success: true })
