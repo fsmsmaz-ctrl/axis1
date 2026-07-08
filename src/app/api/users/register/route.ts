@@ -1,50 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
-import bcrypt from 'bcryptjs'
 
-export async function POST(req: NextRequest) {
-  const user = await getAuthUser(req)
+const ADMIN_EMAIL = 'admin@axis.om'
 
-  if (!user) {
-    return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
-  }
-
-  if (user.email.toLowerCase().trim() !== 'admin@axis.om') {
-    return NextResponse.json({ error: 'forbidden', message: 'فقط المدير يمكنه إنشاء مستخدم' }, { status: 403 })
-  }
-
+export async function GET(req: NextRequest) {
   try {
-    const body = await req.json()
-    const { name, nameEn, email, phone, role, password, permissions } = body
-
-    if (!name?.trim() || !email?.trim() || !password?.trim()) {
-      return NextResponse.json({ error: 'missing_fields', message: 'الاسم والبريد وكلمة المرور مطلوبة' }, { status: 400 })
+    const authUser = await getAuthUser(req)
+    if (!authUser || authUser.email.toLowerCase().trim() !== ADMIN_EMAIL) {
+      return NextResponse.json({ error: 'unauthorized' }, { status: 403 })
     }
 
-    const existing = await db.user.findUnique({ where: { email: email.trim().toLowerCase() } })
-    if (existing) {
-      return NextResponse.json({ error: 'exists', message: 'البريد الإلكتروني مستخدم بالفعل' }, { status: 409 })
-    }
-
-    const hashedPassword = await bcrypt.hash(password.trim(), 12)
-
-    const newUser = await db.user.create({
-      data: {
-        email: email.trim().toLowerCase(),
-        name: name.trim(),
-        nameEn: nameEn?.trim() || null,
-        phone: phone?.trim() || null,
-        role: role || 'site_engineer',
-        password: hashedPassword,
-        permissions: permissions || null,
+    const users = await db.user.findMany({
+      where: { active: true },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        nameEn: true,
+        role: true,
+        phone: true,
+        permissions: true,
+        active: true,
+        createdAt: true,
       },
-      select: { id: true, email: true, name: true, nameEn: true, phone: true, role: true, active: true, language: true, permissions: true, createdAt: true },
+      orderBy: { createdAt: 'desc' },
     })
 
-    return NextResponse.json({ user: newUser, success: true })
-  } catch (error: any) {
-    console.error('User register error:', error)
-    return NextResponse.json({ error: 'server_error', message: 'فشل إنشاء المستخدم' }, { status: 500 })
+    return NextResponse.json({ users })
+  } catch (error) {
+    console.error('List users error:', error)
+    return NextResponse.json({ error: 'Failed to fetch users' }, { status: 500 })
   }
 }
