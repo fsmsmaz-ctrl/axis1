@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
+import { handleDbError, parseNumber, safeDbOp } from '@/lib/api-helpers'
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const user = await getAuthUser(req)
 
   if (!user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
   }
 
   const { id } = await params
@@ -14,22 +15,25 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   try {
     const body = await req.json()
 
-    const cost = await db.cost.update({
-      where: { id },
-      data: {
-        projectId: body.projectId,
-        date: new Date(body.date),
-        category: body.category,
-        description: body.description,
-        amount: parseFloat(body.amount) || 0,
-        notes: body.notes || null,
-      },
-    })
+    const updateResult = await safeDbOp(
+      () => db.cost.update({
+        where: { id },
+        data: {
+          projectId: body.projectId ? String(body.projectId) : undefined,
+          date: body.date ? new Date(body.date) : undefined,
+          category: body.category ? String(body.category) : undefined,
+          description: body.description ? String(body.description) : undefined,
+          amount: body.amount !== undefined ? parseNumber(body.amount, 0) : undefined,
+          notes: body.notes !== undefined ? (body.notes ? String(body.notes) : null) : undefined,
+        },
+      }),
+      'تحديث التكلفة'
+    )
+    if (!updateResult.success) return updateResult.response
 
-    return NextResponse.json({ cost, success: true })
-  } catch (error) {
-    console.error('Update cost error:', error)
-    return NextResponse.json({ error: 'Failed to update cost' }, { status: 500 })
+    return NextResponse.json({ cost: updateResult.data, success: true })
+  } catch (error: any) {
+    return handleDbError(error, 'تحديث التكلفة')
   }
 }
 
@@ -37,16 +41,20 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   const user = await getAuthUser(req)
 
   if (!user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
   }
 
   const { id } = await params
 
   try {
-    await db.cost.delete({ where: { id } })
+    const deleteResult = await safeDbOp(
+      () => db.cost.delete({ where: { id } }),
+      'حذف التكلفة'
+    )
+    if (!deleteResult.success) return deleteResult.response
+
     return NextResponse.json({ success: true })
-  } catch (error) {
-    console.error('Delete cost error:', error)
-    return NextResponse.json({ error: 'Failed to delete cost' }, { status: 500 })
+  } catch (error: any) {
+    return handleDbError(error, 'حذف التكلفة')
   }
 }
