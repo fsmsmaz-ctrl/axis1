@@ -63,7 +63,7 @@ export function hasPermission(role: string, resource: string, customPermissions?
 // Single alias — declared once only
 export const hasReportPermission = hasPermission
 
-// Togglable permission labels (bilingual) for user management UI
+// Togglable permission labels (bilingual) for user management UI — modules only
 export const TOGGLABLE_PERMISSION_LABELS: Record<string, { ar: string; en: string }> = {
   dashboard: { ar: 'لوحة التحكم', en: 'Dashboard' },
   projects: { ar: 'المشاريع', en: 'Projects' },
@@ -77,12 +77,22 @@ export const TOGGLABLE_PERMISSION_LABELS: Record<string, { ar: string; en: strin
   reports: { ar: 'التقارير', en: 'Reports' },
   notifications: { ar: 'التنبيهات', en: 'Notifications' },
   users: { ar: 'إدارة المستخدمين', en: 'User Management' },
-  report_daily: { ar: 'تقرير يومي', en: 'Daily Report' },
-  report_safety: { ar: 'تقرير السلامة', en: 'Safety Report' },
-  report_production: { ar: 'تقرير الإنتاج', en: 'Production Report' },
-  report_cost: { ar: 'تقرير التكاليف', en: 'Cost Report' },
-  report_performance: { ar: 'تقرير الأداء', en: 'Performance Report' },
-  report_equipment: { ar: 'تقرير المعدات', en: 'Equipment Report' },
+}
+
+// Report labels (bilingual) — separate from module labels to avoid key collisions
+// Keys match the report IDs used in reports-page.tsx exactly
+export const REPORT_LABELS: Record<string, { ar: string; en: string }> = {
+  daily_site: { ar: 'التقرير اليومي للموقع', en: 'Daily Site Report' },
+  production: { ar: 'تقرير الإنتاج اليومي', en: 'Daily Production Report' },
+  safety: { ar: 'تقرير السلامة اليومي', en: 'Daily Safety Report' },
+  attendance: { ar: 'تقرير الحضور', en: 'Attendance Report' },
+  revenue: { ar: 'تقرير الإيرادات', en: 'Revenue Report' },
+  costs: { ar: 'تقرير التكاليف', en: 'Cost Report' },
+  profit: { ar: 'تقرير صافي الربح', en: 'Profit Report' },
+  equipment: { ar: 'تقرير المعدات', en: 'Equipment Report' },
+  weekly: { ar: 'تقرير الإنجاز الأسبوعي', en: 'Weekly Progress Report' },
+  monthly: { ar: 'تقرير شهري للإدارة', en: 'Monthly Management Report' },
+  handover: { ar: 'تقرير تسليم الأعمال', en: 'Handover Report' },
 }
 
 // Module (section) permissions — array of keys
@@ -91,9 +101,10 @@ export const MODULE_PERMISSIONS = [
   'equipment', 'costs', 'finishings', 'performance', 'reports', 'notifications', 'users',
 ] as const
 
-// Report permissions — array of keys
+// Report permissions — array of keys (matches report IDs in reports-page.tsx)
 export const REPORT_PERMISSIONS = [
-  'report_daily', 'report_safety', 'report_production', 'report_cost', 'report_performance', 'report_equipment',
+  'daily_site', 'production', 'safety', 'attendance', 'revenue', 'costs',
+  'profit', 'equipment', 'weekly', 'monthly', 'handover',
 ] as const
 
 // Combined list of all togglable permissions
