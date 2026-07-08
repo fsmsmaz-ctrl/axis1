@@ -111,7 +111,7 @@ export default function LoginPage() {
             </div>
             <div>
               <h1 className="text-4xl font-bold tracking-wide">AXIS</h1>
-              <p className="text-sm text-primary-foreground/70 font-light tracking-wider">Pipe Jacking & Microtunneling</p>
+              <p className="text-sm text-primary-foreground/70 font-light tracking-wider">Pipe Jacking &amp; Microtunneling</p>
             </div>
           </div>
         </div>
@@ -137,3 +137,34 @@ export default function LoginPage() {
               <p className="text-muted-foreground text-sm mt-1">{t.loginSubtitle}</p>
             </div>
             <Button variant="ghost" size="sm" onClick={toggleLanguage} className="gap-1.5">
+              <Globe className="h-4 w-4" />
+              <span className="text-sm font-semibold">{t.langBtn}</span>
+            </Button>
+          </div>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="email">{t.email}</Label>
+              <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="example@axis.om" required className="h-11" dir="ltr" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="password">{t.password}</Label>
+              <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" required className="h-11" dir="ltr" />
+            </div>
+            {error && (
+              <Alert variant="destructive">
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+            <Button type="submit" disabled={loading} className="w-full h-11" size="lg">
+              {loading ? (
+                <Loader2 className="h-5 w-5 animate-spin" />
+              ) : (
+                <>{t.signIn}<ArrowRight className={`h-4 w-4 ${isRtl ? 'mr-2 rotate-180' : 'ml-2'}`} /></>
+              )}
+            </Button>
+          </form>
+        </div>
+      </div>
+    </div>
+  )
+}
