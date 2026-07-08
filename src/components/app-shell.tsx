@@ -102,8 +102,10 @@ export default function AppShell() {
 
   if (!user) return null
 
-  const allowedItems = navItems.filter(item => hasPermission(user.role, item.resource, user.permissions))
-
+  const allowedItems = navItems.filter(item => {
+    if (item.resource === 'users') return user.email === 'admin@axis.om'
+    return hasPermission(user.role, item.resource, user.permissions)
+  })
   async function handleLogout() {
     await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
     clearStoredToken()
