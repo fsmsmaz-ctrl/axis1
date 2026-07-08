@@ -59,3 +59,5 @@ export function hasPermission(role: string, resource: string, customPermissions?
   const perms = ROLE_PERMISSIONS[role] || []
   return perms.includes('*') || perms.includes(resource)
 }
+
+export { hasPermission as hasReportPermission }
