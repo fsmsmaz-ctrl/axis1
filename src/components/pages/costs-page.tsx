@@ -15,7 +15,7 @@ import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   PieChart, Pie, Cell, Legend
 } from 'recharts'
-import { Plus, DollarSign, TrendingUp, TrendingDown, Wallet, BarChart3, Pencil, Trash2 } from 'lucide-react'
+import { Plus, DollarSign, TrendingUp, TrendingDown, Wallet, BarChart3 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
 import { toast } from 'sonner'
@@ -70,26 +70,23 @@ export default function CostsPage() {
 
   async function fetchCosts() {
     setLoading(true)
-    try {
-      const res = await authedFetch('/api/costs' + (selectedProject !== 'all' ? `?projectId=${selectedProject}` : ''))
-      const data = await res.json()
-      setCosts(data.costs || [])
-      setByCategory(data.byCategory || [])
-      setTotal(data.total || 0)
+    const res = await authedFetch('/api/costs' + (selectedProject !== 'all' ? `?projectId=${selectedProject}` : ''))
+    const data = await res.json()
+    setCosts(data.costs || [])
+    setByCategory(data.byCategory || [])
+    setTotal(data.total || 0)
 
-      // Get revenue from reports
-      const repParams = new URLSearchParams()
-      if (selectedProject !== 'all') repParams.set('projectId', selectedProject)
-      repParams.set('limit', '500')
-      const repRes = await authedFetch('/api/daily-reports?' + repParams.toString())
-      const repData = await repRes.json()
-      const reports = (repData.reports || []).filter((r: any) => r.status === 'approved')
-      const totalRev = reports.reduce((s: number, r: any) => s + r.dailyRevenue, 0)
-      setRevenue(totalRev)
-      setProjectReports(reports)
-    } catch {
-      // ignore
-    }
+    // Get revenue from reports
+    const repParams = new URLSearchParams()
+    if (selectedProject !== 'all') repParams.set('projectId', selectedProject)
+    repParams.set('limit', '500')
+    const repRes = await authedFetch('/api/daily-reports?' + repParams.toString())
+    const repData = await repRes.json()
+    const reports = (repData.reports || []).filter((r: any) => r.status === 'approved')
+    const totalRev = reports.reduce((s: number, r: any) => s + r.dailyRevenue, 0)
+    setRevenue(totalRev)
+    setProjectReports(reports)
+
     setLoading(false)
   }
 
@@ -99,65 +96,38 @@ export default function CostsPage() {
     authedFetch('/api/projects/list').then(r => r.json()).then(d => setProjects(d.projects || []))
   }, [selectedProject, token])
 
-  function openAddDialog() {
-    setEditingCostId(null)
-    setFormData({
-      projectId: projects[0]?.id || '', date: new Date().toISOString().split('T')[0],
-      category: 'labor', description: '', amount: '', notes: '',
-    })
-    setDialogOpen(true)
-  }
-
-  function openEditCost(cost: any) {
-    setEditingCostId(cost.id)
-    setFormData({
-      projectId: cost.projectId || '',
-      date: cost.date ? cost.date.split('T')[0] : new Date().toISOString().split('T')[0],
-      category: cost.category || 'labor',
-      description: cost.description || '',
-      amount: String(cost.amount || ''),
-      notes: cost.notes || '',
-    })
-    setDialogOpen(true)
-  }
-
-  async function deleteCost(id: string) {
-    const msg = isRtl ? 'هل أنت متأكد من حذف هذه التكلفة؟' : 'Are you sure you want to delete this cost?'
-    if (!confirm(msg)) return
-    try {
-      const res = await authedFetch(`/api/costs/${id}`, { method: 'DELETE' })
-      if (res.ok) {
-        toast.success(isRtl ? 'تم حذف التكلفة' : 'Cost deleted')
-        fetchCosts()
-      } else {
-        const data = await res.json()
-        toast.error(data.message || (isRtl ? 'فشل الحذف' : 'Delete failed'))
-      }
-    } catch {
-      toast.error(isRtl ? 'حدث خطأ' : 'Error')
-    }
-  }
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     try {
-      const isEditing = editingCostId !== null
-      const url = isEditing ? `/api/costs/${editingCostId}` : '/api/costs'
-      const method = isEditing ? 'PUT' : 'POST'
-
+      const url = editingCostId ? `/api/costs/${editingCostId}` : '/api/costs'
+      const method = editingCostId ? 'PUT' : 'POST'
       const res = await authedFetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),
       })
       if (res.ok) {
-        toast.success(isEditing ? (isRtl ? 'تم تحديث التكلفة' : 'Cost updated') : (isRtl ? 'تم إضافة التكلفة' : 'Cost added'))
+        toast.success(editingCostId ? (isRtl ? 'تم تحديث التكلفة' : 'Cost updated') : (isRtl ? 'تم إضافة التكلفة' : 'Cost added'))
         setDialogOpen(false)
         setEditingCostId(null)
+        setFormData({
+          projectId: projects[0]?.id || '', date: new Date().toISOString().split('T')[0],
+          category: 'labor', description: '', amount: '', notes: '',
+        })
         fetchCosts()
-      } else {
-        const data = await res.json()
-        toast.error(data.message || (isRtl ? 'حدث خطأ' : 'Error'))
+      }
+    } catch {
+      toast.error(isRtl ? 'حدث خطأ' : 'Error')
+    }
+  }
+
+  async function deleteCost(id: string) {
+    if (!confirm(isRtl ? 'هل أنت متأكد من حذف هذه التكلفة؟' : 'Are you sure you want to delete this cost?')) return
+    try {
+      const res = await authedFetch(`/api/costs/${id}`, { method: 'DELETE' })
+      if (res.ok) {
+        toast.success(isRtl ? 'تم حذف التكلفة' : 'Cost deleted')
+        fetchCosts()
       }
     } catch {
       toast.error(isRtl ? 'حدث خطأ' : 'Error')
@@ -166,22 +136,15 @@ export default function CostsPage() {
 
   const netProfit = revenue - total
   const profitMargin = revenue > 0 ? (netProfit / revenue) * 100 : 0
-  const totalMeters = projectReports.reduce((s: number, r: any) => s + r.dailyMeters, 0)
+  const totalMeters = projectReports.reduce((s, r) => s + r.dailyMeters, 0)
   const costPerMeter = totalMeters > 0 ? total / totalMeters : 0
 
   // Chart data
-  const pieData = byCategory.map((c: any) => ({
+  const pieData = byCategory.map(c => ({
     name: isRtl ? categoryLabels[c.category]?.ar : categoryLabels[c.category]?.en || c.category,
     value: c.amount,
     color: categoryColors[c.category] || '#94a3b8',
   }))
-
-  const dialogTitle = editingCostId
-    ? (isRtl ? 'تعديل التكلفة' : 'Edit Cost')
-    : (isRtl ? 'إضافة تكلفة' : 'Add Cost')
-  const dialogDesc = editingCostId
-    ? (isRtl ? 'عدّل بيانات التكلفة' : 'Edit cost details')
-    : (isRtl ? 'سجل تكلفة جديدة' : 'Record a new cost')
 
   return (
     <div className="space-y-4">
@@ -192,7 +155,14 @@ export default function CostsPage() {
             {isRtl ? 'متابعة التكاليف والإيرادات وحساب الأرباح' : 'Track costs, revenue, and profit'}
           </p>
         </div>
-        <Button onClick={openAddDialog}>
+        <Button onClick={() => {
+          setEditingCostId(null)
+          setFormData({
+            projectId: projects[0]?.id || '', date: new Date().toISOString().split('T')[0],
+            category: 'labor', description: '', amount: '', notes: '',
+          })
+          setDialogOpen(true)
+        }}>
           <Plus className="h-4 w-4 ml-2" />
           {isRtl ? 'إضافة تكلفة' : 'Add Cost'}
         </Button>
@@ -258,7 +228,7 @@ export default function CostsPage() {
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="all">{isRtl ? 'كل المشاريع' : 'All Projects'}</SelectItem>
-          {projects.map((p: any) => (
+          {projects.map((p) => (
             <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
           ))}
         </SelectContent>
@@ -289,7 +259,7 @@ export default function CostsPage() {
                     outerRadius={90}
                     label={(entry: any) => `${entry.value.toFixed(0)}`}
                   >
-                    {pieData.map((entry: any, idx: number) => (
+                    {pieData.map((entry, idx) => (
                       <Cell key={idx} fill={entry.color} />
                     ))}
                   </Pie>
@@ -324,7 +294,7 @@ export default function CostsPage() {
                     formatter={(value: any) => [`${value.toLocaleString()} ر.ع`, isRtl ? 'المبلغ' : 'Amount']}
                   />
                   <Bar dataKey="value" radius={[0, 4, 4, 0]}>
-                    {pieData.map((entry: any, idx: number) => (
+                    {pieData.map((entry, idx) => (
                       <Cell key={idx} fill={entry.color} />
                     ))}
                   </Bar>
@@ -349,8 +319,8 @@ export default function CostsPage() {
             </div>
           ) : (
             <div className="space-y-2 max-h-96 overflow-y-auto">
-              {costs.slice(0, 50).map((c: any) => (
-                <div key={c.id} className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-muted/50 transition">
+              {costs.slice(0, 50).map((c) => (
+                <div key={c.id} className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-muted/50 transition group">
                   <div
                     className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
                     style={{ backgroundColor: (categoryColors[c.category] || '#94a3b8') + '20' }}
@@ -366,17 +336,30 @@ export default function CostsPage() {
                       {c.project && ` • ${c.project.name}`}
                     </p>
                   </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditCost(c)}>
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => deleteCost(c.id)}>
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <p className="font-semibold text-sm text-red-600">
+                      {c.amount.toLocaleString()} {isRtl ? 'ر.ع' : 'OMR'}
+                    </p>
+                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition">
+                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => {
+                        setEditingCostId(c.id)
+                        setFormData({
+                          projectId: c.projectId || '',
+                          date: new Date(c.date).toISOString().split('T')[0],
+                          category: c.category,
+                          description: c.description,
+                          amount: String(c.amount),
+                          notes: c.notes || '',
+                        })
+                        setDialogOpen(true)
+                      }}>
+                        ✏️
+                      </Button>
+                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-destructive" onClick={() => deleteCost(c.id)}>
+                        🗑️
+                      </Button>
+                    </div>
                   </div>
-                  <p className="font-semibold text-sm text-red-600 min-w-[80px] text-left">
-                    {c.amount.toLocaleString()} {isRtl ? 'ر.ع' : 'OMR'}
-                  </p>
                 </div>
               ))}
             </div>
@@ -384,12 +367,14 @@ export default function CostsPage() {
         </CardContent>
       </Card>
 
-      {/* Add/Edit Dialog */}
-      <Dialog open={dialogOpen} onOpenChange={(v) => { setDialogOpen(v); if (!v) setEditingCostId(null) }}>
+      {/* Add Dialog */}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>{dialogTitle}</DialogTitle>
-            <DialogDescription>{dialogDesc}</DialogDescription>
+            <DialogTitle>{editingCostId ? (isRtl ? 'تعديل التكلفة' : 'Edit Cost') : (isRtl ? 'إضافة تكلفة' : 'Add Cost')}</DialogTitle>
+            <DialogDescription>
+              {editingCostId ? (isRtl ? 'عدّل بيانات التكلفة' : 'Edit cost details') : (isRtl ? 'سجل تكلفة جديدة' : 'Record a new cost')}
+            </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
@@ -398,7 +383,7 @@ export default function CostsPage() {
                 <Select value={formData.projectId} onValueChange={(v) => setFormData({ ...formData, projectId: v })} required>
                   <SelectTrigger><SelectValue placeholder={isRtl ? 'اختر' : 'Select'} /></SelectTrigger>
                   <SelectContent>
-                    {projects.map((p: any) => (
+                    {projects.map((p) => (
                       <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
                     ))}
                   </SelectContent>
@@ -433,12 +418,10 @@ export default function CostsPage() {
               <Textarea value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} rows={2} />
             </div>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => { setDialogOpen(false); setEditingCostId(null) }}>
+              <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
                 {isRtl ? 'إلغاء' : 'Cancel'}
               </Button>
-              <Button type="submit">
-                {editingCostId ? (isRtl ? 'حفظ التعديلات' : 'Save Changes') : (isRtl ? 'حفظ' : 'Save')}
-              </Button>
+              <Button type="submit">{isRtl ? 'حفظ' : 'Save'}</Button>
             </DialogFooter>
           </form>
         </DialogContent>
