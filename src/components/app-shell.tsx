@@ -19,7 +19,7 @@ import {
   LayoutDashboard, FolderKanban, GitBranch, FileText, ShieldCheck,
   Wrench, DollarSign, CheckCircle2, FileBarChart, TrendingUp,
   Bell, LogOut, Menu, X, Globe, User, Settings,
-  AlertTriangle, ChevronLeft
+  AlertTriangle, ChevronLeft, Users
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -27,7 +27,7 @@ import dynamic from 'next/dynamic'
 
 type PageId =
   | 'dashboard' | 'projects' | 'driveLines' | 'dailyReports' | 'safety'
-  | 'equipment' | 'costs' | 'finishings' | 'reports' | 'performance' | 'notifications'
+  | 'equipment' | 'costs' | 'finishings' | 'reports' | 'performance' | 'notifications' | 'users'
 
 interface NavItem {
   id: PageId
@@ -49,6 +49,7 @@ const navItems: NavItem[] = [
   { id: 'performance', labelAr: 'تقييم الأداء', labelEn: 'Performance', icon: TrendingUp, resource: 'performance' },
   { id: 'reports', labelAr: 'التقارير', labelEn: 'Reports', icon: FileBarChart, resource: 'reports' },
   { id: 'notifications', labelAr: 'التنبيهات', labelEn: 'Notifications', icon: Bell, resource: 'notifications' },
+  { id: 'users', labelAr: 'إدارة المستخدمين', labelEn: 'User Management', icon: Users, resource: 'users' },
 ]
 
 const roleLabels: Record<string, { ar: string; en: string }> = {
@@ -71,6 +72,7 @@ const FinishingsPage = dynamic(() => import('@/components/pages/finishings-page'
 const PerformancePage = dynamic(() => import('@/components/pages/performance-page'), { ssr: false })
 const ReportsPage = dynamic(() => import('@/components/pages/reports-page'), { ssr: false })
 const NotificationsPage = dynamic(() => import('@/components/pages/notifications-page'), { ssr: false })
+const UsersPage = dynamic(() => import('@/components/pages/users-page'), { ssr: false })
 
 export default function AppShell() {
   const user = useAppStore((s) => s.user)
@@ -100,7 +102,7 @@ export default function AppShell() {
 
   if (!user) return null
 
-  const allowedItems = navItems.filter(item => hasPermission(user.role, item.resource))
+  const allowedItems = navItems.filter(item => hasPermission(user.role, item.resource, user.permissions))
 
   async function handleLogout() {
     await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
@@ -129,6 +131,7 @@ export default function AppShell() {
       case 'performance': return <PerformancePage />
       case 'reports': return <ReportsPage />
       case 'notifications': return <NotificationsPage />
+      case 'users': return <UsersPage />
       default: return <DashboardPage onNavigate={setCurrentPage} />
     }
   }
