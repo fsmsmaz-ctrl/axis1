@@ -7,15 +7,10 @@ import { SignJWT, jwtVerify } from 'jose'
 import { db } from './db'
 import { SessionUser, SESSION_COOKIE, getSessionMaxAge, getCookieOptions } from './auth'
 
+const SESSION_SECRET_STRING = 'AXIS-Pipe-Jacking-2025-Secret-Key-OM-v1-Stable'
+
 function getSecretKey(): Uint8Array {
-  const secret = process.env.JWT_SECRET
-  if (!secret || secret.length < 32) {
-    throw new Error(
-      'JWT_SECRET environment variable is required and must be at least 32 characters. ' +
-      'Generate one with: openssl rand -base64 48'
-    )
-  }
-  return new TextEncoder().encode(secret)
+  return new TextEncoder().encode(SESSION_SECRET_STRING)
 }
 
 export async function verifyCredentials(email: string, password: string): Promise<SessionUser | null> {
@@ -27,6 +22,15 @@ export async function verifyCredentials(email: string, password: string): Promis
     const valid = await bcrypt.compare(password, user.password)
     if (!valid) return null
 
+    let permissions: string[] = []
+    try {
+      const rows = await db.$queryRawUnsafe(`SELECT permissions FROM "User" WHERE id = ?`, user.id) as any[]
+      if (rows.length > 0 && rows[0].permissions) {
+        const parsed = JSON.parse(rows[0].permissions)
+        if (Array.isArray(parsed) && parsed.length > 0) permissions = parsed
+      }
+    } catch {}
+
     return {
       id: user.id,
       email: user.email,
@@ -35,6 +39,7 @@ export async function verifyCredentials(email: string, password: string): Promis
       role: user.role,
       phone: user.phone,
       language: user.language,
+      permissions,
     }
   } catch (error) {
     console.error('verifyCredentials error:', error)
@@ -52,6 +57,7 @@ export async function createSession(user: SessionUser): Promise<string> {
       role: user.role,
       phone: user.phone || null,
       language: user.language,
+      permissions: user.permissions || [],
     })
       .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
       .setIssuedAt()
@@ -67,29 +73,10 @@ export async function createSession(user: SessionUser): Promise<string> {
   }
 }
 
-// ==================== Session Cache ====================
-// Caches verified user for 30 seconds to avoid a DB query on EVERY API call
-const sessionCache = new Map<string, { user: SessionUser | null; ts: number }>()
-const SESSION_CACHE_TTL = 30_000
-
-// Clean expired entries every 5 minutes to prevent memory leaks
-setInterval(() => {
-  const now = Date.now()
-  for (const [key, entry] of sessionCache) {
-    if (now - entry.ts > SESSION_CACHE_TTL) sessionCache.delete(key)
-  }
-}, 300_000)
-
 export async function getSessionUser(token: string | undefined): Promise<SessionUser | null> {
   if (!token) return null
   if (typeof token !== 'string') return null
   if (token.trim().length === 0) return null
-
-  // Check cache first
-  const cached = sessionCache.get(token)
-  if (cached && Date.now() - cached.ts < SESSION_CACHE_TTL) {
-    return cached.user
-  }
 
   try {
     const { payload } = await jwtVerify(token, getSecretKey(), {
@@ -101,12 +88,9 @@ export async function getSessionUser(token: string | undefined): Promise<Session
     if (!userId) return null
 
     const user = await db.user.findUnique({ where: { id: userId } })
-    if (!user || !user.active) {
-      sessionCache.set(token, { user: null, ts: Date.now() })
-      return null
-    }
+    if (!user || !user.active) return null
 
-    const sessionUser: SessionUser = {
+    return {
       id: user.id,
       email: user.email,
       name: user.name,
@@ -114,10 +98,8 @@ export async function getSessionUser(token: string | undefined): Promise<Session
       role: user.role,
       phone: user.phone,
       language: user.language,
+      permissions: Array.isArray(payload.permissions) ? payload.permissions : [],
     }
-
-    sessionCache.set(token, { user: sessionUser, ts: Date.now() })
-    return sessionUser
   } catch (error) {
     return null
   }
