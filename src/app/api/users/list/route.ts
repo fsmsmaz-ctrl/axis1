@@ -2,26 +2,44 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 
-export async function GET(req: NextRequest) {
-  const user = await getAuthUser(req)
+const ADMIN_EMAIL = 'admin@axis.om'
 
-  if (!user) {
-    return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
-  }
-
-  if (user.email.toLowerCase().trim() !== 'admin@axis.om') {
-    return NextResponse.json({ error: 'forbidden', message: 'فقط المدير يمكنه عرض المستخدمين' }, { status: 403 })
-  }
-
+export async function DELETE(req: NextRequest) {
   try {
-    const users = await db.user.findMany({
-      select: { id: true, email: true, name: true, nameEn: true, phone: true, role: true, active: true, language: true, permissions: true, createdAt: true },
-      orderBy: { createdAt: 'asc' },
+    const authUser = await getAuthUser(req)
+    if (!authUser || authUser.email.toLowerCase().trim() !== ADMIN_EMAIL) {
+      return NextResponse.json({ error: 'unauthorized' }, { status: 403 })
+    }
+
+    const { searchParams } = new URL(req.url)
+    const userId = searchParams.get('id')
+
+    if (!userId) {
+      return NextResponse.json({ error: 'User ID is required' }, { status: 400 })
+    }
+
+    // Prevent deleting the admin account
+    const targetUser = await db.user.findUnique({ where: { id: userId } })
+    if (!targetUser) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 })
+    }
+
+    if (targetUser.email.toLowerCase().trim() === ADMIN_EMAIL) {
+      return NextResponse.json({ error: 'Cannot delete admin account' }, { status: 403 })
+    }
+
+    await db.user.delete({ where: { id: userId } })
+
+    const remaining = await db.user.count({
+      where: { email: { not: ADMIN_EMAIL } }
     })
 
-    return NextResponse.json({ users })
-  } catch (error: any) {
-    console.error('User list error:', error)
-    return NextResponse.json({ error: 'server_error', message: 'فشل جلب المستخدمين' }, { status: 500 })
+    return NextResponse.json({
+      message: 'User deleted successfully.',
+      remainingSlots: 50 - remaining
+    })
+  } catch (error) {
+    console.error('Delete user error:', error)
+    return NextResponse.json({ error: 'internal_error', message: 'Failed to delete user' }, { status: 500 })
   }
 }
