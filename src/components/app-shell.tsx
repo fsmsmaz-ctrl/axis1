@@ -60,7 +60,6 @@ const roleLabels: Record<string, { ar: string; en: string }> = {
   accountant: { ar: 'المحاسب', en: 'Accountant' },
 }
 
-// Dynamically import pages to avoid SSR issues
 const DashboardPage = dynamic(() => import('@/components/pages/dashboard-page'), { ssr: false })
 const ProjectsPage = dynamic(() => import('@/components/pages/projects-page'), { ssr: false })
 const DriveLinesPage = dynamic(() => import('@/components/pages/drive-lines-page'), { ssr: false })
@@ -86,14 +85,12 @@ export default function AppShell() {
 
   useEffect(() => {
     if (!user || !token) return
-    // Fetch notifications count - only when token is available
     authedFetch('/api/notifications?unreadOnly=true')
       .then(r => r.json())
       .then(data => setNotifications(data.notifications || []))
       .catch(() => {})
   }, [user, token, currentPage])
 
-  // Sync document direction and language when language changes
   useEffect(() => {
     if (typeof document !== 'undefined') {
       document.documentElement.lang = language
@@ -140,15 +137,12 @@ export default function AppShell() {
 
   return (
     <div className="min-h-screen bg-muted/30" dir={isRtl ? 'rtl' : 'ltr'}>
-      {/* Mobile overlay */}
       {sidebarOpen && (
         <div
           className="fixed inset-0 bg-black/50 z-40 lg:hidden"
           onClick={() => setSidebarOpen(false)}
         />
       )}
-
-      {/* Sidebar */}
       <aside
         className={cn(
           "fixed top-0 bottom-0 z-50 w-72 bg-sidebar border-sidebar-border flex flex-col transition-transform duration-300 lg:translate-x-0",
@@ -156,17 +150,18 @@ export default function AppShell() {
           sidebarOpen ? "translate-x-0" : (isRtl ? "translate-x-full" : "-translate-x-full")
         )}
       >
-        {/* Logo */}
-        <div className="p-5 border-b border-sidebar-border">
+        <div className="px-5 py-4 border-b border-sidebar-border">
           <div className="flex items-center gap-3">
-            <img
-              src="/logo.png"
-              alt="AXIS Logo"
-              className="h-10 w-auto object-contain"
-            />
-            <div>
-              <h1 className="text-lg font-bold text-sidebar-foreground">AXIS</h1>
-              <p className="text-xs text-muted-foreground">Pipe Jacking System</p>
+            <div className="shrink-0">
+              <img
+                src="/logo-white.png"
+                alt="AXIS"
+                className="h-9 w-auto object-contain"
+              />
+            </div>
+            <div className="min-w-0">
+              <h1 className="text-lg font-bold text-sidebar-foreground leading-tight tracking-wide">AXIS</h1>
+              <p className="text-[10px] text-muted-foreground leading-tight">Pipe Jacking System</p>
             </div>
             <Button
               variant="ghost"
@@ -178,22 +173,16 @@ export default function AppShell() {
             </Button>
           </div>
         </div>
-
-        {/* Nav items */}
         <nav className="flex-1 overflow-y-auto p-3 space-y-1">
           {allowedItems.map((item) => {
             const Icon = item.icon
             const isActive = currentPage === item.id
             const label = isRtl ? item.labelAr : item.labelEn
             const unreadCount = item.id === 'notifications' ? notifications.length : 0
-
             return (
               <button
                 key={item.id}
-                onClick={() => {
-                  setCurrentPage(item.id)
-                  setSidebarOpen(false)
-                }}
+                onClick={() => { setCurrentPage(item.id); setSidebarOpen(false) }}
                 className={cn(
                   "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all",
                   isActive
@@ -213,8 +202,6 @@ export default function AppShell() {
             )
           })}
         </nav>
-
-        {/* User card */}
         <div className="p-3 border-t border-sidebar-border">
           <div className="flex items-center gap-3 p-2 rounded-lg">
             <Avatar className="h-10 w-10 border-2 border-primary/20 shrink-0">
@@ -228,54 +215,32 @@ export default function AppShell() {
                 {isRtl ? roleLabels[user.role]?.ar : roleLabels[user.role]?.en}
               </p>
             </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 text-muted-foreground hover:text-destructive shrink-0"
-              onClick={handleLogout}
-              title={isRtl ? 'تسجيل الخروج' : 'Logout'}
-            >
+            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive shrink-0" onClick={handleLogout} title={isRtl ? 'تسجيل الخروج' : 'Logout'}>
               <LogOut className="h-4 w-4" />
             </Button>
           </div>
         </div>
       </aside>
-
-      {/* Main content - padding depends on language direction */}
       <div className={isRtl ? "lg:pr-72" : "lg:pl-72"}>
-        {/* Top header */}
         <header className="sticky top-0 z-30 h-16 bg-background/80 backdrop-blur border-b flex items-center px-4 lg:px-6 gap-3">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="lg:hidden"
-            onClick={() => setSidebarOpen(true)}
-          >
+          <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setSidebarOpen(true)}>
             <Menu className="h-5 w-5" />
           </Button>
-
           <div className="flex-1">
             <h2 className="text-lg font-semibold">
-              {isRtl
-                ? navItems.find(i => i.id === currentPage)?.labelAr
-                : navItems.find(i => i.id === currentPage)?.labelEn}
+              {isRtl ? navItems.find(i => i.id === currentPage)?.labelAr : navItems.find(i => i.id === currentPage)?.labelEn}
             </h2>
           </div>
-
           <Button variant="ghost" size="sm" onClick={toggleLanguage} className="gap-1.5">
             <Globe className="h-4 w-4" />
             <span className="text-sm">{isRtl ? 'EN' : 'ع'}</span>
           </Button>
-
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="relative">
                 <Bell className="h-5 w-5" />
                 {notifications.length > 0 && (
-                  <span className={cn(
-                    "absolute -top-1 h-5 w-5 rounded-full bg-destructive text-destructive-foreground text-xs flex items-center justify-center",
-                    isRtl ? "-left-1" : "-right-1"
-                  )}>
+                  <span className={cn("absolute -top-1 h-5 w-5 rounded-full bg-destructive text-destructive-foreground text-xs flex items-center justify-center", isRtl ? "-left-1" : "-right-1")}>
                     {notifications.length}
                   </span>
                 )}
@@ -284,15 +249,11 @@ export default function AppShell() {
             <DropdownMenuContent align={isRtl ? "start" : "end"} className="w-80">
               <DropdownMenuLabel className="flex items-center justify-between">
                 <span>{isRtl ? 'التنبيهات' : 'Notifications'}</span>
-                {notifications.length > 0 && (
-                  <Badge variant="secondary">{notifications.length}</Badge>
-                )}
+                {notifications.length > 0 && <Badge variant="secondary">{notifications.length}</Badge>}
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
               {notifications.length === 0 ? (
-                <div className="p-4 text-center text-sm text-muted-foreground">
-                  {isRtl ? 'لا توجد تنبيهات جديدة' : 'No new notifications'}
-                </div>
+                <div className="p-4 text-center text-sm text-muted-foreground">{isRtl ? 'لا توجد تنبيهات جديدة' : 'No new notifications'}</div>
               ) : (
                 notifications.slice(0, 5).map((n) => (
                   <DropdownMenuItem key={n.id} className="flex-col items-start p-3">
@@ -307,20 +268,15 @@ export default function AppShell() {
                 ))
               )}
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => setCurrentPage('notifications')}>
-                {isRtl ? 'عرض الكل' : 'View all'}
-              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setCurrentPage('notifications')}>{isRtl ? 'عرض الكل' : 'View all'}</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-
           <Avatar className="h-9 w-9 border-2 border-primary/20 shrink-0">
             <AvatarFallback className="bg-primary/10 text-primary text-sm font-semibold">
               {(isRtl ? user.name : (user.nameEn || user.name)).charAt(0)}
             </AvatarFallback>
           </Avatar>
         </header>
-
-        {/* Page content */}
         <main className="p-4 lg:p-6 max-w-[1600px] mx-auto">
           {renderPage()}
         </main>
