@@ -60,7 +60,6 @@ const roleLabels: Record<string, { ar: string; en: string }> = {
   accountant: { ar: 'المحاسب', en: 'Accountant' },
 }
 
-// Dynamically import pages to avoid SSR issues
 const DashboardPage = dynamic(() => import('@/components/pages/dashboard-page'), { ssr: false })
 const ProjectsPage = dynamic(() => import('@/components/pages/projects-page'), { ssr: false })
 const DriveLinesPage = dynamic(() => import('@/components/pages/drive-lines-page'), { ssr: false })
@@ -86,7 +85,6 @@ export default function AppShell() {
   const [notifications, setNotifications] = useState<any[]>([])
   const [userDialogOpen, setUserDialogOpen] = useState(false)
 
-  // Fetch notifications only once on mount (not on every page change)
   const notifFetched = useRef(false)
   useEffect(() => {
     if (!user || !token || notifFetched.current) return
@@ -97,7 +95,6 @@ export default function AppShell() {
       .catch(() => {})
   }, [user, token])
 
-  // Sync document direction and language when language changes
   useEffect(() => {
     if (typeof document !== 'undefined') {
       document.documentElement.lang = language
@@ -107,8 +104,7 @@ export default function AppShell() {
 
   if (!user) return null
 
-  const allowedItems = navItems.filter(item => hasPermission(user.role, item.resource, user.permissions))
-  // Only admin@axis.om can manage users
+  const allowedItems = navItems.filter(item => hasPermission(user.role, item.resource))
   const isAdmin = user.email.toLowerCase().trim() === 'admin@axis.om'
 
   async function handleLogout() {
@@ -146,7 +142,6 @@ export default function AppShell() {
 
   return (
     <div className="min-h-screen bg-muted/30" dir={isRtl ? 'rtl' : 'ltr'}>
-      {/* Mobile overlay */}
       {sidebarOpen && (
         <div
           className="fixed inset-0 bg-black/50 z-40 lg:hidden"
@@ -154,7 +149,6 @@ export default function AppShell() {
         />
       )}
 
-      {/* Sidebar */}
       <aside
         className={cn(
           "fixed top-0 bottom-0 z-50 w-72 bg-sidebar border-sidebar-border flex flex-col transition-transform duration-300 lg:translate-x-0",
@@ -162,7 +156,6 @@ export default function AppShell() {
           sidebarOpen ? "translate-x-0" : (isRtl ? "translate-x-full" : "-translate-x-full")
         )}
       >
-        {/* Logo */}
         <div className="p-5 border-b border-sidebar-border">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center text-primary-foreground">
@@ -183,7 +176,6 @@ export default function AppShell() {
           </div>
         </div>
 
-        {/* Nav items */}
         <nav className="flex-1 overflow-y-auto p-3 space-y-1">
           {allowedItems.map((item) => {
             const Icon = item.icon
@@ -218,7 +210,6 @@ export default function AppShell() {
           })}
         </nav>
 
-        {/* User card */}
         <div className="p-3 border-t border-sidebar-border">
           <div className="flex items-center gap-3 p-2 rounded-lg">
             <Avatar className="h-10 w-10 border-2 border-primary/20 shrink-0">
@@ -245,9 +236,7 @@ export default function AppShell() {
         </div>
       </aside>
 
-      {/* Main content - padding depends on language direction */}
       <div className={isRtl ? "lg:pr-72" : "lg:pl-72"}>
-        {/* Top header */}
         <header className="sticky top-0 z-30 h-16 bg-background/80 backdrop-blur border-b flex items-center px-4 lg:px-6 gap-3">
           <Button
             variant="ghost"
@@ -258,7 +247,6 @@ export default function AppShell() {
             <Menu className="h-5 w-5" />
           </Button>
 
-          {/* Admin: Add User Button */}
           {isAdmin && (
             <Button
               onClick={() => setUserDialogOpen(true)}
@@ -338,14 +326,12 @@ export default function AppShell() {
           </Avatar>
         </header>
 
-        {/* Page content */}
         <main className="p-4 lg:p-6 max-w-[1600px] mx-auto">
           {renderPage()}
 
-      {/* Admin: Create User Dialog */}
-      {isAdmin && (
-        <CreateUserDialog open={userDialogOpen} onOpenChange={setUserDialogOpen} />
-      )}
+          {isAdmin && (
+            <CreateUserDialog open={userDialogOpen} onOpenChange={setUserDialogOpen} />
+          )}
         </main>
       </div>
     </div>
