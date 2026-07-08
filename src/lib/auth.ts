@@ -31,24 +31,56 @@ export function getCookieOptions() {
   }
 }
 
-// Resources that admin can toggle per-user
-export const TOGGLABLE_PERMISSIONS = [
+// ─── Module permissions (sidebar sections) ───────────────────────────
+export const MODULE_PERMISSIONS = [
   'drive_lines', 'daily_reports', 'safety', 'equipment', 'costs', 'finishings', 'performance',
+] as const
+
+export const MODULE_PERMISSION_LABELS: Record<string, { ar: string; en: string }> = {
+  drive_lines:    { ar: 'خطوط الحفر',       en: 'Drive Lines' },
+  daily_reports:  { ar: 'التقارير اليومية',  en: 'Daily Reports' },
+  safety:         { ar: 'السلامة',           en: 'Safety' },
+  equipment:      { ar: 'المعدات',           en: 'Equipment' },
+  costs:          { ar: 'التكاليف والإيرادات', en: 'Costs & Revenue' },
+  finishings:     { ar: 'التشطيبات',         en: 'Finishings' },
+  performance:    { ar: 'تقييم الأداء',      en: 'Performance' },
+}
+
+// ─── Report permissions ──────────────────────────────────────────────
+export const REPORT_PERMISSIONS = [
+  'rpt_daily_site', 'rpt_production', 'rpt_safety', 'rpt_attendance',
+  'rpt_revenue', 'rpt_costs', 'rpt_profit', 'rpt_equipment',
+  'rpt_weekly', 'rpt_monthly', 'rpt_handover',
+] as const
+
+export const REPORT_LABELS: Record<string, { ar: string; en: string }> = {
+  rpt_daily_site:  { ar: 'تقرير الموقع اليومي', en: 'Daily Site Report' },
+  rpt_production:  { ar: 'تقرير الإنتاج',        en: 'Production Report' },
+  rpt_safety:      { ar: 'تقرير السلامة',        en: 'Safety Report' },
+  rpt_attendance:  { ar: 'تقرير الحضور',         en: 'Attendance Report' },
+  rpt_revenue:     { ar: 'تقرير الإيرادات',      en: 'Revenue Report' },
+  rpt_costs:       { ar: 'تقرير التكاليف',       en: 'Costs Report' },
+  rpt_profit:      { ar: 'تقرير الأرباح',        en: 'Profit Report' },
+  rpt_equipment:   { ar: 'تقرير المعدات',        en: 'Equipment Report' },
+  rpt_weekly:      { ar: 'التقرير الأسبوعي',     en: 'Weekly Report' },
+  rpt_monthly:     { ar: 'التقرير الشهري',       en: 'Monthly Report' },
+  rpt_handover:    { ar: 'تقرير التسليم',        en: 'Handover Report' },
+}
+
+// ─── Combined (for legacy / create-user-dialog) ─────────────────────
+export const TOGGLABLE_PERMISSIONS = [
+  ...MODULE_PERMISSIONS,
+  ...REPORT_PERMISSIONS,
 ] as const
 
 export type TogglablePermission = typeof TOGGLABLE_PERMISSIONS[number]
 
 export const TOGGLABLE_PERMISSION_LABELS: Record<string, { ar: string; en: string }> = {
-  drive_lines: { ar: 'خطوط الحفر', en: 'Drive Lines' },
-  daily_reports: { ar: 'التقارير اليومية', en: 'Daily Reports' },
-  safety: { ar: 'السلامة', en: 'Safety' },
-  equipment: { ar: 'المعدات', en: 'Equipment' },
-  costs: { ar: 'التكاليف والإيرادات', en: 'Costs & Revenue' },
-  finishings: { ar: 'التشطيبات', en: 'Finishings' },
-  performance: { ar: 'تقييم الأداء', en: 'Performance' },
+  ...MODULE_PERMISSION_LABELS,
+  ...REPORT_LABELS,
 }
 
-// Role permissions matrix (base permissions per role)
+// ─── Role permissions matrix (base permissions per role) ─────────────
 export const ROLE_PERMISSIONS: Record<string, string[]> = {
   top_management: ['*'],
   project_manager: [
@@ -71,8 +103,7 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
 }
 
 export function hasPermission(role: string, resource: string, userPermissions?: Record<string, boolean> | null): boolean {
-  // If resource is non-togglable (dashboard, projects, reports, notifications), use role only
-  const isTogglable = (TOGGLABLE_PERMISSIONS as readonly string[]).includes(resource)
+  const isTogglable = (MODULE_PERMISSIONS as readonly string[]).includes(resource)
 
   if (isTogglable && userPermissions && typeof userPermissions[resource] === 'boolean') {
     return userPermissions[resource]
