@@ -35,7 +35,6 @@ export async function verifyCredentials(email: string, password: string): Promis
       role: user.role,
       phone: user.phone,
       language: user.language,
-      permissions: user.permissions ? JSON.parse(JSON.stringify(user.permissions)) : null,
     }
   } catch (error) {
     console.error('verifyCredentials error:', error)
@@ -68,10 +67,29 @@ export async function createSession(user: SessionUser): Promise<string> {
   }
 }
 
+// ==================== Session Cache ====================
+// Caches verified user for 30 seconds to avoid a DB query on EVERY API call
+const sessionCache = new Map<string, { user: SessionUser | null; ts: number }>()
+const SESSION_CACHE_TTL = 30_000
+
+// Clean expired entries every 5 minutes to prevent memory leaks
+setInterval(() => {
+  const now = Date.now()
+  for (const [key, entry] of sessionCache) {
+    if (now - entry.ts > SESSION_CACHE_TTL) sessionCache.delete(key)
+  }
+}, 300_000)
+
 export async function getSessionUser(token: string | undefined): Promise<SessionUser | null> {
   if (!token) return null
   if (typeof token !== 'string') return null
   if (token.trim().length === 0) return null
+
+  // Check cache first
+  const cached = sessionCache.get(token)
+  if (cached && Date.now() - cached.ts < SESSION_CACHE_TTL) {
+    return cached.user
+  }
 
   try {
     const { payload } = await jwtVerify(token, getSecretKey(), {
@@ -83,9 +101,12 @@ export async function getSessionUser(token: string | undefined): Promise<Session
     if (!userId) return null
 
     const user = await db.user.findUnique({ where: { id: userId } })
-    if (!user || !user.active) return null
+    if (!user || !user.active) {
+      sessionCache.set(token, { user: null, ts: Date.now() })
+      return null
+    }
 
-    return {
+    const sessionUser: SessionUser = {
       id: user.id,
       email: user.email,
       name: user.name,
@@ -93,8 +114,10 @@ export async function getSessionUser(token: string | undefined): Promise<Session
       role: user.role,
       phone: user.phone,
       language: user.language,
-      permissions: user.permissions ? JSON.parse(JSON.stringify(user.permissions)) : null,
     }
+
+    sessionCache.set(token, { user: sessionUser, ts: Date.now() })
+    return sessionUser
   } catch (error) {
     return null
   }
