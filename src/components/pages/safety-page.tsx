@@ -6,12 +6,12 @@ import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Checkbox } from '@/components/ui/checkbox'
-import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter } from '@/components/ui/sheet'
-import { ShieldCheck, ShieldAlert, AlertTriangle, CheckCircle2, XCircle, Calendar, Plus, Loader2, Save } from 'lucide-react'
+import { Textarea } from '@/components/ui/textarea'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet'
+import { ShieldCheck, ShieldAlert, AlertTriangle, CheckCircle2, XCircle, Calendar, Plus, Loader2 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
 import { toast } from 'sonner'
@@ -24,26 +24,27 @@ const incidentLabels: Record<string, { ar: string; en: string; color: string }> 
 }
 
 const checklistItems = [
-  { key: 'ppeAvailable', ar: 'معدات الوقاية متوفرة', en: 'PPE Available' },
-  { key: 'helmetCheck', ar: 'خوذات الرأس', en: 'Helmets' },
+  { key: 'ppeAvailable', ar: 'معدات الحماية متوفرة', en: 'PPE Available' },
+  { key: 'helmetCheck', ar: 'خوذات السلامة', en: 'Safety Helmets' },
   { key: 'bootsCheck', ar: 'أحذية السلامة', en: 'Safety Boots' },
   { key: 'glovesCheck', ar: 'القفازات', en: 'Gloves' },
   { key: 'glassesCheck', ar: 'النظارات الواقية', en: 'Safety Glasses' },
-  { key: 'workAreaCheck', ar: 'منطقة العمل منظمة', en: 'Work Area Organized' },
+  { key: 'workAreaCheck', ar: 'تنظيم منطقة العمل', en: 'Work Area Organized' },
   { key: 'barriersCheck', ar: 'الحواجز والتحذيرات', en: 'Barriers & Warnings' },
   { key: 'shaftCheck', ar: 'سلامة البئر', en: 'Shaft Safety' },
   { key: 'ventilationCheck', ar: 'التهوية', en: 'Ventilation' },
-  { key: 'electricalCheck', ar: 'التوصيلات الكهربائية', en: 'Electrical Connections' },
-  { key: 'craneCheck', ar: 'الرافعة', en: 'Crane' },
-  { key: 'hydraulicCheck', ar: 'النظام الهيدروليكي', en: 'Hydraulic System' },
+  { key: 'electricalCheck', ar: 'السلامة الكهربائية', en: 'Electrical Safety' },
+  { key: 'craneCheck', ar: 'سلامة الرافعة', en: 'Crane Safety' },
+  { key: 'hydraulicCheck', ar: 'سلامة النظام الهيدروليكي', en: 'Hydraulic Safety' },
   { key: 'fireExtinguishers', ar: 'طفايات الحريق', en: 'Fire Extinguishers' },
   { key: 'workPermit', ar: 'تصريح العمل', en: 'Work Permit' },
-  { key: 'toolboxTalk', ar: 'إحاطة السلامة', en: 'Toolbox Talk' },
+  { key: 'toolboxTalk', ar: 'Toolbox Talk', en: 'Toolbox Talk' },
 ]
 
 const emptyForm = {
   projectId: '',
   reportDate: new Date().toISOString().split('T')[0],
+  signedBy: '',
   ppeAvailable: false,
   helmetCheck: false,
   bootsCheck: false,
@@ -72,7 +73,7 @@ export default function SafetyPage() {
   const [selectedProject, setSelectedProject] = useState<string>('all')
   const [sheetOpen, setSheetOpen] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [form, setForm] = useState(emptyForm)
+  const [form, setForm] = useState({ ...emptyForm })
   const language = useAppStore((s) => s.language)
   const token = useAppStore((s) => s.token)
   const isRtl = language === 'ar'
@@ -84,88 +85,78 @@ export default function SafetyPage() {
       if (selectedProject !== 'all') params.set('projectId', selectedProject)
       params.set('limit', '100')
       const res = await authedFetch('/api/daily-reports?' + params.toString())
+      if (!res.ok) throw new Error('Failed to fetch')
       const data = await res.json()
       const withSafety = (data.reports || []).filter((r: any) => r.safety)
       setReports(withSafety)
-    } catch (e) {
-      console.error(e)
+    } catch {
+      toast.error(isRtl ? 'خطأ في تحميل التقارير' : 'Failed to load reports')
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }
 
   useEffect(() => {
     if (!token) return
     fetchReports()
-    authedFetch('/api/projects/list').then(r => r.json()).then(d => setProjects(d.projects || [])).catch(() => {})
+    authedFetch('/api/projects/list').then(r => r.json()).then(d => setProjects(d.projects || []))
   }, [selectedProject, token])
 
-  function toggleCheck(key: string) {
-    setForm(prev => ({ ...prev, [key]: !prev[key as keyof typeof prev] }))
-  }
-
   async function handleSave() {
-    if (!form.projectId) {
-      toast.error(isRtl ? 'يرجى اختيار المشروع' : 'Please select a project')
+    if (!form.projectId || !form.reportDate || !form.signedBy) {
+      toast.error(isRtl ? 'يرجى ملء جميع الحقول المطلوبة' : 'Please fill all required fields')
       return
     }
 
     setSaving(true)
     try {
-      // 1) Find or create a daily report for this project + date
-      const dateStr = form.reportDate
-      const todayStart = new Date(dateStr + 'T00:00:00.000Z')
-      const todayEnd = new Date(dateStr + 'T23:59:59.999Z')
-
-      // Search for existing daily report
-      const searchParams = new URLSearchParams({
-        projectId: form.projectId,
-        limit: '100',
-      })
-      const listRes = await authedFetch('/api/daily-reports?' + searchParams.toString())
-      const listData = await listRes.json()
-      const existing = (listData.reports || []).find((r: any) => {
-        const d = new Date(r.reportDate)
-        return d >= todayStart && d <= todayEnd
-      })
-
-      let reportId = existing?.id
+      // Find or create a daily report for this project+date
+      const reportsRes = await authedFetch(`/api/daily-reports?projectId=${form.projectId}&date=${form.reportDate}&limit=1`)
+      const reportsData = await reportsRes.json()
+      let reportId = reportsData.reports?.[0]?.id
 
       if (!reportId) {
-        // Create a minimal daily report (draft)
+        // Create a minimal daily report
         const createRes = await authedFetch('/api/daily-reports', {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             projectId: form.projectId,
-            reportDate: dateStr,
+            reportDate: form.reportDate,
             status: 'draft',
           }),
         })
+        if (!createRes.ok) throw new Error('Failed to create report')
         const createData = await createRes.json()
-        if (!createRes.ok || !createData.report) {
-          throw new Error(createData.error || createData.details || (isRtl ? 'فشل إنشاء التقرير اليومي' : 'Failed to create daily report'))
-        }
-        reportId = createData.report.id
+        reportId = createData.report?.id
       }
 
-      // 2) Save safety report
+      if (!reportId) throw new Error('No report ID')
+
+      // Create safety report
+      const safetyData: any = { signedBy: form.signedBy }
+      for (const item of checklistItems) {
+        safetyData[item.key] = form[item.key as keyof typeof form]
+      }
+      safetyData.observations = form.observations || null
+      safetyData.violations = form.violations || null
+      safetyData.incidentType = form.incidentType
+      safetyData.incidentDescription = form.incidentType !== 'none' ? form.incidentDescription || null : null
+
       const safetyRes = await authedFetch(`/api/daily-reports/${reportId}/safety`, {
         method: 'POST',
-        body: JSON.stringify({
-          ...form,
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(safetyData),
       })
-      const safetyData = await safetyRes.json()
-      if (!safetyRes.ok) {
-        throw new Error(safetyData.error || (isRtl ? 'فشل حفظ تقرير السلامة' : 'Failed to save safety report'))
-      }
 
-      toast.success(isRtl ? 'تم حفظ تقرير السلامة بنجاح' : 'Safety report saved successfully')
+      if (!safetyRes.ok) throw new Error('Failed to save safety report')
+
+      toast.success(isRtl ? 'تم حفظ تقرير السلامة' : 'Safety report saved')
       setSheetOpen(false)
-      setForm(emptyForm)
+      setForm({ ...emptyForm, reportDate: new Date().toISOString().split('T')[0] })
       fetchReports()
     } catch (e: any) {
-      console.error(e)
-      toast.error(e.message || (isRtl ? 'حدث خطأ' : 'An error occurred'))
+      toast.error(e.message || (isRtl ? 'حدث خطأ' : 'Error'))
     } finally {
       setSaving(false)
     }
@@ -176,17 +167,15 @@ export default function SafetyPage() {
   const incidents = reports.filter(r => r.safety?.incidentType && r.safety.incidentType !== 'none').length
   const avgCompliance = total > 0
     ? reports.reduce((sum, r) => {
-        const checks = [
-          r.safety?.ppeAvailable, r.safety?.helmetCheck, r.safety?.bootsCheck,
-          r.safety?.glovesCheck, r.safety?.glassesCheck, r.safety?.workAreaCheck,
-          r.safety?.barriersCheck, r.safety?.shaftCheck, r.safety?.ventilationCheck,
-          r.safety?.electricalCheck, r.safety?.craneCheck, r.safety?.hydraulicCheck,
-          r.safety?.fireExtinguishers, r.safety?.workPermit, r.safety?.toolboxTalk,
-        ]
+        const checks = checklistItems.map(item => r.safety?.[item.key as keyof any])
         const passed = checks.filter(Boolean).length
         return sum + (passed / 15) * 100
       }, 0) / total
     : 0
+
+  // Form compliance
+  const formPassed = checklistItems.filter(item => form[item.key as keyof typeof form]).length
+  const formCompliance = (formPassed / 15) * 100
 
   return (
     <div className="space-y-4">
@@ -197,8 +186,11 @@ export default function SafetyPage() {
             {isRtl ? 'تقارير السلامة اليومية والمخاطر' : 'Daily safety reports and hazards'}
           </p>
         </div>
-        <Button onClick={() => { setForm({ ...emptyForm, reportDate: new Date().toISOString().split('T')[0] }); setSheetOpen(true) }}>
-          <Plus className="h-4 w-4" />
+        <Button onClick={() => {
+          setForm({ ...emptyForm, reportDate: new Date().toISOString().split('T')[0] })
+          setSheetOpen(true)
+        }}>
+          <Plus className="h-4 w-4 ml-2" />
           {isRtl ? 'إضافة تقرير سلامة' : 'Add Safety Report'}
         </Button>
       </div>
@@ -270,13 +262,7 @@ export default function SafetyPage() {
       ) : (
         <div className="space-y-3">
           {reports.map((r) => {
-            const checks = [
-              r.safety.ppeAvailable, r.safety.helmetCheck, r.safety.bootsCheck,
-              r.safety.glovesCheck, r.safety.glassesCheck, r.safety.workAreaCheck,
-              r.safety.barriersCheck, r.safety.shaftCheck, r.safety.ventilationCheck,
-              r.safety.electricalCheck, r.safety.craneCheck, r.safety.hydraulicCheck,
-              r.safety.fireExtinguishers, r.safety.workPermit, r.safety.toolboxTalk,
-            ]
+            const checks = checklistItems.map(item => r.safety?.[item.key as keyof any])
             const passed = checks.filter(Boolean).length
             const compliance = (passed / 15) * 100
             const incident = incidentLabels[r.safety.incidentType || 'none']
@@ -336,52 +322,64 @@ export default function SafetyPage() {
 
       {/* Add Safety Report Sheet */}
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
-        <SheetContent side={isRtl ? 'left' : 'right'} className="sm:max-w-lg overflow-y-auto">
+        <SheetContent side={isRtl ? 'left' : 'right'} className="overflow-y-auto w-full sm:max-w-lg">
           <SheetHeader>
-            <SheetTitle>{isRtl ? 'إضافة تقرير سلامة' : 'Add Safety Report'}</SheetTitle>
+            <SheetTitle>{isRtl ? 'إضافة تقرير سلامة جديد' : 'New Safety Report'}</SheetTitle>
             <SheetDescription>
-              {isRtl ? 'ملء قائمة فحص السلامة اليومية' : 'Fill the daily safety checklist'}
+              {isRtl ? 'ملء بيانات تقرير السلامة اليومي' : 'Fill in the daily safety report details'}
             </SheetDescription>
           </SheetHeader>
 
-          <div className="px-4 space-y-5 pb-4">
-            {/* Project selector */}
-            <div className="space-y-2">
-              <Label className="text-sm font-medium">{isRtl ? 'المشروع' : 'Project'} *</Label>
-              <Select value={form.projectId} onValueChange={(v) => setForm(p => ({ ...p, projectId: v }))}>
-                <SelectTrigger>
-                  <SelectValue placeholder={isRtl ? 'اختر المشروع' : 'Select project'} />
-                </SelectTrigger>
-                <SelectContent>
-                  {projects.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          <div className="mt-6 space-y-5">
+            {/* Project & Date */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>{isRtl ? 'المشروع' : 'Project'} *</Label>
+                <Select value={form.projectId} onValueChange={(v) => setForm({ ...form, projectId: v })}>
+                  <SelectTrigger><SelectValue placeholder={isRtl ? 'اختر' : 'Select'} /></SelectTrigger>
+                  <SelectContent>
+                    {projects.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>{isRtl ? 'التاريخ' : 'Date'} *</Label>
+                <Input type="date" value={form.reportDate} onChange={(e) => setForm({ ...form, reportDate: e.target.value })} />
+              </div>
             </div>
 
-            {/* Date */}
-            <div className="space-y-2">
-              <Label className="text-sm font-medium">{isRtl ? 'التاريخ' : 'Date'}</Label>
+            {/* Signed by */}
+            <div className="space-y-1.5">
+              <Label>{isRtl ? 'موقّع من' : 'Signed by'} *</Label>
               <Input
-                type="date"
-                value={form.reportDate}
-                onChange={(e) => setForm(p => ({ ...p, reportDate: e.target.value }))}
+                value={form.signedBy}
+                onChange={(e) => setForm({ ...form, signedBy: e.target.value })}
+                placeholder={isRtl ? 'اسم المسؤول' : 'Officer name'}
               />
             </div>
 
             {/* Checklist */}
             <div className="space-y-2">
-              <Label className="text-sm font-medium">{isRtl ? 'قائمة الفحص' : 'Checklist'}</Label>
-              <div className="grid grid-cols-1 gap-2">
+              <Label className="text-base font-semibold">
+                {isRtl ? 'قائمة التحقق' : 'Safety Checklist'}
+              </Label>
+              <div className="flex items-center gap-2 mb-2">
+                <Progress value={formCompliance} className="h-2 flex-1" />
+                <span className="text-sm font-medium">{formPassed}/15</span>
+              </div>
+              <div className="grid grid-cols-1 gap-1.5">
                 {checklistItems.map((item) => (
                   <label
                     key={item.key}
-                    className="flex items-center gap-3 p-2.5 rounded-lg border hover:bg-muted/50 cursor-pointer transition"
+                    className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 cursor-pointer transition"
                   >
                     <Checkbox
                       checked={form[item.key as keyof typeof form] as boolean}
-                      onCheckedChange={() => toggleCheck(item.key)}
+                      onCheckedChange={(checked) =>
+                        setForm({ ...form, [item.key]: !!checked })
+                      }
                     />
                     <span className="text-sm">{isRtl ? item.ar : item.en}</span>
                   </label>
@@ -389,83 +387,64 @@ export default function SafetyPage() {
               </div>
             </div>
 
-            {/* Observations */}
-            <div className="space-y-2">
-              <Label className="text-sm font-medium">{isRtl ? 'الملاحظات' : 'Observations'}</Label>
+            {/* Observations & Violations */}
+            <div className="space-y-1.5">
+              <Label>{isRtl ? 'الملاحظات' : 'Observations'}</Label>
               <Textarea
                 value={form.observations}
-                onChange={(e) => setForm(p => ({ ...p, observations: e.target.value }))}
-                placeholder={isRtl ? 'أضف ملاحظاتك...' : 'Add your observations...'}
+                onChange={(e) => setForm({ ...form, observations: e.target.value })}
                 rows={3}
+                placeholder={isRtl ? 'ملاحظات عامة...' : 'General observations...'}
               />
             </div>
 
-            {/* Violations */}
-            <div className="space-y-2">
-              <Label className="text-sm font-medium">{isRtl ? 'المخالفات' : 'Violations'}</Label>
+            <div className="space-y-1.5">
+              <Label>{isRtl ? 'المخالفات' : 'Violations'}</Label>
               <Textarea
                 value={form.violations}
-                onChange={(e) => setForm(p => ({ ...p, violations: e.target.value }))}
-                placeholder={isRtl ? 'سجّل أي مخالفات...' : 'Record any violations...'}
+                onChange={(e) => setForm({ ...form, violations: e.target.value })}
                 rows={2}
+                placeholder={isRtl ? 'أي مخالفات مرصودة...' : 'Any violations noted...'}
               />
             </div>
 
             {/* Incident type */}
-            <div className="space-y-2">
-              <Label className="text-sm font-medium">{isRtl ? 'نوع الحادث' : 'Incident Type'}</Label>
-              <Select value={form.incidentType} onValueChange={(v) => setForm(p => ({ ...p, incidentType: v }))}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
+            <div className="space-y-1.5">
+              <Label>{isRtl ? 'نوع الحادث' : 'Incident Type'}</Label>
+              <Select value={form.incidentType} onValueChange={(v) => setForm({ ...form, incidentType: v })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">{isRtl ? 'لا يوجد' : 'None'}</SelectItem>
-                  <SelectItem value="near_miss">Near Miss</SelectItem>
-                  <SelectItem value="incident">{isRtl ? 'حادث' : 'Incident'}</SelectItem>
-                  <SelectItem value="accident">{isRtl ? 'إصابة' : 'Accident'}</SelectItem>
+                  {Object.entries(incidentLabels).map(([key, val]) => (
+                    <SelectItem key={key} value={key}>{isRtl ? val.ar : val.en}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
 
-            {/* Incident description */}
             {form.incidentType !== 'none' && (
-              <div className="space-y-2">
-                <Label className="text-sm font-medium">{isRtl ? 'وصف الحادث' : 'Incident Description'}</Label>
+              <div className="space-y-1.5">
+                <Label>{isRtl ? 'وصف الحادث' : 'Incident Description'}</Label>
                 <Textarea
                   value={form.incidentDescription}
-                  onChange={(e) => setForm(p => ({ ...p, incidentDescription: e.target.value }))}
-                  placeholder={isRtl ? 'صف الحادث بالتفصيل...' : 'Describe the incident in detail...'}
+                  onChange={(e) => setForm({ ...form, incidentDescription: e.target.value })}
                   rows={3}
+                  placeholder={isRtl ? 'وصف تفصيلي للحادث...' : 'Detailed incident description...'}
                 />
               </div>
             )}
 
-            {/* Compliance summary */}
-            <div className="bg-muted/50 rounded-lg p-3">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium">{isRtl ? 'نسبة الالتزام' : 'Compliance'}</span>
-                <span className="text-sm font-bold">
-                  {checklistItems.filter(i => form[i.key as keyof typeof form]).length}/15
-                  {' '}({((checklistItems.filter(i => form[i.key as keyof typeof form]).length / 15) * 100).toFixed(0)}%)
-                </span>
-              </div>
-              <Progress
-                value={(checklistItems.filter(i => form[i.key as keyof typeof form]).length / 15) * 100}
-                className="h-2"
-              />
-            </div>
+            {/* Save button */}
+            <Button onClick={handleSave} disabled={saving} className="w-full h-11">
+              {saving ? (
+                <Loader2 className="h-5 w-5 animate-spin" />
+              ) : (
+                <>
+                  <ShieldCheck className="h-4 w-4 ml-2" />
+                  {isRtl ? 'حفظ تقرير السلامة' : 'Save Safety Report'}
+                </>
+              )}
+            </Button>
           </div>
-
-          <SheetFooter>
-            <Button variant="outline" onClick={() => setSheetOpen(false)} disabled={saving}>
-              {isRtl ? 'إلغاء' : 'Cancel'}
-            </Button>
-            <Button onClick={handleSave} disabled={saving || !form.projectId}>
-              {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-              {!saving && <Save className="h-4 w-4" />}
-              {saving ? (isRtl ? 'جاري الحفظ...' : 'Saving...') : (isRtl ? 'حفظ التقرير' : 'Save Report')}
-            </Button>
-          </SheetFooter>
         </SheetContent>
       </Sheet>
     </div>
