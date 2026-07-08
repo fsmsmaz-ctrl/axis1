@@ -167,12 +167,37 @@ export default function UsersPage() {
   }
 
   async function handleSave() {
-    if (!(form.name || '').trim()) { toast.error(isRtl ? 'الاسم مطلوب' : 'Name is required'); return }
-    if (!(form.email || '').trim()) { toast.error(isRtl ? 'البريد الإلكتروني مطلوب' : 'Email is required'); return }
-    if (!editUser && !(form.password || '').trim()) { toast.error(isRtl ? 'كلمة المرور مطلوبة' : 'Password is required'); return }
-    if (!form.role) { toast.error(isRtl ? 'يجب اختيار نوع الحساب' : 'Role is required'); return }
+  async function handleSave() {
     setSaving(true)
     try {
+      const body: any = {
+        name: (form.name || '').trim(),
+        nameEn: (form.nameEn || '').trim() || null,
+        email: (form.email || '').trim(),
+        phone: (form.phone || '').trim() || null,
+        role: form.role,
+        language: form.language || 'ar',
+        active: form.active !== false,
+        permissions: form.permissions || [],
+      }
+      if (form.password && form.password.trim()) body.password = form.password.trim()
+      const res = await authedFetch(editUser ? `/api/users/${editUser.id}` : '/api/users', {
+        method: editUser ? 'PUT' : 'POST', body: JSON.stringify(body),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        toast.success(editUser ? t.userUpdated : t.userCreated)
+        setDialogOpen(false)
+        fetchUsers()
+      } else {
+        toast.error(data.message || t.error)
+      }
+    } catch {
+      toast.error(t.connError)
+    } finally {
+      setSaving(false)
+    }
+  }
       const body: any = {
         name: form.name, nameEn: form.nameEn || null, email: form.email,
         phone: form.phone || null, role: form.role, language: form.language,
