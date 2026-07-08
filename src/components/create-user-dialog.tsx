@@ -14,8 +14,7 @@ import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
 import { toast } from 'sonner'
 import { UserPlus, ShieldAlert, Trash2, Edit3, Save, ArrowLeft, Users, FolderKanban, FileBarChart } from 'lucide-react'
-import { TOGGLABLE_PERMISSION_LABELS, MODULE_PERMISSIONS, REPORT_PERMISSIONS, ROLE_PERMISSIONS } from '@/lib/auth'
-
+import { TOGGLABLE_PERMISSION_LABELS, REPORT_LABELS, MODULE_PERMISSIONS, REPORT_PERMISSIONS, ROLE_PERMISSIONS } from '@/lib/auth'
 const VALID_ROLES = [
   { value: 'top_management', ar: 'الإدارة العليا', en: 'Top Management' },
   { value: 'project_manager', ar: 'مدير المشروع', en: 'Project Manager' },
@@ -209,7 +208,7 @@ export default function CreateUserDialog({ open, onOpenChange }: CreateUserDialo
 
   function getEffectivePermission(permKey: string, customPerms: Record<string, boolean>, role: string): boolean {
     if (customPerms && typeof customPerms[permKey] === 'boolean') return customPerms[permKey]
-    if (permKey.startsWith('report_')) {
+    if ((REPORT_PERMISSIONS as readonly string[]).includes(permKey)) {
       const perms = ROLE_PERMISSIONS[role] || []
       return perms.includes('*') || perms.includes('reports')
     }
@@ -236,7 +235,7 @@ export default function CreateUserDialog({ open, onOpenChange }: CreateUserDialo
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           {groupKeys.map((key) => {
-            const labels = TOGGLABLE_PERMISSION_LABELS[key]
+            const labels = iconType === 'report' ? REPORT_LABELS[key] : TOGGLABLE_PERMISSION_LABELS[key]
             if (!labels) return null
             const isCustom = customPerms && typeof customPerms[key] === 'boolean'
             const effective = getEffectivePermission(key, customPerms, role)
