@@ -3,50 +3,80 @@ import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import bcrypt from 'bcryptjs'
 
-export async function PATCH(req: NextRequest) {
-  const user = await getAuthUser(req)
+const ADMIN_EMAIL = 'admin@axis.om'
+const VALID_ROLES = ['top_management', 'project_manager', 'site_engineer', 'hse_officer', 'foreman', 'accountant']
+const TOGGLABLE_PERMISSIONS = ['drive_lines', 'daily_reports', 'safety', 'equipment', 'costs', 'finishings', 'performance']
 
-  if (!user) {
-    return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
-  }
-
-  if (user.email.toLowerCase().trim() !== 'admin@axis.om') {
-    return NextResponse.json({ error: 'forbidden', message: 'فقط المدير يمكنه التعديل' }, { status: 403 })
-  }
-
+export async function POST(req: NextRequest) {
   try {
+    const authUser = await getAuthUser(req)
+    if (!authUser || authUser.email.toLowerCase().trim() !== ADMIN_EMAIL) {
+      return NextResponse.json({ error: 'unauthorized' }, { status: 403 })
+    }
+
     const body = await req.json()
-    const { userId, name, nameEn, role, phone, password, permissions } = body
+    const { name, nameEn, email, phone, role, password, permissions } = body
 
-    if (!userId) {
-      return NextResponse.json({ error: 'missing_fields', message: 'معرف المستخدم مطلوب' }, { status: 400 })
+    if (!name?.trim() || !email?.trim() || !password?.trim() || !role) {
+      return NextResponse.json({ error: 'Name, email, password and role are required' }, { status: 400 })
     }
 
-    const targetUser = await db.user.findUnique({ where: { id: userId } })
-    if (!targetUser) {
-      return NextResponse.json({ error: 'not_found', message: 'المستخدم غير موجود' }, { status: 404 })
+    if (!VALID_ROLES.includes(role)) {
+      return NextResponse.json({ error: 'Invalid role' }, { status: 400 })
     }
 
-    const updateData: any = {}
-    if (name !== undefined) updateData.name = name
-    if (nameEn !== undefined) updateData.nameEn = nameEn || null
-    if (role !== undefined) updateData.role = role
-    if (phone !== undefined) updateData.phone = phone || null
-    if (permissions !== undefined) updateData.permissions = permissions
-
-    if (password && password.trim()) {
-      updateData.password = await bcrypt.hash(password.trim(), 12)
+    // Check if email already exists
+    const existing = await db.user.findUnique({ where: { email: email.toLowerCase().trim() } })
+    if (existing) {
+      return NextResponse.json({ error: 'Email already exists', message: 'البريد الإلكتروني مستخدم بالفعل' }, { status: 409 })
     }
 
-    const updated = await db.user.update({
-      where: { id: userId },
-      data: updateData,
-      select: { id: true, email: true, name: true, nameEn: true, phone: true, role: true, active: true, language: true, permissions: true, createdAt: true },
+    // Check max users
+    const userCount = await db.user.count()
+    if (userCount >= 50) {
+      return NextResponse.json({ error: 'Max users reached', message: 'تم بلوغ الحد الأقصى للمستخدمين (50)' }, { status: 400 })
+    }
+
+    // Clean permissions
+    const cleanPerms: Record<string, boolean> = {}
+    if (permissions) {
+      for (const key of TOGGLABLE_PERMISSIONS) {
+        if (typeof permissions[key] === 'boolean') {
+          cleanPerms[key] = permissions[key]
+        }
+      }
+    }
+
+    const passwordHash = await bcrypt.hash(password.trim(), 12)
+
+    const user = await db.user.create({
+      data: {
+        email: email.toLowerCase().trim(),
+        password: passwordHash,
+        name: name.trim(),
+        nameEn: nameEn?.trim() || null,
+        phone: phone?.trim() || null,
+        role,
+        language: 'ar',
+        active: true,
+        permissions: Object.keys(cleanPerms).length > 0 ? cleanPerms : undefined,
+      },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        nameEn: true,
+        role: true,
+        phone: true,
+        permissions: true,
+        active: true,
+        createdAt: true,
+      },
     })
 
-    return NextResponse.json({ user: updated, success: true })
-  } catch (error: any) {
-    console.error('User update error:', error)
-    return NextResponse.json({ error: 'server_error', message: 'فشل تحديث المستخدم' }, { status: 500 })
+    return NextResponse.json({ user, message: 'User created successfully' })
+  } catch (error) {
+    console.error('Register user error:', error)
+    return NextResponse.json({ error: 'Failed to create user' }, { status: 500 })
   }
 }
