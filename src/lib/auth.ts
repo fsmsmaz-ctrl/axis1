@@ -103,9 +103,13 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
  * For togglable resources: custom permissions override role defaults.
  * For non-togglable resources (notifications): role only.
  */
-export function hasPermission(role: string, resource: string, userPermissions?: Record<string, boolean> | null): boolean {
-  // If resource is togglable, check custom permissions first
-  const isTogglable = (TOGGLABLE_PERMISSIONS as readonly string[]).includes(resource)
+export function hasPermission(role: string, resource: string, customPermissions?: string[]): boolean {
+  if (customPermissions && customPermissions.length > 0) {
+    return customPermissions.includes(resource)
+  }
+  const perms = ROLE_PERMISSIONS[role] || []
+  return perms.includes('*') || perms.includes(resource)
+}
 
   if (isTogglable && userPermissions && typeof userPermissions[resource] === 'boolean') {
     return userPermissions[resource]
