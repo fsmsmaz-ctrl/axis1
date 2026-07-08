@@ -1,10 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo, useCallback } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { AlertTriangle, Bell, CheckCircle2, Info, XCircle, Trash2 } from 'lucide-react'
+import { AlertTriangle, Bell, CheckCircle2, Info, XCircle } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
 import { toast } from 'sonner'
@@ -34,51 +34,37 @@ export default function NotificationsPage() {
   const token = useAppStore((s) => s.token)
   const isRtl = language === 'ar'
 
-  async function fetchNotifications() {
+  const fetchNotifications = useCallback(async () => {
     setLoading(true)
     const res = await authedFetch('/api/notifications')
     const data = await res.json()
     setNotifications(data.notifications || [])
     setLoading(false)
-  }
+  }, [])
 
   useEffect(() => {
     if (!token) return
     fetchNotifications()
-  }, [token])
+  }, [token, fetchNotifications])
 
   async function markAsRead(id: string) {
-    await fetch(`/api/notifications/${id}`, {
+    await authedFetch(`/api/notifications/${id}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ read: true }),
     })
     fetchNotifications()
   }
 
-  async function deleteNotification(id: string) {
-    const res = await authedFetch(`/api/notifications/${id}`, { method: 'DELETE' })
+  async function markAllAsRead() {
+    // Single batch request instead of N individual requests
+    const res = await authedFetch('/api/notifications/batch', { method: 'PUT' })
     if (res.ok) {
-      toast.success(isRtl ? 'تم حذف التنبيه' : 'Notification deleted')
+      toast.success(isRtl ? 'تم تعليم الكل كمقروء' : 'All marked as read')
       fetchNotifications()
     }
   }
 
-  async function markAllAsRead() {
-    await Promise.all(
-      notifications.filter(n => !n.read).map(n =>
-        fetch(`/api/notifications/${n.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ read: true }),
-        })
-      )
-    )
-    toast.success(isRtl ? 'تم تعليم الكل كمقروء' : 'All marked as read')
-    fetchNotifications()
-  }
-
-  const unreadCount = notifications.filter(n => !n.read).length
+  const unreadCount = useMemo(() => notifications.filter(n => !n.read).length, [notifications])
 
   return (
     <div className="space-y-4">
@@ -147,16 +133,11 @@ export default function NotificationsPage() {
                         {new Date(n.createdAt).toLocaleString(isRtl ? 'ar-EG' : 'en-US')}
                       </p>
                     </div>
-                    <div className="flex gap-1 shrink-0">
-                      {!n.read && (
-                        <Button variant="ghost" size="sm" onClick={() => markAsRead(n.id)}>
-                          <CheckCircle2 className="h-4 w-4" />
-                        </Button>
-                      )}
-                      <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => deleteNotification(n.id)}>
-                        <Trash2 className="h-4 w-4" />
+                    {!n.read && (
+                      <Button variant="ghost" size="sm" onClick={() => markAsRead(n.id)}>
+                        <CheckCircle2 className="h-4 w-4" />
                       </Button>
-                    </div>
+                    )}
                   </div>
                 </CardContent>
               </Card>
