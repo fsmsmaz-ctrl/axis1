@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState } from 'react'
 import { useAppStore } from '@/lib/store'
 import { hasPermission, type SessionUser } from '@/lib/auth'
 import { clearStoredToken, authedFetch } from '@/lib/api-client'
@@ -18,8 +18,8 @@ import {
 import {
   LayoutDashboard, FolderKanban, GitBranch, FileText, ShieldCheck,
   Wrench, DollarSign, CheckCircle2, FileBarChart, TrendingUp,
-  Bell, HardHat, LogOut, Menu, X, Globe, User, Settings,
-  AlertTriangle, ChevronLeft, UserPlus
+  Bell, LogOut, Menu, X, Globe, User, Settings,
+  AlertTriangle, ChevronLeft
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -60,6 +60,7 @@ const roleLabels: Record<string, { ar: string; en: string }> = {
   accountant: { ar: 'المحاسب', en: 'Accountant' },
 }
 
+// Dynamically import pages to avoid SSR issues
 const DashboardPage = dynamic(() => import('@/components/pages/dashboard-page'), { ssr: false })
 const ProjectsPage = dynamic(() => import('@/components/pages/projects-page'), { ssr: false })
 const DriveLinesPage = dynamic(() => import('@/components/pages/drive-lines-page'), { ssr: false })
@@ -71,7 +72,6 @@ const FinishingsPage = dynamic(() => import('@/components/pages/finishings-page'
 const PerformancePage = dynamic(() => import('@/components/pages/performance-page'), { ssr: false })
 const ReportsPage = dynamic(() => import('@/components/pages/reports-page'), { ssr: false })
 const NotificationsPage = dynamic(() => import('@/components/pages/notifications-page'), { ssr: false })
-const CreateUserDialog = dynamic(() => import('@/components/create-user-dialog'), { ssr: false })
 
 export default function AppShell() {
   const user = useAppStore((s) => s.user)
@@ -83,18 +83,17 @@ export default function AppShell() {
   const setSidebarOpen = useAppStore((s) => s.setSidebarOpen)
   const [currentPage, setCurrentPage] = useState<PageId>('dashboard')
   const [notifications, setNotifications] = useState<any[]>([])
-  const [userDialogOpen, setUserDialogOpen] = useState(false)
 
-  const notifFetched = useRef(false)
   useEffect(() => {
-    if (!user || !token || notifFetched.current) return
-    notifFetched.current = true
+    if (!user || !token) return
+    // Fetch notifications count - only when token is available
     authedFetch('/api/notifications?unreadOnly=true')
       .then(r => r.json())
       .then(data => setNotifications(data.notifications || []))
       .catch(() => {})
-  }, [user, token])
+  }, [user, token, currentPage])
 
+  // Sync document direction and language when language changes
   useEffect(() => {
     if (typeof document !== 'undefined') {
       document.documentElement.lang = language
@@ -105,7 +104,6 @@ export default function AppShell() {
   if (!user) return null
 
   const allowedItems = navItems.filter(item => hasPermission(user.role, item.resource))
-  const isAdmin = user.email.toLowerCase().trim() === 'admin@axis.om'
 
   async function handleLogout() {
     await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
@@ -142,6 +140,7 @@ export default function AppShell() {
 
   return (
     <div className="min-h-screen bg-muted/30" dir={isRtl ? 'rtl' : 'ltr'}>
+      {/* Mobile overlay */}
       {sidebarOpen && (
         <div
           className="fixed inset-0 bg-black/50 z-40 lg:hidden"
@@ -149,6 +148,7 @@ export default function AppShell() {
         />
       )}
 
+      {/* Sidebar */}
       <aside
         className={cn(
           "fixed top-0 bottom-0 z-50 w-72 bg-sidebar border-sidebar-border flex flex-col transition-transform duration-300 lg:translate-x-0",
@@ -156,11 +156,14 @@ export default function AppShell() {
           sidebarOpen ? "translate-x-0" : (isRtl ? "translate-x-full" : "-translate-x-full")
         )}
       >
+        {/* Logo */}
         <div className="p-5 border-b border-sidebar-border">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center text-primary-foreground">
-              <HardHat className="h-6 w-6" />
-            </div>
+            <img
+              src="/logo.png"
+              alt="AXIS Logo"
+              className="h-10 w-auto object-contain"
+            />
             <div>
               <h1 className="text-lg font-bold text-sidebar-foreground">AXIS</h1>
               <p className="text-xs text-muted-foreground">Pipe Jacking System</p>
@@ -176,6 +179,7 @@ export default function AppShell() {
           </div>
         </div>
 
+        {/* Nav items */}
         <nav className="flex-1 overflow-y-auto p-3 space-y-1">
           {allowedItems.map((item) => {
             const Icon = item.icon
@@ -210,6 +214,7 @@ export default function AppShell() {
           })}
         </nav>
 
+        {/* User card */}
         <div className="p-3 border-t border-sidebar-border">
           <div className="flex items-center gap-3 p-2 rounded-lg">
             <Avatar className="h-10 w-10 border-2 border-primary/20 shrink-0">
@@ -236,7 +241,9 @@ export default function AppShell() {
         </div>
       </aside>
 
+      {/* Main content - padding depends on language direction */}
       <div className={isRtl ? "lg:pr-72" : "lg:pl-72"}>
+        {/* Top header */}
         <header className="sticky top-0 z-30 h-16 bg-background/80 backdrop-blur border-b flex items-center px-4 lg:px-6 gap-3">
           <Button
             variant="ghost"
@@ -246,19 +253,6 @@ export default function AppShell() {
           >
             <Menu className="h-5 w-5" />
           </Button>
-
-          {isAdmin && (
-            <Button
-              onClick={() => setUserDialogOpen(true)}
-              size="sm"
-              className="gap-1.5 bg-primary hover:bg-primary/90"
-            >
-              <UserPlus className="h-4 w-4" />
-              <span className="hidden sm:inline text-sm">
-                {isRtl ? 'إضافة مستخدم' : 'Add User'}
-              </span>
-            </Button>
-          )}
 
           <div className="flex-1">
             <h2 className="text-lg font-semibold">
@@ -326,12 +320,9 @@ export default function AppShell() {
           </Avatar>
         </header>
 
+        {/* Page content */}
         <main className="p-4 lg:p-6 max-w-[1600px] mx-auto">
           {renderPage()}
-
-          {isAdmin && (
-            <CreateUserDialog open={userDialogOpen} onOpenChange={setUserDialogOpen} />
-          )}
         </main>
       </div>
     </div>
