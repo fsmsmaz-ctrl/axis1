@@ -81,3 +81,6 @@ export function hasPermission(role: string, resource: string, userPermissions?: 
   const perms = ROLE_PERMISSIONS[role] || []
   return perms.includes('*') || perms.includes(resource)
 }
+
+// Alias used by reports-page.tsx — keep for backward compatibility
+export const hasReportPermission = hasPermission
