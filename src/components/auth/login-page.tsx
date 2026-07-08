@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Loader2, HardHat, ArrowRight, Globe } from 'lucide-react'
+import { Loader2, ArrowRight, Globe } from 'lucide-react'
 import { toast } from 'sonner'
 
 const features = [
@@ -103,6 +103,7 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex flex-col lg:flex-row" dir={isRtl ? 'rtl' : 'ltr'}>
+      {/* Right side - Hero */}
       <div className="lg:flex-1 bg-gradient-to-br from-primary to-primary/80 text-primary-foreground p-8 lg:p-16 flex flex-col justify-between relative overflow-hidden">
         <div className="absolute inset-0 opacity-10">
           <div className="absolute top-10 right-10 w-72 h-72 rounded-full bg-white blur-3xl" />
@@ -111,9 +112,11 @@ export default function LoginPage() {
 
         <div className="relative z-10">
           <div className="flex items-center gap-3 mb-2">
-            <div className="w-12 h-12 rounded-xl bg-white/20 backdrop-blur flex items-center justify-center">
-              <HardHat className="h-7 w-7" />
-            </div>
+            <img
+              src="/logo.png"
+              alt="AXIS Logo"
+              className="h-12 w-auto object-contain"
+            />
             <div>
               <h1 className="text-3xl font-bold">AXIS</h1>
               <p className="text-sm text-primary-foreground/80">Pipe Jacking & Microtunneling</p>
@@ -143,6 +146,7 @@ export default function LoginPage() {
         </div>
       </div>
 
+      {/* Left side - Login form */}
       <div className="lg:flex-1 flex items-center justify-center p-6 lg:p-16 bg-background">
         <div className="w-full max-w-md">
           <div className="flex items-center justify-between mb-8">
