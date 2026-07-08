@@ -60,7 +60,10 @@ export function hasPermission(role: string, resource: string, customPermissions?
   return perms.includes('*') || perms.includes(resource)
 }
 
-export { hasPermission as hasReportPermission }
+// Single alias — declared once only
+export const hasReportPermission = hasPermission
+
+// Togglable permission labels (bilingual) for user management UI
 export const TOGGLABLE_PERMISSION_LABELS: Record<string, { ar: string; en: string }> = {
   dashboard: { ar: 'لوحة التحكم', en: 'Dashboard' },
   projects: { ar: 'المشاريع', en: 'Projects' },
@@ -82,16 +85,16 @@ export const TOGGLABLE_PERMISSION_LABELS: Record<string, { ar: string; en: strin
   report_equipment: { ar: 'تقرير المعدات', en: 'Equipment Report' },
 }
 
+// Module (section) permissions — array of keys
 export const MODULE_PERMISSIONS = [
   'dashboard', 'projects', 'drive_lines', 'daily_reports', 'safety',
   'equipment', 'costs', 'finishings', 'performance', 'reports', 'notifications', 'users',
 ] as const
 
+// Report permissions — array of keys
 export const REPORT_PERMISSIONS = [
   'report_daily', 'report_safety', 'report_production', 'report_cost', 'report_performance', 'report_equipment',
 ] as const
 
+// Combined list of all togglable permissions
 export const TOGGLABLE_PERMISSIONS = [...MODULE_PERMISSIONS, ...REPORT_PERMISSIONS] as const
-
-export { hasPermission as hasReportPermission }
-export const MODULE_PERMISSIONS = ROLE_PERMISSIONS
