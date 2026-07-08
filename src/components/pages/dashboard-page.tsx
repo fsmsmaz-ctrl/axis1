@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
@@ -16,30 +16,6 @@ import {
 } from 'recharts'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
-
-interface DashboardData {
-  stats: {
-    activeProjects: number
-    totalProjects: number
-    metersToday: number
-    metersThisMonth: number
-    revenueToday: number
-    revenueThisMonth: number
-    totalRevenue: number
-    totalCosts: number
-    monthCosts: number
-    netProfit: number
-    stoppedEquipment: number
-    presentWorkers: number
-    unreadNotifications: number
-  }
-  trend: Array<{ date: string; meters: number; revenue: number; cost: number }>
-  projects: Array<{ id: string; name: string; code: string; status: string; progress: number; totalLength: number; pricePerMeter: number; client: string }>
-  recentReports: any[]
-  notifications: any[]
-  equipment: any[]
-  costsByCategory: Array<{ category: string; amount: number }>
-}
 
 const categoryColors: Record<string, string> = {
   labor: '#f97316',
@@ -67,12 +43,22 @@ const categoryLabelsAr: Record<string, string> = {
   other: 'أخرى',
 }
 
+// Extract base64 image outside component so it's not recreated on every render
+const AXIS_LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAFQAAAA8CAIAAAB3rgqhAAANjUlEQVR42u1aeXgUVba/91ZVd6c7vSXpkIWQELKyQyZh3wR15rGqAYIb7ykqyDAwMqM4TGRkFEd9T0HlOQ9kUFnC4sL2KbIIBCJJEJAQAgkJBBKyb71XV9W9Z/6o0ATG8TPhxW/ms+9X39fVX5269/7uueec3zm3MACgn2sj6GfcAuAD4APgA+AD4APgA+AD4APgA+B/ZPt3SBm6BTwwhjD+mYEHUJFjQkS36+cCHhhTtQ0AmJBvv/j03OF9CCHG6PcKM0YZox1NAwAYpQjdZiyMUv+Cqqk3ADCqMEbZrUa7npXD3TfG1F9J9AJj+btznsvoZW+sBwB289E/Cv8rNP6udzrDmFw99+3ed15pqa3WBZvKT38z/uGnTGHhjCqE4+/QOSbkm882533ysS2m95wVb2n1BkYp4bjcbRvKz+Q/8cZ6YAxhhABhQj56cUFM30H3PDY/Z+XShLQR6ZMzvU77gQ1rrpecI4RDCBHCeZz2kQ8+MuKBR4BRTLhOTZ6/O+SAEXbbW9cvebz+WkVQsBEYCFrdqMzHqSJzvHCHNMZY8no+ezN7TNYTJ7ZvLNizbWzWkwAMgAyc8Kvdb6/c8tJvHln5juwTBa1u+yu/LzryxbTFf0QIFeceCAo2pU/O3P7q8xfzjsxa/rqg0WLCYYKpLEfEJyGEEO60CfN3q3hAsk/0OO0Gs5UXNKLbGdtvcO9B6cXHvjJYQnoPSle1rdo/4fjCfTsxxtMXZxPCHf7of8dmPUk4HgFYekQt23kk+77BPVMHjpsz78SOD49uWffy/rPWiGiEkN5k1ur1CKGKswX3zVuc9ssH/nEquPPx5S4dHsaEWMIjpy95SRa9CCNFlobPmIMQunDi8KGN77UvjypKOITQoY3vjnzwUSrLw6dnNVwrLy3IxQgBAkaprVf8grU5e9b8+ejW9bvefnn+e1vDY+OpIiOEGGWMUoSQ2RZx9sBeR1OD6Hb6PC5F8t3N7Pm7g44rzhZUlZwDxsJj+7TUVXO88NX61bnbNpYWFPzyqWc7+m3CcWWFx50tjdOWZHO8YOsVP2LGIwc+WJ08bCwGhDmOyvKgiZOT94xd88TT/zH/8UETJyuydIftzP7D65tXLH736Yd0hmBgTBK91ojoOSvestgioPPK57sc2xDGO159/vBHawEQAtBbrFSWE4aO0JstLbXV989bMG1JNgJQ97w6qyOb1yFAB//2riJLhBDJ6ynOPdhUVRkWE6fIMi8I+bu2Xjp57PltW3aseqFg97Zh07P8vkPtJ6bvoBd3HnW1NlNZAgDR7Vr7zMzdb6+c+9r7QBXM8d0OnjFGCKm6WHRk81/1JivhCAAAA4Tw7Ow3eyb3v213tDt5rqWm6mLe16NnPi66HKotRCakhERGH92yLnPZKl4Qqi4WbfjdvKdWf5gxZRZG6IOl/xWd3K9nygAVeUetBltD/fe/mPzQpZPHVAv8KbY9RggABK1O0OoAgCoKIZzodiT+YlR0Yl8qy4Tnassvhccm8BpNezhE5Iv33zSG2TKXvdaxK3N4xObsRVMW/UF0Od7ImjRl4bKMKbNknzh8xsPVpcVvZE1asa8wtGesz+2UJR9CqL7yssdux4QAo4xxRfLlffJx+uSZ/lG6FzxjFCOMMY6IT5o499f73ltlDLWp2+GeuQsxIVTycYJQVniiND93wmPz1WhPZbm55vqUhcsYo0xRCMcBAMY4ffLM/F05V8+dunwqb/CkKdN/+xKjlNdoGaOZL6xqqa3+etP7M1/8S9yAtJDIGITQyc+3lpw4rAs2qv6PKUrarx6c+pvlAEA6GeQRQrhT3FCdMULI63JIXg8h3MfLny3OPagzBDNKH1j6cvqUmQazFRjb9MdfV54/nb0nX/WL/hfVyAfAgDF1r2JCFFniOB4TAgBAKcLtxJfjeSrLhOdx96RJnQCvAriY9/WBDasbrl2RRC/H85ygcTY1EI7zONok0RsRnxyVkOJ1O0vzc+OHZCz/7DhG+EdmeH5G8AOLfpNb3ObYf+DF/59tr5LHsoLja56cAcA0uiCEMTBACDheAICJcxfWXSmrLPq26MiXCOOQyJ7TFi3HmACjGLdvyOM7NsYNSItJHdhad6Nw7w6f100IhzEOiYoZNn0OIcTjaDuy6f8YU9T4wBgzhYUPmzY7yGi+hR9jjFD+rpz6ynJCSPLwcUkZoxFAF5LoH6t5NVB/uOyZvE82mcLCqSzdpC5EdLviBgx9YfvXCCF7Y11bfS2VJVtsH2NI2B1zei6j1/Ql2WOznsy+f3BUQmrqyAmYkEsnj5afzn8zrxwTIrochfs+oYoMAMAoQvjC8QP2hvrf5xzU6g2qo8WE1F0py75v0Lg58/Qmy9Gt62ctf3105lx1ht3o8HhBgzFiVLnF2xCWfWLG1Nlqomq2RZhtEf9sN+rNVr3JInpcLTXVSzd9qVJXgyWk6mKRKqkLNo3NeqLjK6Meemzp8Ni6itK4gWnAmOrST36+JbJPyqN/fhch5Ha0FezeNjpzLuq8WyCdiG8IDb1/BsIY+cfBmMqS2dZj6P3TMSGEcIxSRumVswXFuQcwIapX82fpVJEBIWBM0Gjc9lYqS1SRPY42tRwAjDGmKLKkXrLkU2RJdLu0eoMi+xhjlFKEMKNK4d4dGdNmM6pQWRa0Wl4QureYQQgHjPUdPXHIvdNcrU2cICCECCGi2zl40lSzLUKRJQDGGCUcJ2h1O19bJvtEhPHtxbybdktwkNHMCRqOFzDGmBD1IoTnBY16CRotL2iMoTaMiaDREUJ4QSAcd+Xct231NaMz5xKO5wRB0GhZ+xC4O0kORgAwZ8VbVReLWm5cDzKaESBMuD5Dh6sWgRBSY23RkS+vFZ+rOJOfMmI8o5RwxJ/hqIvo87ivnT/jam4MMlkwJpLXU3EmHwAQAn8tB25WWjR6/bGcD4a5sxTZxwmave+82idtBCcI1ZfOC1pdS02V5PF0BXqnwGNMgDFLeOSi9Z/+deHDzTVVvEaj0xs+/++XTu3bEZ3c32C2epz2yqLT1y98x/Gc1+W8afyAMMIYc7xAqcLxfGy/IQc2rBZdrpSR4xPTRjibG3esegEAML5JYzFS7zEhPWITaitK97zzimpZkteTuWzV6S8+Pb1/V7A1xN3WmjJiXLfH+Y5u/0bZhb/MHE84HmHssbf6PCKC9moCx3MIodRRExat+0xrCPYHZFdr8/OjE55e8/HgSVM7drjztReLj3318v4zP30BswvcHoCxG6XFottttvVYsDanpaaq/MzJ5hvXvU4HxjjYGtonbcSYWf+pMxgBwOt05Kx8TvJ6G6uu9B93X9/Rkzz2ti1/WqxIPo4TZMlXc7lk1vI3/FTiVnQEgPZ7UPMJv+35BW7psEskp9OaVwPY2gWzCvfuHDZ15rPv7/iB5A9jDMDqrpQhAI1OHxYThxCistxSW6XIkloFC4mK0eoNasqAMMYYtzNfQvzcriM79hvFT615FXlTdeWVMwWCVjv43mkAzOuw681W0e3UGYwdTYOos2coKiG1YyecIOhNFoMl5I5o0vFddSxHc4PZFsEYVd2kGhFUMdknep0OYEzQBck+r59cdCd4YBiRc4f2tTXUhsXE9R97L8ak6Mh+j9Muup3B1lDR5RQ0WrejzRbTOyjY6La3KrJsDAl129sar1X0HTOprqI0KiH16vnTeqOZUsXndvm8HoPZ6mpt5jjeGtnT0dygMwQTjo/tP6Ss8HiQ0exorLP1iq8uvWAKtWGCEcKaIH1s/yElJw57nXZtkKHfmElmW0QXGG7nwGPCAcB3h/ZRRU7KGGMK6wHAopL6uttaGKV6k+VGWTFCONxijU7uX3O5hOOF8LiEtrobgkabmDFGZzDqgk0ALG5AGkLgaGqoqyhLyhgFAEFGM1PksJ6xZlsPxtjlwuMxqQOiElKdrU3RSf0czQ0xKQMErVYSvcHW0Na6G6aw8LCesRG9kzR6g6/Lp0M/vsRPKQWA6kvFi4dGPZNsPPPVbvX8xNnS5La3fs9ZBqUd/zZUlqsHG7JP9Hk9kugFgPLT36hPW2qqOgrfKCtRb0S3i1JFHb2lttrncbtamwHA63KqAh5Hm6OpoWtnIXynLB4hkrv9b7XlNXEDE1NGjgcATLgLuQdb6qpj+w+NjE8S3a7Lp/IEnQ4AFJ+YMvIeQaMpzj2oyJKzuWHCo/Prr14uzj2gCzaFRsUAQG3FpUsnjyWmjyo5cTh9yky90cwYvXwqT9Dq9CbL1XOn7E31MSn9rZEx1y9811R1NTyuT3XphYjeSV5HmyUiKioxtTj3kEany5g6G3e3tweA/ev+p6GyPDF99MgHHwXGMMH2xvqashK3vbVH70RGqeT1GCxWYEz0uAWtDmNccuKw3mTuO2aSu7WlvvIyJ2gQQHhsguR1G0NtVSVF0Sn9FElSJB/heEXyNVyr6BGXyAkCxlj2iZwgYEwYpZYeURzPV18672xpskZES16PKSxc9okGS0h4bJ8u2Dy+i29voQucUpEllQj/K7TOMzxGEQNEsD84AUD7qv+TrjDG0OFQpV3enxIj3PFsA+GbTOb7OmrnNhjfNiLGXatz4cBX1wHwAfAB8AHwAfAB8AHwAfAB8AHwAfAB8P/G7e+CTbzNgA3bBgAAAABJRU5ErkJggg=="
+
+const tooltipStyle = { borderRadius: 8, border: '1px solid #e5e7eb', fontSize: 12 }
+
 export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) => void }) {
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
   const language = useAppStore((s) => s.language)
   const token = useAppStore((s) => s.token)
   const isRtl = language === 'ar'
+
+  const tooltipContentStyle = useMemo(() => ({
+    ...tooltipStyle,
+    direction: isRtl ? 'rtl' as const : 'ltr' as const,
+  }), [isRtl])
 
   useEffect(() => {
     if (!token) return
@@ -115,17 +101,16 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
   const fmt = (n: number) => (n || 0).toLocaleString(isRtl ? 'ar-EG' : 'en-US', { maximumFractionDigits: 1 })
   const fmtCurrency = (n: number) => `${fmt(n || 0)} ${isRtl ? 'ر.ع' : 'OMR'}`
 
-  // Sort projects for best/worst
-  const sortedByProgress = [...projects].sort((a, b) => (b.progress || 0) - (a.progress || 0))
+  // Memoize expensive computations
+  const sortedByProgress = useMemo(() => [...projects].sort((a, b) => (b.progress || 0) - (a.progress || 0)), [projects])
   const bestProject = sortedByProgress[0]
   const worstProject = sortedByProgress[sortedByProgress.length - 1]
 
-  // Format trend for chart
-  const trendData = trend.map(t => ({
+  const trendData = useMemo(() => trend.map(t => ({
     ...t,
     date: new Date(t.date).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US', { month: 'short', day: 'numeric' }),
     profit: (t.revenue || 0) - (t.cost || 0),
-  }))
+  })), [trend, isRtl])
 
   return (
     <div className="space-y-6">
@@ -133,7 +118,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
           <img
-            src="data:image/png;base64,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"
+            src={AXIS_LOGO_SRC}
             alt="AXIS"
             className="h-12 w-auto"
           />
@@ -256,7 +241,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
                 <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#6b7280' }} reversed={isRtl} />
                 <YAxis tick={{ fontSize: 11, fill: '#6b7280' }} orientation={isRtl ? 'right' : 'left'} />
                 <Tooltip
-                  contentStyle={{ direction: isRtl ? 'rtl' : 'ltr', borderRadius: 8, border: '1px solid #e5e7eb', fontSize: 12 }}
+                  contentStyle={tooltipContentStyle}
                   formatter={(value: any, name: any) => {
                     if (name === 'meters') return [`${fmt(value)} ${isRtl ? 'م' : 'm'}`, isRtl ? 'الأمتار' : 'Meters']
                     if (name === 'revenue') return [fmtCurrency(value), isRtl ? 'الإيراد' : 'Revenue']
@@ -303,7 +288,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
                     ))}
                   </Pie>
                   <Tooltip
-                    contentStyle={{ direction: isRtl ? 'rtl' : 'ltr', borderRadius: 8, fontSize: 12 }}
+                    contentStyle={tooltipContentStyle}
                     formatter={(value: any, _name: any, props: any) => [fmtCurrency(value), categoryLabelsAr[props.payload.category] || props.payload.category]}
                   />
                   <Legend
@@ -395,7 +380,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
             <Card className="bg-red-50/50 border-red-200">
               <CardContent className="p-4">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-red-100 flex items-center justify-center shrink-0">
+                  <div className="w-10 h-10 rounded-lg bg-red-100 flex items-center justify-center">
                     <Wrench className="h-5 w-5 text-red-600" />
                   </div>
                   <div className="flex-1">
