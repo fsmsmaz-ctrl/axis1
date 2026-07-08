@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
   const costWhere: any = {}
   if (projectId) costWhere.projectId = projectId
 
-  // Run all 3 queries in parallel
+  // Run all 3 queries in parallel (with limits to prevent loading all data)
   const [reports, safetyReports, costs] = await Promise.all([
     db.dailyReport.findMany({
       where,
@@ -30,14 +30,17 @@ export async function GET(req: NextRequest) {
         driveLine: { select: { lineNumber: true } },
       },
       orderBy: { reportDate: 'asc' },
+      take: 500,
     }),
     db.safetyReport.findMany({
       where: safetyWhere,
       select: { projectId: true, ppeAvailable: true, helmetCheck: true, bootsCheck: true, glovesCheck: true, glassesCheck: true, workAreaCheck: true, barriersCheck: true, shaftCheck: true, ventilationCheck: true, electricalCheck: true, craneCheck: true, hydraulicCheck: true, fireExtinguishers: true, workPermit: true, toolboxTalk: true },
+      take: 500,
     }),
     db.cost.findMany({
       where: costWhere,
       select: { projectId: true, amount: true },
+      take: 1000,
     }),
   ])
 
