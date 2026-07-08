@@ -154,7 +154,7 @@ export default function AppShell() {
           <div className="flex items-center gap-3">
             <div className="shrink-0">
               <img
-                src="/logo-white.png"
+                src="/logo-orange.png"
                 alt="AXIS"
                 className="h-9 w-auto object-contain"
               />
