@@ -61,3 +61,5 @@ export function hasPermission(role: string, resource: string, customPermissions?
 }
 
 export { hasPermission as hasReportPermission }
+
+export const MODULE_PERMISSIONS = ROLE_PERMISSIONS
