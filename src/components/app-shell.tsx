@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useAppStore } from '@/lib/store'
-import { hasPermission, type SessionUser } from '@/lib/auth'
+import { hasPermission, MODULE_PERMISSIONS, MODULE_PERMISSION_LABELS, REPORT_PERMISSIONS, REPORT_LABELS, ROLE_PERMISSIONS, type SessionUser } from '@/lib/auth'
 import { clearStoredToken, authedFetch } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -25,9 +25,11 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import {
   LayoutDashboard, FolderKanban, GitBranch, FileText, ShieldCheck,
   Wrench, DollarSign, CheckCircle2, FileBarChart, TrendingUp,
-  Bell, LogOut, Menu, X, Globe, User, Settings,
-  AlertTriangle, ChevronLeft, UserPlus, Users, Loader2, Shield, Pencil, Trash2, Check
+  Bell, LogOut, Menu, X, Globe,
+  AlertTriangle, ChevronLeft, UserPlus, Users, Loader2, Shield, Pencil, Trash2, Check,
+  ShieldAlert
 } from 'lucide-react'
+import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import dynamic from 'next/dynamic'
@@ -99,7 +101,7 @@ export default function AppShell() {
   const [currentPage, setCurrentPage] = useState<PageId>('dashboard')
   const [notifications, setNotifications] = useState<any[]>([])
   const [userDialogOpen, setUserDialogOpen] = useState(false)
-  const [formData, setFormData] = useState({ email: '', name: '', nameEn: '', password: '', role: 'site_engineer', phone: '' })
+  const [formData, setFormData] = useState({ email: '', name: '', nameEn: '', password: '', role: 'site_engineer', phone: '', permissions: {} as Record<string, boolean> })
   const [createLoading, setCreateLoading] = useState(false)
   const [createError, setCreateError] = useState('')
   const [remainingSlots, setRemainingSlots] = useState(50)
@@ -147,7 +149,7 @@ export default function AppShell() {
 
   function openUserDialog() {
     setDialogTab('create')
-    setFormData({ email: '', name: '', nameEn: '', password: '', role: 'site_engineer', phone: '' })
+    setFormData({ email: '', name: '', nameEn: '', password: '', role: 'site_engineer', phone: '', permissions: {} })
     setCreateError('')
     loadSlotInfo()
     setUserDialogOpen(true)
@@ -189,7 +191,7 @@ export default function AppShell() {
         const res = await authedFetch('/api/users/update', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: editingUser.id, ...updateFields }),
+          body: JSON.stringify({ userId: editingUser.id, ...updateFields, permissions: updateFields.permissions }),
         })
         const data = await res.json()
         if (!res.ok) {
@@ -244,6 +246,7 @@ export default function AppShell() {
       password: '',
       role: u.role,
       phone: u.phone || '',
+      permissions: u.permissions ? { ...u.permissions } : {},
     })
     setCreateError('')
     setDialogTab('edit')
@@ -264,6 +267,27 @@ export default function AppShell() {
     } catch {
       toast.error(isAr ? 'خطأ في الاتصال' : 'Connection error')
     }
+  }
+
+  function getRoleDefault(role: string, resource: string): boolean {
+    if (role === 'top_management') return true
+    const perms = ROLE_PERMISSIONS[role] || []
+    return perms.includes('*') || perms.includes(resource)
+  }
+
+  function getEffective(key: string): boolean {
+    if (formData.permissions && typeof formData.permissions[key] === 'boolean') {
+      return formData.permissions[key]
+    }
+    return getRoleDefault(formData.role, key)
+  }
+
+  function togglePerm(key: string) {
+    const current = getEffective(key)
+    setFormData(prev => ({
+      ...prev,
+      permissions: { ...prev.permissions, [key]: !current },
+    }))
   }
 
   function renderPage() {
@@ -297,7 +321,7 @@ export default function AppShell() {
         <div className="p-4 pb-3 border-b border-sidebar-border">
           <div className="flex items-center gap-2">
             <img
-              src="/axis-logo.png"
+              src="/axis-logo-sidebar.png"
               alt="AXIS"
               className="h-9 w-auto object-contain flex-1 min-w-0"
             />
@@ -424,7 +448,7 @@ export default function AppShell() {
 
       {isAdmin && (
         <Dialog open={userDialogOpen} onOpenChange={(v) => setUserDialogOpen(v)}>
-          <DialogContent className="sm:max-w-[520px] max-h-[90vh] overflow-y-auto">
+          <DialogContent className="sm:max-w-[640px] max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Shield className="h-5 w-5 text-primary" />
@@ -440,7 +464,7 @@ export default function AppShell() {
             </DialogHeader>
 
             <div className="flex border rounded-lg overflow-hidden">
-              <button onClick={() => { setDialogTab('create'); setEditingUser(null); setFormData({ email: '', name: '', nameEn: '', password: '', role: 'site_engineer', phone: '' }); setCreateError(''); }} className={`flex-1 py-2.5 text-sm font-medium transition ${dialogTab === 'create' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}>
+              <button onClick={() => { setDialogTab('create'); setEditingUser(null); setFormData({ email: '', name: '', nameEn: '', password: '', role: 'site_engineer', phone: '', permissions: {} }); setCreateError(''); }} className={`flex-1 py-2.5 text-sm font-medium transition ${dialogTab === 'create' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}>
                 <UserPlus className="h-4 w-4 inline-block mr-1.5" />
                 {isAr ? 'إنشاء مستخدم' : 'Create User'}
               </button>
@@ -508,6 +532,67 @@ export default function AppShell() {
                     <Input type="tel" value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} placeholder="+968XXXXXXXX" dir="ltr" className="h-10" />
                   </div>
                 </div>
+
+                {/* ─── Permissions: Sidebar Sections ─── */}
+                <div className="space-y-2.5 pt-1">
+                  <div className="flex items-center gap-2">
+                    <ShieldAlert className="h-4 w-4 text-primary" />
+                    <span className="text-sm font-semibold">{isAr ? 'صلاحيات الوصول للأقسام' : 'Section Access'}</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                    {(MODULE_PERMISSIONS as readonly string[]).map((key) => {
+                      const labels = MODULE_PERMISSION_LABELS[key]
+                      const effective = getEffective(key)
+                      const isCustom = formData.permissions && typeof formData.permissions[key] === 'boolean'
+                      const overridden = isCustom && effective !== getRoleDefault(formData.role, key)
+                      return (
+                        <div key={key} onClick={() => togglePerm(key)} className={cn(
+                          'flex items-center justify-between p-2.5 rounded-lg border cursor-pointer transition-all',
+                          effective ? 'bg-emerald-50/50 border-emerald-200' : 'bg-red-50/50 border-red-200'
+                        )}>
+                          <div className="flex items-center gap-2">
+                            <Switch checked={effective} onCheckedChange={() => togglePerm(key)} />
+                            <span className={cn('text-xs', !effective && 'text-muted-foreground line-through')}>
+                              {isAr ? labels.ar : labels.en}
+                            </span>
+                          </div>
+                          {overridden && <Badge variant="outline" className="text-[9px] px-1 py-0 text-orange-600 border-orange-300">{isAr ? 'مخصص' : 'Custom'}</Badge>}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {/* ─── Permissions: Reports ─── */}
+                <div className="space-y-2.5">
+                  <div className="flex items-center gap-2">
+                    <FileBarChart className="h-4 w-4 text-primary" />
+                    <span className="text-sm font-semibold">{isAr ? 'صلاحيات التقارير' : 'Report Access'}</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                    {(REPORT_PERMISSIONS as readonly string[]).map((key) => {
+                      const labels = REPORT_LABELS[key]
+                      const effective = getEffective(key)
+                      const isCustom = formData.permissions && typeof formData.permissions[key] === 'boolean'
+                      const overridden = isCustom && effective !== getRoleDefault(formData.role, key)
+                      return (
+                        <div key={key} onClick={() => togglePerm(key)} className={cn(
+                          'flex items-center justify-between p-2.5 rounded-lg border cursor-pointer transition-all',
+                          effective ? 'bg-emerald-50/50 border-emerald-200' : 'bg-red-50/50 border-red-200'
+                        )}>
+                          <div className="flex items-center gap-2">
+                            <Switch checked={effective} onCheckedChange={() => togglePerm(key)} />
+                            <span className={cn('text-xs', !effective && 'text-muted-foreground line-through')}>
+                              {isAr ? labels.ar : labels.en}
+                            </span>
+                          </div>
+                          {overridden && <Badge variant="outline" className="text-[9px] px-1 py-0 text-orange-600 border-orange-300">{isAr ? 'مخصص' : 'Custom'}</Badge>}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+
                 {createError && (
                   <Alert variant="destructive"><AlertDescription>{createError}</AlertDescription></Alert>
                 )}
