@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
@@ -9,9 +9,11 @@ import {
   ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip
 } from 'recharts'
-import { TrendingUp, AlertTriangle, Clock, Users, ShieldCheck, DollarSign, Activity } from 'lucide-react'
+import { TrendingUp, Award, AlertTriangle, Clock, Users, ShieldCheck, DollarSign, Activity } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
+
+const tooltipStyle = { borderRadius: 8, fontSize: 12 }
 
 export default function PerformancePage() {
   const [performance, setPerformance] = useState<any[]>([])
@@ -22,48 +24,61 @@ export default function PerformancePage() {
   const token = useAppStore((s) => s.token)
   const isRtl = language === 'ar'
 
+  const tooltipContentStyle = useMemo(() => ({
+    ...tooltipStyle,
+    direction: isRtl ? 'rtl' as const : 'ltr' as const,
+  }), [isRtl])
+
   useEffect(() => {
+    if (!token) return
     setLoading(true)
-    authedFetch('/api/performance' + (selectedProject !== 'all' ? `?projectId=${selectedProject}` : ''))
-      .then(r => r.json())
-      .then(d => setPerformance(d.performance || []))
-      .finally(() => setLoading(false))
-    authedFetch('/api/projects/list').then(r => r.json()).then(d => setProjects(d.projects || []))
+    Promise.all([
+      authedFetch('/api/performance' + (selectedProject !== 'all' ? `?projectId=${selectedProject}` : '')),
+      authedFetch('/api/projects/list'),
+    ]).then(async ([perfRes, projRes]) => {
+      const perfData = await perfRes.json()
+      const projData = await projRes.json()
+      setPerformance(perfData.performance || [])
+      setProjects(projData.projects || [])
+    }).finally(() => setLoading(false))
   }, [selectedProject, token])
 
-  // Aggregates
-  const totals = performance.reduce((acc, p) => ({
-    totalMeters: acc.totalMeters + p.totalMeters,
-    totalRevenue: acc.totalRevenue + p.totalRevenue,
-    totalCost: acc.totalCost + p.totalCost,
-    totalProfit: acc.totalProfit + (p.totalRevenue - p.totalCost),
-    totalDays: acc.totalDays + p.daysCount,
-    totalWorkers: acc.totalWorkers + p.totalWorkers,
-  }), { totalMeters: 0, totalRevenue: 0, totalCost: 0, totalProfit: 0, totalDays: 0, totalWorkers: 0 })
+  // Memoize all derived computations
+  const { totals, avgDailyMeters, overallProfitMargin, avgSafety, avgAttendance } = useMemo(() => {
+    const t = performance.reduce((acc, p) => ({
+      totalMeters: acc.totalMeters + p.totalMeters,
+      totalRevenue: acc.totalRevenue + p.totalRevenue,
+      totalCost: acc.totalCost + p.totalCost,
+      totalProfit: acc.totalProfit + (p.totalRevenue - p.totalCost),
+      totalDays: acc.totalDays + p.daysCount,
+      totalWorkers: acc.totalWorkers + p.totalWorkers,
+    }), { totalMeters: 0, totalRevenue: 0, totalCost: 0, totalProfit: 0, totalDays: 0, totalWorkers: 0 })
 
-  const avgDailyMeters = totals.totalDays > 0 ? totals.totalMeters / totals.totalDays : 0
-  const overallProfitMargin = totals.totalRevenue > 0 ? (totals.totalProfit / totals.totalRevenue) * 100 : 0
-  const avgSafety = performance.length > 0 ? performance.reduce((s, p) => s + p.safetyRate, 0) / performance.length : 0
-  const avgAttendance = performance.length > 0 ? performance.reduce((s, p) => s + p.attendanceRate, 0) / performance.length : 0
+    return {
+      totals: t,
+      avgDailyMeters: t.totalDays > 0 ? t.totalMeters / t.totalDays : 0,
+      overallProfitMargin: t.totalRevenue > 0 ? (t.totalProfit / t.totalRevenue) * 100 : 0,
+      avgSafety: performance.length > 0 ? performance.reduce((s, p) => s + p.safetyRate, 0) / performance.length : 0,
+      avgAttendance: performance.length > 0 ? performance.reduce((s, p) => s + p.attendanceRate, 0) / performance.length : 0,
+    }
+  }, [performance])
 
-  // Chart data - comparison
-  const comparisonData = performance.map(p => ({
+  const comparisonData = useMemo(() => performance.map(p => ({
     name: p.projectCode,
     meters: Number(p.totalMeters.toFixed(0)),
     revenue: Number(p.totalRevenue.toFixed(0)),
     profit: Number((p.totalRevenue - p.totalCost).toFixed(0)),
     safety: Number(p.safetyRate.toFixed(0)),
-  }))
+  })), [performance])
 
-  // Radar data for first project (or selected)
-  const radarData = performance[0] ? [
+  const radarData = useMemo(() => performance[0] ? [
     { metric: isRtl ? 'الإنتاج' : 'Production', value: Math.min(100, (performance[0].avgDaily / 10) * 100) },
     { metric: isRtl ? 'السلامة' : 'Safety', value: performance[0].safetyRate },
     { metric: isRtl ? 'الحضور' : 'Attendance', value: performance[0].attendanceRate },
     { metric: isRtl ? 'الربحية' : 'Profitability', value: Math.max(0, performance[0].profitMargin) },
     { metric: isRtl ? 'كفاءة المعدات' : 'Equipment', value: 85 },
     { metric: isRtl ? 'الالتزام' : 'Compliance', value: 90 },
-  ] : []
+  ] : [], [performance, isRtl])
 
   return (
     <div className="space-y-4">
@@ -130,7 +145,6 @@ export default function PerformancePage() {
 
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Comparison bar chart */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -149,9 +163,7 @@ export default function PerformancePage() {
                   <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                   <XAxis dataKey="name" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} />
-                  <Tooltip
-                    contentStyle={{ direction: isRtl ? 'rtl' : 'ltr', borderRadius: 8, fontSize: 12 }}
-                  />
+                  <Tooltip contentStyle={tooltipContentStyle} />
                   <Bar dataKey="meters" fill="#f97316" name={isRtl ? 'أمتار' : 'Meters'} radius={[4, 4, 0, 0]} />
                   <Bar dataKey="profit" fill="#10b981" name={isRtl ? 'ربح' : 'Profit'} radius={[4, 4, 0, 0]} />
                 </BarChart>
@@ -160,7 +172,6 @@ export default function PerformancePage() {
           </CardContent>
         </Card>
 
-        {/* Radar chart */}
         <Card>
           <CardHeader>
             <CardTitle>{isRtl ? 'تحليل أداء شامل' : 'Performance Radar'}</CardTitle>
@@ -177,7 +188,7 @@ export default function PerformancePage() {
                   <PolarAngleAxis dataKey="metric" tick={{ fontSize: 11 }} />
                   <PolarRadiusAxis angle={90} domain={[0, 100]} tick={{ fontSize: 10 }} />
                   <Radar name="Performance" dataKey="value" stroke="#f97316" fill="#f97316" fillOpacity={0.4} />
-                  <Tooltip contentStyle={{ direction: isRtl ? 'rtl' : 'ltr', borderRadius: 8, fontSize: 12 }} />
+                  <Tooltip contentStyle={tooltipContentStyle} />
                 </RadarChart>
               </ResponsiveContainer>
             )}
