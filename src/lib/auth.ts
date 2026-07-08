@@ -61,5 +61,37 @@ export function hasPermission(role: string, resource: string, customPermissions?
 }
 
 export { hasPermission as hasReportPermission }
+export const TOGGLABLE_PERMISSION_LABELS: Record<string, { ar: string; en: string }> = {
+  dashboard: { ar: 'لوحة التحكم', en: 'Dashboard' },
+  projects: { ar: 'المشاريع', en: 'Projects' },
+  drive_lines: { ar: 'خطوط الحفر', en: 'Drive Lines' },
+  daily_reports: { ar: 'التقارير اليومية', en: 'Daily Reports' },
+  safety: { ar: 'السلامة', en: 'Safety' },
+  equipment: { ar: 'المعدات', en: 'Equipment' },
+  costs: { ar: 'التكاليف والإيرادات', en: 'Costs & Revenue' },
+  finishings: { ar: 'التشطيبات', en: 'Finishings' },
+  performance: { ar: 'تقييم الأداء', en: 'Performance' },
+  reports: { ar: 'التقارير', en: 'Reports' },
+  notifications: { ar: 'التنبيهات', en: 'Notifications' },
+  users: { ar: 'إدارة المستخدمين', en: 'User Management' },
+  report_daily: { ar: 'تقرير يومي', en: 'Daily Report' },
+  report_safety: { ar: 'تقرير السلامة', en: 'Safety Report' },
+  report_production: { ar: 'تقرير الإنتاج', en: 'Production Report' },
+  report_cost: { ar: 'تقرير التكاليف', en: 'Cost Report' },
+  report_performance: { ar: 'تقرير الأداء', en: 'Performance Report' },
+  report_equipment: { ar: 'تقرير المعدات', en: 'Equipment Report' },
+}
 
+export const MODULE_PERMISSIONS = [
+  'dashboard', 'projects', 'drive_lines', 'daily_reports', 'safety',
+  'equipment', 'costs', 'finishings', 'performance', 'reports', 'notifications', 'users',
+] as const
+
+export const REPORT_PERMISSIONS = [
+  'report_daily', 'report_safety', 'report_production', 'report_cost', 'report_performance', 'report_equipment',
+] as const
+
+export const TOGGLABLE_PERMISSIONS = [...MODULE_PERMISSIONS, ...REPORT_PERMISSIONS] as const
+
+export { hasPermission as hasReportPermission }
 export const MODULE_PERMISSIONS = ROLE_PERMISSIONS
