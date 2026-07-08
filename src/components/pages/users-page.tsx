@@ -167,10 +167,10 @@ export default function UsersPage() {
   }
 
   async function handleSave() {
-    if (!form.name.trim() || !form.email.trim() || (!editUser && !form.password.trim()) || !form.role) {
-      toast.error(t.fillRequired)
-      return
-    }
+    if (!(form.name || '').trim()) { toast.error(isRtl ? 'الاسم مطلوب' : 'Name is required'); return }
+    if (!(form.email || '').trim()) { toast.error(isRtl ? 'البريد الإلكتروني مطلوب' : 'Email is required'); return }
+    if (!editUser && !(form.password || '').trim()) { toast.error(isRtl ? 'كلمة المرور مطلوبة' : 'Password is required'); return }
+    if (!form.role) { toast.error(isRtl ? 'يجب اختيار نوع الحساب' : 'Role is required'); return }
     setSaving(true)
     try {
       const body: any = {
