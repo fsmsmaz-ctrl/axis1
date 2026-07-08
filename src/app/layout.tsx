@@ -22,12 +22,7 @@ export const metadata: Metadata = {
   keywords: ["AXIS", "Pipe Jacking", "Microtunneling", "إدارة المشاريع", "عمان"],
   authors: [{ name: "AXIS" }],
   icons: {
-    icon: [
-      { url: "/favicon-16.png", sizes: "16x16", type: "image/png" },
-      { url: "/favicon-32.png", sizes: "32x32", type: "image/png" },
-      { url: "/logo.svg", type: "image/svg+xml" },
-    ],
-    apple: "/apple-touch-icon.png",
+    icon: "/logo.png",
   },
 };
 
