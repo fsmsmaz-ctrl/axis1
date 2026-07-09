@@ -78,6 +78,40 @@ const ROLES = [
   { value: 'accountant', ar: 'المحاسب / الإدارة المالية', en: 'Accountant' },
 ]
 
+// ─── Permission helpers ──────────────────────────────────────────
+function getRoleDefaults(role: string): Record<string, boolean> {
+  const defs: Record<string, boolean> = {}
+  // Module permissions from role
+  const rolePerms = ROLE_PERMISSIONS[role] || []
+  const hasAll = rolePerms.includes('*')
+  for (const key of MODULE_PERMISSIONS) {
+    defs[key] = hasAll || rolePerms.includes(key)
+  }
+  // Report permissions: all roles get all reports by default
+  for (const key of REPORT_PERMISSIONS) {
+    defs[key] = hasAll || rolePerms.includes('reports')
+  }
+  return defs
+}
+
+function getEffective(key: string, role: string, customPerms: Record<string, boolean>): boolean {
+  if (typeof customPerms[key] === 'boolean') return customPerms[key]
+  return getRoleDefaults(role)[key] ?? false
+}
+
+function togglePerm(key: string, role: string, current: Record<string, boolean>): Record<string, boolean> {
+  const defaults = getRoleDefaults(role)
+  const currentVal = getEffective(key, role, current)
+  const newVal = !currentVal
+  // If toggling TO the default value, remove the override (cleaner)
+  if (newVal === defaults[key]) {
+    const next = { ...current }
+    delete next[key]
+    return next
+  }
+  return { ...current, [key]: newVal }
+}
+
 const DashboardPage = dynamic(() => import('@/components/pages/dashboard-page'), { ssr: false })
 const ProjectsPage = dynamic(() => import('@/components/pages/projects-page'), { ssr: false })
 const DriveLinesPage = dynamic(() => import('@/components/pages/drive-lines-page'), { ssr: false })
@@ -128,7 +162,7 @@ export default function AppShell() {
 
   if (!user) return null
 
-  const allowedItems = navItems.filter(item => hasPermission(user.role, item.resource))
+  const allowedItems = navItems.filter(item => hasPermission(user.role, item.resource, user.permissions))
   const isAdmin = user.email.toLowerCase().trim() === 'admin@axis.om'
   const isAr = language === 'ar'
   const isRtl = isAr
@@ -157,7 +191,7 @@ export default function AppShell() {
 
   async function loadSlotInfo() {
     try {
-      const res = await authedFetch('/api/users/list')
+      const res = await authedFetch('/api/users/list', { noCache: true })
       const data = await res.json()
       if (res.ok) {
         setRemainingSlots(data.remainingSlots ?? 50)
@@ -169,7 +203,7 @@ export default function AppShell() {
   async function loadUserList() {
     setListLoading(true)
     try {
-      const res = await authedFetch('/api/users/list')
+      const res = await authedFetch('/api/users/list', { noCache: true })
       const data = await res.json()
       if (res.ok) {
         setExistingUsers(data.users || [])
@@ -185,7 +219,6 @@ export default function AppShell() {
     setCreateLoading(true)
     setCreateError('')
     if (dialogTab === 'edit') {
-      // Update existing user
       const { email, ...updateFields } = formData
       try {
         const res = await authedFetch('/api/users/update', {
@@ -269,27 +302,6 @@ export default function AppShell() {
     }
   }
 
-  function getRoleDefault(role: string, resource: string): boolean {
-    if (role === 'top_management') return true
-    const perms = ROLE_PERMISSIONS[role] || []
-    return perms.includes('*') || perms.includes(resource)
-  }
-
-  function getEffective(key: string): boolean {
-    if (formData.permissions && typeof formData.permissions[key] === 'boolean') {
-      return formData.permissions[key]
-    }
-    return getRoleDefault(formData.role, key)
-  }
-
-  function togglePerm(key: string) {
-    const current = getEffective(key)
-    setFormData(prev => ({
-      ...prev,
-      permissions: { ...prev.permissions, [key]: !current },
-    }))
-  }
-
   function renderPage() {
     switch (currentPage) {
       case 'dashboard': return <DashboardPage onNavigate={setCurrentPage} />
@@ -321,7 +333,7 @@ export default function AppShell() {
         <div className="p-4 pb-3 border-b border-sidebar-border">
           <div className="flex items-center gap-2">
             <img
-              src="/axis-logo-sidebar.png"
+              src="/axis-logo.png"
               alt="AXIS"
               className="h-9 w-auto object-contain flex-1 min-w-0"
             />
@@ -339,7 +351,7 @@ export default function AppShell() {
               className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-all border border-primary/20 border-dashed"
             >
               <UserPlus className="h-5 w-5 shrink-0" />
-              <span className="flex-1 text-start">{isAr ? 'إضافة مستخدم جديد' : 'Add New User'}</span>
+              <span className="flex-1 text-start">{isAr ? 'إدارة المستخدمين' : 'User Management'}</span>
             </button>
           )}
           <div className="h-2" />
@@ -448,7 +460,7 @@ export default function AppShell() {
 
       {isAdmin && (
         <Dialog open={userDialogOpen} onOpenChange={(v) => setUserDialogOpen(v)}>
-          <DialogContent className="sm:max-w-[640px] max-h-[90vh] overflow-y-auto">
+          <DialogContent className="sm:max-w-[680px] max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Shield className="h-5 w-5 text-primary" />
@@ -518,7 +530,7 @@ export default function AppShell() {
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-2">
                     <Label>{isAr ? 'نوع الحساب *' : 'Role *'}</Label>
-                    <Select value={formData.role} onValueChange={(val) => setFormData({ ...formData, role: val })}>
+                    <Select value={formData.role} onValueChange={(val) => setFormData({ ...formData, role: val, permissions: {} })}>
                       <SelectTrigger className="h-10"><SelectValue /></SelectTrigger>
                       <SelectContent>
                         {ROLES.map((r) => (
@@ -533,60 +545,66 @@ export default function AppShell() {
                   </div>
                 </div>
 
-                {/* ─── Permissions: Sidebar Sections ─── */}
-                <div className="space-y-2.5 pt-1">
-                  <div className="flex items-center gap-2">
+                {/* ─── Permissions Section ─── */}
+                <div className="space-y-3 pt-2">
+                  <div className="flex items-center gap-2 text-sm font-semibold">
                     <ShieldAlert className="h-4 w-4 text-primary" />
-                    <span className="text-sm font-semibold">{isAr ? 'صلاحيات الوصول للأقسام' : 'Section Access'}</span>
+                    <span>{isAr ? 'صلاحيات الوصول إلى الأقسام' : 'Section Access Permissions'}</span>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                    {(MODULE_PERMISSIONS as readonly string[]).map((key) => {
+                  <p className="text-xs text-muted-foreground -mt-1">
+                    {isAr ? 'تغيير الدور يعيد الصلاحيات للقيم الافتراضية' : 'Changing role resets permissions to defaults'}
+                  </p>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-2 p-3 rounded-lg border bg-muted/30">
+                    {MODULE_PERMISSIONS.map((key) => {
                       const labels = MODULE_PERMISSION_LABELS[key]
-                      const effective = getEffective(key)
-                      const isCustom = formData.permissions && typeof formData.permissions[key] === 'boolean'
-                      const overridden = isCustom && effective !== getRoleDefault(formData.role, key)
+                      const val = getEffective(key, formData.role, formData.permissions)
+                      const isDefault = typeof formData.permissions[key] !== 'boolean'
                       return (
-                        <div key={key} onClick={() => togglePerm(key)} className={cn(
-                          'flex items-center justify-between p-2.5 rounded-lg border cursor-pointer transition-all',
-                          effective ? 'bg-emerald-50/50 border-emerald-200' : 'bg-red-50/50 border-red-200'
-                        )}>
-                          <div className="flex items-center gap-2">
-                            <Switch checked={effective} onCheckedChange={() => togglePerm(key)} />
-                            <span className={cn('text-xs', !effective && 'text-muted-foreground line-through')}>
-                              {isAr ? labels.ar : labels.en}
-                            </span>
+                        <div key={key} className="flex items-center justify-between gap-2 py-1">
+                          <span className="text-xs truncate">{isAr ? labels.ar : labels.en}</span>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {!isDefault && (
+                              <Badge variant="outline" className="h-4 px-1 text-[10px] font-normal text-amber-600 border-amber-300">
+                                {isAr ? 'مخصص' : 'custom'}
+                              </Badge>
+                            )}
+                            <Switch
+                              checked={val}
+                              onCheckedChange={() => setFormData({ ...formData, permissions: togglePerm(key, formData.role, formData.permissions) })}
+                              className={cn("scale-75", val ? "" : "opacity-50")}
+                            />
                           </div>
-                          {overridden && <Badge variant="outline" className="text-[9px] px-1 py-0 text-orange-600 border-orange-300">{isAr ? 'مخصص' : 'Custom'}</Badge>}
                         </div>
                       )
                     })}
                   </div>
                 </div>
 
-                {/* ─── Permissions: Reports ─── */}
-                <div className="space-y-2.5">
-                  <div className="flex items-center gap-2">
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 text-sm font-semibold">
                     <FileBarChart className="h-4 w-4 text-primary" />
-                    <span className="text-sm font-semibold">{isAr ? 'صلاحيات التقارير' : 'Report Access'}</span>
+                    <span>{isAr ? 'صلاحيات التقارير' : 'Report Permissions'}</span>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                    {(REPORT_PERMISSIONS as readonly string[]).map((key) => {
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-2 p-3 rounded-lg border bg-muted/30">
+                    {REPORT_PERMISSIONS.map((key) => {
                       const labels = REPORT_LABELS[key]
-                      const effective = getEffective(key)
-                      const isCustom = formData.permissions && typeof formData.permissions[key] === 'boolean'
-                      const overridden = isCustom && effective !== getRoleDefault(formData.role, key)
+                      const val = getEffective(key, formData.role, formData.permissions)
+                      const isDefault = typeof formData.permissions[key] !== 'boolean'
                       return (
-                        <div key={key} onClick={() => togglePerm(key)} className={cn(
-                          'flex items-center justify-between p-2.5 rounded-lg border cursor-pointer transition-all',
-                          effective ? 'bg-emerald-50/50 border-emerald-200' : 'bg-red-50/50 border-red-200'
-                        )}>
-                          <div className="flex items-center gap-2">
-                            <Switch checked={effective} onCheckedChange={() => togglePerm(key)} />
-                            <span className={cn('text-xs', !effective && 'text-muted-foreground line-through')}>
-                              {isAr ? labels.ar : labels.en}
-                            </span>
+                        <div key={key} className="flex items-center justify-between gap-2 py-1">
+                          <span className="text-xs truncate">{isAr ? labels.ar : labels.en}</span>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {!isDefault && (
+                              <Badge variant="outline" className="h-4 px-1 text-[10px] font-normal text-amber-600 border-amber-300">
+                                {isAr ? 'مخصص' : 'custom'}
+                              </Badge>
+                            )}
+                            <Switch
+                              checked={val}
+                              onCheckedChange={() => setFormData({ ...formData, permissions: togglePerm(key, formData.role, formData.permissions) })}
+                              className={cn("scale-75", val ? "" : "opacity-50")}
+                            />
                           </div>
-                          {overridden && <Badge variant="outline" className="text-[9px] px-1 py-0 text-orange-600 border-orange-300">{isAr ? 'مخصص' : 'Custom'}</Badge>}
                         </div>
                       )
                     })}
