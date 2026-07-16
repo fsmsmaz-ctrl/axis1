@@ -64,6 +64,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  if (user.role !== 'top_management' && user.role !== 'project_manager') {
+    return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
+  }
+
   const { id } = await params
   const body = await req.json()
 
