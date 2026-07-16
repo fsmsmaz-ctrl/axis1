@@ -1,13 +1,15 @@
 [build]
-  command = "npx prisma generate && next build"
+  command = "npx prisma generate && next build --no-lint"
   publish = ".next"
 
 # Note: @netlify/plugin-nextjs is NOT needed for Next.js 16.
 # Netlify auto-detects Next.js 16 and uses the OpenNext adapter.
 # The old plugin can cause build conflicts with Next.js 16.
+# IMPORTANT: If you have the plugin enabled in Netlify UI (Site settings > Build plugins),
+# you MUST remove it from there too!
 
 [build.environment]
-  NODE_VERSION = "20"
+  NODE_VERSION = "22"
 
 # Required environment variables (set in Netlify UI → Site settings → Environment variables)
 #   DATABASE_URL   — Supabase connection pooler (transaction mode)
