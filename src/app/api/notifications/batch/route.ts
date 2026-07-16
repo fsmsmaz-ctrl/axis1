@@ -11,7 +11,10 @@ export async function PUT(req: NextRequest) {
 
   try {
     const result = await db.notification.updateMany({
-      where: { read: false },
+      where: {
+        read: false,
+        userId: user.id,
+      },
       data: { read: true },
     })
 
