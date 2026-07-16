@@ -1,5 +1,5 @@
 [build]
-  command = "npx prisma generate && next build --no-lint"
+  command = "npx prisma generate && next build"
   publish = ".next"
 
 # Note: @netlify/plugin-nextjs is NOT needed for Next.js 16.
