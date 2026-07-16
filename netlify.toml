@@ -9,7 +9,7 @@
 #   DATABASE_URL   — Supabase connection pooler (transaction mode)
 #   DIRECT_URL     — Supabase direct connection (for migrations)
 #   JWT_SECRET     — Strong random string, min 32 chars
-#   INIT_ADMIN_PASSWORD — Initial admin password (optional, defaults to Axis@2025!Secure)
+#   INIT_ADMIN_PASSWORD — Initial admin password (optional, set your own strong password)
 
 [[headers]]
   for = "/*"
