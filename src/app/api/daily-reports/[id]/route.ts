@@ -128,11 +128,28 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   const { id } = await params
 
   try {
+    // Get projectId before deleting the report
+    const report = await db.dailyReport.findUnique({
+      where: { id },
+      select: { projectId: true, status: true },
+    })
+
+    if (!report) {
+      return NextResponse.json({ error: 'Report not found' }, { status: 404 })
+    }
+
+    // Only top management can delete approved reports
+    if (user.role !== 'top_management' && report.status === 'approved') {
+      return NextResponse.json({ error: 'Cannot delete approved report' }, { status: 403 })
+    }
+
     await db.dailyReport.delete({ where: { id } })
 
     await db.auditLog.create({
       data: {
         userId: user.id,
+        projectId: report.projectId,
+        dailyReportId: id,
         action: 'delete',
         entity: 'daily_report',
         entityId: id,
