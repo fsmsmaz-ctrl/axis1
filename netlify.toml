@@ -1,17 +1,9 @@
 [build]
-  command = "npx prisma generate && next build"
+  command = "npx prisma generate && next build --no-turbopack"
   publish = ".next"
 
 [build.environment]
   NODE_VERSION = "22"
-  # Disable Turbopack — @netlify/plugin-nextjs does not support it
-  NEXT_TURBOPACK = "0"
-
-# Required environment variables (set in Netlify UI → Site settings → Environment variables)
-#   DATABASE_URL   — Supabase connection pooler (transaction mode)
-#   DIRECT_URL     — Supabase direct connection (for migrations)
-#   JWT_SECRET     — Strong random string, min 32 chars
-#   INIT_ADMIN_PASSWORD — Initial admin password (optional, set your own strong password)
 
 [[headers]]
   for = "/*"
