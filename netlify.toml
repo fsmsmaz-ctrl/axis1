@@ -1,0 +1,29 @@
+[build]
+  command = "npx prisma generate && next build"
+  publish = ".next"
+
+# Note: @netlify/plugin-nextjs is NOT needed for Next.js 16.
+# Netlify auto-detects Next.js 16 and uses the OpenNext adapter.
+# The old plugin can cause build conflicts with Next.js 16.
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# Required environment variables (set in Netlify UI → Site settings → Environment variables)
+#   DATABASE_URL   — Supabase connection pooler (transaction mode)
+#   DIRECT_URL     — Supabase direct connection (for migrations)
+#   JWT_SECRET     — Strong random string, min 32 chars
+#   INIT_ADMIN_PASSWORD — Initial admin password (optional, set your own strong password)
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "SAMEORIGIN"
+    X-Content-Type-Options = "nosniff"
+    X-XSS-Protection = "1; mode=block"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+
+[[headers]]
+  for = "/_next/static/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
