@@ -15,13 +15,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const { id } = await params
   const body = await req.json()
-  const action = body.action // 'approve' or 'reject'
+  const action = body.action
+
+  if (action !== 'approve' && action !== 'reject') {
+    return NextResponse.json({ error: 'Invalid action. Must be "approve" or "reject"' }, { status: 400 })
+  }
 
   try {
     const report = await db.dailyReport.update({
       where: { id },
       data: {
-        status: action === 'approve' ? 'approved' : 'rejected',
+        status: action,
         approvedById: user.id,
         approvedAt: new Date(),
       },
@@ -31,7 +35,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       data: {
         userId: user.id,
         dailyReportId: id,
-        action: action === 'approve' ? 'approve' : 'reject',
+        projectId: report.projectId,
+        action,
         entity: 'daily_report',
         entityId: id,
         details: `${action === 'approve' ? 'Approved' : 'Rejected'} daily report`,
