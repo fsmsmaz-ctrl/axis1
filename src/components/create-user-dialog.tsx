@@ -108,14 +108,15 @@ export default function CreateUserDialog({ open, onOpenChange }: CreateUserDialo
   // When role changes, reset custom permissions
   useEffect(() => {
     const currentRole = view === 'edit' ? editForm.role : form.role
-    if (currentRole && currentRole !== prevRole) {
-      if (view === 'edit') {
-        setEditPermissions({})
-      } else {
-        setPermissions({})
-      }
-      setPrevRole(currentRole)
+  if (currentRole && currentRole !== prevRole) {
+    if (view === 'edit') {
+      setEditPermissions({})
+    } else {
+      setPermissions({})
     }
+    setPrevRole(currentRole)
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view === 'edit' ? editForm.role : form.role, view])
 
   function togglePermission(key: string, isEdit: boolean) {
