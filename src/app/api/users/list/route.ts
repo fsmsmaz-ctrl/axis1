@@ -4,40 +4,49 @@ import { db } from '@/lib/db'
 
 const ADMIN_EMAIL = 'admin@axis.om'
 
-export async function DELETE(req: NextRequest) {
+const ROLE_LABELS: Record<string, { ar: string; en: string }> = {
+  top_management: { ar: 'الإدارة العليا', en: 'Top Management' },
+  project_manager: { ar: 'مدير المشروع', en: 'Project Manager' },
+  site_engineer: { ar: 'مهندس الموقع', en: 'Site Engineer' },
+  hse_officer: { ar: 'مسؤول السلامة', en: 'HSE Officer' },
+  foreman: { ar: 'المشرف', en: 'Foreman' },
+  accountant: { ar: 'المحاسب', en: 'Accountant' },
+}
+
+export async function GET(req: NextRequest) {
   try {
     const authUser = await getAuthUser(req)
     if (!authUser || authUser.email.toLowerCase().trim() !== ADMIN_EMAIL) {
       return NextResponse.json({ error: 'unauthorized' }, { status: 403 })
     }
 
-    const { searchParams } = new URL(req.url)
-    const userId = searchParams.get('id')
-
-    if (!userId) {
-      return NextResponse.json({ error: 'User ID is required' }, { status: 400 })
-    }
-
-    // Prevent deleting the admin account
-    const targetUser = await db.user.findUnique({ where: { id: userId } })
-    if (!targetUser) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 })
-    }
-
-    if (targetUser.email.toLowerCase().trim() === ADMIN_EMAIL) {
-      return NextResponse.json({ error: 'Cannot delete admin account' }, { status: 403 })
-    }
-
-    await db.user.delete({ where: { id: userId } })
-
-    const remaining = await db.user.count()
-
-    return NextResponse.json({
-      message: 'User deleted successfully.',
-      remainingSlots: 50 - remaining
+    const users = await db.user.findMany({
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        nameEn: true,
+        role: true,
+        phone: true,
+        permissions: true,
+        active: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: 'desc' },
     })
+
+    const usersWithLabels = users.map(u => ({
+      ...u,
+      permissions: u.permissions ?? {},
+      roleLabel: ROLE_LABELS[u.role] || { ar: u.role, en: u.role },
+    }))
+
+    const total = await db.user.count()
+    const remainingSlots = Math.max(0, 50 - total)
+
+    return NextResponse.json({ users: usersWithLabels, remainingSlots })
   } catch (error) {
-    console.error('Delete user error:', error)
-    return NextResponse.json({ error: 'Failed to delete user', details: String(error) }, { status: 500 })
+    console.error('List users error:', error)
+    return NextResponse.json({ error: 'Failed to fetch users' }, { status: 500 })
   }
 }
