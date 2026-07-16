@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Cairo, Tajawal } from "next/font/google";
 import "./globals.css";
-import { Toaster } from "@/components/ui/toaster";
 import { Toaster as SonnerToaster } from "@/components/ui/sonner";
 
 const cairo = Cairo({
@@ -38,7 +37,6 @@ export default function RootLayout({
         style={{ fontFamily: "var(--font-cairo), var(--font-tajawal), sans-serif" }}
       >
         {children}
-        <Toaster />
         <SonnerToaster position="top-center" />
       </body>
     </html>
