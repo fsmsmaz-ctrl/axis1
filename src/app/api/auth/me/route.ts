@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
-import { SESSION_COOKIE } from '@/lib/auth'
+import { SESSION_COOKIE, getCookieOptions } from '@/lib/auth'
 
 export async function GET(req: NextRequest) {
   const user = await getAuthUser(req)
@@ -12,12 +12,10 @@ export async function GET(req: NextRequest) {
     const hadCookie = req.cookies.get(SESSION_COOKIE)?.value
     const hadHeader = req.headers.get('authorization')
     if (hadCookie || hadHeader) {
+      // Cookie attributes MUST match how it was set, otherwise the browser won't clear it
       response.cookies.set(SESSION_COOKIE, '', {
-        httpOnly: false,
-        secure: false,
-        sameSite: 'lax',
+        ...getCookieOptions(),
         maxAge: 0,
-        path: '/',
       })
     }
     return response
