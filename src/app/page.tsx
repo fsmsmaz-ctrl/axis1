@@ -2,34 +2,61 @@
 
 import { useState, useEffect } from 'react'
 import { useAppStore } from '@/lib/store'
-import { saveStoredToken } from '@/lib/api-client'
+import { saveStoredToken, clearStoredToken } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Loader2, ArrowRight, Globe } from 'lucide-react'
 import { toast } from 'sonner'
+import dynamic from 'next/dynamic'
+
+const AppShell = dynamic(() => import('@/components/app-shell'), { ssr: false })
 
 const features = [
   { ar: 'لوحة تحكم مباشرة', en: 'Live Dashboard', icon: '📊' },
   { ar: 'تقارير PDF و Excel', en: 'PDF & Excel Reports', icon: '📄' },
-  { ar: 'إدارة السلامة', en: 'Safety Management', icon: '🦺' },
+  { ar: 'إدارة السلامة', en: 'Safety Management', icon: '🧩' },
   { ar: 'حساب الإيرادات تلقائياً', en: 'Auto Revenue Calc', icon: '💰' },
   { ar: 'إدارة المعدات', en: 'Equipment Mgmt', icon: '⚙️' },
   { ar: 'دعم الموبايل', en: 'Mobile Support', icon: '📱' },
 ]
 
-export default function LoginPage() {
+export default function HomePage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [checking, setChecking] = useState(true)
+
+  const user = useAppStore((s) => s.user)
   const setUser = useAppStore((s) => s.setUser)
   const language = useAppStore((s) => s.language)
   const setLanguage = useAppStore((s) => s.setLanguage)
 
   const isAr = language === 'ar'
   const isRtl = isAr
+
+  // Check for existing session on mount
+  useEffect(() => {
+    async function checkSession() {
+      try {
+        const res = await fetch('/api/auth/me', { credentials: 'include' })
+        if (res.ok) {
+          const data = await res.json()
+          if (data.user) {
+            setUser(data.user)
+            return
+          }
+        }
+      } catch {}
+      // Clear stale data if session is invalid
+      clearStoredToken()
+      setUser(null)
+      setChecking(false)
+    }
+    checkSession()
+  }, [setUser])
 
   useEffect(() => {
     if (typeof document !== 'undefined') {
@@ -38,10 +65,20 @@ export default function LoginPage() {
     }
   }, [language, isRtl])
 
+  // If user is logged in, show the app
+  if (user) {
+    return <AppShell />
+  }
+
+  // While checking session, show nothing (prevents flash of login form)
+  if (checking) {
+    return null
+  }
+
   const t = {
     loginTitle: isAr ? 'تسجيل الدخول' : 'Login',
     loginSubtitle: isAr ? 'أدخل بياناتك للمتابعة' : 'Enter your credentials to continue',
-    email: isAr ? 'البريد الإلكتروني' : 'Email',
+    email: isAr ? 'اسم المستخدم' : 'Username',
     password: isAr ? 'كلمة المرور' : 'Password',
     signIn: isAr ? 'دخول' : 'Sign In',
     invalidCreds: isAr ? 'بيانات الدخول غير صحيحة' : 'Invalid credentials',
@@ -141,14 +178,36 @@ export default function LoginPage() {
               <span className="text-sm font-semibold">{t.langBtn}</span>
             </Button>
           </div>
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} autoComplete="off" className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="email">{t.email}</Label>
-              <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="example@axis.om" required className="h-11" dir="ltr" />
+              <Input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder={isAr ? 'اسم المستخدم'
+ : 'Username'}
+                required
+                className="h-11"
+                dir="ltr"
+                autoComplete="off"
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="password">{t.password}</Label>
-              <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" required className="h-11" dir="ltr" />
+              <Input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder={isAr ? 'كلمة المرور'
+ : 'Password'}
+                required
+                className="h-11"
+                dir="ltr"
+                autoComplete="new-password"
+              />
             </div>
             {error && (
               <Alert variant="destructive">
