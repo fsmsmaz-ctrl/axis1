@@ -137,20 +137,16 @@ export default function HomePage() {
           <div className="absolute top-10 right-10 w-72 h-72 rounded-full bg-white blur-3xl" />
           <div className="absolute bottom-10 left-10 w-96 h-96 rounded-full bg-white blur-3xl" />
         </div>
-        <div className="relative z-10">
-          <div className="flex items-center gap-4 mb-4">
-            <div className="shrink-0 bg-white/15 backdrop-blur-sm rounded-2xl p-2.5">
-              <img
-                src="/logo-white.png"
-                alt="AXIS"
-                className="h-14 w-auto object-contain"
-              />
-            </div>
-            <div>
-              <h1 className="text-4xl font-bold tracking-wide">AXIS</h1>
-              <p className="text-sm text-primary-foreground/70 font-light tracking-wider">Pipe Jacking &amp; Microtunneling</p>
-            </div>
+        <div className="relative z-10 flex flex-col items-center text-center">
+          <div className="bg-white/15 backdrop-blur-sm rounded-2xl p-3 mb-3">
+            <img
+              src="/logo-white.png"
+              alt="AXIS"
+              className="h-24 w-auto object-contain"
+            />
           </div>
+          <h1 className="text-4xl font-bold tracking-wide">AXIS</h1>
+          <p className="text-sm text-primary-foreground/70 font-light tracking-wider">Pipe Jacking &amp; Microtunneling</p>
         </div>
         <div className="relative z-10 space-y-6">
           <h2 className="text-3xl lg:text-4xl font-bold leading-tight">{t.heroTitle}</h2>
