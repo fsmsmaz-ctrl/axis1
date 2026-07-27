@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
+import { safeDbOp, handleDbError } from '@/lib/api-helpers'
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const user = await getAuthUser(req)
@@ -54,6 +55,35 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       },
     })
 
+    // Audit log + notification (non-critical, fire-and-forget)
+    Promise.all([
+      safeDbOp(
+        () => db.auditLog.create({
+          data: {
+            userId: user.id,
+            projectId: equipment.projectId,
+            action: 'update',
+            entity: 'equipment',
+            entityId: id,
+            details: `Updated equipment: ${equipment.number} - ${equipment.name}`,
+          },
+        }),
+        'سجل التدقيق'
+      ),
+      safeDbOp(
+        () => db.notification.create({
+          data: {
+            projectId: equipment.projectId,
+            type: 'equipment_breakdown',
+            title: 'تعديل معدة',
+            message: `تم تعديل بيانات المعدة: ${equipment.number} - ${equipment.name} بواسطة ${user.name}`,
+            severity: 'info',
+          },
+        }),
+        'إشعار التعديل'
+      ),
+    ]).catch(() => {})
+
     return NextResponse.json({ equipment })
   } catch (error) {
     console.error('Update equipment error:', error)
@@ -71,7 +101,48 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   const { id } = await params
 
   try {
+    // Get equipment info before deleting
+    const equipInfo = await safeDbOp(
+      () => db.equipment.findUnique({ where: { id }, select: { projectId: true, number: true, name: true } }),
+      'جلب بيانات المعدة'
+    )
+
     await db.equipment.delete({ where: { id } })
+
+    const equipDesc = equipInfo.success && equipInfo.data
+      ? `${equipInfo.data.number} - ${equipInfo.data.name}`
+      : id
+    const projectId = equipInfo.success ? equipInfo.data?.projectId : null
+
+    // Audit log + delete notification (non-critical, fire-and-forget)
+    Promise.all([
+      safeDbOp(
+        () => db.auditLog.create({
+          data: {
+            userId: user.id,
+            projectId,
+            action: 'delete',
+            entity: 'equipment',
+            entityId: id,
+            details: `Deleted equipment: ${equipDesc}`,
+          },
+        }),
+        'سجل التدقيق'
+      ),
+      safeDbOp(
+        () => db.notification.create({
+          data: {
+            projectId,
+            type: 'equipment_breakdown',
+            title: 'حذف معدة',
+            message: `تم حذف المعدة: ${equipDesc} بواسطة ${user.name}`,
+            severity: 'warning',
+          },
+        }),
+        'إشعار الحذف'
+      ),
+    ]).catch(() => {})
+
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error('Delete equipment error:', error)
