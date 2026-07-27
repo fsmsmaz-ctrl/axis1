@@ -68,20 +68,34 @@ export async function POST(req: NextRequest) {
     )
     if (!createResult.success) return createResult.response
 
-    // Audit log (non-critical)
-    await safeDbOp(
-      () => db.auditLog.create({
-        data: {
-          userId: user.id,
-          projectId: createResult.data.id,
-          action: 'create',
-          entity: 'project',
-          entityId: createResult.data.id,
-          details: `Created project ${createResult.data.code}`,
-        },
-      }),
-      'سجل التدقيق'
-    )
+    // Audit log + notification (non-critical, fire-and-forget)
+    Promise.all([
+      safeDbOp(
+        () => db.auditLog.create({
+          data: {
+            userId: user.id,
+            projectId: createResult.data.id,
+            action: 'create',
+            entity: 'project',
+            entityId: createResult.data.id,
+            details: `Created project ${createResult.data.code} - ${createResult.data.name}`,
+          },
+        }),
+        'سجل التدقيق'
+      ),
+      safeDbOp(
+        () => db.notification.create({
+          data: {
+            projectId: createResult.data.id,
+            type: 'deadline_near',
+            title: 'مشروع جديد',
+            message: `تم إنشاء مشروع جديد: ${createResult.data.code} - ${createResult.data.name} بواسطة ${user.name}`,
+            severity: 'info',
+          },
+        }),
+        'إشعار الإضافة'
+      ),
+    ]).catch(() => {})
 
     return NextResponse.json({ project: createResult.data, success: true })
   } catch (error: any) {
