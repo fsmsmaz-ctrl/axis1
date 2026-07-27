@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
+import { safeDbOp } from '@/lib/api-helpers'
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const user = await getAuthUser(req)
@@ -126,15 +127,32 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   try {
     await db.project.delete({ where: { id } })
 
-    await db.auditLog.create({
-      data: {
-        userId: user.id,
-        action: 'delete',
-        entity: 'project',
-        entityId: id,
-        details: 'Deleted project',
-      },
-    })
+    // Audit log + delete notification (non-critical, fire-and-forget)
+    Promise.all([
+      safeDbOp(
+        () => db.auditLog.create({
+          data: {
+            userId: user.id,
+            action: 'delete',
+            entity: 'project',
+            entityId: id,
+            details: 'Deleted project',
+          },
+        }),
+        'سجل التدقيق'
+      ),
+      safeDbOp(
+        () => db.notification.create({
+          data: {
+            type: 'work_stopped',
+            title: 'حذف مشروع',
+            message: `تم حذف مشروع (المعرف: ${id}) بواسطة ${user.name}`,
+            severity: 'critical',
+          },
+        }),
+        'إشعار الحذف'
+      ),
+    ]).catch(() => {})
 
     return NextResponse.json({ success: true })
   } catch (error) {
