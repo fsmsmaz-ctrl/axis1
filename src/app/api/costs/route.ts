@@ -81,6 +81,35 @@ export async function POST(req: NextRequest) {
     )
     if (!createResult.success) return createResult.response
 
+    // Audit log + notification (non-critical, fire-and-forget)
+    Promise.all([
+      safeDbOp(
+        () => db.auditLog.create({
+          data: {
+            userId: user.id,
+            projectId: String(body.projectId),
+            action: 'create',
+            entity: 'cost',
+            entityId: createResult.data.id,
+            details: `Created cost: ${body.category} - ${body.description} (${body.amount} OMR)`,
+          },
+        }),
+        'سجل التدقيق'
+      ),
+      safeDbOp(
+        () => db.notification.create({
+          data: {
+            projectId: String(body.projectId),
+            type: 'cost_overrun',
+            title: 'تكلفة جديدة',
+            message: `تم إضافة تكلفة: ${body.category} - ${body.description} بمبلغ ${body.amount} ريال عماني`,
+            severity: 'info',
+          },
+        }),
+        'إشعار التكلفة'
+      ),
+    ]).catch(() => {})
+
     return NextResponse.json({ cost: createResult.data, success: true })
   } catch (error: any) {
     return handleDbError(error, 'إنشاء التكلفة')
