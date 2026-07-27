@@ -36,6 +36,7 @@ model User {
   finishings         Finishing[]
   notifications      Notification[]
   auditLogs          AuditLog[]
+companyAssets      CompanyAsset[]  @relation("AssetResponsible")
 }
 
 // ==================== Projects ====================
