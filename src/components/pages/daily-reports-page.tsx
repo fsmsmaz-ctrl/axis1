@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
-  Plus, FileText, Calendar, Users, Ruler, AlertTriangle,
+  FileText, Calendar, Users, Ruler, AlertTriangle,
   ShieldCheck, CheckCircle2, Clock, DollarSign, Eye, Check, X, Pencil, Trash2
 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
@@ -34,6 +34,10 @@ const weatherLabels: Record<string, { ar: string; en: string }> = {
   cloudy: { ar: 'غائم', en: 'Cloudy' },
   rainy: { ar: 'ممطر', en: 'Rainy' },
   windy: { ar: 'عاصف', en: 'Windy' },
+}
+
+function getStatusInfo(status: string) {
+  return statusLabels[status] || { ar: status || '-', en: status || '-', color: 'secondary' }
 }
 
 export default function DailyReportsPage() {
@@ -72,19 +76,27 @@ export default function DailyReportsPage() {
 
   async function fetchReports() {
     setLoading(true)
-    const params = new URLSearchParams()
-    if (selectedProject !== 'all') params.set('projectId', selectedProject)
-    params.set('limit', '100')
-    const res = await authedFetch('/api/daily-reports?' + params.toString())
-    const data = await res.json()
-    setReports(data.reports || [])
+    try {
+      const params = new URLSearchParams()
+      if (selectedProject !== 'all') params.set('projectId', selectedProject)
+      params.set('limit', '100')
+      const res = await authedFetch('/api/daily-reports?' + params.toString())
+      const data = await res.json()
+      setReports(data.reports || [])
+    } catch {
+      setReports([])
+    }
     setLoading(false)
   }
 
   async function fetchProjects() {
-    const res = await authedFetch('/api/projects/list')
-    const data = await res.json()
-    setProjects(data.projects || [])
+    try {
+      const res = await authedFetch('/api/projects/list')
+      const data = await res.json()
+      setProjects(data.projects || [])
+    } catch {
+      setProjects([])
+    }
   }
 
   useEffect(() => {
@@ -95,9 +107,10 @@ export default function DailyReportsPage() {
 
   useEffect(() => {
     if (formData.projectId) {
-      fetch('/api/drive-lines?projectId=' + formData.projectId)
+      authedFetch('/api/drive-lines?projectId=' + formData.projectId)
         .then((r) => r.json())
         .then((d) => setDriveLines(d.driveLines || []))
+        .catch(() => setDriveLines([]))
     }
   }, [formData.projectId])
 
@@ -206,7 +219,7 @@ export default function DailyReportsPage() {
       }
 
       if (!editingReportId) {
-        await fetch('/api/daily-reports/' + data.report.id + '/safety', {
+        await authedFetch('/api/daily-reports/' + data.report.id + '/safety', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(safety),
@@ -225,7 +238,7 @@ export default function DailyReportsPage() {
   }
 
   async function approveReport(id: string, action: 'approve' | 'reject') {
-    const res = await fetch('/api/daily-reports/' + id + '/approve', {
+    const res = await authedFetch('/api/daily-reports/' + id + '/approve', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action }),
@@ -239,9 +252,11 @@ export default function DailyReportsPage() {
   async function viewReportDetails(report: any) {
     setViewReport(report)
     setViewDialogOpen(true)
-    const res = await fetch('/api/daily-reports/' + report.id)
-    const data = await res.json()
-    setViewReport(data.report)
+    try {
+      const res = await authedFetch('/api/daily-reports/' + report.id)
+      const data = await res.json()
+      if (data.report) setViewReport(data.report)
+    } catch {}
   }
 
   const canApprove = user?.role === 'project_manager' || user?.role === 'top_management'
@@ -281,7 +296,7 @@ export default function DailyReportsPage() {
       ) : (
         <div className="space-y-2">
           {reports.map((r) => {
-            const status = statusLabels[r.status]
+            const status = getStatusInfo(r.status)
             return (
               <Card key={r.id} className="hover:shadow-sm transition">
                 <CardContent className="p-4">
@@ -291,18 +306,18 @@ export default function DailyReportsPage() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <p className="font-semibold text-sm truncate">{r.project?.name}</p>
-                        <Badge variant="outline" className="text-xs">{r.driveLine?.lineNumber || '-'}</Badge>
+                        <p className="font-semibold text-sm truncate">{(r.project && r.project.name) || '-'}</p>
+                        <Badge variant="outline" className="text-xs">{(r.driveLine && r.driveLine.lineNumber) || '-'}</Badge>
                         <Badge variant={status.color as any} className="text-xs">
                           {isRtl ? status.ar : status.en}
                         </Badge>
                       </div>
                       <p className="text-xs text-muted-foreground mt-0.5">
-                        {new Date(r.reportDate).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
-                        {' • '}
-                        {r.workStartTime} - {r.workEndTime}
-                        {' • '}
-                        {r.workersCount} {isRtl ? 'عامل' : 'workers'}
+                        {r.reportDate ? new Date(r.reportDate).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '-'}
+                        {' \u2022 '}
+                        {r.workStartTime || '-'} - {r.workEndTime || '-'}
+                        {' \u2022 '}
+                        {r.workersCount || '0'} {isRtl ? 'عامل' : 'workers'}
                       </p>
                     </div>
                     {r.safety && (
@@ -482,7 +497,7 @@ export default function DailyReportsPage() {
                           <SelectTrigger><SelectValue placeholder={isRtl ? 'اختر' : 'Select'} /></SelectTrigger>
                           <SelectContent>
                             {driveLines.map((l) => (
-                              <SelectItem key={l.id} value={l.id}>{l.lineNumber + ' - ' + l.startPoint + ' → ' + l.endPoint}</SelectItem>
+                              <SelectItem key={l.id} value={l.id}>{l.lineNumber + ' - ' + l.startPoint + ' \u2192 ' + l.endPoint}</SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
@@ -592,7 +607,6 @@ export default function DailyReportsPage() {
 
 function ReportDetails({ report }: { report: any }) {
   const language = useAppStore((s) => s.language)
-  const token = useAppStore((s) => s.token)
   const isRtl = language === 'ar'
 
   const safetyChecks = report.safety ? [
@@ -616,18 +630,18 @@ function ReportDetails({ report }: { report: any }) {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3 text-sm">
-        <Detail label={isRtl ? 'المشروع' : 'Project'} value={report.project?.name || '-'} />
-        <Detail label={isRtl ? 'خط الحفر' : 'Drive Line'} value={report.driveLine?.lineNumber || '-'} />
-        <Detail label={isRtl ? 'التاريخ' : 'Date'} value={new Date(report.reportDate).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')} />
+        <Detail label={isRtl ? 'المشروع' : 'Project'} value={(report.project && report.project.name) || '-'} />
+        <Detail label={isRtl ? 'خط الحفر' : 'Drive Line'} value={(report.driveLine && report.driveLine.lineNumber) || '-'} />
+        <Detail label={isRtl ? 'التاريخ' : 'Date'} value={report.reportDate ? new Date(report.reportDate).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US') : '-'} />
         <Detail label={isRtl ? 'الطقس' : 'Weather'} value={report.weather || '-'} />
         <Detail label={isRtl ? 'بداية العمل' : 'Start'} value={report.workStartTime || '-'} />
         <Detail label={isRtl ? 'نهاية العمل' : 'End'} value={report.workEndTime || '-'} />
-        <Detail label={isRtl ? 'ساعات التشغيل' : 'Operating'} value={report.operatingHours + 'h'} />
-        <Detail label={isRtl ? 'ساعات التوقف' : 'Stoppage'} value={report.stoppageHours + 'h'} />
-        <Detail label={isRtl ? 'عدد العمال' : 'Workers'} value={String(report.workersCount)} />
-        <Detail label={isRtl ? 'الأنابيب' : 'Pipes'} value={String(report.pipesInstalled)} />
-        <Detail label={isRtl ? 'قراءة البداية' : 'Start Reading'} value={report.startReading + ' م'} />
-        <Detail label={isRtl ? 'قراءة النهاية' : 'End Reading'} value={report.endReading + ' م'} />
+        <Detail label={isRtl ? 'ساعات التشغيل' : 'Operating'} value={String(report.operatingHours || '0') + 'h'} />
+        <Detail label={isRtl ? 'ساعات التوقف' : 'Stoppage'} value={String(report.stoppageHours || '0') + 'h'} />
+        <Detail label={isRtl ? 'عدد العمال' : 'Workers'} value={String(report.workersCount || '0')} />
+        <Detail label={isRtl ? 'الأنابيب' : 'Pipes'} value={String(report.pipesInstalled || '0')} />
+        <Detail label={isRtl ? 'قراءة البداية' : 'Start Reading'} value={String(report.startReading || '0') + ' م'} />
+        <Detail label={isRtl ? 'قراءة النهاية' : 'End Reading'} value={String(report.endReading || '0') + ' م'} />
       </div>
 
       {report.stoppageReason && (
@@ -675,7 +689,7 @@ function ReportDetails({ report }: { report: any }) {
         </div>
       )}
 
-      {report.costs?.length > 0 && (
+      {report.costs && report.costs.length > 0 && (
         <div>
           <h4 className="font-semibold text-sm mb-2">{isRtl ? 'التكاليف' : 'Costs'}</h4>
           <div className="space-y-1">
@@ -697,15 +711,6 @@ function Detail({ label, value }: { label: string; value: string }) {
     <div>
       <p className="text-xs text-muted-foreground">{label}</p>
       <p className="font-medium">{value}</p>
-    </div>
-  )
-}
-
-function Stat({ label, value, color }: { label: string; value: string; color: string }) {
-  return (
-    <div className="p-3 rounded-lg bg-muted/50 text-center">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className={'font-bold text-sm mt-0.5 ' + color}>{value}</p>
     </div>
   )
 }
