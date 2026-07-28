@@ -140,6 +140,16 @@ export default function AppShell() {
   const [dialogTab, setDialogTab] = useState<'create' | 'list' | 'edit'>('create')
   const [editingUser, setEditingUser] = useState<any>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
+  const [notifications, setNotifications] = useState<any[]>([])
+  const hasNotifPerm = hasPermission(user.role, 'notifications', user.permissions)
+
+  useEffect(() => {
+    if (!user || !token || !hasNotifPerm) return
+    authedFetch('/api/notifications?unreadOnly=true')
+      .then(r => r.json())
+      .then(data => setNotifications(data.notifications || []))
+      .catch(() => {})
+  }, [user, token, hasNotifPerm])
 
   useEffect(() => {
     if (typeof document !== 'undefined') {
@@ -393,6 +403,45 @@ export default function AppShell() {
             <Globe className="h-4 w-4" />
             <span className="text-sm">{isRtl ? 'EN' : 'ع'}</span>
           </Button>
+
+          {hasNotifPerm && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="relative">
+                  <Bell className="h-5 w-5" />
+                  {notifications.length > 0 && (
+                    <span className={cn('absolute -top-1 h-5 w-5 rounded-full bg-destructive text-destructive-foreground text-xs flex items-center justify-center', isRtl ? '-left-1' : '-right-1')}>
+                      {notifications.length}
+                    </span>
+                  )}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align={isRtl ? 'start' : 'end'} className="w-80">
+                <DropdownMenuLabel className="flex items-center justify-between">
+                  <span>{isAr ? 'التنبيهات' : 'Notifications'}</span>
+                  {notifications.length > 0 && <Badge variant="secondary">{notifications.length}</Badge>}
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {notifications.length === 0 ? (
+                  <div className="p-4 text-center text-sm text-muted-foreground">{isAr ? 'لا توجد تنبيهات جديدة' : 'No new notifications'}</div>
+                ) : (
+                  notifications.slice(0, 5).map((n) => (
+                    <DropdownMenuItem key={n.id} className="flex-col items-start p-3">
+                      <div className="flex items-center gap-2 w-full">
+                        {n.severity === 'critical' && <AlertTriangle className="h-4 w-4 text-destructive" />}
+                        {n.severity === 'warning' && <AlertTriangle className="h-4 w-4 text-yellow-500" />}
+                        {n.severity === 'info' && <Bell className="h-4 w-4 text-blue-500" />}
+                        <span className="font-medium text-sm">{n.title}</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">{n.message}</p>
+                    </DropdownMenuItem>
+                  ))
+                )}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setCurrentPage('notifications')}>{isAr ? 'عرض الكل' : 'View all'}</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
 
           <Avatar className="h-9 w-9 border-2 border-primary/20 shrink-0">
             <AvatarFallback className="bg-primary/10 text-primary text-sm font-semibold">
