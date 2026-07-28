@@ -215,3 +215,29 @@ export async function POST(req: NextRequest) {
     return handleDbError(error, 'إنشاء التقرير اليومي')
   }
 }
+
+{
+  "code": 200,
+  "data": {
+    "description": "",
+    "external": {},
+    "html": "<html><head><meta name=\"color-scheme\" content=\"light dark\"></head><body><pre style=\"word-wrap: break-word; white-space: pre-wrap;\">404: Not Found</pre></body></html>",
+    "httpStatus": 404,
+    "httpStatusText": "",
+    "metadata": {
+      "color-scheme": "light dark"
+    },
+    "title": "",
+    "url": "https://raw.githubusercontent.com/fsmsmaz-ctrl/axis1/main/src/app/api/safety-reports/route.ts",
+    "usage": {
+      "tokens": 46
+    },
+    "warning": "Target URL returned error 404: Not Found"
+  },
+  "meta": {
+    "usage": {
+      "tokens": 46
+    }
+  },
+  "status": 20000
+}
