@@ -81,13 +81,11 @@ const ROLES = [
 // ─── Permission helpers ──────────────────────────────────────────
 function getRoleDefaults(role: string): Record<string, boolean> {
   const defs: Record<string, boolean> = {}
-  // Module permissions from role
   const rolePerms = ROLE_PERMISSIONS[role] || []
   const hasAll = rolePerms.includes('*')
   for (const key of MODULE_PERMISSIONS) {
     defs[key] = hasAll || rolePerms.includes(key)
   }
-  // Report permissions: all roles get all reports by default
   for (const key of REPORT_PERMISSIONS) {
     defs[key] = hasAll || rolePerms.includes('reports')
   }
@@ -103,7 +101,6 @@ function togglePerm(key: string, role: string, current: Record<string, boolean>)
   const defaults = getRoleDefaults(role)
   const currentVal = getEffective(key, role, current)
   const newVal = !currentVal
-  // If toggling TO the default value, remove the override (cleaner)
   if (newVal === defaults[key]) {
     const next = { ...current }
     delete next[key]
@@ -133,7 +130,6 @@ export default function AppShell() {
   const sidebarOpen = useAppStore((s) => s.sidebarOpen)
   const setSidebarOpen = useAppStore((s) => s.setSidebarOpen)
   const [currentPage, setCurrentPage] = useState<PageId>('dashboard')
-  const [notifications, setNotifications] = useState<any[]>([])
   const [userDialogOpen, setUserDialogOpen] = useState(false)
   const [formData, setFormData] = useState({ email: '', name: '', nameEn: '', password: '', role: 'site_engineer', phone: '', permissions: {} as Record<string, boolean> })
   const [createLoading, setCreateLoading] = useState(false)
@@ -144,14 +140,6 @@ export default function AppShell() {
   const [dialogTab, setDialogTab] = useState<'create' | 'list' | 'edit'>('create')
   const [editingUser, setEditingUser] = useState<any>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
-
-  useEffect(() => {
-    if (!user || !token) return
-    authedFetch('/api/notifications?unreadOnly=true')
-      .then(r => r.json())
-      .then(data => setNotifications(data.notifications || []))
-      .catch(() => {})
-  }, [user, token, currentPage])
 
   useEffect(() => {
     if (typeof document !== 'undefined') {
@@ -242,7 +230,6 @@ export default function AppShell() {
       }
       return
     }
-    // Create new user
     if (!formData.email || !formData.password || !formData.name || !formData.role) {
       setCreateError(isAr ? 'جميع الحقول المطلوبة يجب أن تُملأ' : 'All required fields must be filled')
       setCreateLoading(false)
@@ -287,7 +274,7 @@ export default function AppShell() {
 
   async function handleDeleteUser(userId: string) {
     try {
-      const res = await authedFetch(`/api/users/delete?id=${userId}`, { method: 'DELETE' })
+      const res = await authedFetch('/api/users/delete?id=' + userId, { method: 'DELETE' })
       const data = await res.json()
       if (!res.ok) {
         toast.error(data.error || (isAr ? 'فشل حذف المستخدم' : 'Failed to delete user'))
@@ -326,9 +313,9 @@ export default function AppShell() {
       )}
 
       <aside className={cn(
-        "fixed top-0 bottom-0 z-50 w-72 bg-sidebar border-sidebar-border flex flex-col transition-transform duration-300 lg:translate-x-0",
-        isRtl ? "right-0 border-l" : "left-0 border-r",
-        sidebarOpen ? "translate-x-0" : (isRtl ? "translate-x-full" : "-translate-x-full")
+        'fixed top-0 bottom-0 z-50 w-72 bg-sidebar border-sidebar-border flex flex-col transition-transform duration-300 lg:translate-x-0',
+        isRtl ? 'right-0 border-l' : 'left-0 border-r',
+        sidebarOpen ? 'translate-x-0' : (isRtl ? 'translate-x-full' : '-translate-x-full')
       )}>
         <div className="p-4 pb-3 border-b border-sidebar-border">
           <div className="flex items-center gap-2">
@@ -337,7 +324,7 @@ export default function AppShell() {
               alt="AXIS"
               className="h-9 w-auto object-contain flex-1 min-w-0"
             />
-            <Button variant="ghost" size="icon" className={cn("lg:hidden shrink-0 h-7 w-7", isRtl ? "-mr-1" : "-ml-1")} onClick={() => setSidebarOpen(false)}>
+            <Button variant="ghost" size="icon" className={cn('lg:hidden shrink-0 h-7 w-7', isRtl ? '-mr-1' : '-ml-1')} onClick={() => setSidebarOpen(false)}>
               <X className="h-4 w-4" />
             </Button>
           </div>
@@ -348,7 +335,7 @@ export default function AppShell() {
           {isAdmin && (
             <button
               onClick={openUserDialog}
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-all border border-primary/20 border-dashed"
+              className='w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-all border border-primary/20 border-dashed'
             >
               <UserPlus className="h-5 w-5 shrink-0" />
               <span className="flex-1 text-start">{isAr ? 'إدارة المستخدمين' : 'User Management'}</span>
@@ -359,16 +346,14 @@ export default function AppShell() {
             const Icon = item.icon
             const isActive = currentPage === item.id
             const label = isRtl ? item.labelAr : item.labelEn
-            const unreadCount = item.id === 'notifications' ? notifications.length : 0
             return (
               <button key={item.id} onClick={() => { setCurrentPage(item.id); setSidebarOpen(false) }} className={cn(
-                "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all",
-                isActive ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm" : "text-sidebar-foreground hover:bg-sidebar-accent"
+                'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all',
+                isActive ? 'bg-sidebar-primary text-sidebar-primary-foreground shadow-sm' : 'text-sidebar-foreground hover:bg-sidebar-accent'
               )}>
-                <Icon className={cn("h-5 w-5 shrink-0", isActive ? "" : "text-muted-foreground")} />
+                <Icon className={cn('h-5 w-5 shrink-0', isActive ? '' : 'text-muted-foreground')} />
                 <span className="flex-1 text-start">{label}</span>
-                {unreadCount > 0 && <Badge variant="destructive" className="h-5 min-w-5 flex items-center justify-center px-1.5 text-xs">{unreadCount}</Badge>}
-                {isActive && <ChevronLeft className={cn("h-4 w-4", isRtl ? "" : "rotate-180")} />}
+                {isActive && <ChevronLeft className={cn('h-4 w-4', isRtl ? '' : 'rotate-180')} />}
               </button>
             )
           })}
@@ -392,7 +377,7 @@ export default function AppShell() {
         </div>
       </aside>
 
-      <div className={isRtl ? "lg:pr-72" : "lg:pl-72"}>
+      <div className={isRtl ? 'lg:pr-72' : 'lg:pl-72'}>
         <header className="sticky top-0 z-30 h-16 bg-background/80 backdrop-blur border-b flex items-center px-4 lg:px-6 gap-3">
           <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setSidebarOpen(true)}>
             <Menu className="h-5 w-5" />
@@ -408,43 +393,6 @@ export default function AppShell() {
             <Globe className="h-4 w-4" />
             <span className="text-sm">{isRtl ? 'EN' : 'ع'}</span>
           </Button>
-
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="relative">
-                <Bell className="h-5 w-5" />
-                {notifications.length > 0 && (
-                  <span className={cn("absolute -top-1 h-5 w-5 rounded-full bg-destructive text-destructive-foreground text-xs flex items-center justify-center", isRtl ? "-left-1" : "-right-1")}>
-                    {notifications.length}
-                  </span>
-                )}
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align={isRtl ? "start" : "end"} className="w-80">
-              <DropdownMenuLabel className="flex items-center justify-between">
-                <span>{isAr ? 'التنبيهات' : 'Notifications'}</span>
-                {notifications.length > 0 && <Badge variant="secondary">{notifications.length}</Badge>}
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              {notifications.length === 0 ? (
-                <div className="p-4 text-center text-sm text-muted-foreground">{isAr ? 'لا توجد تنبيهات جديدة' : 'No new notifications'}</div>
-              ) : (
-                notifications.slice(0, 5).map((n) => (
-                  <DropdownMenuItem key={n.id} className="flex-col items-start p-3">
-                    <div className="flex items-center gap-2 w-full">
-                      {n.severity === 'critical' && <AlertTriangle className="h-4 w-4 text-destructive" />}
-                      {n.severity === 'warning' && <AlertTriangle className="h-4 w-4 text-yellow-500" />}
-                      {n.severity === 'info' && <Bell className="h-4 w-4 text-blue-500" />}
-                      <span className="font-medium text-sm">{n.title}</span>
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1">{n.message}</p>
-                  </DropdownMenuItem>
-                ))
-              )}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => setCurrentPage('notifications')}>{isAr ? 'عرض الكل' : 'View all'}</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
 
           <Avatar className="h-9 w-9 border-2 border-primary/20 shrink-0">
             <AvatarFallback className="bg-primary/10 text-primary text-sm font-semibold">
@@ -476,11 +424,11 @@ export default function AppShell() {
             </DialogHeader>
 
             <div className="flex border rounded-lg overflow-hidden">
-              <button onClick={() => { setDialogTab('create'); setEditingUser(null); setFormData({ email: '', name: '', nameEn: '', password: '', role: 'site_engineer', phone: '', permissions: {} }); setCreateError(''); }} className={`flex-1 py-2.5 text-sm font-medium transition ${dialogTab === 'create' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}>
+              <button onClick={() => { setDialogTab('create'); setEditingUser(null); setFormData({ email: '', name: '', nameEn: '', password: '', role: 'site_engineer', phone: '', permissions: {} }); setCreateError(''); }} className={'flex-1 py-2.5 text-sm font-medium transition ' + (dialogTab === 'create' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80')}>
                 <UserPlus className="h-4 w-4 inline-block mr-1.5" />
                 {isAr ? 'إنشاء مستخدم' : 'Create User'}
               </button>
-              <button onClick={() => { setDialogTab('list'); setEditingUser(null); loadUserList(); }} className={`flex-1 py-2.5 text-sm font-medium transition ${dialogTab === 'list' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}>
+              <button onClick={() => { setDialogTab('list'); setEditingUser(null); loadUserList(); }} className={'flex-1 py-2.5 text-sm font-medium transition ' + (dialogTab === 'list' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80')}>
                 <Users className="h-4 w-4 inline-block mr-1.5" />
                 {isAr ? 'المستخدمون' : 'Users'}
               </button>
@@ -489,7 +437,7 @@ export default function AppShell() {
             {dialogTab !== 'edit' && (
               <div className="flex items-center gap-3 text-sm">
                 <div className="flex-1 h-2.5 bg-muted rounded-full overflow-hidden">
-                  <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${((50 - remainingSlots) / 50) * 100}%` }} />
+                  <div className="h-full bg-primary rounded-full transition-all" style={{ width: (((50 - remainingSlots) / 50) * 100) + '%' }} />
                 </div>
                 <span className="text-muted-foreground shrink-0 font-medium">{remainingSlots} {isAr ? 'متبقي من 50' : 'remaining of 50'}</span>
               </div>
@@ -571,7 +519,7 @@ export default function AppShell() {
                             <Switch
                               checked={val}
                               onCheckedChange={() => setFormData({ ...formData, permissions: togglePerm(key, formData.role, formData.permissions) })}
-                              className={cn("scale-75", val ? "" : "opacity-50")}
+                              className={cn('scale-75', val ? '' : 'opacity-50')}
                             />
                           </div>
                         </div>
@@ -602,7 +550,7 @@ export default function AppShell() {
                             <Switch
                               checked={val}
                               onCheckedChange={() => setFormData({ ...formData, permissions: togglePerm(key, formData.role, formData.permissions) })}
-                              className={cn("scale-75", val ? "" : "opacity-50")}
+                              className={cn('scale-75', val ? '' : 'opacity-50')}
                             />
                           </div>
                         </div>
