@@ -10,14 +10,27 @@ import { Input } from '@/components/ui/input'
 import {
   AlertTriangle, Bell, CheckCircle2, Info, XCircle,
   FileDown, FileSpreadsheet, Filter, Activity, ChevronLeft, ChevronRight,
-  Plus, Pencil, Trash2, ThumbsUp, ThumbsDown, Search
+  Plus, Pencil, Trash2, ThumbsUp, ThumbsDown, ArrowRight, ArrowLeft
 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
 import { toast } from 'sonner'
 
+// ==================== Types ====================
+interface ChangeDiff {
+  field: string
+  fieldEn: string
+  old: string
+  new: string
+}
+
+interface AuditChangeDetails {
+  summary: string
+  changes: ChangeDiff[]
+}
+
 // ==================== Config ====================
-const severityConfig = {
+const severityConfig: Record<string, { ar: string; en: string; color: string; icon: any; bgColor: string; iconColor: string }> = {
   critical: { ar: 'حرج', en: 'Critical', color: 'destructive', icon: XCircle, bgColor: 'bg-red-50', iconColor: 'text-red-600' },
   warning: { ar: 'تحذير', en: 'Warning', color: 'default', icon: AlertTriangle, bgColor: 'bg-orange-50', iconColor: 'text-orange-600' },
   info: { ar: 'معلومة', en: 'Info', color: 'secondary', icon: Info, bgColor: 'bg-blue-50', iconColor: 'text-blue-600' },
@@ -43,6 +56,7 @@ const entityLabels: Record<string, { ar: string; en: string }> = {
   equipment: { ar: 'المعدة', en: 'Equipment' },
   drive_line: { ar: 'خط الحفر', en: 'Drive Line' },
   finishing: { ar: 'التشطيب', en: 'Finishing' },
+  company_asset: { ar: 'أصل الشركة', en: 'Company Asset' },
 }
 
 const actionLabels: Record<string, { ar: string; en: string; icon: any; color: string }> = {
@@ -53,7 +67,141 @@ const actionLabels: Record<string, { ar: string; en: string; icon: any; color: s
   reject: { ar: 'رفض', en: 'Reject', icon: ThumbsDown, color: 'bg-amber-100 text-amber-700' },
 }
 
-// ==================== Component ====================
+// ==================== Helper: Parse Details ====================
+function parseDetails(details: string | null | undefined): AuditChangeDetails | null {
+  if (!details) return null
+  try {
+    const parsed = JSON.parse(details)
+    if (parsed && typeof parsed === 'object' && Array.isArray(parsed.changes) && parsed.changes.length > 0) {
+      return parsed as AuditChangeDetails
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+// ==================== Component: Diff Renderer ====================
+function DiffRenderer({ details, isRtl }: { details: AuditChangeDetails; isRtl: boolean }) {
+  const Arrow = isRtl ? ArrowLeft : ArrowRight
+
+  return (
+    <div className="mt-1.5 space-y-1.5">
+      {details.summary && (
+        <p className="text-xs font-medium text-muted-foreground mb-1.5">{details.summary}</p>
+      )}
+      {details.changes.map((change, idx) => (
+        <div
+          key={idx}
+          className="flex items-start gap-2 text-xs bg-muted/50 rounded-md px-2.5 py-1.5 border border-border/50"
+        >
+          <span className="font-medium text-foreground shrink-0 min-w-[80px] sm:min-w-[100px]">
+            {isRtl ? change.field : change.fieldEn}:
+          </span>
+          <span className="text-red-600 bg-red-50 px-1.5 py-0.5 rounded line-through font-mono break-all">
+            {change.old}
+          </span>
+          <Arrow className="h-3 w-3 text-muted-foreground shrink-0 mt-0.5" />
+          <span className="text-green-700 bg-green-50 px-1.5 py-0.5 rounded font-mono font-medium break-all">
+            {change.new}
+          </span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ==================== Component: Expanded Log ====================
+function LogEntry({ log, isRtl }: { log: any; isRtl: boolean }) {
+  const [expanded, setExpanded] = useState(false)
+  const actionConfig = actionLabels[log.action] || actionLabels.update
+  const ActionIcon = actionConfig.icon
+  const entityLabel = entityLabels[log.entity] || { ar: log.entity, en: log.entity }
+  const diffDetails = parseDetails(log.details)
+  const isUpdateWithChanges = log.action === 'update' && diffDetails
+
+  return (
+    <Card
+      className={`cursor-pointer transition hover:shadow-sm ${
+        log.action === 'delete'
+          ? 'border-r-4 border-r-red-400'
+          : log.action === 'create'
+          ? 'border-r-4 border-r-green-400'
+          : ''
+      }`}
+      onClick={() => setExpanded(!expanded)}
+    >
+      <CardContent className="p-3">
+        <div className="flex items-center gap-3">
+          {/* Action Icon */}
+          <div className={`w-9 h-9 rounded-lg ${actionConfig.color} flex items-center justify-center shrink-0`}>
+            <ActionIcon className="h-4 w-4" />
+          </div>
+
+          {/* Content */}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-semibold text-sm">
+                {log.user?.name || (isRtl ? 'غير معروف' : 'Unknown')}
+              </span>
+              <Badge variant="outline" className={`text-xs ${actionConfig.color} border-0`}>
+                {isRtl ? actionConfig.ar : actionConfig.en}
+              </Badge>
+              <Badge variant="secondary" className="text-xs">
+                {isRtl ? entityLabel.ar : entityLabel.en}
+              </Badge>
+              {isUpdateWithChanges && (
+                <Badge variant="outline" className="text-xs bg-blue-50 text-blue-600 border-blue-200">
+                  {diffDetails.changes.length} {isRtl ? 'تغيير' : 'change'}{diffDetails.changes.length > 1 ? 's' : ''}
+                </Badge>
+              )}
+            </div>
+
+            {/* Summary line (truncated) */}
+            {!isUpdateWithChanges && (
+              <p className="text-sm text-muted-foreground mt-0.5 truncate">
+                {log.details || '-'}
+              </p>
+            )}
+            {isUpdateWithChanges && !expanded && (
+              <p className="text-sm text-muted-foreground mt-0.5">
+                {diffDetails.summary}
+                <span className="text-xs ml-1 text-primary">
+                  ({isRtl ? 'انقر للتوسيع' : 'click to expand'})
+                </span>
+              </p>
+            )}
+
+            {/* Expanded: show diff or full details */}
+            {expanded && isUpdateWithChanges && (
+              <DiffRenderer details={diffDetails} isRtl={isRtl} />
+            )}
+            {expanded && !isUpdateWithChanges && log.details && (
+              <p className="text-sm text-muted-foreground mt-1 bg-muted/50 rounded-md px-2.5 py-1.5">
+                {log.details}
+              </p>
+            )}
+
+            {/* Project + Time */}
+            <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
+              {log.project && (
+                <span>{log.project.name} ({log.project.code})</span>
+              )}
+              <span>{new Date(log.createdAt).toLocaleString(isRtl ? 'ar-EG' : 'en-US')}</span>
+            </div>
+          </div>
+
+          {/* Expand indicator */}
+          <div className={`transition-transform shrink-0 ${expanded ? 'rotate-180' : ''}`}>
+            <ChevronLeft className="h-4 w-4 text-muted-foreground" />
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+// ==================== Main Component ====================
 export default function NotificationsPage() {
   const [notifications, setNotifications] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -148,15 +296,25 @@ export default function NotificationsPage() {
     const header = isRtl
       ? ['التاريخ', 'المستخدم', 'الإجراء', 'القسم', 'التفاصيل', 'المشروع']
       : ['Date', 'User', 'Action', 'Entity', 'Details', 'Project']
-    const rows = logs.map((log: any) => [
-      new Date(log.createdAt).toLocaleString(isRtl ? 'ar-EG' : 'en-US'),
-      log.user?.name || '-',
-      t(actionLabels[log.action] || { ar: log.action, en: log.action }),
-      t(entityLabels[log.entity] || { ar: log.entity, en: log.entity }),
-      log.details || '-',
-      log.project?.name || '-',
-    ])
-    const csvContent = '\uFEFF' + [header, ...rows].map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n')
+    const rows = logs.map((log: any) => {
+      // For CSV, flatten diff details into readable text
+      let detailsStr = log.details || '-'
+      const diff = parseDetails(log.details)
+      if (diff) {
+        detailsStr = diff.summary + ' | ' + diff.changes.map(
+          (c) => `${isRtl ? c.field : c.fieldEn}: ${c.old} → ${c.new}`
+        ).join('; ')
+      }
+      return [
+        new Date(log.createdAt).toLocaleString(isRtl ? 'ar-EG' : 'en-US'),
+        log.user?.name || '-',
+        t(actionLabels[log.action] || { ar: log.action, en: log.action }),
+        t(entityLabels[log.entity] || { ar: log.entity, en: log.entity }),
+        detailsStr,
+        log.project?.name || '-',
+      ]
+    })
+    const csvContent = '\uFEFF' + [header, ...rows].map(r => r.map(c => `"${String(c).replace(/"/g, '""')}").join(',')).join('\n')
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -168,7 +326,14 @@ export default function NotificationsPage() {
   }
 
   function exportJSON() {
-    const blob = new Blob([JSON.stringify(logs, null, 2)], { type: 'application/json' })
+    const exportData = logs.map((log: any) => {
+      const diff = parseDetails(log.details)
+      return {
+        ...log,
+        detailsParsed: diff || log.details,
+      }
+    })
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
@@ -288,8 +453,12 @@ export default function NotificationsPage() {
           {/* Stats Cards */}
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
             {entityStats.map((stat: any) => (
-              <Card key={stat.entity} className={`${filterEntity === stat.entity ? 'ring-2 ring-primary' : ''} cursor-pointer hover:shadow-md transition`}>
-                <CardContent className="p-3 text-center" onClick={() => setFilterEntity(filterEntity === stat.entity ? 'all' : stat.entity)}>
+              <Card
+                key={stat.entity}
+                className={`${filterEntity === stat.entity ? 'ring-2 ring-primary' : ''} cursor-pointer hover:shadow-md transition`}
+                onClick={() => setFilterEntity(filterEntity === stat.entity ? 'all' : stat.entity)}
+              >
+                <CardContent className="p-3 text-center">
                   <p className="text-2xl font-bold">{stat.count}</p>
                   <p className="text-xs text-muted-foreground">{isRtl ? stat.ar : stat.en}</p>
                 </CardContent>
@@ -396,53 +565,9 @@ export default function NotificationsPage() {
           ) : (
             <>
               <div className="space-y-2">
-                {logs.map((log: any) => {
-                  const actionConfig = actionLabels[log.action] || actionLabels.update
-                  const ActionIcon = actionConfig.icon
-                  const entityLabel = entityLabels[log.entity] || { ar: log.entity, en: log.entity }
-
-                  return (
-                    <Card key={log.id} className={`${log.action === 'delete' ? 'border-r-4 border-r-red-400' : ''}`}>
-                      <CardContent className="p-3">
-                        <div className="flex items-center gap-3">
-                          {/* Action Icon */}
-                          <div className={`w-9 h-9 rounded-lg ${actionConfig.color} flex items-center justify-center shrink-0`}>
-                            <ActionIcon className="h-4 w-4" />
-                          </div>
-
-                          {/* Content */}
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              {/* User Name */}
-                              <span className="font-semibold text-sm">
-                                {log.user?.name || (isRtl ? 'غير معروف' : 'Unknown')}
-                              </span>
-                              {/* Action Badge */}
-                              <Badge variant="outline" className={`text-xs ${actionConfig.color} border-0`}>
-                                {isRtl ? actionConfig.ar : actionConfig.en}
-                              </Badge>
-                              {/* Entity Badge */}
-                              <Badge variant="secondary" className="text-xs">
-                                {isRtl ? entityLabel.ar : entityLabel.en}
-                              </Badge>
-                            </div>
-                            {/* Details */}
-                            <p className="text-sm text-muted-foreground mt-0.5 truncate">
-                              {log.details || '-'}
-                            </p>
-                            {/* Project + Time */}
-                            <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
-                              {log.project && (
-                                <span>{log.project.name} ({log.project.code})</span>
-                              )}
-                              <span>{new Date(log.createdAt).toLocaleString(isRtl ? 'ar-EG' : 'en-US')}</span>
-                            </div>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  )
-                })}
+                {logs.map((log: any) => (
+                  <LogEntry key={log.id} log={log} isRtl={isRtl} />
+                ))}
               </div>
 
               {/* Pagination */}
