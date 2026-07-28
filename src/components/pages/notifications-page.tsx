@@ -96,7 +96,7 @@ function DiffRenderer({ details, isRtl }: { details: AuditChangeDetails; isRtl: 
           className="flex items-start gap-2 text-xs bg-muted/50 rounded-md px-2.5 py-1.5 border border-border/50"
         >
           <span className="font-medium text-foreground shrink-0 min-w-[80px] sm:min-w-[100px]">
-            {isRtl ? change.field : change.fieldEn}:
+            {(isRtl ? change.field : change.fieldEn) + ':'}
           </span>
           <span className="text-red-600 bg-red-50 px-1.5 py-0.5 rounded line-through font-mono break-all">
             {change.old}
@@ -120,21 +120,21 @@ function LogEntry({ log, isRtl }: { log: any; isRtl: boolean }) {
   const diffDetails = parseDetails(log.details)
   const isUpdateWithChanges = log.action === 'update' && diffDetails
 
+  const cardBorderClass = log.action === 'delete'
+    ? 'border-r-4 border-r-red-400'
+    : log.action === 'create'
+    ? 'border-r-4 border-r-green-400'
+    : ''
+
   return (
     <Card
-      className={`cursor-pointer transition hover:shadow-sm ${
-        log.action === 'delete'
-          ? 'border-r-4 border-r-red-400'
-          : log.action === 'create'
-          ? 'border-r-4 border-r-green-400'
-          : ''
-      }`}
+      className={'cursor-pointer transition hover:shadow-sm ' + cardBorderClass}
       onClick={() => setExpanded(!expanded)}
     >
       <CardContent className="p-3">
         <div className="flex items-center gap-3">
           {/* Action Icon */}
-          <div className={`w-9 h-9 rounded-lg ${actionConfig.color} flex items-center justify-center shrink-0`}>
+          <div className={'w-9 h-9 rounded-lg ' + actionConfig.color + ' flex items-center justify-center shrink-0'}>
             <ActionIcon className="h-4 w-4" />
           </div>
 
@@ -144,7 +144,7 @@ function LogEntry({ log, isRtl }: { log: any; isRtl: boolean }) {
               <span className="font-semibold text-sm">
                 {log.user?.name || (isRtl ? 'غير معروف' : 'Unknown')}
               </span>
-              <Badge variant="outline" className={`text-xs ${actionConfig.color} border-0`}>
+              <Badge variant="outline" className={'text-xs ' + actionConfig.color + ' border-0'}>
                 {isRtl ? actionConfig.ar : actionConfig.en}
               </Badge>
               <Badge variant="secondary" className="text-xs">
@@ -152,7 +152,7 @@ function LogEntry({ log, isRtl }: { log: any; isRtl: boolean }) {
               </Badge>
               {isUpdateWithChanges && (
                 <Badge variant="outline" className="text-xs bg-blue-50 text-blue-600 border-blue-200">
-                  {diffDetails.changes.length} {isRtl ? 'تغيير' : 'change'}{diffDetails.changes.length > 1 ? 's' : ''}
+                  {diffDetails.changes.length + ' ' + (isRtl ? 'تغيير' : 'change') + (diffDetails.changes.length > 1 ? 's' : '')}
                 </Badge>
               )}
             </div>
@@ -185,14 +185,14 @@ function LogEntry({ log, isRtl }: { log: any; isRtl: boolean }) {
             {/* Project + Time */}
             <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
               {log.project && (
-                <span>{log.project.name} ({log.project.code})</span>
+                <span>{log.project.name + ' (' + log.project.code + ')'}</span>
               )}
               <span>{new Date(log.createdAt).toLocaleString(isRtl ? 'ar-EG' : 'en-US')}</span>
             </div>
           </div>
 
           {/* Expand indicator */}
-          <div className={`transition-transform shrink-0 ${expanded ? 'rotate-180' : ''}`}>
+          <div className={'transition-transform shrink-0 ' + (expanded ? 'rotate-180' : '')}>
             <ChevronLeft className="h-4 w-4 text-muted-foreground" />
           </div>
         </div>
@@ -239,7 +239,7 @@ export default function NotificationsPage() {
   }, [token, fetchNotifications])
 
   async function markAsRead(id: string) {
-    await authedFetch(`/api/notifications/${id}`, {
+    await authedFetch('/api/notifications/' + id, {
       method: 'PUT',
       body: JSON.stringify({ read: true }),
     })
@@ -268,7 +268,7 @@ export default function NotificationsPage() {
     params.set('page', String(logPage))
     params.set('limit', '50')
 
-    const res = await authedFetch(`/api/audit-logs?${params.toString()}`)
+    const res = await authedFetch('/api/audit-logs?' + params.toString())
     if (res.ok) {
       const data = await res.json()
       setLogs(data.logs || [])
@@ -297,12 +297,11 @@ export default function NotificationsPage() {
       ? ['التاريخ', 'المستخدم', 'الإجراء', 'القسم', 'التفاصيل', 'المشروع']
       : ['Date', 'User', 'Action', 'Entity', 'Details', 'Project']
     const rows = logs.map((log: any) => {
-      // For CSV, flatten diff details into readable text
       let detailsStr = log.details || '-'
       const diff = parseDetails(log.details)
       if (diff) {
         detailsStr = diff.summary + ' | ' + diff.changes.map(
-          (c) => `${isRtl ? c.field : c.fieldEn}: ${c.old} → ${c.new}`
+          (c) => (isRtl ? c.field : c.fieldEn) + ': ' + c.old + ' → ' + c.new
         ).join('; ')
       }
       return [
@@ -314,12 +313,12 @@ export default function NotificationsPage() {
         log.project?.name || '-',
       ]
     })
-    const csvContent = '\uFEFF' + [header, ...rows].map(r => r.map(c => `"${String(c).replace(/"/g, '""')}").join(',')).join('\n')
+    const csvContent = '\uFEFF' + [header, ...rows].map(r => r.map(c => '"' + String(c).replace(/"/g, '""') + '"').join(',')).join('\n')
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `audit-logs-${new Date().toISOString().slice(0, 10)}.csv`
+    a.download = 'audit-logs-' + new Date().toISOString().slice(0, 10) + '.csv'
     a.click()
     URL.revokeObjectURL(url)
     toast.success(isRtl ? 'تم تصدير السجلات بنجاح' : 'Exported successfully')
@@ -337,7 +336,7 @@ export default function NotificationsPage() {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `audit-logs-${new Date().toISOString().slice(0, 10)}.json`
+    a.download = 'audit-logs-' + new Date().toISOString().slice(0, 10) + '.json'
     a.click()
     URL.revokeObjectURL(url)
     toast.success(isRtl ? 'تم تصدير السجلات بنجاح' : 'Exported successfully')
@@ -372,7 +371,7 @@ export default function NotificationsPage() {
               <h1 className="text-2xl font-bold">{isRtl ? 'التنبيهات' : 'Notifications'}</h1>
               <p className="text-sm text-muted-foreground mt-1">
                 {unreadCount > 0
-                  ? (isRtl ? `${unreadCount} تنبيه غير مقروء` : `${unreadCount} unread`)
+                  ? (isRtl ? (unreadCount + ' تنبيه غير مقروء') : (unreadCount + ' unread'))
                   : (isRtl ? 'لا توجد تنبيهات جديدة' : 'No new notifications')
                 }
               </p>
@@ -404,12 +403,12 @@ export default function NotificationsPage() {
                 return (
                   <Card
                     key={n.id}
-                    className={`transition ${!n.read ? 'border-r-4 border-r-primary' : 'opacity-70'}`}
+                    className={'transition ' + (!n.read ? 'border-r-4 border-r-primary' : 'opacity-70')}
                   >
                     <CardContent className="p-4">
                       <div className="flex items-start gap-3">
-                        <div className={`w-10 h-10 rounded-lg ${config.bgColor} flex items-center justify-center shrink-0`}>
-                          <Icon className={`h-5 w-5 ${config.iconColor}`} />
+                        <div className={'w-10 h-10 rounded-lg ' + config.bgColor + ' flex items-center justify-center shrink-0'}>
+                          <Icon className={'h-5 w-5 ' + config.iconColor} />
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap mb-1">
@@ -455,7 +454,7 @@ export default function NotificationsPage() {
             {entityStats.map((stat: any) => (
               <Card
                 key={stat.entity}
-                className={`${filterEntity === stat.entity ? 'ring-2 ring-primary' : ''} cursor-pointer hover:shadow-md transition`}
+                className={(filterEntity === stat.entity ? 'ring-2 ring-primary ' : '') + 'cursor-pointer hover:shadow-md transition'}
                 onClick={() => setFilterEntity(filterEntity === stat.entity ? 'all' : stat.entity)}
               >
                 <CardContent className="p-3 text-center">
@@ -474,7 +473,6 @@ export default function NotificationsPage() {
                 {isRtl ? 'فلترة السجلات' : 'Filter Logs'}
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
-                {/* Entity Filter */}
                 <Select value={filterEntity} onValueChange={setFilterEntity}>
                   <SelectTrigger>
                     <SelectValue placeholder={isRtl ? 'القسم' : 'Entity'} />
@@ -489,7 +487,6 @@ export default function NotificationsPage() {
                   </SelectContent>
                 </Select>
 
-                {/* Action Filter */}
                 <Select value={filterAction} onValueChange={setFilterAction}>
                   <SelectTrigger>
                     <SelectValue placeholder={isRtl ? 'الإجراء' : 'Action'} />
@@ -504,7 +501,6 @@ export default function NotificationsPage() {
                   </SelectContent>
                 </Select>
 
-                {/* User Filter */}
                 <Select value={filterUser} onValueChange={setFilterUser}>
                   <SelectTrigger>
                     <SelectValue placeholder={isRtl ? 'المستخدم' : 'User'} />
@@ -519,7 +515,6 @@ export default function NotificationsPage() {
                   </SelectContent>
                 </Select>
 
-                {/* Date From */}
                 <Input
                   type="date"
                   value={filterDateFrom}
@@ -527,7 +522,6 @@ export default function NotificationsPage() {
                   placeholder={isRtl ? 'من تاريخ' : 'From'}
                 />
 
-                {/* Date To */}
                 <Input
                   type="date"
                   value={filterDateTo}
@@ -535,7 +529,6 @@ export default function NotificationsPage() {
                   placeholder={isRtl ? 'إلى تاريخ' : 'To'}
                 />
 
-                {/* Export Buttons */}
                 <div className="flex gap-1">
                   <Button variant="outline" size="sm" onClick={exportCSV} title={isRtl ? 'تصدير Excel/CSV' : 'Export CSV'}>
                     <FileSpreadsheet className="h-4 w-4" />
@@ -570,13 +563,12 @@ export default function NotificationsPage() {
                 ))}
               </div>
 
-              {/* Pagination */}
               {totalPages > 1 && (
                 <div className="flex items-center justify-between">
                   <p className="text-sm text-muted-foreground">
                     {isRtl
-                      ? `${logTotal} سجل - صفحة ${logPage} من ${totalPages}`
-                      : `${logTotal} logs - Page ${logPage} of ${totalPages}`
+                      ? (logTotal + ' سجل - صفحة ' + logPage + ' من ' + totalPages)
+                      : (logTotal + ' logs - Page ' + logPage + ' of ' + totalPages)
                     }
                   </p>
                   <div className="flex gap-1">
