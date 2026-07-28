@@ -1,34 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
-import { safeDbOp, handleDbError } from '@/lib/api-helpers'
-
-export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const user = await getAuthUser(req)
-
-  if (!user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
-  const { id } = await params
-
-  const equipment = await db.equipment.findUnique({
-    where: { id },
-    include: {
-      project: true,
-      maintenance: {
-        include: { performedBy: { select: { name: true, nameEn: true } } },
-        orderBy: { date: 'desc' },
-      },
-    },
-  })
-
-  if (!equipment) {
-    return NextResponse.json({ error: 'Equipment not found' }, { status: 404 })
-  }
-
-  return NextResponse.json({ equipment })
-}
+import { safeDbOp, buildAuditDetails } from '@/lib/api-helpers'
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const user = await getAuthUser(req)
@@ -41,6 +14,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const body = await req.json()
 
   try {
+    // Fetch old data before update
+    const oldEq = await db.equipment.findUnique({ where: { id } })
+
     const equipment = await db.equipment.update({
       where: { id },
       data: {
@@ -52,21 +28,29 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         lastMaintenance: body.lastMaintenance ? new Date(body.lastMaintenance) : null,
         nextMaintenance: body.nextMaintenance ? new Date(body.nextMaintenance) : null,
         notes: body.notes,
+        projectId: body.projectId || null,
       },
     })
 
-    // Audit log + notification (non-critical, fire-and-forget)
+    // Build detailed changes diff
+    const oldForCompare = oldEq ? {
+      name: oldEq.name, number: oldEq.number, type: oldEq.type, status: oldEq.status,
+      dailyHours: oldEq.dailyHours,
+      lastMaintenance: oldEq.lastMaintenance?.toISOString?.()?.split('T')[0] || oldEq.lastMaintenance,
+      nextMaintenance: oldEq.nextMaintenance?.toISOString?.()?.split('T')[0] || oldEq.nextMaintenance,
+      notes: oldEq.notes,
+    } : null
+
+    const details = oldForCompare
+      ? buildAuditDetails(oldForCompare, body, `تعديل المعدة: ${equipment.number} - ${equipment.name}`, {
+          skipFields: ['id', 'createdAt', 'updatedAt', 'projectId', 'breakdowns', 'spareParts'],
+        })
+      : `تعديل المعدة: ${equipment.number} - ${equipment.name}`
+
     Promise.all([
       safeDbOp(
         () => db.auditLog.create({
-          data: {
-            userId: user.id,
-            projectId: equipment.projectId,
-            action: 'update',
-            entity: 'equipment',
-            entityId: id,
-            details: `Updated equipment: ${equipment.number} - ${equipment.name}`,
-          },
+          data: { userId: user.id, projectId: equipment.projectId, action: 'update', entity: 'equipment', entityId: id, details },
         }),
         'سجل التدقيق'
       ),
@@ -101,43 +85,32 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   const { id } = await params
 
   try {
-    // Get equipment info before deleting
-    const equipInfo = await safeDbOp(
-      () => db.equipment.findUnique({ where: { id }, select: { projectId: true, number: true, name: true } }),
+    const eqInfo = await safeDbOp(
+      () => db.equipment.findUnique({ where: { id }, select: { projectId: true, name: true, number: true } }),
       'جلب بيانات المعدة'
     )
 
-    await db.equipment.delete({ where: { id } })
+    const deleteResult = await safeDbOp(
+      () => db.equipment.delete({ where: { id } }),
+      'حذف المعدة'
+    )
+    if (!deleteResult.success) return deleteResult.response
 
-    const equipDesc = equipInfo.success && equipInfo.data
-      ? `${equipInfo.data.number} - ${equipInfo.data.name}`
+    const projectId = eqInfo.success ? eqInfo.data?.projectId : null
+    const eqDesc = eqInfo.success && eqInfo.data
+      ? `${eqInfo.data.number} - ${eqInfo.data.name}`
       : id
-    const projectId = equipInfo.success ? equipInfo.data?.projectId : null
 
-    // Audit log + delete notification (non-critical, fire-and-forget)
     Promise.all([
       safeDbOp(
         () => db.auditLog.create({
-          data: {
-            userId: user.id,
-            projectId,
-            action: 'delete',
-            entity: 'equipment',
-            entityId: id,
-            details: `Deleted equipment: ${equipDesc}`,
-          },
+          data: { userId: user.id, projectId, action: 'delete', entity: 'equipment', entityId: id, details: `حذف معدة: ${eqDesc}` },
         }),
         'سجل التدقيق'
       ),
       safeDbOp(
         () => db.notification.create({
-          data: {
-            projectId,
-            type: 'equipment_breakdown',
-            title: 'حذف معدة',
-            message: `تم حذف المعدة: ${equipDesc} بواسطة ${user.name}`,
-            severity: 'warning',
-          },
+          data: { projectId, type: 'equipment_breakdown', title: 'حذف معدة', message: `تم حذف: ${eqDesc} بواسطة ${user.name}`, severity: 'warning' },
         }),
         'إشعار الحذف'
       ),
