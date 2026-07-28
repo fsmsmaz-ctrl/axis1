@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
     const validationError = validateRequired(body, ['projectId', 'reportDate'])
     if (validationError) return validationError
 
-    // Check if safety inspection already exists for this project+date
+    // === Check: only ONE safety report per employee per project per day ===
     const dateStart = new Date(body.reportDate)
     dateStart.setHours(0, 0, 0, 0)
     const dateEnd = new Date(body.reportDate)
@@ -66,6 +66,7 @@ export async function POST(req: NextRequest) {
       () => db.safetyReport.findFirst({
         where: {
           projectId: body.projectId,
+          signedById: user.id,
           reportDate: { gte: dateStart, lte: dateEnd },
         },
         include: { dailyReport: { select: { id: true } } },
@@ -75,10 +76,15 @@ export async function POST(req: NextRequest) {
 
     if (existingResult.success && existingResult.data) {
       return NextResponse.json(
-        { error: 'duplicate', message: 'يوجد بالفعل فحص سلامة لهذا المشروع في هذا التاريخ', existingId: existingResult.data.id },
+        {
+          error: 'duplicate',
+          message: 'لقد قمت بإنشاء تقرير سلامة لهذا المشروع في هذا التاريخ بالفعل',
+          existingId: existingResult.data.id,
+        },
         { status: 409 }
       )
     }
+    // === End of duplicate check ===
 
     // 1. Create a minimal daily report (safety_only flag via status)
     const createReportResult = await safeDbOp(
@@ -157,7 +163,7 @@ export async function POST(req: NextRequest) {
           action: 'create',
           entity: 'safety_report',
           entityId: createSafetyResult.data.id,
-          details: `Created safety inspection for ${body.reportDate}`,
+          details: 'Created safety inspection for ' + body.reportDate,
         },
       }),
       'سجل التدقيق'
