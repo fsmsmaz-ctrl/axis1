@@ -18,11 +18,11 @@ model User {
   name         String
   nameEn       String?
   phone        String?
-  role         String   @default("site_engineer")
+  role         String   @default("site_engineer") // top_management, project_manager, site_engineer, hse_officer, foreman, accountant
   avatar       String?
   active       Boolean  @default(true)
-  language     String   @default("ar")
-  permissions  Json?
+  language     String   @default("ar") // ar, en
+  permissions  Json?    // Custom per-user permission overrides: { drive_lines: true, rpt_daily_site: false, ... }
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -36,7 +36,7 @@ model User {
   finishings         Finishing[]
   notifications      Notification[]
   auditLogs          AuditLog[]
-companyAssets      CompanyAsset[]  @relation("AssetResponsible")
+  companyAssets      CompanyAsset[]  @relation("AssetResponsible")
 }
 
 // ==================== Projects ====================
@@ -47,16 +47,16 @@ model Project {
   client         String
   location       String
   contractNumber String?
-  workType       String
-  pipeDiameter   String
-  totalLength    Float
-  pricePerMeter  Float
-  soilType       String
+  workType       String   // pipe_jacking, microtunneling, hdd, auger_boring
+  pipeDiameter   String   // 800mm, 1000mm, 1200mm, other
+  totalLength    Float    // meters
+  pricePerMeter  Float    // OMR
+  soilType       String   // soft, hard, rocky, mixed
   startDate      DateTime
   expectedEnd    DateTime
   actualEnd      DateTime?
-  status         String   @default("not_started")
-  progress       Float    @default(0)
+  status         String   @default("not_started") // not_started, in_progress, suspended, completed
+  progress       Float    @default(0) // 0-100
   notes          String?
 
   managerId      String?
@@ -72,6 +72,7 @@ model Project {
   finishings     Finishing[]
   notifications  Notification[]
   auditLogs      AuditLog[]
+  companyAssets  CompanyAsset[]
 
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -84,14 +85,14 @@ model DriveLine {
   lineNumber    String
   startPoint    String
   endPoint      String
-  totalLength   Float
+  totalLength   Float    // meters
   diameter      String
-  pipeType      String
+  pipeType      String   // pipe, sleeve
   soilType      String
-  depth         Float
-  status        String   @default("not_started")
+  depth         Float    // meters
+  status        String   @default("not_started") // not_started, in_progress, completed, suspended
   completedLength Float  @default(0)
-  progress      Float    @default(0)
+  progress      Float    @default(0) // 0-100
   problems      String?
 
   project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -107,19 +108,20 @@ model DailyReport {
   projectId       String
   driveLineId     String?
   reportDate      DateTime
-  weather         String?
-  workStartTime   String?
-  workEndTime     String?
+  weather         String?  // sunny, cloudy, rainy, windy
+  workStartTime   String?  // HH:mm
+  workEndTime     String?  // HH:mm
   operatingHours  Float    @default(0)
   stoppageHours   Float    @default(0)
   stoppageReason  String?
   workersCount    Int      @default(0)
-  attendees       String?
+  attendees       String?  // JSON string of workers list
   absentees       String?
   attendanceNotes String?
 
-  startReading    Float    @default(0)
-  endReading      Float    @default(0)
+  // Production data
+  startReading    Float    @default(0) // meter
+  endReading      Float    @default(0) // meter
   dailyMeters     Float    @default(0)
   totalMeters     Float    @default(0)
   remainingMeters Float    @default(0)
@@ -129,9 +131,10 @@ model DailyReport {
   productionNotes String?
   problems        String?
 
+  // Revenue (auto-calculated)
   dailyRevenue    Float    @default(0)
 
-  status          String   @default("draft")
+  status          String   @default("draft") // draft, submitted, approved, rejected
   approvedById    String?
   approvedAt      DateTime?
 
@@ -156,6 +159,7 @@ model SafetyReport {
   projectId           String
   reportDate          DateTime
 
+  // Checklist items (boolean)
   ppeAvailable        Boolean  @default(false)
   helmetCheck         Boolean  @default(false)
   bootsCheck          Boolean  @default(false)
@@ -172,10 +176,10 @@ model SafetyReport {
   workPermit          Boolean  @default(false)
   toolboxTalk         Boolean  @default(false)
 
-  hazards             String?
+  hazards             String?  // JSON list
   observations        String?
   violations          String?
-  incidentType        String?
+  incidentType        String?  // none, near_miss, incident, accident
   incidentDescription String?
 
   signedBy            String?
@@ -196,10 +200,10 @@ model Equipment {
   projectId       String?
   name            String
   number          String   @unique
-  type            String
-  status          String   @default("operational")
+  type            String   // jacking_machine, crane, excavator, pump, etc.
+  status          String   @default("operational") // operational, stopped, maintenance_needed
   dailyHours      Float    @default(0)
-  breakdowns      String?
+  breakdowns      String?  // JSON list of breakdowns
   lastMaintenance DateTime?
   nextMaintenance DateTime?
   spareParts      String?
@@ -216,7 +220,7 @@ model EquipmentMaintenance {
   id            String   @id @default(cuid())
   equipmentId   String
   date          DateTime
-  type          String
+  type          String   // routine, repair, emergency
   description   String
   cost          Float    @default(0)
   partsUsed     String?
@@ -233,7 +237,7 @@ model Cost {
   projectId     String
   dailyReportId String?
   date          DateTime
-  category      String
+  category      String   // labor, housing, transport, fuel, maintenance, parts, oil, safety, rental, other
   description   String
   amount        Float
   notes         String?
@@ -258,7 +262,7 @@ model Finishing {
   siteRestored    Boolean  @default(false)
   lineHandover    Boolean  @default(false)
   clientNotes     String?
-  handoverStatus  String   @default("pending")
+  handoverStatus  String   @default("pending") // pending, accepted, needs_revision, rejected
   signedBy        String?
   signedById      String?
   signedAt        DateTime?
@@ -274,10 +278,10 @@ model Finishing {
 // ==================== Attachments ====================
 model Attachment {
   id            String   @id @default(cuid())
-  type          String
+  type          String   // site_photo, drilling_photo, safety_photo, finishing_photo, contract, po, invoice, report, worker_doc, certificate
   fileName      String
-  fileType      String
-  url           String
+  fileType      String   // image, pdf, doc
+  url           String   // base64 or path
   size          Int?
   dailyReportId String?
   finishingId   String?
@@ -293,10 +297,10 @@ model Notification {
   id          String   @id @default(cuid())
   projectId   String?
   userId      String?
-  type        String
+  type        String   // safety_missing, work_stopped, low_production, equipment_breakdown, mass_absence, cost_overrun, deadline_near, safety_alert, report_delay
   title       String
   message     String
-  severity    String   @default("info")
+  severity    String   @default("info") // info, warning, critical
   read        Boolean  @default(false)
   createdAt   DateTime @default(now())
 
@@ -310,8 +314,8 @@ model AuditLog {
   userId      String?
   projectId   String?
   dailyReportId String?
-  action      String
-  entity      String
+  action      String   // create, update, delete, approve, reject
+  entity      String   // project, drive_line, daily_report, safety_report, cost, equipment, finishing
   entityId    String
   details     String?
   createdAt   DateTime @default(now())
