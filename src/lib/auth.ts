@@ -24,7 +24,7 @@ export function getCookieOptions() {
   const isProduction = process.env.NODE_ENV === 'production'
   return {
     httpOnly: true,
-    secure: isProduction,   // true on Netlify (HTTPS), false on localhost (HTTP)
+    secure: isProduction,
     sameSite: 'lax' as const,
     maxAge: SESSION_MAX_AGE,
     path: '/',
@@ -33,7 +33,7 @@ export function getCookieOptions() {
 
 // ─── Module permissions (sidebar sections) ───────────────────────────
 export const MODULE_PERMISSIONS = [
-  'drive_lines', 'daily_reports', 'safety', 'equipment', 'costs', 'finishings', 'performance',
+  'drive_lines', 'daily_reports', 'safety', 'equipment', 'costs', 'finishings', 'performance', 'notifications',
 ] as const
 
 export const MODULE_PERMISSION_LABELS: Record<string, { ar: string; en: string }> = {
@@ -44,6 +44,7 @@ export const MODULE_PERMISSION_LABELS: Record<string, { ar: string; en: string }
   costs:          { ar: 'التكاليف والإيرادات', en: 'Costs & Revenue' },
   finishings:     { ar: 'التشطيبات',         en: 'Finishings' },
   performance:    { ar: 'تقييم الأداء',      en: 'Performance' },
+  notifications:  { ar: 'التنبيهات وسجل المراقبة', en: 'Notifications & Monitor' },
 }
 
 // ─── Report permissions ──────────────────────────────────────────────
