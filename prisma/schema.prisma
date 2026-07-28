@@ -320,3 +320,26 @@ model AuditLog {
   project     Project? @relation(fields: [projectId], references: [id])
   dailyReport DailyReport? @relation(fields: [dailyReportId], references: [id])
 }
+
+// ==================== Company Assets & Rentals ====================
+model CompanyAsset {
+  id             String   @id @default(cuid())
+  projectId      String?
+  name           String
+  itemType       String
+  quantity       Int      @default(1)
+  ownership      String
+  supplier       String?
+  rentalCost     Float?
+  rentalStart    DateTime?
+  rentalEnd      DateTime?
+  responsibleId  String?
+  status         String   @default("available")
+  notes          String?
+
+  project        Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  responsible    User?    @relation("AssetResponsible", fields: [responsibleId], references: [id])
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
