@@ -21,13 +21,37 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: 'Invalid action. Must be "approve" or "reject"' }, { status: 400 })
   }
 
+  const finalStatus = action === 'approve' ? 'approved' : 'rejected'
+
   try {
+    // Get the report first to recalculate revenue on approval
+    const existingReport = await db.dailyReport.findUnique({
+      where: { id },
+      include: {
+        project: { select: { pricePerMeter: true } },
+      },
+    })
+
+    if (!existingReport) {
+      return NextResponse.json({ error: 'Report not found' }, { status: 404 })
+    }
+
+    // Recalculate dailyRevenue on approval using latest project price
+    let dailyRevenue = existingReport.dailyRevenue
+    if (action === 'approve') {
+      const pricePerMeter = existingReport.project?.pricePerMeter || 0
+      const dailyMeters = Math.max(0, (existingReport.endReading || 0) - (existingReport.startReading || 0))
+      dailyRevenue = dailyMeters * pricePerMeter
+    }
+
     const report = await db.dailyReport.update({
       where: { id },
       data: {
-        status: action,
+        status: finalStatus,
         approvedById: user.id,
         approvedAt: new Date(),
+        // Update revenue with latest price on approval
+        ...(action === 'approve' ? { dailyRevenue } : {}),
       },
     })
 
@@ -36,10 +60,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         userId: user.id,
         dailyReportId: id,
         projectId: report.projectId,
-        action,
+        action: finalStatus,
         entity: 'daily_report',
         entityId: id,
-        details: `${action === 'approve' ? 'Approved' : 'Rejected'} daily report`,
+        details: (action === 'approve' ? 'Approved' : 'Rejected') + ' daily report' + (action === 'approve' ? ' (revenue: ' + dailyRevenue + ' OMR)' : ''),
       },
     })
 
