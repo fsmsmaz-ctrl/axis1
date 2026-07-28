@@ -142,6 +142,7 @@ export default function AppShell() {
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
   const [notifications, setNotifications] = useState<any[]>([])
   const hasNotifPerm = user ? hasPermission(user.role, 'notifications', user.permissions) : false
+
   useEffect(() => {
     if (!user || !token || !hasNotifPerm) return
     authedFetch('/api/notifications?unreadOnly=true')
