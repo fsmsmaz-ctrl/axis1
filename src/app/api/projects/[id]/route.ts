@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
-import { safeDbOp } from '@/lib/api-helpers'
+import { safeDbOp, buildAuditDetails } from '@/lib/api-helpers'
 
-export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(req: NextRequest, { params }: { params: Promise }) {
   const user = await getAuthUser(req)
 
   if (!user) {
@@ -17,13 +17,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     include: {
       manager: { select: { id: true, name: true, nameEn: true } },
       engineer: { select: { id: true, name: true, nameEn: true } },
-      driveLines: {
-        orderBy: { lineNumber: 'asc' },
-      },
+      driveLines: { orderBy: { lineNumber: 'asc' } },
       equipments: true,
-      _count: {
-        select: { dailyReports: true, costs: true, finishings: true },
-      },
+      _count: { select: { dailyReports: true, costs: true, finishings: true } },
     },
   })
 
@@ -31,7 +27,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     return NextResponse.json({ error: 'Project not found' }, { status: 404 })
   }
 
-  // Calculate aggregate stats
   const reports = await db.dailyReport.findMany({
     where: { projectId: id, status: 'approved' },
     select: { dailyMeters: true, dailyRevenue: true, reportDate: true },
@@ -58,7 +53,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   })
 }
 
-export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function PUT(req: NextRequest, { params }: { params: Promise }) {
   const user = await getAuthUser(req)
 
   if (!user) {
@@ -73,6 +68,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const body = await req.json()
 
   try {
+    // Fetch old data before update
+    const oldProject = await db.project.findUnique({ where: { id } })
+
     const project = await db.project.update({
       where: { id },
       data: {
@@ -93,16 +91,20 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       },
     })
 
-    await db.auditLog.create({
-      data: {
-        userId: user.id,
-        projectId: id,
-        action: 'update',
-        entity: 'project',
-        entityId: id,
-        details: `Updated project ${project.code}`,
-      },
-    })
+    // Build detailed changes diff
+    const details = oldProject
+      ? buildAuditDetails(oldProject, body, `تعديل المشروع: ${project.code}`)
+      : `تعديل المشروع: ${project.code}`
+
+    // Audit log
+    Promise.all([
+      safeDbOp(
+        () => db.auditLog.create({
+          data: { userId: user.id, projectId: id, action: 'update', entity: 'project', entityId: id, details },
+        }),
+        'سجل التدقيق'
+      ),
+    ]).catch(() => {})
 
     return NextResponse.json({ project })
   } catch (error) {
@@ -111,7 +113,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   }
 }
 
-export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise }) {
   const user = await getAuthUser(req)
 
   if (!user) {
@@ -127,28 +129,16 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   try {
     await db.project.delete({ where: { id } })
 
-    // Audit log + delete notification (non-critical, fire-and-forget)
     Promise.all([
       safeDbOp(
         () => db.auditLog.create({
-          data: {
-            userId: user.id,
-            action: 'delete',
-            entity: 'project',
-            entityId: id,
-            details: 'Deleted project',
-          },
+          data: { userId: user.id, action: 'delete', entity: 'project', entityId: id, details: 'Deleted project' },
         }),
         'سجل التدقيق'
       ),
       safeDbOp(
         () => db.notification.create({
-          data: {
-            type: 'work_stopped',
-            title: 'حذف مشروع',
-            message: `تم حذف مشروع (المعرف: ${id}) بواسطة ${user.name}`,
-            severity: 'critical',
-          },
+          data: { type: 'work_stopped', title: 'حذف مشروع', message: `تم حذف مشروع (المعرف: ${id}) بواسطة ${user.name}`, severity: 'critical' },
         }),
         'إشعار الحذف'
       ),
