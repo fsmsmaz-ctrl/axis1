@@ -327,12 +327,16 @@ export default function DailyReportsPage() {
                       </div>
                     )}
                     <div className="flex gap-1">
+                    {r.status === 'draft' && (
                       <Button variant="ghost" size="sm" onClick={() => openEditReport(r)}>
                         <Pencil className="h-4 w-4" />
                       </Button>
+                      )}
+                    {r.status === 'draft' && (
                       <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => deleteReport(r.id)}>
                         <Trash2 className="h-4 w-4" />
                       </Button>
+                    )}
                       <Button variant="outline" size="sm" onClick={() => viewReportDetails(r)}>
                         <Eye className="h-4 w-4" />
                       </Button>
