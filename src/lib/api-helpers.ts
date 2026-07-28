@@ -14,7 +14,7 @@ export interface ApiError {
  * Handle database errors with specific, helpful messages
  */
 export function handleDbError(error: any, operation: string = 'operation'): NextResponse {
-  console.error(`Database error during ${operation}:`, error)
+  console.error('Database error during ' + operation + ':', error)
 
   const errorMsg = String(error?.message || error)
 
@@ -68,7 +68,7 @@ export function handleDbError(error: any, operation: string = 'operation'): Next
 
   return NextResponse.json({
     error: 'database_error',
-    message: `فشل في ${operation}. يرجى المحاولة مرة أخرى.`,
+    message: 'فشل في ' + operation + '. يرجى المحاولة مرة أخرى.',
     details: errorMsg,
   }, { status: 500 })
 }
@@ -83,7 +83,7 @@ export function validateRequired(body: any, fields: string[]): NextResponse | nu
   if (missing.length > 0) {
     return NextResponse.json({
       error: 'missing_fields',
-      message: `حقول مطلوبة مفقودة: ${missing.join(', ')}`,
+      message: 'حقول مطلوبة مفقودة: ' + missing.join(', '),
       fields: missing,
     }, { status: 400 })
   }
@@ -213,7 +213,6 @@ function formatValue(key: string, value: any): string {
     return new Date(value).toLocaleDateString('ar-EG')
   }
   if (typeof value === 'number') return String(value)
-  // Check value labels
   const mapped = valueLabels[key]?.[String(value)]
   if (mapped) return mapped
   return String(value)
@@ -233,8 +232,6 @@ export interface AuditChangeDetails {
 
 /**
  * Compare old and new data objects, return structured changes for audit log.
- * Pass the raw DB record as `oldData` and the request body as `newData`.
- * `skipFields` are relation fields or fields to ignore.
  */
 export function getChangesDiff(
   oldData: Record<string, any>,
@@ -255,7 +252,7 @@ export function getChangesDiff(
     if (skipFields.has(key)) continue
 
     const oldVal = oldData[key]
-    let newVal = newData[key]
+    const newVal = newData[key]
 
     // Normalize for comparison
     let oldNorm = oldVal
@@ -296,7 +293,7 @@ export function getChangesDiff(
 }
 
 /**
- * Build a JSON string for audit log `details` field.
+ * Build a JSON string for audit log details field.
  * If no changes, returns a simple summary string.
  */
 export function buildAuditDetails(
