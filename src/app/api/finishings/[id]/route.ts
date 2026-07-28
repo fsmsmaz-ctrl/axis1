@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
+import { safeDbOp, buildAuditDetails } from '@/lib/api-helpers'
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const user = await getAuthUser(req)
@@ -13,11 +14,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
   const finishing = await db.finishing.findUnique({
     where: { id },
-    include: {
-      project: true,
-      signedByUser: true,
-      attachments: true,
-    },
+    include: { project: true, signedByUser: true, attachments: true },
   })
 
   if (!finishing) {
@@ -38,20 +35,50 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const body = await req.json()
 
   try {
-    const finishing = await db.finishing.update({
-      where: { id },
-      data: {
-        siteCleaned: !!body.siteCleaned,
-        wasteRemoved: !!body.wasteRemoved,
-        shaftClosed: !!body.shaftClosed,
-        siteRestored: !!body.siteRestored,
-        lineHandover: !!body.lineHandover,
-        clientNotes: body.clientNotes,
-        handoverStatus: body.handoverStatus,
-      },
-    })
+    // Fetch old data before update
+    const oldFin = await safeDbOp(
+      () => db.finishing.findUnique({ where: { id } }),
+      'جلب التشطيب القديم'
+    )
 
-    return NextResponse.json({ finishing })
+    const updateResult = await safeDbOp(
+      () => db.finishing.update({
+        where: { id },
+        data: {
+          siteCleaned: !!body.siteCleaned,
+          wasteRemoved: !!body.wasteRemoved,
+          shaftClosed: !!body.shaftClosed,
+          siteRestored: !!body.siteRestored,
+          lineHandover: !!body.lineHandover,
+          clientNotes: body.clientNotes,
+          handoverStatus: body.handoverStatus,
+        },
+      }),
+      'تحديث التشطيب'
+    )
+    if (!updateResult.success) return updateResult.response
+
+    // Build detailed changes diff
+    const details = oldFin.success && oldFin.data
+      ? buildAuditDetails(
+          oldFin.data,
+          body,
+          `تعديل التشطيب`,
+          { skipFields: ['id', 'createdAt', 'updatedAt', 'projectId', 'driveLineId', 'date', 'signedBy', 'signedById', 'signedAt'] }
+        )
+      : `تعديل التشطيب`
+
+    // Audit log (was missing before)
+    Promise.all([
+      safeDbOp(
+        () => db.auditLog.create({
+          data: { userId: user.id, projectId: updateResult.data.projectId, action: 'update', entity: 'finishing', entityId: id, details },
+        }),
+        'سجل التدقيق'
+      ),
+    ]).catch(() => {})
+
+    return NextResponse.json({ finishing: updateResult.data })
   } catch (error) {
     console.error('Update finishing error:', error)
     return NextResponse.json({ error: 'Failed to update finishing' }, { status: 500 })
