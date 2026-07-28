@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
-import { handleDbError, validateRequired, parseNumber, safeDbOp } from '@/lib/api-helpers'
+import { handleDbError, validateRequired, parseNumber, safeDbOp, buildAuditDetails } from '@/lib/api-helpers'
 
 export async function PUT(
   req: NextRequest,
@@ -20,6 +20,12 @@ export async function PUT(
     const validationError = validateRequired(body, ['date', 'category', 'description', 'amount'])
     if (validationError) return validationError
 
+    // Fetch old data before update
+    const oldCost = await safeDbOp(
+      () => db.cost.findUnique({ where: { id } }),
+      'جلب التكلفة القديمة'
+    )
+
     const updateResult = await safeDbOp(
       () => db.cost.update({
         where: { id },
@@ -36,18 +42,20 @@ export async function PUT(
     )
     if (!updateResult.success) return updateResult.response
 
-    // Audit log + notification (non-critical, fire-and-forget)
+    // Build detailed changes diff
+    const details = oldCost.success && oldCost.data
+      ? buildAuditDetails(
+          { ...oldCost.data, date: oldCost.data.date?.toISOString?.()?.split('T')[0] || oldCost.data.date },
+          { ...body, amount: parseNumber(body.amount, 0) },
+          `تعديل تكلفة: ${body.category} - ${body.description}`,
+          { skipFields: ['id', 'createdAt', 'updatedAt', 'projectId', 'dailyReportId', 'recordedById'] }
+        )
+      : `تعديل تكلفة: ${body.category} - ${body.description} (${body.amount} ر.ع)`
+
     Promise.all([
       safeDbOp(
         () => db.auditLog.create({
-          data: {
-            userId: user.id,
-            projectId: updateResult.data.projectId,
-            action: 'update',
-            entity: 'cost',
-            entityId: id,
-            details: `Updated cost: ${body.category} - ${body.description} (${body.amount} OMR)`,
-          },
+          data: { userId: user.id, projectId: updateResult.data.projectId, action: 'update', entity: 'cost', entityId: id, details },
         }),
         'سجل التدقيق'
       ),
@@ -57,7 +65,7 @@ export async function PUT(
             projectId: updateResult.data.projectId,
             type: 'cost_overrun',
             title: 'تعديل تكلفة',
-            message: `تم تعديل تكلفة: ${body.category} - ${body.description} بمبلغ ${body.amount} ريال عماني`,
+            message: `تم تعديل تكلفة: ${body.category} - ${body.description} بمبلغ ${body.amount} ر.ع`,
             severity: 'info',
           },
         }),
@@ -84,7 +92,6 @@ export async function DELETE(
   try {
     const { id } = await params
 
-    // Get cost info before deleting
     const costInfo = await safeDbOp(
       () => db.cost.findUnique({ where: { id }, select: { projectId: true, category: true, description: true, amount: true } }),
       'جلب بيانات التكلفة'
@@ -96,35 +103,21 @@ export async function DELETE(
     )
     if (!deleteResult.success) return deleteResult.response
 
-    // Audit log + delete notification (non-critical, fire-and-forget)
     const projectId = costInfo.success ? costInfo.data?.projectId : null
     const costDesc = costInfo.success && costInfo.data
-      ? `${costInfo.data.category} - ${costInfo.data.description} (${costInfo.data.amount} OMR)`
+      ? `${costInfo.data.category} - ${costInfo.data.description} (${costInfo.data.amount} ر.ع)`
       : id
 
     Promise.all([
       safeDbOp(
         () => db.auditLog.create({
-          data: {
-            userId: user.id,
-            projectId,
-            action: 'delete',
-            entity: 'cost',
-            entityId: id,
-            details: `Deleted cost: ${costDesc}`,
-          },
+          data: { userId: user.id, projectId, action: 'delete', entity: 'cost', entityId: id, details: `حذف تكلفة: ${costDesc}` },
         }),
         'سجل التدقيق'
       ),
       safeDbOp(
         () => db.notification.create({
-          data: {
-            projectId,
-            type: 'cost_overrun',
-            title: 'حذف تكلفة',
-            message: `تم حذف تكلفة: ${costDesc} بواسطة ${user.name}`,
-            severity: 'warning',
-          },
+          data: { projectId, type: 'cost_overrun', title: 'حذف تكلفة', message: `تم حذف: ${costDesc} بواسطة ${user.name}`, severity: 'warning' },
         }),
         'إشعار الحذف'
       ),
