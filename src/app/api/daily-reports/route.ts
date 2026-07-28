@@ -50,6 +50,37 @@ export async function POST(req: NextRequest) {
     const validationError = validateRequired(body, ['projectId', 'reportDate'])
     if (validationError) return validationError
 
+    // === Check: only ONE daily report per employee per project per day ===
+    const dateStart = new Date(body.reportDate)
+    dateStart.setHours(0, 0, 0, 0)
+    const dateEnd = new Date(body.reportDate)
+    dateEnd.setHours(23, 59, 59, 999)
+
+    const existingResult = await safeDbOp(
+      () => db.dailyReport.findFirst({
+        where: {
+          projectId: body.projectId,
+          createdById: user.id,
+          reportDate: { gte: dateStart, lte: dateEnd },
+        },
+        select: { id: true, status: true, reportDate: true },
+      }),
+      'التحقق من تقرير يومي موجود'
+    )
+
+    if (existingResult.success && existingResult.data) {
+      return NextResponse.json(
+        {
+          error: 'duplicate',
+          message: 'لقد قمت بإنشاء تقرير يومي لهذا المشروع في هذا التاريخ بالفعل',
+          existingId: existingResult.data.id,
+          existingStatus: existingResult.data.status,
+        },
+        { status: 409 }
+      )
+    }
+    // === End of duplicate check ===
+
     // Calculate production data
     const startReading = parseNumber(body.startReading, 0)
     const endReading = parseNumber(body.endReading, 0)
@@ -169,7 +200,7 @@ export async function POST(req: NextRequest) {
             action: 'create',
             entity: 'daily_report',
             entityId: createResult.data.id,
-            details: `Created daily report for ${body.reportDate}`,
+            details: 'Created daily report for ' + body.reportDate,
           },
         }),
         'سجل التدقيق'
