@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
-  Plus, FileText, Calendar, Users, Ruler, AlertTriangle,
+  FileText, Calendar, Users, Ruler, AlertTriangle,
   ShieldCheck, CheckCircle2, Clock, DollarSign, Eye, Check, X, Pencil, Trash2
 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
@@ -96,9 +96,9 @@ export default function DailyReportsPage() {
 
   useEffect(() => {
     if (formData.projectId) {
-      fetch(`/api/drive-lines?projectId=${formData.projectId}`)
-        .then(r => r.json())
-        .then(d => setDriveLines(d.driveLines || []))
+      fetch('/api/drive-lines?projectId=' + formData.projectId)
+        .then(function(r) { return r.json() })
+        .then(function(d) { setDriveLines(d.driveLines || []) })
     }
   }, [formData.projectId])
 
@@ -148,12 +148,12 @@ export default function DailyReportsPage() {
   }
 
   async function deleteReport(id: string) {
-    const res = await authedFetch(`/api/daily-reports/${id}`, { method: 'DELETE' })
+    const res = await authedFetch('/api/daily-reports/' + id, { method: 'DELETE' })
     if (res.ok) {
       toast.success(isRtl ? 'تم حذف التقرير' : 'Report deleted')
-        fetchReports()
+      fetchReports()
     } else {
-      const data = await res.json().catch(() => ({}))
+      const data = await res.json().catch(function() { return {} })
       toast.error(data.error || (isRtl ? 'فشل الحذف' : 'Delete failed'))
     }
   }
@@ -176,7 +176,7 @@ export default function DailyReportsPage() {
     { key: 'toolboxTalk', label: isRtl ? 'اجتماع toolbox talk' : 'Toolbox talk' },
   ]
 
-  const safetyPassedCount = safetyChecklistItems.filter(item => safety[item.key as keyof typeof safety]).length
+  const safetyPassedCount = safetyChecklistItems.filter(function(item) { return safety[item.key as keyof typeof safety] }).length
   const allSafetyPassed = safetyPassedCount === safetyChecklistItems.length
 
   async function handleSubmit(e: React.FormEvent) {
@@ -188,7 +188,7 @@ export default function DailyReportsPage() {
     }
 
     try {
-      const url = editingReportId ? `/api/daily-reports/${editingReportId}` : '/api/daily-reports'
+      const url = editingReportId ? ('/api/daily-reports/' + editingReportId) : '/api/daily-reports'
       const method = editingReportId ? 'PUT' : 'POST'
       const body = { ...formData, status: 'submitted' }
 
@@ -206,9 +206,8 @@ export default function DailyReportsPage() {
         return
       }
 
-      // Only save safety checklist for new reports
       if (!editingReportId) {
-        await fetch(`/api/daily-reports/${data.report.id}/safety`, {
+        await fetch('/api/daily-reports/' + data.report.id + '/safety', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(safety),
@@ -220,29 +219,28 @@ export default function DailyReportsPage() {
 
       setDialogOpen(false)
       setEditingReportId(null)
-        fetchReports()
+      fetchReports()
     } catch {
       toast.error(isRtl ? 'حدث خطأ' : 'Error')
     }
   }
 
   async function approveReport(id: string, action: 'approve' | 'reject') {
-    const res = await fetch(`/api/daily-reports/${id}/approve`, {
+    const res = await fetch('/api/daily-reports/' + id + '/approve', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action }),
     })
     if (res.ok) {
       toast.success(action === 'approve' ? (isRtl ? 'تم الاعتماد' : 'Approved') : (isRtl ? 'تم الرفض' : 'Rejected'))
-        fetchReports()
+      fetchReports()
     }
   }
 
   async function viewReportDetails(report: any) {
     setViewReport(report)
     setViewDialogOpen(true)
-    // Fetch full details including safety
-    const res = await fetch(`/api/daily-reports/${report.id}`)
+    const res = await fetch('/api/daily-reports/' + report.id)
     const data = await res.json()
     setViewReport(data.report)
   }
@@ -255,13 +253,9 @@ export default function DailyReportsPage() {
         <div>
           <h1 className="text-2xl font-bold">{isRtl ? 'التقارير اليومية' : 'Daily Reports'}</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            {isRtl ? `${reports.length} تقرير` : `${reports.length} reports`}
+            {isRtl ? (reports.length + ' تقرير') : (reports.length + ' reports')}
           </p>
         </div>
-        <Button onClick={openCreate}>
-          <Plus className="h-4 w-4 ml-2" />
-          {isRtl ? 'تقرير جديد' : 'New Report'}
-        </Button>
       </div>
 
       <Select value={selectedProject} onValueChange={setSelectedProject}>
@@ -270,9 +264,11 @@ export default function DailyReportsPage() {
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="all">{isRtl ? 'كل المشاريع' : 'All Projects'}</SelectItem>
-          {projects.map((p) => (
-            <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-          ))}
+          {projects.map(function(p) {
+            return (
+              <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+            )
+          })}
         </SelectContent>
       </Select>
 
@@ -287,7 +283,7 @@ export default function DailyReportsPage() {
         </Card>
       ) : (
         <div className="space-y-2">
-          {reports.map((r) => {
+          {reports.map(function(r) {
             const status = statusLabels[r.status]
             return (
               <Card key={r.id} className="hover:shadow-sm transition">
@@ -306,21 +302,13 @@ export default function DailyReportsPage() {
                       </div>
                       <p className="text-xs text-muted-foreground mt-0.5">
                         {new Date(r.reportDate).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
-                        {' • '}
+                        {' \u2022 '}
                         {r.workStartTime} - {r.workEndTime}
-                        {' • '}
+                        {' \u2022 '}
                         {r.workersCount} {isRtl ? 'عامل' : 'workers'}
                       </p>
                     </div>
                     <div className="flex items-center gap-4 text-sm">
-                      <div className="text-center">
-                        <p className="text-xs text-muted-foreground">{isRtl ? 'الإنتاج' : 'Production'}</p>
-                        <p className="font-semibold">{r.dailyMeters} {isRtl ? 'م' : 'm'}</p>
-                      </div>
-                      <div className="text-center">
-                        <p className="text-xs text-muted-foreground">{isRtl ? 'الإيراد' : 'Revenue'}</p>
-                        <p className="font-semibold text-emerald-600">{r.dailyRevenue} {isRtl ? 'ر.ع' : 'OMR'}</p>
-                      </div>
                       {r.safety && (
                         <div className="text-center">
                           <p className="text-xs text-muted-foreground">{isRtl ? 'السلامة' : 'Safety'}</p>
@@ -329,21 +317,21 @@ export default function DailyReportsPage() {
                       )}
                     </div>
                     <div className="flex gap-1">
-                      <Button variant="ghost" size="sm" onClick={() => openEditReport(r)}>
+                      <Button variant="ghost" size="sm" onClick={function() { openEditReport(r) }}>
                         <Pencil className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => deleteReport(r.id)}>
+                      <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={function() { deleteReport(r.id) }}>
                         <Trash2 className="h-4 w-4" />
                       </Button>
-                      <Button variant="outline" size="sm" onClick={() => viewReportDetails(r)}>
+                      <Button variant="outline" size="sm" onClick={function() { viewReportDetails(r) }}>
                         <Eye className="h-4 w-4" />
                       </Button>
                       {canApprove && r.status === 'submitted' && (
                         <>
-                          <Button variant="outline" size="sm" className="text-emerald-600" onClick={() => approveReport(r.id, 'approve')}>
+                          <Button variant="outline" size="sm" className="text-emerald-600" onClick={function() { approveReport(r.id, 'approve') }}>
                             <Check className="h-4 w-4" />
                           </Button>
-                          <Button variant="outline" size="sm" className="text-destructive" onClick={() => approveReport(r.id, 'reject')}>
+                          <Button variant="outline" size="sm" className="text-destructive" onClick={function() { approveReport(r.id, 'reject') }}>
                             <X className="h-4 w-4" />
                           </Button>
                         </>
@@ -358,7 +346,7 @@ export default function DailyReportsPage() {
       )}
 
       {/* Create/Edit Dialog with tabs */}
-      <Dialog open={dialogOpen} onOpenChange={(open) => {
+      <Dialog open={dialogOpen} onOpenChange={function(open) {
         setDialogOpen(open)
         if (!open) setEditingReportId(null)
       }}>
@@ -379,7 +367,7 @@ export default function DailyReportsPage() {
           <div className="space-y-4">
             {/* Safety checklist warning banner - only for new reports */}
             {!editingReportId && (
-              <div className={`p-3 rounded-lg border-2 ${allSafetyPassed ? 'bg-emerald-50 border-emerald-200' : 'bg-orange-50 border-orange-200'}`}>
+              <div className={'p-3 rounded-lg border-2 ' + (allSafetyPassed ? 'bg-emerald-50 border-emerald-200' : 'bg-orange-50 border-orange-200')}>
                 <div className="flex items-center gap-2">
                   {allSafetyPassed ? (
                     <CheckCircle2 className="h-5 w-5 text-emerald-600" />
@@ -387,10 +375,10 @@ export default function DailyReportsPage() {
                     <ShieldCheck className="h-5 w-5 text-orange-600" />
                   )}
                   <div className="flex-1">
-                    <p className={`font-medium text-sm ${allSafetyPassed ? 'text-emerald-700' : 'text-orange-700'}`}>
+                    <p className={'font-medium text-sm ' + (allSafetyPassed ? 'text-emerald-700' : 'text-orange-700')}>
                       {allSafetyPassed
                         ? (isRtl ? 'اكتمل فحص السلامة - يمكنك حفظ التقرير' : 'Safety check complete - you can save the report')
-                        : (isRtl ? `فحص السلامة: ${safetyPassedCount}/${safetyChecklistItems.length}` : `Safety checklist: ${safetyPassedCount}/${safetyChecklistItems.length}`)
+                        : (isRtl ? ('فحص السلامة: ' + safetyPassedCount + '/' + safetyChecklistItems.length) : ('Safety checklist: ' + safetyPassedCount + '/' + safetyChecklistItems.length))
                       }
                     </p>
                   </div>
@@ -417,24 +405,26 @@ export default function DailyReportsPage() {
               {!editingReportId && (
                 <TabsContent value="safety" className="space-y-4 mt-4">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {safetyChecklistItems.map((item) => (
-                      <label
-                        key={item.key}
-                        className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition ${
-                          safety[item.key as keyof typeof safety]
-                            ? 'bg-emerald-50 border-emerald-200'
-                            : 'bg-card border-border hover:bg-muted/50'
-                        }`}
-                      >
-                        <Checkbox
-                          checked={safety[item.key as keyof typeof safety]}
-                          onCheckedChange={(checked) => {
-                            setSafety({ ...safety, [item.key]: !!checked })
-                          }}
-                        />
-                        <span className="text-sm">{item.label}</span>
-                      </label>
-                    ))}
+                    {safetyChecklistItems.map(function(item) {
+                      return (
+                        <label
+                          key={item.key}
+                          className={'flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition ' +
+                            (safety[item.key as keyof typeof safety]
+                              ? 'bg-emerald-50 border-emerald-200'
+                              : 'bg-card border-border hover:bg-muted/50')
+                          }
+                        >
+                          <Checkbox
+                            checked={safety[item.key as keyof typeof safety]}
+                            onCheckedChange={function(checked) {
+                              setSafety({ ...safety, [item.key]: !!checked })
+                            }}
+                          />
+                          <span className="text-sm">{item.label}</span>
+                        </label>
+                      )
+                    })}
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -442,7 +432,7 @@ export default function DailyReportsPage() {
                       <Label>{isRtl ? 'المخاطر' : 'Hazards'}</Label>
                       <Textarea
                         value={safety.hazards}
-                        onChange={(e) => setSafety({ ...safety, hazards: e.target.value })}
+                        onChange={function(e) { setSafety({ ...safety, hazards: e.target.value }) }}
                         rows={2}
                         placeholder={isRtl ? 'اذكر أي مخاطر ملاحظة' : 'Any hazards observed'}
                       />
@@ -451,7 +441,7 @@ export default function DailyReportsPage() {
                       <Label>{isRtl ? 'الملاحظات' : 'Observations'}</Label>
                       <Textarea
                         value={safety.observations}
-                        onChange={(e) => setSafety({ ...safety, observations: e.target.value })}
+                        onChange={function(e) { setSafety({ ...safety, observations: e.target.value }) }}
                         rows={2}
                       />
                     </div>
@@ -459,13 +449,13 @@ export default function DailyReportsPage() {
                       <Label>{isRtl ? 'المخالفات' : 'Violations'}</Label>
                       <Textarea
                         value={safety.violations}
-                        onChange={(e) => setSafety({ ...safety, violations: e.target.value })}
+                        onChange={function(e) { setSafety({ ...safety, violations: e.target.value }) }}
                         rows={2}
                       />
                     </div>
                     <div className="space-y-1.5">
                       <Label>{isRtl ? 'نوع الحادث' : 'Incident Type'}</Label>
-                      <Select value={safety.incidentType} onValueChange={(v) => setSafety({ ...safety, incidentType: v })}>
+                      <Select value={safety.incidentType} onValueChange={function(v) { setSafety({ ...safety, incidentType: v }) }}>
                         <SelectTrigger><SelectValue /></SelectTrigger>
                         <SelectContent>
                           <SelectItem value="none">{isRtl ? 'لا يوجد' : 'None'}</SelectItem>
@@ -480,39 +470,43 @@ export default function DailyReportsPage() {
               )}
 
               {/* Report Tab */}
-              <div className={editingReportId ? '' : ''}>
-                <div className={!editingReportId ? '' : ''}>
-                  <TabsContent value="report" className={`space-y-4 ${editingReportId ? 'mt-0' : 'mt-4'}`}>
+              <div>
+                <div>
+                  <TabsContent value="report" className={'space-y-4 ' + (editingReportId ? 'mt-0' : 'mt-4')}>
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1.5">
                         <Label>{isRtl ? 'المشروع' : 'Project'} *</Label>
-                        <Select value={formData.projectId} onValueChange={(v) => setFormData({ ...formData, projectId: v, driveLineId: '' })}>
+                        <Select value={formData.projectId} onValueChange={function(v) { setFormData({ ...formData, projectId: v, driveLineId: '' }) }}>
                           <SelectTrigger><SelectValue placeholder={isRtl ? 'اختر' : 'Select'} /></SelectTrigger>
                           <SelectContent>
-                            {projects.map((p) => (
-                              <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                            ))}
+                            {projects.map(function(p) {
+                              return (
+                                <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                              )
+                            })}
                           </SelectContent>
                         </Select>
                       </div>
                       <div className="space-y-1.5">
                         <Label>{isRtl ? 'خط الحفر' : 'Drive Line'}</Label>
-                        <Select value={formData.driveLineId} onValueChange={(v) => setFormData({ ...formData, driveLineId: v })}>
+                        <Select value={formData.driveLineId} onValueChange={function(v) { setFormData({ ...formData, driveLineId: v }) }}>
                           <SelectTrigger><SelectValue placeholder={isRtl ? 'اختر' : 'Select'} /></SelectTrigger>
                           <SelectContent>
-                            {driveLines.map((l) => (
-                              <SelectItem key={l.id} value={l.id}>{l.lineNumber} - {l.startPoint} → {l.endPoint}</SelectItem>
-                            ))}
+                            {driveLines.map(function(l) {
+                              return (
+                                <SelectItem key={l.id} value={l.id}>{l.lineNumber + ' - ' + l.startPoint + ' \u2192 ' + l.endPoint}</SelectItem>
+                              )
+                            })}
                           </SelectContent>
                         </Select>
                       </div>
                       <div className="space-y-1.5">
                         <Label>{isRtl ? 'التاريخ' : 'Date'} *</Label>
-                        <Input type="date" value={formData.reportDate} onChange={(e) => setFormData({ ...formData, reportDate: e.target.value })} />
+                        <Input type="date" value={formData.reportDate} onChange={function(e) { setFormData({ ...formData, reportDate: e.target.value }) }} />
                       </div>
                       <div className="space-y-1.5">
                         <Label>{isRtl ? 'الطقس' : 'Weather'}</Label>
-                        <Select value={formData.weather} onValueChange={(v) => setFormData({ ...formData, weather: v })}>
+                        <Select value={formData.weather} onValueChange={function(v) { setFormData({ ...formData, weather: v }) }}>
                           <SelectTrigger><SelectValue /></SelectTrigger>
                           <SelectContent>
                             <SelectItem value="sunny">{isRtl ? 'مشمس' : 'Sunny'}</SelectItem>
@@ -524,39 +518,39 @@ export default function DailyReportsPage() {
                       </div>
                       <div className="space-y-1.5">
                         <Label>{isRtl ? 'بداية العمل' : 'Work Start'}</Label>
-                        <Input type="time" value={formData.workStartTime} onChange={(e) => setFormData({ ...formData, workStartTime: e.target.value })} />
+                        <Input type="time" value={formData.workStartTime} onChange={function(e) { setFormData({ ...formData, workStartTime: e.target.value }) }} />
                       </div>
                       <div className="space-y-1.5">
                         <Label>{isRtl ? 'نهاية العمل' : 'Work End'}</Label>
-                        <Input type="time" value={formData.workEndTime} onChange={(e) => setFormData({ ...formData, workEndTime: e.target.value })} />
+                        <Input type="time" value={formData.workEndTime} onChange={function(e) { setFormData({ ...formData, workEndTime: e.target.value }) }} />
                       </div>
                       <div className="space-y-1.5">
                         <Label>{isRtl ? 'ساعات التشغيل' : 'Operating Hours'}</Label>
-                        <Input type="number" step="0.1" value={formData.operatingHours} onChange={(e) => setFormData({ ...formData, operatingHours: e.target.value })} />
+                        <Input type="number" step="0.1" value={formData.operatingHours} onChange={function(e) { setFormData({ ...formData, operatingHours: e.target.value }) }} />
                       </div>
                       <div className="space-y-1.5">
                         <Label>{isRtl ? 'ساعات التوقف' : 'Stoppage Hours'}</Label>
-                        <Input type="number" step="0.1" value={formData.stoppageHours} onChange={(e) => setFormData({ ...formData, stoppageHours: e.target.value })} />
+                        <Input type="number" step="0.1" value={formData.stoppageHours} onChange={function(e) { setFormData({ ...formData, stoppageHours: e.target.value }) }} />
                       </div>
                       <div className="space-y-1.5">
                         <Label>{isRtl ? 'عدد العمال' : 'Workers Count'}</Label>
-                        <Input type="number" value={formData.workersCount} onChange={(e) => setFormData({ ...formData, workersCount: e.target.value })} />
+                        <Input type="number" value={formData.workersCount} onChange={function(e) { setFormData({ ...formData, workersCount: e.target.value }) }} />
                       </div>
                       <div className="space-y-1.5">
                         <Label>{isRtl ? 'سبب التوقف' : 'Stoppage Reason'}</Label>
-                        <Input value={formData.stoppageReason} onChange={(e) => setFormData({ ...formData, stoppageReason: e.target.value })} />
+                        <Input value={formData.stoppageReason} onChange={function(e) { setFormData({ ...formData, stoppageReason: e.target.value }) }} />
                       </div>
                       <div className="space-y-1.5">
                         <Label>{isRtl ? 'قراءة البداية (م)' : 'Start Reading (m)'}</Label>
-                        <Input type="number" step="0.01" value={formData.startReading} onChange={(e) => setFormData({ ...formData, startReading: e.target.value })} />
+                        <Input type="number" step="0.01" value={formData.startReading} onChange={function(e) { setFormData({ ...formData, startReading: e.target.value }) }} />
                       </div>
                       <div className="space-y-1.5">
                         <Label>{isRtl ? 'قراءة النهاية (م)' : 'End Reading (m)'}</Label>
-                        <Input type="number" step="0.01" value={formData.endReading} onChange={(e) => setFormData({ ...formData, endReading: e.target.value })} />
+                        <Input type="number" step="0.01" value={formData.endReading} onChange={function(e) { setFormData({ ...formData, endReading: e.target.value }) }} />
                       </div>
                       <div className="space-y-1.5">
                         <Label>{isRtl ? 'التربة المحفورة' : 'Soil Excavated'}</Label>
-                        <Select value={formData.soilExcavated} onValueChange={(v) => setFormData({ ...formData, soilExcavated: v })}>
+                        <Select value={formData.soilExcavated} onValueChange={function(v) { setFormData({ ...formData, soilExcavated: v }) }}>
                           <SelectTrigger><SelectValue /></SelectTrigger>
                           <SelectContent>
                             <SelectItem value="soft">{isRtl ? 'طرية' : 'Soft'}</SelectItem>
@@ -568,16 +562,16 @@ export default function DailyReportsPage() {
                       </div>
                       <div className="space-y-1.5">
                         <Label>{isRtl ? 'الأنابيب المركبة' : 'Pipes Installed'}</Label>
-                        <Input type="number" value={formData.pipesInstalled} onChange={(e) => setFormData({ ...formData, pipesInstalled: e.target.value })} />
+                        <Input type="number" value={formData.pipesInstalled} onChange={function(e) { setFormData({ ...formData, pipesInstalled: e.target.value }) }} />
                       </div>
                     </div>
                     <div className="space-y-1.5">
-                      <Label>{isRtl ? 'ملاحظات الإنتاج' : 'Production Notes'}</Label>
-                      <Textarea value={formData.productionNotes} onChange={(e) => setFormData({ ...formData, productionNotes: e.target.value })} rows={2} />
+                      <Label>{isRtl ? 'ملاحظات' : 'Notes'}</Label>
+                      <Textarea value={formData.productionNotes} onChange={function(e) { setFormData({ ...formData, productionNotes: e.target.value }) }} rows={2} />
                     </div>
                     <div className="space-y-1.5">
                       <Label>{isRtl ? 'المشاكل' : 'Problems'}</Label>
-                      <Textarea value={formData.problems} onChange={(e) => setFormData({ ...formData, problems: e.target.value })} rows={2} />
+                      <Textarea value={formData.problems} onChange={function(e) { setFormData({ ...formData, problems: e.target.value }) }} rows={2} />
                     </div>
                   </TabsContent>
                 </div>
@@ -586,7 +580,7 @@ export default function DailyReportsPage() {
           </div>
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => { setDialogOpen(false); setEditingReportId(null) }}>
+            <Button type="button" variant="outline" onClick={function() { setDialogOpen(false); setEditingReportId(null) }}>
               {isRtl ? 'إلغاء' : 'Cancel'}
             </Button>
             <Button type="button" onClick={handleSubmit} disabled={!editingReportId && !allSafetyPassed}>
@@ -641,18 +635,12 @@ function ReportDetails({ report }: { report: any }) {
         <Detail label={isRtl ? 'الطقس' : 'Weather'} value={report.weather || '-'} />
         <Detail label={isRtl ? 'بداية العمل' : 'Start'} value={report.workStartTime || '-'} />
         <Detail label={isRtl ? 'نهاية العمل' : 'End'} value={report.workEndTime || '-'} />
-        <Detail label={isRtl ? 'ساعات التشغيل' : 'Operating'} value={`${report.operatingHours}h`} />
-        <Detail label={isRtl ? 'ساعات التوقف' : 'Stoppage'} value={`${report.stoppageHours}h`} />
+        <Detail label={isRtl ? 'ساعات التشغيل' : 'Operating'} value={report.operatingHours + 'h'} />
+        <Detail label={isRtl ? 'ساعات التوقف' : 'Stoppage'} value={report.stoppageHours + 'h'} />
         <Detail label={isRtl ? 'عدد العمال' : 'Workers'} value={String(report.workersCount)} />
         <Detail label={isRtl ? 'الأنابيب' : 'Pipes'} value={String(report.pipesInstalled)} />
-        <Detail label={isRtl ? 'قراءة البداية' : 'Start Reading'} value={`${report.startReading} م`} />
-        <Detail label={isRtl ? 'قراءة النهاية' : 'End Reading'} value={`${report.endReading} م`} />
-      </div>
-
-      <div className="grid grid-cols-3 gap-2">
-        <Stat label={isRtl ? 'إنتاج اليوم' : 'Daily Meters'} value={`${report.dailyMeters} م`} color="text-blue-600" />
-        <Stat label={isRtl ? 'إجمالي الأمتار' : 'Total Meters'} value={`${report.totalMeters.toFixed(1)} م`} color="text-purple-600" />
-        <Stat label={isRtl ? 'الإيراد اليومي' : 'Daily Revenue'} value={`${report.dailyRevenue} ر.ع`} color="text-emerald-600" />
+        <Detail label={isRtl ? 'قراءة البداية' : 'Start Reading'} value={report.startReading + ' م'} />
+        <Detail label={isRtl ? 'قراءة النهاية' : 'End Reading'} value={report.endReading + ' م'} />
       </div>
 
       {report.stoppageReason && (
@@ -664,7 +652,7 @@ function ReportDetails({ report }: { report: any }) {
 
       {report.productionNotes && (
         <div>
-          <h4 className="font-semibold text-sm mb-1">{isRtl ? 'ملاحظات الإنتاج' : 'Production Notes'}</h4>
+          <h4 className="font-semibold text-sm mb-1">{isRtl ? 'ملاحظات' : 'Notes'}</h4>
           <p className="text-sm text-muted-foreground">{report.productionNotes}</p>
         </div>
       )}
@@ -683,16 +671,18 @@ function ReportDetails({ report }: { report: any }) {
             {isRtl ? 'قائمة السلامة' : 'Safety Checklist'}
           </h4>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-            {safetyChecks.map((c, i) => (
-              <div key={i} className="flex items-center gap-1.5 text-xs p-1.5 rounded bg-muted/30">
-                {c.ok ? (
-                  <Check className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
-                ) : (
-                  <X className="h-3.5 w-3.5 text-red-500 shrink-0" />
-                )}
-                <span className={c.ok ? '' : 'text-red-500 line-through'}>{c.label}</span>
-              </div>
-            ))}
+            {safetyChecks.map(function(c, i) {
+              return (
+                <div key={i} className="flex items-center gap-1.5 text-xs p-1.5 rounded bg-muted/30">
+                  {c.ok ? (
+                    <Check className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                  ) : (
+                    <X className="h-3.5 w-3.5 text-red-500 shrink-0" />
+                  )}
+                  <span className={c.ok ? '' : 'text-red-500 line-through'}>{c.label}</span>
+                </div>
+              )
+            })}
           </div>
           {report.safety.observations && (
             <p className="text-xs text-muted-foreground mt-2">{report.safety.observations}</p>
@@ -704,12 +694,14 @@ function ReportDetails({ report }: { report: any }) {
         <div>
           <h4 className="font-semibold text-sm mb-2">{isRtl ? 'التكاليف' : 'Costs'}</h4>
           <div className="space-y-1">
-            {report.costs.map((c: any) => (
-              <div key={c.id} className="flex justify-between text-sm p-2 rounded bg-muted/30">
-                <span>{c.description}</span>
-                <span className="font-medium">{c.amount} ر.ع</span>
-              </div>
-            ))}
+            {report.costs.map(function(c: any) {
+              return (
+                <div key={c.id} className="flex justify-between text-sm p-2 rounded bg-muted/30">
+                  <span>{c.description}</span>
+                  <span className="font-medium">{c.amount} ر.ع</span>
+                </div>
+              )
+            })}
           </div>
         </div>
       )}
@@ -730,7 +722,7 @@ function Stat({ label, value, color }: { label: string; value: string; color: st
   return (
     <div className="p-3 rounded-lg bg-muted/50 text-center">
       <p className="text-xs text-muted-foreground">{label}</p>
-      <p className={`font-bold text-sm mt-0.5 ${color}`}>{value}</p>
+      <p className={'font-bold text-sm mt-0.5 ' + color}>{value}</p>
     </div>
   )
 }
