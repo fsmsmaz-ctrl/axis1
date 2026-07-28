@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
-import { safeDbOp, handleDbError } from '@/lib/api-helpers'
+import { safeDbOp, handleDbError, buildAuditDetails } from '@/lib/api-helpers'
 
 export async function PUT(
   req: NextRequest,
@@ -16,6 +16,12 @@ export async function PUT(
   try {
     const { id } = await params
     const body = await req.json()
+
+    // Fetch old data before update
+    const oldAsset = await safeDbOp(
+      () => db.companyAsset.findUnique({ where: { id } }),
+      'جلب الأصل القديم'
+    )
 
     const updateResult = await safeDbOp(
       () => db.companyAsset.update({
@@ -39,18 +45,24 @@ export async function PUT(
     )
     if (!updateResult.success) return updateResult.response
 
-    // Audit log
+    // Build detailed changes diff
+    const details = oldAsset.success && oldAsset.data
+      ? buildAuditDetails(
+          {
+            ...oldAsset.data,
+            rentalStart: oldAsset.data.rentalStart?.toISOString?.()?.split('T')[0] || oldAsset.data.rentalStart,
+            rentalEnd: oldAsset.data.rentalEnd?.toISOString?.()?.split('T')[0] || oldAsset.data.rentalEnd,
+          },
+          body,
+          `تعديل أصل: ${updateResult.data.name}`,
+          { skipFields: ['id', 'createdAt', 'updatedAt', 'projectId', 'responsibleId'] }
+        )
+      : `تعديل أصل: ${updateResult.data.name}`
+
     Promise.all([
       safeDbOp(
         () => db.auditLog.create({
-          data: {
-            userId: user.id,
-            projectId: updateResult.data.projectId,
-            action: 'update',
-            entity: 'company_asset',
-            entityId: id,
-            details: `Updated asset: ${updateResult.data.name} (${updateResult.data.ownership})`,
-          },
+          data: { userId: user.id, projectId: updateResult.data.projectId, action: 'update', entity: 'company_asset', entityId: id, details },
         }),
         'سجل التدقيق'
       ),
@@ -94,7 +106,7 @@ export async function DELETE(
     Promise.all([
       safeDbOp(
         () => db.auditLog.create({
-          data: { userId: user.id, projectId, action: 'delete', entity: 'company_asset', entityId: id, details: `Deleted asset: ${assetDesc}` },
+          data: { userId: user.id, projectId, action: 'delete', entity: 'company_asset', entityId: id, details: `حذف أصل: ${assetDesc}` },
         }),
         'سجل التدقيق'
       ),
