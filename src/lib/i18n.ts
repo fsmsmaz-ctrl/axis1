@@ -141,11 +141,9 @@ export const translations = {
     safetyCheckRequired: 'يجب إكمال فحص السلامة أولاً',
     submitReport: 'إرسال التقرير',
     approveReport: 'اعتماد التقرير',
-    rejectReport: 'رفض التقرير',
     draft: 'مسودة',
     submitted: 'مرسل',
     approved: 'معتمد',
-    rejected: 'مرفوض',
 
     // Safety
     safetyChecklist: 'قائمة فحص السلامة',
@@ -444,11 +442,9 @@ export const translations = {
     safetyCheckRequired: 'Safety checklist must be completed first',
     submitReport: 'Submit Report',
     approveReport: 'Approve Report',
-    rejectReport: 'Reject Report',
     draft: 'Draft',
     submitted: 'Submitted',
     approved: 'Approved',
-    rejected: 'Rejected',
 
     safetyChecklist: 'Safety Checklist',
     ppeAvailable: 'PPE available for all workers',
