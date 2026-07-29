@@ -50,6 +50,7 @@ export default function DailyReportsPage() {
   const [viewReport, setViewReport] = useState<any | null>(null)
   const [viewDialogOpen, setViewDialogOpen] = useState(false)
   const [existingSafetyLoaded, setExistingSafetyLoaded] = useState(false)
+  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false)
   const language = useAppStore((s) => s.language)
   const token = useAppStore((s) => s.token)
   const user = useAppStore((s) => s.user)
@@ -203,60 +204,50 @@ export default function DailyReportsPage() {
   var safetyPassedCount = safetyChecklistItems.filter(function(item) { return safety[item.key as keyof typeof safety] }).length
   var allSafetyPassed = safetyPassedCount === safetyChecklistItems.length
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-
-    // For new reports, require safety checks
-    if (!editingReportId && !allSafetyPassed) {
-      toast.error(isRtl ? 'يجب إكمال جميع فحوصات السلامة أولاً' : 'Complete all safety checks first')
-      return
-    }
-
-    // For editing, if safety was pre-loaded, skip safety requirement
-    // Only check safety for new reports
-
+  async function handleSaveDraft() {
+    if (!editingReportId) return
     try {
-      var url = editingReportId ? '/api/daily-reports/' + editingReportId : '/api/daily-reports'
-      var method = editingReportId ? 'PUT' : 'POST'
-      var body = Object.assign({}, formData, { status: 'submitted' })
-
-      var res = await authedFetch(url, {
-        method: method,
+      var res = await authedFetch('/api/daily-reports/' + editingReportId, {
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        body: JSON.stringify(Object.assign({}, formData, { status: 'draft' })),
       })
-
-      if (res.status === 409) {
-        var errData = await res.json().catch(function() { return {} })
-        toast.error(errData.message || (isRtl ? 'لا يمكن إنشاء تقرير ثانٍ' : 'Cannot create duplicate report'))
-        return
-      }
-
-      var data = await res.json()
-
-      if (!res.ok) {
-        toast.error(editingReportId
-          ? (isRtl ? 'فشل تحديث التقرير' : 'Failed to update report')
-          : (isRtl ? 'فشل إنشاء التقرير' : 'Failed to create report'))
-        return
-      }
-
-      if (!editingReportId) {
-        // New report: create safety data
-        await authedFetch('/api/daily-reports/' + data.report.id + '/safety', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(safety),
-        })
-        toast.success(isRtl ? 'تم إنشاء التقرير بنجاح' : 'Report created successfully')
+      if (res.ok) {
+        toast.success(isRtl ? 'تم حفظ التقرير' : 'Report saved')
+        setDialogOpen(false)
+        setEditingReportId(null)
+        setExistingSafetyLoaded(false)
+        fetchReports()
       } else {
-        toast.success(isRtl ? 'تم تحديث التقرير' : 'Report updated successfully')
+        toast.error(isRtl ? 'فشل حفظ التقرير' : 'Failed to save report')
       }
+    } catch {
+      toast.error(isRtl ? 'حدث خطأ' : 'Error')
+    }
+  }
 
-      setDialogOpen(false)
-      setEditingReportId(null)
-      setExistingSafetyLoaded(false)
-      fetchReports()
+  function askSubmitReport() {
+    setConfirmDialogOpen(true)
+  }
+
+  async function confirmSubmitReport() {
+    setConfirmDialogOpen(false)
+    if (!editingReportId) return
+    try {
+      var res = await authedFetch('/api/daily-reports/' + editingReportId, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(Object.assign({}, formData, { status: 'submitted' })),
+      })
+      if (res.ok) {
+        toast.success(isRtl ? 'تم رفع التقرير بنجاح' : 'Report submitted successfully')
+        setDialogOpen(false)
+        setEditingReportId(null)
+        setExistingSafetyLoaded(false)
+        fetchReports()
+      } else {
+        toast.error(isRtl ? 'فشل رفع التقرير' : 'Failed to submit report')
+      }
     } catch {
       toast.error(isRtl ? 'حدث خطأ' : 'Error')
     }
@@ -635,12 +626,39 @@ export default function DailyReportsPage() {
             </Tabs>
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="gap-2">
             <Button type="button" variant="outline" onClick={function() { setDialogOpen(false); setEditingReportId(null); setExistingSafetyLoaded(false) }}>
               {isRtl ? 'إلغاء' : 'Cancel'}
             </Button>
-            <Button type="button" onClick={handleSubmit} disabled={(!editingReportId && !allSafetyPassed) || !existingSafetyLoaded && editingReportId}>
-              {editingReportId ? (isRtl ? 'حفظ ورفع التقرير' : 'Save & Submit') : (isRtl ? 'حفظ التقرير' : 'Save Report')}
+            <Button type="button" variant="outline" onClick={handleSaveDraft} disabled={!editingReportId}>
+              <Pencil className="h-4 w-4 ml-2" />
+              {isRtl ? 'حفظ (تعديل)' : 'Save (Edit)'}
+            </Button>
+            <Button type="button" onClick={askSubmitReport} disabled={!editingReportId}>
+              <Check className="h-4 w-4 ml-2" />
+              {isRtl ? 'تسليم التقرير' : 'Submit Report'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Submit Confirmation Dialog */}
+      <Dialog open={confirmDialogOpen} onOpenChange={setConfirmDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{isRtl ? 'تأكيد تسليم التقرير' : 'Confirm Submit'}</DialogTitle>
+            <DialogDescription>
+              {isRtl ? 'هل أنت متأكد من تسليم التقرير؟ لا يمكنك تعديل التقرير بعد التسليم.' : 'Are you sure you want to submit? You cannot edit the report after submission.'}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={function() { setConfirmDialogOpen(false) }}>
+              <Pencil className="h-4 w-4 ml-2" />
+              {isRtl ? 'تعديل' : 'Edit'}
+            </Button>
+            <Button onClick={confirmSubmitReport}>
+              <Check className="h-4 w-4 ml-2" />
+              {isRtl ? 'تسليم' : 'Submit'}
             </Button>
           </DialogFooter>
         </DialogContent>
