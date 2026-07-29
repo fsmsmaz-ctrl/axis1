@@ -182,8 +182,7 @@ export default function HomePage() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder={isAr ? 'اسم المستخدم'
- : 'Username'}
+                placeholder={isAr ? 'اسم المستخدم' : 'Username'}
                 required
                 className="h-11"
                 dir="ltr"
@@ -197,8 +196,7 @@ export default function HomePage() {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder={isAr ? 'كلمة المرور'
- : 'Password'}
+                placeholder={isAr ? 'كلمة المرور' : 'Password'}
                 required
                 className="h-11"
                 dir="ltr"
