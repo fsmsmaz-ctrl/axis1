@@ -7,11 +7,22 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyCredentials, createSession, getSessionMaxAge, getCookieOptions, SESSION_COOKIE } from '@/lib/auth-server'
 import { db } from '@/lib/db'
+import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 
 export async function POST(req: NextRequest) {
+  // Rate limit: max 5 login attempts per minute per IP
+  var rl = checkRateLimit(req, RateLimitPresets.auth)
+  if (rl.limited) {
+    return NextResponse.json(
+      { error: 'too_many_requests', message: 'محاولات تسجيل دخول كثيرة جداً، يرجى الانتظار قليلاً' },
+      { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } }
+    )
+  }
+
   try {
-    const body = await req.json()
-    const { email, password } = body
+    var body = await req.json()
+    var email = body.email
+    var password = body.password
 
     if (!email || !password) {
       return NextResponse.json(
@@ -20,7 +31,23 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const normalizedEmail = email.toLowerCase().trim()
+    // Validate email format
+    var emailStr = String(email).toLowerCase().trim()
+    var emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(emailStr)) {
+      return NextResponse.json(
+        { error: 'invalid_input', message: 'صيغة البريد الإلكتروني غير صحيحة' },
+        { status: 400 }
+      )
+    }
+
+    // Validate password length
+    if (String(password).length < 1) {
+      return NextResponse.json(
+        { error: 'missing_fields', message: 'كلمة المرور مطلوبة' },
+        { status: 400 }
+      )
+    }
 
     // Quick database connectivity check before verifying credentials
     try {
@@ -33,7 +60,7 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const user = await verifyCredentials(normalizedEmail, password)
+    var user = await verifyCredentials(emailStr, password)
     if (!user) {
       return NextResponse.json(
         { error: 'invalidCredentials', message: 'Invalid email or password' },
@@ -41,7 +68,7 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const token = await createSession(user)
+    var token = await createSession(user)
 
     try {
       await db.user.update({
@@ -50,7 +77,7 @@ export async function POST(req: NextRequest) {
       })
     } catch {}
 
-    const response = NextResponse.json({ user, token })
+    var response = NextResponse.json({ user, token })
     response.cookies.set(SESSION_COOKIE, token, getCookieOptions())
 
     return response
