@@ -2,22 +2,26 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { handleDbError, validateRequired, parseNumber, safeDbOp } from '@/lib/api-helpers'
+import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 
 export async function GET(req: NextRequest) {
-  const user = await getAuthUser(req)
+  var user = await getAuthUser(req)
 
   if (!user) {
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
   }
 
-  const { searchParams } = new URL(req.url)
-  const projectId = searchParams.get('projectId')
-  const limit = parseInt(searchParams.get('limit') || '50')
+  var searchParams = new URL(req.url).searchParams
+  var projectId = searchParams.get('projectId')
+  var limit = parseInt(searchParams.get('limit') || '50')
 
-  const where: any = {}
+  // Cap limit to prevent excessive data retrieval
+  if (limit > 200) limit = 200
+
+  var where: any = {}
   if (projectId) where.projectId = projectId
 
-  const result = await safeDbOp(
+  var result = await safeDbOp(
     () => db.dailyReport.findMany({
       where,
       take: limit,
@@ -38,25 +42,34 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const user = await getAuthUser(req)
+  var user = await getAuthUser(req)
 
   if (!user) {
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
   }
 
-  try {
-    const body = await req.json()
+  // Rate limit write operations
+  var rl = checkRateLimit(req, RateLimitPresets.write)
+  if (rl.limited) {
+    return NextResponse.json(
+      { error: 'too_many_requests', message: 'طلبات كثيرة جداً، يرجى الانتظار قليلاً' },
+      { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } }
+    )
+  }
 
-    const validationError = validateRequired(body, ['projectId', 'reportDate'])
+  try {
+    var body = await req.json()
+
+    var validationError = validateRequired(body, ['projectId', 'reportDate'])
     if (validationError) return validationError
 
     // === Check: only ONE daily report per employee per project per day ===
-    const dateStart = new Date(body.reportDate)
+    var dateStart = new Date(body.reportDate)
     dateStart.setHours(0, 0, 0, 0)
-    const dateEnd = new Date(body.reportDate)
+    var dateEnd = new Date(body.reportDate)
     dateEnd.setHours(23, 59, 59, 999)
 
-    const existingResult = await safeDbOp(
+    var existingResult = await safeDbOp(
       () => db.dailyReport.findFirst({
         where: {
           projectId: body.projectId,
@@ -82,33 +95,31 @@ export async function POST(req: NextRequest) {
     // === End of duplicate check ===
 
     // Calculate production data
-    const startReading = parseNumber(body.startReading, 0)
-    const endReading = parseNumber(body.endReading, 0)
-    const dailyMeters = Math.max(0, endReading - startReading)
+    var startReading = parseNumber(body.startReading, 0)
+    var endReading = parseNumber(body.endReading, 0)
+    var dailyMeters = Math.max(0, endReading - startReading)
 
     // Run drive line and project queries in parallel
-    const [dlResult, projResult] = await Promise.all([
-      body.driveLineId
-        ? safeDbOp(
-            () => db.driveLine.findUnique({ where: { id: body.driveLineId } }),
-            'جلب خط الحفر'
-          )
-        : Promise.resolve({ success: false }),
-      safeDbOp(
-        () => db.project.findUnique({ where: { id: body.projectId }, select: { pricePerMeter: true } }),
-        'جلب بيانات المشروع'
-      ),
-    ])
+    var dlResult = body.driveLineId
+      ? await safeDbOp(
+          () => db.driveLine.findUnique({ where: { id: body.driveLineId } }),
+          'جلب خط الحفر'
+        )
+      : { success: false }
+    var projResult = await safeDbOp(
+      () => db.project.findUnique({ where: { id: body.projectId }, select: { pricePerMeter: true } }),
+      'جلب بيانات المشروع'
+    )
 
-    const totalLength = dlResult.success && dlResult.data ? dlResult.data.totalLength : 0
-    const totalMeters = endReading
-    const remainingMeters = Math.max(0, totalLength - totalMeters)
-    const progressPercent = totalLength > 0 ? (totalMeters / totalLength) * 100 : 0
+    var totalLength = dlResult.success && dlResult.data ? dlResult.data.totalLength : 0
+    var totalMeters = endReading
+    var remainingMeters = Math.max(0, totalLength - totalMeters)
+    var progressPercent = totalLength > 0 ? (totalMeters / totalLength) * 100 : 0
 
-    const pricePerMeter = projResult.success && projResult.data ? projResult.data.pricePerMeter : 0
-    const dailyRevenue = dailyMeters * pricePerMeter
+    var pricePerMeter = projResult.success && projResult.data ? projResult.data.pricePerMeter : 0
+    var dailyRevenue = dailyMeters * pricePerMeter
 
-    const createResult = await safeDbOp(
+    var createResult = await safeDbOp(
       () => db.dailyReport.create({
         data: {
           projectId: String(body.projectId),
@@ -142,7 +153,7 @@ export async function POST(req: NextRequest) {
     if (!createResult.success) return createResult.response
 
     // Run non-critical updates in parallel (fire-and-forget style)
-    const updatePromises: Promise<void>[] = []
+    var updatePromises: Promise<void>[] = []
 
     // Update drive line progress
     if (body.driveLineId) {
@@ -157,15 +168,15 @@ export async function POST(req: NextRequest) {
             },
           }),
           'تحديث تقدم خط الحفر'
-        ).then(() => {})
+        ).then(function() {})
       )
     }
 
     // Update project progress
     if (projResult.success && projResult.data) {
       updatePromises.push(
-        (async () => {
-          const allLinesResult = await safeDbOp(
+        (async function() {
+          var allLinesResult = await safeDbOp(
             () => db.driveLine.findMany({
               where: { projectId: body.projectId },
               select: { totalLength: true, completedLength: true },
@@ -173,9 +184,9 @@ export async function POST(req: NextRequest) {
             'جلب جميع خطوط الحفر'
           )
           if (allLinesResult.success) {
-            const totalAll = allLinesResult.data.reduce((s, l) => s + l.totalLength, 0)
-            const completedAll = allLinesResult.data.reduce((s, l) => s + l.completedLength, 0)
-            const projectProgress = totalAll > 0 ? (completedAll / totalAll) * 100 : 0
+            var totalAll = allLinesResult.data.reduce(function(s: number, l: any) { return s + l.totalLength }, 0)
+            var completedAll = allLinesResult.data.reduce(function(s: number, l: any) { return s + l.completedLength }, 0)
+            var projectProgress = totalAll > 0 ? (completedAll / totalAll) * 100 : 0
 
             await safeDbOp(
               () => db.project.update({
@@ -204,11 +215,11 @@ export async function POST(req: NextRequest) {
           },
         }),
         'سجل التدقيق'
-      ).then(() => {})
+      ).then(function() {})
     )
 
     // Fire all non-critical updates in parallel (don't await - let them run in background)
-    Promise.all(updatePromises).catch(() => {})
+    Promise.all(updatePromises).catch(function() {})
 
     return NextResponse.json({ report: createResult.data, success: true })
   } catch (error: any) {
