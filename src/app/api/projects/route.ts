@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { handleDbError, validateRequired, parseNumber, parseDate, safeDbOp } from '@/lib/api-helpers'
+import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 
 export async function POST(req: NextRequest) {
-  const user = await getAuthUser(req)
+  var user = await getAuthUser(req)
 
   if (!user) {
     return NextResponse.json({
@@ -13,23 +14,32 @@ export async function POST(req: NextRequest) {
     }, { status: 401 })
   }
 
+  // Rate limit write operations
+  var rl = checkRateLimit(req, RateLimitPresets.write)
+  if (rl.limited) {
+    return NextResponse.json(
+      { error: 'too_many_requests', message: 'طلبات كثيرة جداً، يرجى الانتظار قليلاً' },
+      { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } }
+    )
+  }
+
   try {
-    const body = await req.json()
+    var body = await req.json()
 
     // Validate required fields
-    const validationError = validateRequired(body, [
+    var validationError = validateRequired(body, [
       'code', 'name', 'client', 'location', 'workType', 'pipeDiameter', 'soilType'
     ])
     if (validationError) return validationError
 
     // Parse values safely
-    const totalLength = parseNumber(body.totalLength, 0)
-    const pricePerMeter = parseNumber(body.pricePerMeter, 0)
-    const startDate = parseDate(body.startDate, 0)
-    const expectedEnd = parseDate(body.expectedEnd, 90)
+    var totalLength = parseNumber(body.totalLength, 0)
+    var pricePerMeter = parseNumber(body.pricePerMeter, 0)
+    var startDate = parseDate(body.startDate, 0)
+    var expectedEnd = parseDate(body.expectedEnd, 90)
 
     // Check for duplicate code
-    const dupCheck = await safeDbOp(
+    var dupCheck = await safeDbOp(
       () => db.project.findUnique({ where: { code: String(body.code).trim() } }),
       'فحص الرمز المكرر'
     )
@@ -37,12 +47,12 @@ export async function POST(req: NextRequest) {
     if (dupCheck.data) {
       return NextResponse.json({
         error: 'duplicate_code',
-        message: `المشروع برمز "${body.code}" موجود بالفعل. يرجى استخدام رمز مختلف.`,
+        message: 'المشروع برمز "' + body.code + '" موجود بالفعل. يرجى استخدام رمز مختلف.',
       }, { status: 400 })
     }
 
     // Create project
-    const createResult = await safeDbOp(
+    var createResult = await safeDbOp(
       () => db.project.create({
         data: {
           code: String(body.code).trim(),
@@ -78,7 +88,7 @@ export async function POST(req: NextRequest) {
             action: 'create',
             entity: 'project',
             entityId: createResult.data.id,
-            details: `Created project ${createResult.data.code} - ${createResult.data.name}`,
+            details: 'Created project ' + createResult.data.code + ' - ' + createResult.data.name,
           },
         }),
         'سجل التدقيق'
@@ -89,13 +99,13 @@ export async function POST(req: NextRequest) {
             projectId: createResult.data.id,
             type: 'deadline_near',
             title: 'مشروع جديد',
-            message: `تم إنشاء مشروع جديد: ${createResult.data.code} - ${createResult.data.name} بواسطة ${user.name}`,
+            message: 'تم إنشاء مشروع جديد: ' + createResult.data.code + ' - ' + createResult.data.name + ' بواسطة ' + user.name,
             severity: 'info',
           },
         }),
         'إشعار الإضافة'
       ),
-    ]).catch(() => {})
+    ]).catch(function() {})
 
     return NextResponse.json({ project: createResult.data, success: true })
   } catch (error: any) {
