@@ -2,30 +2,33 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { handleDbError, validateRequired, safeDbOp } from '@/lib/api-helpers'
+import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 
 export async function GET(req: NextRequest) {
-  const user = await getAuthUser(req)
+  var user = await getAuthUser(req)
 
   if (!user) {
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
   }
 
-  const { searchParams } = new URL(req.url)
-  const projectId = searchParams.get('projectId')
-  const reportDate = searchParams.get('reportDate')
-  const limit = parseInt(searchParams.get('limit') || '50')
+  var searchParams = new URL(req.url).searchParams
+  var projectId = searchParams.get('projectId')
+  var reportDate = searchParams.get('reportDate')
+  var limit = parseInt(searchParams.get('limit') || '50')
 
-  const where: any = {}
+  if (limit > 200) limit = 200
+
+  var where: any = {}
   if (projectId) where.projectId = projectId
   if (reportDate) {
-    const start = new Date(reportDate)
+    var start = new Date(reportDate)
     start.setHours(0, 0, 0, 0)
-    const end = new Date(reportDate)
+    var end = new Date(reportDate)
     end.setHours(23, 59, 59, 999)
     where.reportDate = { gte: start, lte: end }
   }
 
-  const result = await safeDbOp(
+  var result = await safeDbOp(
     () => db.safetyReport.findMany({
       where,
       take: limit,
@@ -44,25 +47,34 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const user = await getAuthUser(req)
+  var user = await getAuthUser(req)
 
   if (!user) {
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
   }
 
-  try {
-    const body = await req.json()
+  // Rate limit write operations
+  var rl = checkRateLimit(req, RateLimitPresets.write)
+  if (rl.limited) {
+    return NextResponse.json(
+      { error: 'too_many_requests', message: 'طلبات كثيرة جداً، يرجى الانتظار قليلاً' },
+      { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } }
+    )
+  }
 
-    const validationError = validateRequired(body, ['projectId', 'reportDate'])
+  try {
+    var body = await req.json()
+
+    var validationError = validateRequired(body, ['projectId', 'reportDate'])
     if (validationError) return validationError
 
     // === Check: only ONE safety report per employee per project per day ===
-    const dateStart = new Date(body.reportDate)
+    var dateStart = new Date(body.reportDate)
     dateStart.setHours(0, 0, 0, 0)
-    const dateEnd = new Date(body.reportDate)
+    var dateEnd = new Date(body.reportDate)
     dateEnd.setHours(23, 59, 59, 999)
 
-    const existingResult = await safeDbOp(
+    var existingResult = await safeDbOp(
       () => db.safetyReport.findFirst({
         where: {
           projectId: body.projectId,
@@ -87,7 +99,7 @@ export async function POST(req: NextRequest) {
     // === End of duplicate check ===
 
     // 1. Create a minimal daily report (safety_only flag via status)
-    const createReportResult = await safeDbOp(
+    var createReportResult = await safeDbOp(
       () => db.dailyReport.create({
         data: {
           projectId: String(body.projectId),
@@ -117,7 +129,7 @@ export async function POST(req: NextRequest) {
     if (!createReportResult.success) return createReportResult.response
 
     // 2. Create the safety report linked to the daily report
-    const safetyData = {
+    var safetyData = {
       dailyReportId: createReportResult.data.id,
       projectId: String(body.projectId),
       reportDate: new Date(body.reportDate),
@@ -146,7 +158,7 @@ export async function POST(req: NextRequest) {
       signedAt: new Date(),
     }
 
-    const createSafetyResult = await safeDbOp(
+    var createSafetyResult = await safeDbOp(
       () => db.safetyReport.create({ data: safetyData }),
       'إنشاء تقرير السلامة'
     )
