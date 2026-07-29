@@ -1,18 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
-import { safeDbOp, buildAuditDetails } from '@/lib/api-helpers'
+import { safeDbOp, buildAuditDetails, handleDbError } from '@/lib/api-helpers'
+import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 
-export async function GET(req: NextRequest, { params }: { params: Promise }) {
-  const user = await getAuthUser(req)
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  var user = await getAuthUser(req)
 
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const { id } = await params
+  var { id } = await params
 
-  const project = await db.project.findUnique({
+  var project = await db.project.findUnique({
     where: { id },
     include: {
       manager: { select: { id: true, name: true, nameEn: true } },
@@ -27,20 +28,20 @@ export async function GET(req: NextRequest, { params }: { params: Promise }) {
     return NextResponse.json({ error: 'Project not found' }, { status: 404 })
   }
 
-  const reports = await db.dailyReport.findMany({
+  var reports = await db.dailyReport.findMany({
     where: { projectId: id, status: 'approved' },
     select: { dailyMeters: true, dailyRevenue: true, reportDate: true },
   })
 
-  const totalMeters = reports.reduce((s, r) => s + r.dailyMeters, 0)
-  const totalRevenue = reports.reduce((s, r) => s + r.dailyRevenue, 0)
+  var totalMeters = reports.reduce(function(s: number, r: any) { return s + r.dailyMeters }, 0)
+  var totalRevenue = reports.reduce(function(s: number, r: any) { return s + r.dailyRevenue }, 0)
 
-  const costsAgg = await db.cost.aggregate({
+  var costsAgg = await db.cost.aggregate({
     where: { projectId: id },
     _sum: { amount: true },
   })
 
-  const totalCost = costsAgg._sum.amount || 0
+  var totalCost = costsAgg._sum.amount || 0
 
   return NextResponse.json({
     project: {
@@ -53,8 +54,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise }) {
   })
 }
 
-export async function PUT(req: NextRequest, { params }: { params: Promise }) {
-  const user = await getAuthUser(req)
+export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  var user = await getAuthUser(req)
 
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -64,14 +65,23 @@ export async function PUT(req: NextRequest, { params }: { params: Promise }) {
     return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
   }
 
-  const { id } = await params
-  const body = await req.json()
+  // Rate limit write operations
+  var rl = checkRateLimit(req, RateLimitPresets.write)
+  if (rl.limited) {
+    return NextResponse.json(
+      { error: 'too_many_requests', message: 'طلبات كثيرة جداً، يرجى الانتظار قليلاً' },
+      { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } }
+    )
+  }
+
+  var { id } = await params
+  var body = await req.json()
 
   try {
     // Fetch old data before update
-    const oldProject = await db.project.findUnique({ where: { id } })
+    var oldProject = await db.project.findUnique({ where: { id } })
 
-    const project = await db.project.update({
+    var project = await db.project.update({
       where: { id },
       data: {
         code: body.code,
@@ -92,9 +102,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise }) {
     })
 
     // Build detailed changes diff
-    const details = oldProject
-      ? buildAuditDetails(oldProject, body, `تعديل المشروع: ${project.code}`)
-      : `تعديل المشروع: ${project.code}`
+    var details = oldProject
+      ? buildAuditDetails(oldProject, body, 'تعديل المشروع: ' + project.code)
+      : 'تعديل المشروع: ' + project.code
 
     // Audit log
     Promise.all([
@@ -104,17 +114,17 @@ export async function PUT(req: NextRequest, { params }: { params: Promise }) {
         }),
         'سجل التدقيق'
       ),
-    ]).catch(() => {})
+    ]).catch(function() {})
 
     return NextResponse.json({ project })
   } catch (error) {
     console.error('Update project error:', error)
-    return NextResponse.json({ error: 'Failed to update project' }, { status: 500 })
+    return handleDbError(error, 'تحديث المشروع')
   }
 }
 
-export async function DELETE(req: NextRequest, { params }: { params: Promise }) {
-  const user = await getAuthUser(req)
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  var user = await getAuthUser(req)
 
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -124,7 +134,16 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise }) 
     return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
   }
 
-  const { id } = await params
+  // Rate limit write operations
+  var rl = checkRateLimit(req, RateLimitPresets.write)
+  if (rl.limited) {
+    return NextResponse.json(
+      { error: 'too_many_requests', message: 'طلبات كثيرة جداً، يرجى الانتظار قليلاً' },
+      { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } }
+    )
+  }
+
+  var { id } = await params
 
   try {
     await db.project.delete({ where: { id } })
@@ -138,15 +157,15 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise }) 
       ),
       safeDbOp(
         () => db.notification.create({
-          data: { type: 'work_stopped', title: 'حذف مشروع', message: `تم حذف مشروع (المعرف: ${id}) بواسطة ${user.name}`, severity: 'critical' },
+          data: { type: 'work_stopped', title: 'حذف مشروع', message: 'تم حذف مشروع (المعرف: ' + id + ') بواسطة ' + user.name, severity: 'critical' },
         }),
         'إشعار الحذف'
       ),
-    ]).catch(() => {})
+    ]).catch(function() {})
 
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error('Delete project error:', error)
-    return NextResponse.json({ error: 'Failed to delete project' }, { status: 500 })
+    return handleDbError(error, 'حذف المشروع')
   }
 }
