@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
+import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const user = await getAuthUser(req)
+  var user = await getAuthUser(req)
 
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -13,19 +14,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
   }
 
-  const { id } = await params
-  const body = await req.json()
-  const action = body.action
-
-  if (action !== 'approve' && action !== 'reject') {
-    return NextResponse.json({ error: 'Invalid action. Must be "approve" or "reject"' }, { status: 400 })
+  // Rate limit write operations
+  var rl = checkRateLimit(req, RateLimitPresets.write)
+  if (rl.limited) {
+    return NextResponse.json(
+      { error: 'too_many_requests', message: 'طلبات كثيرة جداً، يرجى الانتظار قليلاً' },
+      { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } }
+    )
   }
 
-  const finalStatus = action === 'approve' ? 'approved' : 'rejected'
+  var { id } = await params
 
   try {
     // Get the report first to recalculate revenue on approval
-    const existingReport = await db.dailyReport.findUnique({
+    var existingReport = await db.dailyReport.findUnique({
       where: { id },
       include: {
         project: { select: { pricePerMeter: true } },
@@ -36,22 +38,26 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: 'Report not found' }, { status: 404 })
     }
 
-    // Recalculate dailyRevenue on approval using latest project price
-    let dailyRevenue = existingReport.dailyRevenue
-    if (action === 'approve') {
-      const pricePerMeter = existingReport.project?.pricePerMeter || 0
-      const dailyMeters = Math.max(0, (existingReport.endReading || 0) - (existingReport.startReading || 0))
-      dailyRevenue = dailyMeters * pricePerMeter
+    // Only submitted reports can be approved
+    if (existingReport.status !== 'submitted') {
+      return NextResponse.json(
+        { error: 'invalid_status', message: 'لا يمكن اعتماد تقرير لم يتم تسليمه' },
+        { status: 400 }
+      )
     }
 
-    const report = await db.dailyReport.update({
+    // Recalculate dailyRevenue on approval using latest project price
+    var pricePerMeter = existingReport.project?.pricePerMeter || 0
+    var dailyMeters = Math.max(0, (existingReport.endReading || 0) - (existingReport.startReading || 0))
+    var dailyRevenue = dailyMeters * pricePerMeter
+
+    var report = await db.dailyReport.update({
       where: { id },
       data: {
-        status: finalStatus,
+        status: 'approved',
         approvedById: user.id,
         approvedAt: new Date(),
-        // Update revenue with latest price on approval
-        ...(action === 'approve' ? { dailyRevenue } : {}),
+        dailyRevenue: dailyRevenue,
       },
     })
 
@@ -60,10 +66,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         userId: user.id,
         dailyReportId: id,
         projectId: report.projectId,
-        action: finalStatus,
+        action: 'approve',
         entity: 'daily_report',
         entityId: id,
-        details: (action === 'approve' ? 'Approved' : 'Rejected') + ' daily report' + (action === 'approve' ? ' (revenue: ' + dailyRevenue + ' OMR)' : ''),
+        details: 'Approved daily report (revenue: ' + dailyRevenue + ' OMR)',
       },
     })
 
