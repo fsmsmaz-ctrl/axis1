@@ -8,7 +8,7 @@ import { db } from './db'
 import { SessionUser, SESSION_COOKIE, getSessionMaxAge, getCookieOptions } from './auth'
 
 function getSecretKey(): Uint8Array {
-  const secret = process.env.JWT_SECRET
+  var secret = process.env.JWT_SECRET
   if (!secret || secret.length < 32) {
     throw new Error('JWT_SECRET is not set or too short (min 32 chars)')
   }
@@ -17,14 +17,14 @@ function getSecretKey(): Uint8Array {
 
 export async function verifyCredentials(email: string, password: string): Promise<SessionUser | null> {
   try {
-    const user = await db.user.findUnique({ where: { email: email.toLowerCase().trim() } })
+    var user = await db.user.findUnique({ where: { email: email.toLowerCase().trim() } })
     if (!user) return null
     if (!user.active) return null
 
-    const valid = await bcrypt.compare(password, user.password)
+    var valid = await bcrypt.compare(password, user.password)
     if (!valid) return null
 
-    const permissions = user.permissions && typeof user.permissions === 'object' && !Array.isArray(user.permissions)
+    var permissions = user.permissions && typeof user.permissions === 'object' && !Array.isArray(user.permissions)
       ? user.permissions as Record<string, boolean>
       : null
 
@@ -46,7 +46,7 @@ export async function verifyCredentials(email: string, password: string): Promis
 
 export async function createSession(user: SessionUser): Promise<string> {
   try {
-    const token = await new SignJWT({
+    var token = await new SignJWT({
       sub: user.id,
       email: user.email,
       name: user.name,
@@ -60,7 +60,7 @@ export async function createSession(user: SessionUser): Promise<string> {
       .setIssuedAt()
       .setIssuer('axis-pipe-jacking')
       .setAudience('axis-users')
-      .setExpirationTime(`${getSessionMaxAge()}s`)
+      .setExpirationTime(String(getSessionMaxAge()) + 's')
       .sign(getSecretKey())
 
     return token
@@ -76,16 +76,22 @@ export async function getSessionUser(token: string | undefined): Promise<Session
   if (token.trim().length === 0) return null
 
   try {
-    const { payload } = await jwtVerify(token, getSecretKey(), {
+    var result = await jwtVerify(token, getSecretKey(), {
       issuer: 'axis-pipe-jacking',
       audience: 'axis-users',
     })
 
-    const userId = payload.sub
+    var payload = result.payload
+    var userId = payload.sub
     if (!userId) return null
 
-    const user = await db.user.findUnique({ where: { id: userId } })
+    var user = await db.user.findUnique({ where: { id: userId as string } })
     if (!user || !user.active) return null
+
+    // Get permissions from database (source of truth) not from token
+    var dbPermissions = user.permissions && typeof user.permissions === 'object' && !Array.isArray(user.permissions)
+      ? user.permissions as Record<string, boolean>
+      : null
 
     return {
       id: user.id,
@@ -95,7 +101,7 @@ export async function getSessionUser(token: string | undefined): Promise<Session
       role: user.role,
       phone: user.phone,
       language: user.language,
-      permissions: Array.isArray(payload.permissions) ? payload.permissions : [],
+      permissions: dbPermissions,
     }
   } catch (error) {
     return null
@@ -112,11 +118,11 @@ import type { NextRequest } from 'next/server'
  * Extract the JWT token from request (cookie OR Authorization header)
  */
 export function extractToken(req: NextRequest): string | undefined {
-  let token = req.cookies.get(SESSION_COOKIE)?.value
+  var token = req.cookies.get(SESSION_COOKIE)?.value
 
   if (!token) {
-    const authHeader = req.headers.get('authorization')
-    if (authHeader?.startsWith('Bearer ')) {
+    var authHeader = req.headers.get('authorization')
+    if (authHeader && authHeader.startsWith('Bearer ')) {
       token = authHeader.substring(7)
     }
   }
@@ -128,6 +134,6 @@ export function extractToken(req: NextRequest): string | undefined {
  * Get the authenticated user from request
  */
 export async function getAuthUser(req: NextRequest): Promise<SessionUser | null> {
-  const token = extractToken(req)
+  var token = extractToken(req)
   return await getSessionUser(token)
 }
