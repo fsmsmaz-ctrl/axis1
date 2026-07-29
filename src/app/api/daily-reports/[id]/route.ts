@@ -1,18 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
-import { safeDbOp } from '@/lib/api-helpers'
+import { safeDbOp, handleDbError } from '@/lib/api-helpers'
+import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const user = await getAuthUser(req)
+  var user = await getAuthUser(req)
 
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const { id } = await params
+  var { id } = await params
 
-  const report = await db.dailyReport.findUnique({
+  var report = await db.dailyReport.findUnique({
     where: { id },
     include: {
       project: true,
@@ -33,40 +34,72 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 }
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const user = await getAuthUser(req)
+  var user = await getAuthUser(req)
 
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const { id } = await params
-  const body = await req.json()
+  // Rate limit write operations
+  var rl = checkRateLimit(req, RateLimitPresets.write)
+  if (rl.limited) {
+    return NextResponse.json(
+      { error: 'too_many_requests', message: 'طلبات كثيرة جداً، يرجى الانتظار قليلاً' },
+      { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } }
+    )
+  }
+
+  var { id } = await params
+
+  // Fetch the report first to verify ownership and status
+  var existingReport = await db.dailyReport.findUnique({
+    where: { id },
+    select: { createdById: true, status: true, projectId: true },
+  })
+
+  if (!existingReport) {
+    return NextResponse.json({ error: 'Report not found' }, { status: 404 })
+  }
+
+  // Only allow editing own reports (or admin/manager can edit any)
+  if (user.role !== 'top_management' && user.role !== 'project_manager') {
+    if (existingReport.createdById !== user.id) {
+      return NextResponse.json({ error: 'forbidden', message: 'لا يمكنك تعديل تقرير آخر موظف' }, { status: 403 })
+    }
+  }
+
+  // Only draft reports can be edited
+  if (existingReport.status !== 'draft') {
+    return NextResponse.json({ error: 'forbidden', message: 'لا يمكن تعديل تقرير تم تسليمه أو اعتماده' }, { status: 403 })
+  }
+
+  var body = await req.json()
 
   try {
-    const startReading = parseFloat(body.startReading) || 0
-    const endReading = parseFloat(body.endReading) || 0
-    const dailyMeters = Math.max(0, endReading - startReading)
+    var startReading = parseFloat(body.startReading) || 0
+    var endReading = parseFloat(body.endReading) || 0
+    var dailyMeters = Math.max(0, endReading - startReading)
 
-    const driveLine = body.driveLineId
+    var driveLine = body.driveLineId
       ? await db.driveLine.findUnique({ where: { id: body.driveLineId } })
       : null
 
-    const totalLength = driveLine?.totalLength || 0
-    const totalMeters = endReading
-    const remainingMeters = Math.max(0, totalLength - totalMeters)
-    const progressPercent = totalLength > 0 ? (totalMeters / totalLength) * 100 : 0
+    var totalLength = driveLine?.totalLength || 0
+    var totalMeters = endReading
+    var remainingMeters = Math.max(0, totalLength - totalMeters)
+    var progressPercent = totalLength > 0 ? (totalMeters / totalLength) * 100 : 0
 
-    const project = await db.project.findUnique({
-      where: { id: body.projectId },
+    var project = await db.project.findUnique({
+      where: { id: existingReport.projectId },
       select: { pricePerMeter: true },
     })
 
-    const dailyRevenue = dailyMeters * (project?.pricePerMeter || 0)
+    var dailyRevenue = dailyMeters * (project?.pricePerMeter || 0)
 
-    const report = await db.dailyReport.update({
+    var report = await db.dailyReport.update({
       where: { id },
       data: {
-        projectId: body.projectId,
+        projectId: existingReport.projectId,
         driveLineId: body.driveLineId || null,
         reportDate: new Date(body.reportDate),
         weather: body.weather,
@@ -88,14 +121,14 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         productionNotes: body.productionNotes,
         problems: body.problems,
         dailyRevenue,
-        status: body.status,
+        status: body.status || 'draft',
       },
     })
 
     await db.auditLog.create({
       data: {
         userId: user.id,
-        projectId: body.projectId,
+        projectId: existingReport.projectId,
         dailyReportId: id,
         action: 'update',
         entity: 'daily_report',
@@ -107,32 +140,33 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     return NextResponse.json({ report })
   } catch (error) {
     console.error('Update daily report error:', error)
-    return NextResponse.json({ error: 'Failed to update daily report' }, { status: 500 })
+    return handleDbError(error, 'تحديث التقرير اليومي')
   }
 }
 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const user = await getAuthUser(req)
+  var user = await getAuthUser(req)
 
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  // Only top management can delete approved reports
-  if (user.role !== 'top_management') {
-    const report = await db.dailyReport.findUnique({ where: { id: (await params).id } })
-    if (report?.status === 'approved') {
-      return NextResponse.json({ error: 'Cannot delete approved report' }, { status: 403 })
-    }
+  // Rate limit write operations
+  var rl = checkRateLimit(req, RateLimitPresets.write)
+  if (rl.limited) {
+    return NextResponse.json(
+      { error: 'too_many_requests', message: 'طلبات كثيرة جداً، يرجى الانتظار قليلاً' },
+      { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } }
+    )
   }
 
-  const { id } = await params
+  var { id } = await params
 
   try {
-    // Get projectId before deleting the report
-    const report = await db.dailyReport.findUnique({
+    // Get report details before deleting
+    var report = await db.dailyReport.findUnique({
       where: { id },
-      select: { projectId: true, status: true },
+      select: { projectId: true, status: true, createdById: true },
     })
 
     if (!report) {
@@ -140,8 +174,15 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     }
 
     // Only top management can delete approved reports
-    if (user.role !== 'top_management' && report.status === 'approved') {
+    if (report.status === 'approved' && user.role !== 'top_management') {
       return NextResponse.json({ error: 'Cannot delete approved report' }, { status: 403 })
+    }
+
+    // Only allow deleting own draft/submitted reports (or admin/manager can delete any non-approved)
+    if (user.role !== 'top_management' && user.role !== 'project_manager') {
+      if (report.createdById !== user.id) {
+        return NextResponse.json({ error: 'forbidden', message: 'لا يمكنك حذف تقرير آخر موظف' }, { status: 403 })
+      }
     }
 
     await db.dailyReport.delete({ where: { id } })
@@ -179,6 +220,6 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error('Delete report error:', error)
-    return NextResponse.json({ error: 'Failed to delete report' }, { status: 500 })
+    return handleDbError(error, 'حذف التقرير اليومي')
   }
 }
