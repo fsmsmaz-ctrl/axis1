@@ -11,7 +11,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet'
-import { ShieldCheck, ShieldAlert, AlertTriangle, CheckCircle2, XCircle, Calendar, Plus, Loader2 } from 'lucide-react'
+import { ShieldCheck, ShieldAlert, AlertTriangle, CheckCircle2, XCircle, Calendar, Plus, Loader2, ArrowLeft, FileText } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
 import { toast } from 'sonner'
@@ -74,8 +74,10 @@ export default function SafetyPage() {
   const [sheetOpen, setSheetOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState({ ...emptyForm })
+  const [navigating, setNavigating] = useState(false)
   const language = useAppStore((s) => s.language)
   const token = useAppStore((s) => s.token)
+  const setPage = useAppStore((s) => s.setPage)
   const isRtl = language === 'ar'
 
   async function fetchReports() {
@@ -84,11 +86,10 @@ export default function SafetyPage() {
       const params = new URLSearchParams()
       if (selectedProject !== 'all') params.set('projectId', selectedProject)
       params.set('limit', '100')
-      const res = await authedFetch('/api/daily-reports?' + params.toString())
+      const res = await authedFetch('/api/safety-inspection?' + params.toString())
       if (!res.ok) throw new Error('Failed to fetch')
       const data = await res.json()
-      const withSafety = (data.reports || []).filter((r: any) => r.safety)
-      setReports(withSafety)
+      setReports(data.safetyReports || [])
     } catch {
       toast.error(isRtl ? 'خطأ في تحميل التقارير' : 'Failed to load reports')
     } finally {
@@ -99,59 +100,46 @@ export default function SafetyPage() {
   useEffect(() => {
     if (!token) return
     fetchReports()
-    authedFetch('/api/projects/list').then(r => r.json()).then(d => setProjects(d.projects || []))
+    authedFetch('/api/projects/list').then(function(r) { return r.json() }).then(function(d) { setProjects(d.projects || []) })
   }, [selectedProject, token])
 
   async function handleSave() {
-    if (!form.projectId || !form.reportDate || !form.signedBy) {
-      toast.error(isRtl ? 'يرجى ملء جميع الحقول المطلوبة' : 'Please fill all required fields')
+    if (!form.projectId || !form.reportDate) {
+      toast.error(isRtl ? 'يرجى اختيار المشروع والتاريخ' : 'Please select project and date')
       return
     }
 
     setSaving(true)
     try {
-      // Find or create a daily report for this project+date
-      const reportsRes = await authedFetch(`/api/daily-reports?projectId=${form.projectId}&date=${form.reportDate}&limit=1`)
-      const reportsData = await reportsRes.json()
-      let reportId = reportsData.reports?.[0]?.id
-
-      if (!reportId) {
-        // Create a minimal daily report
-        const createRes = await authedFetch('/api/daily-reports', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            projectId: form.projectId,
-            reportDate: form.reportDate,
-            status: 'draft',
-          }),
-        })
-        if (!createRes.ok) throw new Error('Failed to create report')
-        const createData = await createRes.json()
-        reportId = createData.report?.id
+      const safetyData: any = {
+        projectId: form.projectId,
+        reportDate: form.reportDate,
       }
-
-      if (!reportId) throw new Error('No report ID')
-
-      // Create safety report
-      const safetyData: any = { signedBy: form.signedBy }
-      for (const item of checklistItems) {
+      for (var i = 0; i < checklistItems.length; i++) {
+        var item = checklistItems[i]
         safetyData[item.key] = form[item.key as keyof typeof form]
       }
       safetyData.observations = form.observations || null
       safetyData.violations = form.violations || null
       safetyData.incidentType = form.incidentType
-      safetyData.incidentDescription = form.incidentType !== 'none' ? form.incidentDescription || null : null
+      safetyData.incidentDescription = form.incidentType !== 'none' ? (form.incidentDescription || null) : null
 
-      const safetyRes = await authedFetch(`/api/daily-reports/${reportId}/safety`, {
+      var safetyRes = await authedFetch('/api/safety-inspection', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(safetyData),
       })
 
+      if (safetyRes.status === 409) {
+        var errData = await safetyRes.json().catch(function() { return {} })
+        toast.error(errData.message || (isRtl ? 'لقد أنشأت تقرير سلامة لهذا المشروع في هذا التاريخ بالفعل' : 'You already created a safety report for this project today'))
+        setSaving(false)
+        return
+      }
+
       if (!safetyRes.ok) throw new Error('Failed to save safety report')
 
-      toast.success(isRtl ? 'تم حفظ تقرير السلامة' : 'Safety report saved')
+      toast.success(isRtl ? 'تم حفظ تقرير السلامة بنجاح' : 'Safety report saved successfully')
       setSheetOpen(false)
       setForm({ ...emptyForm, reportDate: new Date().toISOString().split('T')[0] })
       fetchReports()
@@ -162,20 +150,41 @@ export default function SafetyPage() {
     }
   }
 
+  function goToDailyReports() {
+    setNavigating(true)
+    setPage('dailyReports')
+  }
+
   // Calculate stats
-  const total = reports.length
-  const incidents = reports.filter(r => r.safety?.incidentType && r.safety.incidentType !== 'none').length
-  const avgCompliance = total > 0
-    ? reports.reduce((sum, r) => {
-        const checks = checklistItems.map(item => r.safety?.[item.key as keyof any])
-        const passed = checks.filter(Boolean).length
+  var total = reports.length
+  var incidents = reports.filter(function(r) { return r.incidentType && r.incidentType !== 'none' }).length
+
+  // Calculate compliance average from unique dates only (avoid duplicates)
+  var seenDates: Record<string, boolean> = {}
+  var uniqueReports = reports.filter(function(r) {
+    var dateKey = r.projectId + '_' + (r.reportDate ? r.reportDate.split('T')[0] : '')
+    if (seenDates[dateKey]) return false
+    seenDates[dateKey] = true
+    return true
+  })
+
+  var avgCompliance = uniqueReports.length > 0
+    ? uniqueReports.reduce(function(sum, r) {
+        var passed = checklistItems.filter(function(item) { return r[item.key as keyof any] }).length
         return sum + (passed / 15) * 100
-      }, 0) / total
+      }, 0) / uniqueReports.length
     : 0
 
   // Form compliance
-  const formPassed = checklistItems.filter(item => form[item.key as keyof typeof form]).length
-  const formCompliance = (formPassed / 15) * 100
+  var formPassed = checklistItems.filter(function(item) { return form[item.key as keyof typeof form] }).length
+  var formCompliance = (formPassed / 15) * 100
+
+  // Check if user already created a safety report today for selected project
+  var today = new Date().toISOString().split('T')[0]
+  var todayReportExists = reports.some(function(r) {
+    if (selectedProject !== 'all' && r.projectId !== selectedProject) return false
+    return r.reportDate && r.reportDate.split('T')[0] === today
+  })
 
   return (
     <div className="space-y-4">
@@ -186,14 +195,30 @@ export default function SafetyPage() {
             {isRtl ? 'تقارير السلامة اليومية والمخاطر' : 'Daily safety reports and hazards'}
           </p>
         </div>
-        <Button onClick={() => {
-          setForm({ ...emptyForm, reportDate: new Date().toISOString().split('T')[0] })
-          setSheetOpen(true)
-        }}>
-          <Plus className="h-4 w-4 ml-2" />
-          {isRtl ? 'إضافة تقرير سلامة' : 'Add Safety Report'}
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={goToDailyReports} disabled={navigating}>
+            <FileText className="h-4 w-4 ml-2" />
+            {isRtl ? 'التقارير اليومية' : 'Daily Reports'}
+          </Button>
+          <Button onClick={function() {
+            setForm({ ...emptyForm, reportDate: new Date().toISOString().split('T')[0] })
+            setSheetOpen(true)
+          }} disabled={todayReportExists}>
+            <Plus className="h-4 w-4 ml-2" />
+            {isRtl ? 'إضافة تقرير سلامة' : 'Add Safety Report'}
+          </Button>
+        </div>
       </div>
+
+      {todayReportExists && (
+        <div className="p-3 rounded-lg bg-blue-50 border border-blue-200 text-sm flex items-center justify-between">
+          <span className="text-blue-700">{isRtl ? 'لقد أنشأت تقرير سلامة لهذا اليوم بالفعل. يمكنك تعبئة باقي البيانات من قسم التقارير اليومية.' : 'You already created a safety report for today. Complete the rest in Daily Reports.'}</span>
+          <Button variant="outline" size="sm" className="shrink-0 ml-3" onClick={goToDailyReports}>
+            {isRtl ? 'الذهاب للتقارير اليومية' : 'Go to Daily Reports'}
+            <ArrowLeft className="h-4 w-4 mr-1" />
+          </Button>
+        </div>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -244,9 +269,9 @@ export default function SafetyPage() {
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="all">{isRtl ? 'كل المشاريع' : 'All Projects'}</SelectItem>
-          {projects.map((p) => (
-            <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-          ))}
+          {projects.map(function(p) {
+            return <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+          })}
         </SelectContent>
       </Select>
 
@@ -261,20 +286,22 @@ export default function SafetyPage() {
         </Card>
       ) : (
         <div className="space-y-3">
-          {reports.map((r) => {
-            const checks = checklistItems.map(item => r.safety?.[item.key as keyof any])
-            const passed = checks.filter(Boolean).length
-            const compliance = (passed / 15) * 100
-            const incident = incidentLabels[r.safety.incidentType || 'none']
-            const hasIncident = r.safety.incidentType && r.safety.incidentType !== 'none'
+          {reports.map(function(r) {
+            var checks = checklistItems.map(function(item) { return r[item.key as keyof any] })
+            var passed = checks.filter(Boolean).length
+            var compliance = (passed / 15) * 100
+            var incident = incidentLabels[r.incidentType || 'none']
+            var hasIncident = r.incidentType && r.incidentType !== 'none'
+            var reportStatus = (r.dailyReport && r.dailyReport.status) || 'draft'
+            var isDraft = reportStatus === 'draft'
 
             return (
               <Card key={r.id} className={hasIncident ? 'border-destructive/30' : ''}>
                 <CardContent className="p-4">
                   <div className="flex items-start gap-3">
-                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
-                      hasIncident ? 'bg-destructive/10' : compliance === 100 ? 'bg-emerald-50' : 'bg-orange-50'
-                    }`}>
+                    <div className={'w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ' +
+                      (hasIncident ? 'bg-destructive/10' : compliance === 100 ? 'bg-emerald-50' : 'bg-orange-50')
+                    }>
                       {hasIncident ? (
                         <ShieldAlert className="h-5 w-5 text-destructive" />
                       ) : compliance === 100 ? (
@@ -285,8 +312,17 @@ export default function SafetyPage() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap mb-1">
-                        <p className="font-semibold text-sm">{r.project?.name}</p>
-                        <Badge variant="outline" className="text-xs">{r.driveLine?.lineNumber || '-'}</Badge>
+                        <p className="font-semibold text-sm">{r.project ? r.project.name : '-'}</p>
+                        {isDraft && (
+                          <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
+                            {isRtl ? 'بانتظار إكمال البيانات' : 'Awaiting data'}
+                          </Badge>
+                        )}
+                        {!isDraft && (
+                          <Badge variant="outline" className="text-xs">
+                            {reportStatus === 'submitted' ? (isRtl ? 'مرسل' : 'Submitted') : reportStatus === 'approved' ? (isRtl ? 'معتمد' : 'Approved') : (isRtl ? 'مرفوض' : 'Rejected')}
+                          </Badge>
+                        )}
                         {hasIncident && (
                           <Badge variant={incident.color as any} className="text-xs">
                             {isRtl ? incident.ar : incident.en}
@@ -295,21 +331,26 @@ export default function SafetyPage() {
                       </div>
                       <p className="text-xs text-muted-foreground mb-2">
                         {new Date(r.reportDate).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
-                        {' • '}
-                        {isRtl ? 'موقّع من' : 'Signed by'}: {r.safety.signedBy || '-'}
+                        {' \u2022 '}
+                        {isRtl ? 'موقّع من' : 'Signed by'}: {r.signedByUser ? (r.signedByUser.name || r.signedByUser.nameEn || '-') : '-'}
                       </p>
                       <div className="flex items-center gap-2 mb-2">
                         <Progress value={compliance} className="h-1.5 flex-1" />
                         <span className="text-xs font-medium">{passed}/15</span>
                       </div>
-                      {r.safety.observations && (
-                        <p className="text-xs text-muted-foreground">{r.safety.observations}</p>
+                      {r.observations && (
+                        <p className="text-xs text-muted-foreground">{r.observations}</p>
                       )}
-                      {r.safety.violations && (
-                        <p className="text-xs text-orange-600 mt-1">⚠ {r.safety.violations}</p>
+                      {r.violations && (
+                        <p className="text-xs text-orange-600 mt-1">{'\u26A0 '}{r.violations}</p>
                       )}
-                      {r.safety.incidentDescription && (
-                        <p className="text-xs text-destructive mt-1">🚨 {r.safety.incidentDescription}</p>
+                      {r.incidentDescription && (
+                        <p className="text-xs text-destructive mt-1">{'\uD83D\uDEA8 '}{r.incidentDescription}</p>
+                      )}
+                      {isDraft && (
+                        <Button variant="link" size="sm" className="text-primary p-0 h-auto mt-2" onClick={goToDailyReports}>
+                          {isRtl ? 'إكمال بيانات التقرير اليومي \u2192' : 'Complete daily report data \u2192'}
+                        </Button>
                       )}
                     </div>
                   </div>
@@ -326,7 +367,7 @@ export default function SafetyPage() {
           <SheetHeader>
             <SheetTitle>{isRtl ? 'إضافة تقرير سلامة جديد' : 'New Safety Report'}</SheetTitle>
             <SheetDescription>
-              {isRtl ? 'ملء بيانات تقرير السلامة اليومي' : 'Fill in the daily safety report details'}
+              {isRtl ? 'بعد حفظ تقرير السلامة، يمكنك إكمال باقي البيانات من قسم التقارير اليومية' : 'After saving, complete the rest in Daily Reports section'}
             </SheetDescription>
           </SheetHeader>
 
@@ -335,29 +376,19 @@ export default function SafetyPage() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>{isRtl ? 'المشروع' : 'Project'} *</Label>
-                <Select value={form.projectId} onValueChange={(v) => setForm({ ...form, projectId: v })}>
+                <Select value={form.projectId} onValueChange={function(v) { setForm({ ...form, projectId: v }) }}>
                   <SelectTrigger><SelectValue placeholder={isRtl ? 'اختر' : 'Select'} /></SelectTrigger>
                   <SelectContent>
-                    {projects.map((p) => (
-                      <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                    ))}
+                    {projects.map(function(p) {
+                      return <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                    })}
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-1.5">
                 <Label>{isRtl ? 'التاريخ' : 'Date'} *</Label>
-                <Input type="date" value={form.reportDate} onChange={(e) => setForm({ ...form, reportDate: e.target.value })} />
+                <Input type="date" value={form.reportDate} onChange={function(e) { setForm({ ...form, reportDate: e.target.value }) }} />
               </div>
-            </div>
-
-            {/* Signed by */}
-            <div className="space-y-1.5">
-              <Label>{isRtl ? 'موقّع من' : 'Signed by'} *</Label>
-              <Input
-                value={form.signedBy}
-                onChange={(e) => setForm({ ...form, signedBy: e.target.value })}
-                placeholder={isRtl ? 'اسم المسؤول' : 'Officer name'}
-              />
             </div>
 
             {/* Checklist */}
@@ -370,20 +401,24 @@ export default function SafetyPage() {
                 <span className="text-sm font-medium">{formPassed}/15</span>
               </div>
               <div className="grid grid-cols-1 gap-1.5">
-                {checklistItems.map((item) => (
-                  <label
-                    key={item.key}
-                    className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 cursor-pointer transition"
-                  >
-                    <Checkbox
-                      checked={form[item.key as keyof typeof form] as boolean}
-                      onCheckedChange={(checked) =>
-                        setForm({ ...form, [item.key]: !!checked })
-                      }
-                    />
-                    <span className="text-sm">{isRtl ? item.ar : item.en}</span>
-                  </label>
-                ))}
+                {checklistItems.map(function(item) {
+                  return (
+                    <label
+                      key={item.key}
+                      className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 cursor-pointer transition"
+                    >
+                      <Checkbox
+                        checked={form[item.key as keyof typeof form] as boolean}
+                        onCheckedChange={function(checked) {
+                          var updated = Object.assign({}, form)
+                          updated[item.key] = !!checked
+                          setForm(updated)
+                        }}
+                      />
+                      <span className="text-sm">{isRtl ? item.ar : item.en}</span>
+                    </label>
+                  )
+                })}
               </div>
             </div>
 
@@ -392,7 +427,7 @@ export default function SafetyPage() {
               <Label>{isRtl ? 'الملاحظات' : 'Observations'}</Label>
               <Textarea
                 value={form.observations}
-                onChange={(e) => setForm({ ...form, observations: e.target.value })}
+                onChange={function(e) { setForm({ ...form, observations: e.target.value }) }}
                 rows={3}
                 placeholder={isRtl ? 'ملاحظات عامة...' : 'General observations...'}
               />
@@ -402,7 +437,7 @@ export default function SafetyPage() {
               <Label>{isRtl ? 'المخالفات' : 'Violations'}</Label>
               <Textarea
                 value={form.violations}
-                onChange={(e) => setForm({ ...form, violations: e.target.value })}
+                onChange={function(e) { setForm({ ...form, violations: e.target.value }) }}
                 rows={2}
                 placeholder={isRtl ? 'أي مخالفات مرصودة...' : 'Any violations noted...'}
               />
@@ -411,12 +446,13 @@ export default function SafetyPage() {
             {/* Incident type */}
             <div className="space-y-1.5">
               <Label>{isRtl ? 'نوع الحادث' : 'Incident Type'}</Label>
-              <Select value={form.incidentType} onValueChange={(v) => setForm({ ...form, incidentType: v })}>
+              <Select value={form.incidentType} onValueChange={function(v) { setForm({ ...form, incidentType: v }) }}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {Object.entries(incidentLabels).map(([key, val]) => (
-                    <SelectItem key={key} value={key}>{isRtl ? val.ar : val.en}</SelectItem>
-                  ))}
+                  {Object.keys(incidentLabels).map(function(key) {
+                    var val = incidentLabels[key]
+                    return <SelectItem key={key} value={key}>{isRtl ? val.ar : val.en}</SelectItem>
+                  })}
                 </SelectContent>
               </Select>
             </div>
@@ -426,7 +462,7 @@ export default function SafetyPage() {
                 <Label>{isRtl ? 'وصف الحادث' : 'Incident Description'}</Label>
                 <Textarea
                   value={form.incidentDescription}
-                  onChange={(e) => setForm({ ...form, incidentDescription: e.target.value })}
+                  onChange={function(e) { setForm({ ...form, incidentDescription: e.target.value }) }}
                   rows={3}
                   placeholder={isRtl ? 'وصف تفصيلي للحادث...' : 'Detailed incident description...'}
                 />
