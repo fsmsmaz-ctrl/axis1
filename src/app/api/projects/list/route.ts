@@ -4,21 +4,21 @@ import { db } from '@/lib/db'
 import { handleDbError, safeDbOp } from '@/lib/api-helpers'
 
 export async function GET(req: NextRequest) {
-  const user = await getAuthUser(req)
+  var user = await getAuthUser(req)
 
   if (!user) {
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
   }
 
-  const { searchParams } = new URL(req.url)
-  const status = searchParams.get('status')
+  var searchParams = new URL(req.url).searchParams
+  var status = searchParams.get('status')
 
-  const where: any = {}
+  var where: any = {}
   if (status && status !== 'all') {
     where.status = status
   }
 
-  const result = await safeDbOp(
+  var result = await safeDbOp(
     () => db.project.findMany({
       where,
       include: {
