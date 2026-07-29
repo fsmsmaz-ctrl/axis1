@@ -100,7 +100,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         action: 'update',
         entity: 'daily_report',
         entityId: id,
-        details: `Updated daily report`,
+        details: 'Updated daily report',
       },
     })
 
@@ -168,7 +168,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
             projectId: report.projectId,
             type: 'report_delay',
             title: 'حذف تقرير يومي',
-            message: `تم حذف تقرير يومي (المعرف: ${id}) بواسطة ${user.name}`,
+            message: 'تم حذف تقرير يومي (المعرف: ' + id + ') بواسطة ' + user.name,
             severity: 'warning',
           },
         }),
