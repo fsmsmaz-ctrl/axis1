@@ -11,7 +11,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet'
-import { ShieldCheck, ShieldAlert, AlertTriangle, CheckCircle2, XCircle, Calendar, Plus, Loader2, ArrowLeft, FileText } from 'lucide-react'
+import { ShieldCheck, ShieldAlert, AlertTriangle, CheckCircle2, XCircle, Calendar, Plus, Loader2 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
 import { toast } from 'sonner'
@@ -74,7 +74,6 @@ export default function SafetyPage() {
   const [sheetOpen, setSheetOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState({ ...emptyForm })
-  const [navigating, setNavigating] = useState(false)
   const language = useAppStore((s) => s.language)
   const token = useAppStore((s) => s.token)
   const setPage = useAppStore((s) => s.setPage)
@@ -151,7 +150,6 @@ export default function SafetyPage() {
   }
 
   function goToDailyReports() {
-    setNavigating(true)
     setPage('dailyReports')
   }
 
@@ -195,28 +193,18 @@ export default function SafetyPage() {
             {isRtl ? 'تقارير السلامة اليومية والمخاطر' : 'Daily safety reports and hazards'}
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={goToDailyReports} disabled={navigating}>
-            <FileText className="h-4 w-4 ml-2" />
-            {isRtl ? 'التقارير اليومية' : 'Daily Reports'}
-          </Button>
-          <Button onClick={function() {
-            setForm({ ...emptyForm, reportDate: new Date().toISOString().split('T')[0] })
-            setSheetOpen(true)
-          }} disabled={todayReportExists}>
-            <Plus className="h-4 w-4 ml-2" />
-            {isRtl ? 'إضافة تقرير سلامة' : 'Add Safety Report'}
-          </Button>
-        </div>
+        <Button onClick={function() {
+          setForm({ ...emptyForm, reportDate: new Date().toISOString().split('T')[0] })
+          setSheetOpen(true)
+        }} disabled={todayReportExists}>
+          <Plus className="h-4 w-4 ml-2" />
+          {isRtl ? 'إضافة تقرير سلامة' : 'Add Safety Report'}
+        </Button>
       </div>
 
       {todayReportExists && (
-        <div className="p-3 rounded-lg bg-blue-50 border border-blue-200 text-sm flex items-center justify-between">
-          <span className="text-blue-700">{isRtl ? 'لقد أنشأت تقرير سلامة لهذا اليوم بالفعل. يمكنك تعبئة باقي البيانات من قسم التقارير اليومية.' : 'You already created a safety report for today. Complete the rest in Daily Reports.'}</span>
-          <Button variant="outline" size="sm" className="shrink-0 ml-3" onClick={goToDailyReports}>
-            {isRtl ? 'الذهاب للتقارير اليومية' : 'Go to Daily Reports'}
-            <ArrowLeft className="h-4 w-4 mr-1" />
-          </Button>
+        <div className="p-3 rounded-lg bg-blue-50 border border-blue-200 text-sm">
+          <span className="text-blue-700">{isRtl ? 'لقد أنشأت تقرير سلامة لهذا اليوم بالفعل.' : 'You already created a safety report for today.'}</span>
         </div>
       )}
 
