@@ -177,11 +177,11 @@ export default function SafetyPage() {
   var formPassed = checklistItems.filter(function(item) { return form[item.key as keyof typeof form] }).length
   var formCompliance = (formPassed / 15) * 100
 
-  // Check if user already created a safety report today for selected project
+  // Check if user already created a safety report today for the selected project
+  // Only check when a specific project is selected (not 'all')
   var today = new Date().toISOString().split('T')[0]
-  var todayReportExists = reports.some(function(r) {
-    if (selectedProject !== 'all' && r.projectId !== selectedProject) return false
-    return r.reportDate && r.reportDate.split('T')[0] === today
+  var todayReportExists = selectedProject !== 'all' && reports.some(function(r) {
+    return r.projectId === selectedProject && r.reportDate && r.reportDate.split('T')[0] === today
   })
 
   return (
