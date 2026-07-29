@@ -15,8 +15,8 @@ import {
 } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
-  FileText, Calendar, Users, Ruler, AlertTriangle,
-  ShieldCheck, CheckCircle2, Clock, DollarSign, Eye, Check, X, Pencil, Trash2
+  FileText, Calendar,
+  ShieldCheck, CheckCircle2, Eye, Check, X, Pencil
 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
@@ -26,7 +26,6 @@ var statusLabels: Record<string, { ar: string; en: string; color: string }> = {
   draft: { ar: 'مسودة', en: 'Draft', color: 'secondary' },
   submitted: { ar: 'مرسل', en: 'Submitted', color: 'default' },
   approved: { ar: 'معتمد', en: 'Approved', color: 'default' },
-  rejected: { ar: 'مرفوض', en: 'Rejected', color: 'destructive' },
 }
 
 var weatherLabels: Record<string, { ar: string; en: string }> = {
@@ -73,8 +72,6 @@ export default function DailyReportsPage() {
     hazards: '', observations: '', violations: '', incidentType: 'none', incidentDescription: '',
   })
 
-  const [safetyCompleted, setSafetyCompleted] = useState(false)
-
   async function fetchReports() {
     setLoading(true)
     try {
@@ -114,28 +111,6 @@ export default function DailyReportsPage() {
         .catch(function() { setDriveLines([]) })
     }
   }, [formData.projectId])
-
-  function openCreate() {
-    setEditingReportId(null)
-    setExistingSafetyLoaded(false)
-    setFormData({
-      projectId: projects[0]?.id || '', driveLineId: '', reportDate: new Date().toISOString().split('T')[0],
-      weather: 'sunny', workStartTime: '06:30', workEndTime: '17:00',
-      operatingHours: '8.5', stoppageHours: '0', stoppageReason: '',
-      workersCount: '12', attendees: '', startReading: '', endReading: '',
-      soilExcavated: 'mixed', pipesInstalled: '0', productionNotes: '',
-      problems: '',
-    })
-    setSafety({
-      ppeAvailable: false, helmetCheck: false, bootsCheck: false, glovesCheck: false,
-      glassesCheck: false, workAreaCheck: false, barriersCheck: false, shaftCheck: false,
-      ventilationCheck: false, electricalCheck: false, craneCheck: false, hydraulicCheck: false,
-      fireExtinguishers: false, workPermit: false, toolboxTalk: false,
-      hazards: '', observations: '', violations: '', incidentType: 'none', incidentDescription: '',
-    })
-    setSafetyCompleted(false)
-    setDialogOpen(true)
-  }
 
   async function openEditReport(report: any) {
     setEditingReportId(report.id)
@@ -183,7 +158,6 @@ export default function DailyReportsPage() {
         incidentType: report.safety.incidentType || 'none',
         incidentDescription: report.safety.incidentDescription || '',
       })
-      setSafetyCompleted(true)
       setExistingSafetyLoaded(true)
     } else {
       setSafety({
@@ -193,7 +167,6 @@ export default function DailyReportsPage() {
         fireExtinguishers: false, workPermit: false, toolboxTalk: false,
         hazards: '', observations: '', violations: '', incidentType: 'none', incidentDescription: '',
       })
-      setSafetyCompleted(false)
       setExistingSafetyLoaded(false)
     }
 
@@ -207,17 +180,6 @@ export default function DailyReportsPage() {
     }
 
     setDialogOpen(true)
-  }
-
-  async function deleteReport(id: string) {
-    var res = await authedFetch('/api/daily-reports/' + id, { method: 'DELETE' })
-    if (res.ok) {
-      toast.success(isRtl ? 'تم حذف التقرير' : 'Report deleted')
-      fetchReports()
-    } else {
-      var data = await res.json().catch(function() { return {} })
-      toast.error(data.error || (isRtl ? 'فشل الحذف' : 'Delete failed'))
-    }
   }
 
   var safetyChecklistItems = [
@@ -300,14 +262,14 @@ export default function DailyReportsPage() {
     }
   }
 
-  async function approveReport(id: string, action: 'approve' | 'reject') {
+  async function approveReport(id: string) {
     var res = await authedFetch('/api/daily-reports/' + id + '/approve', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: action }),
+      body: JSON.stringify({ action: 'approve' }),
     })
     if (res.ok) {
-      toast.success(action === 'approve' ? (isRtl ? 'تم الاعتماد' : 'Approved') : (isRtl ? 'تم الرفض' : 'Rejected'))
+      toast.success(isRtl ? 'تم الاعتماد' : 'Approved')
       fetchReports()
     }
   }
@@ -412,23 +374,13 @@ export default function DailyReportsPage() {
                           <Pencil className="h-4 w-4" />
                         </Button>
                       )}
-                      {r.status === 'draft' && (
-                        <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={function() { deleteReport(r.id) }}>
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      )}
                       <Button variant="outline" size="sm" onClick={function() { viewReportDetails(r) }}>
                         <Eye className="h-4 w-4" />
                       </Button>
                       {canApprove && r.status === 'submitted' && (
-                        <>
-                          <Button variant="outline" size="sm" className="text-emerald-600" onClick={function() { approveReport(r.id, 'approve') }}>
-                            <Check className="h-4 w-4" />
-                          </Button>
-                          <Button variant="outline" size="sm" className="text-destructive" onClick={function() { approveReport(r.id, 'reject') }}>
-                            <X className="h-4 w-4" />
-                          </Button>
-                        </>
+                        <Button variant="outline" size="sm" className="text-emerald-600" onClick={function() { approveReport(r.id) }}>
+                          <Check className="h-4 w-4" />
+                        </Button>
                       )}
                     </div>
                   </div>
