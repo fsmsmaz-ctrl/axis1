@@ -2,21 +2,22 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { handleDbError, validateRequired, parseNumber, safeDbOp } from '@/lib/api-helpers'
+import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 
 export async function GET(req: NextRequest) {
-  const user = await getAuthUser(req)
+  var user = await getAuthUser(req)
 
   if (!user) {
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
   }
 
-  const { searchParams } = new URL(req.url)
-  const projectId = searchParams.get('projectId')
+  var searchParams = new URL(req.url).searchParams
+  var projectId = searchParams.get('projectId')
 
-  const where: any = {}
+  var where: any = {}
   if (projectId) where.projectId = projectId
 
-  const result = await safeDbOp(
+  var result = await safeDbOp(
     () => db.equipment.findMany({
       where,
       include: {
@@ -33,31 +34,40 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const user = await getAuthUser(req)
+  var user = await getAuthUser(req)
 
   if (!user) {
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
   }
 
-  try {
-    const body = await req.json()
+  // Rate limit write operations
+  var rl = checkRateLimit(req, RateLimitPresets.write)
+  if (rl.limited) {
+    return NextResponse.json(
+      { error: 'too_many_requests', message: 'طلبات كثيرة جداً، يرجى الانتظار قليلاً' },
+      { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } }
+    )
+  }
 
-    const validationError = validateRequired(body, ['name', 'number', 'type'])
+  try {
+    var body = await req.json()
+
+    var validationError = validateRequired(body, ['name', 'number', 'type'])
     if (validationError) return validationError
 
     // Check for duplicate number
-    const dupResult = await safeDbOp(
+    var dupResult = await safeDbOp(
       () => db.equipment.findUnique({ where: { number: String(body.number).trim() } }),
       'فحص الرمز المكرر'
     )
     if (dupResult.success && dupResult.data) {
       return NextResponse.json({
         error: 'duplicate_number',
-        message: `المعدة برقم "${body.number}" موجودة بالفعل`,
+        message: 'المعدة برقم "' + body.number + '" موجودة بالفعل',
       }, { status: 400 })
     }
 
-    const createResult = await safeDbOp(
+    var createResult = await safeDbOp(
       () => db.equipment.create({
         data: {
           projectId: body.projectId || null,
@@ -85,7 +95,7 @@ export async function POST(req: NextRequest) {
             action: 'create',
             entity: 'equipment',
             entityId: createResult.data.id,
-            details: `Created equipment ${createResult.data.number} - ${createResult.data.name}`,
+            details: 'Created equipment ' + createResult.data.number + ' - ' + createResult.data.name,
           },
         }),
         'سجل التدقيق'
@@ -96,13 +106,13 @@ export async function POST(req: NextRequest) {
             projectId: body.projectId,
             type: 'equipment_breakdown',
             title: 'إضافة معدة جديدة',
-            message: `تم إضافة معدة: ${createResult.data.number} - ${createResult.data.name} بواسطة ${user.name}`,
+            message: 'تم إضافة معدة: ' + createResult.data.number + ' - ' + createResult.data.name + ' بواسطة ' + user.name,
             severity: 'info',
           },
         }),
         'إشعار الإضافة'
       ),
-    ]).catch(() => {})
+    ]).catch(function() {})
 
     return NextResponse.json({ equipment: createResult.data, success: true })
   } catch (error: any) {
