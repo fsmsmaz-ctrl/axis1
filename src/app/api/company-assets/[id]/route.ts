@@ -2,28 +2,38 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { safeDbOp, handleDbError, buildAuditDetails } from '@/lib/api-helpers'
+import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 
 export async function PUT(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const user = await getAuthUser(req)
+  var user = await getAuthUser(req)
 
   if (!user) {
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
   }
 
+  // Rate limit write operations
+  var rl = checkRateLimit(req, RateLimitPresets.write)
+  if (rl.limited) {
+    return NextResponse.json(
+      { error: 'too_many_requests', message: 'طلبات كثيرة جداً، يرجى الانتظار قليلاً' },
+      { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } }
+    )
+  }
+
   try {
-    const { id } = await params
-    const body = await req.json()
+    var { id } = await params
+    var body = await req.json()
 
     // Fetch old data before update
-    const oldAsset = await safeDbOp(
+    var oldAsset = await safeDbOp(
       () => db.companyAsset.findUnique({ where: { id } }),
       'جلب الأصل القديم'
     )
 
-    const updateResult = await safeDbOp(
+    var updateResult = await safeDbOp(
       () => db.companyAsset.update({
         where: { id },
         data: {
@@ -46,18 +56,18 @@ export async function PUT(
     if (!updateResult.success) return updateResult.response
 
     // Build detailed changes diff
-    const details = oldAsset.success && oldAsset.data
+    var details = oldAsset.success && oldAsset.data
       ? buildAuditDetails(
           {
             ...oldAsset.data,
-            rentalStart: oldAsset.data.rentalStart?.toISOString?.()?.split('T')[0] || oldAsset.data.rentalStart,
-            rentalEnd: oldAsset.data.rentalEnd?.toISOString?.()?.split('T')[0] || oldAsset.data.rentalEnd,
+            rentalStart: oldAsset.data.rentalStart && oldAsset.data.rentalStart.toISOString ? oldAsset.data.rentalStart.toISOString().split('T')[0] : oldAsset.data.rentalStart,
+            rentalEnd: oldAsset.data.rentalEnd && oldAsset.data.rentalEnd.toISOString ? oldAsset.data.rentalEnd.toISOString().split('T')[0] : oldAsset.data.rentalEnd,
           },
           body,
-          `تعديل أصل: ${updateResult.data.name}`,
+          'تعديل أصل: ' + updateResult.data.name,
           { skipFields: ['id', 'createdAt', 'updatedAt', 'projectId', 'responsibleId'] }
         )
-      : `تعديل أصل: ${updateResult.data.name}`
+      : 'تعديل أصل: ' + updateResult.data.name
 
     Promise.all([
       safeDbOp(
@@ -66,7 +76,7 @@ export async function PUT(
         }),
         'سجل التدقيق'
       ),
-    ]).catch(() => {})
+    ]).catch(function() {})
 
     return NextResponse.json({ asset: updateResult.data, success: true })
   } catch (error: any) {
@@ -78,45 +88,54 @@ export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const user = await getAuthUser(req)
+  var user = await getAuthUser(req)
 
   if (!user) {
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
   }
 
-  try {
-    const { id } = await params
+  // Rate limit write operations
+  var rl = checkRateLimit(req, RateLimitPresets.write)
+  if (rl.limited) {
+    return NextResponse.json(
+      { error: 'too_many_requests', message: 'طلبات كثيرة جداً، يرجى الانتظار قليلاً' },
+      { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } }
+    )
+  }
 
-    const assetInfo = await safeDbOp(
+  try {
+    var { id } = await params
+
+    var assetInfo = await safeDbOp(
       () => db.companyAsset.findUnique({ where: { id }, select: { projectId: true, name: true, ownership: true } }),
       'جلب بيانات الأصل'
     )
 
-    const deleteResult = await safeDbOp(
+    var deleteResult = await safeDbOp(
       () => db.companyAsset.delete({ where: { id } }),
       'حذف الأصل'
     )
     if (!deleteResult.success) return deleteResult.response
 
-    const projectId = assetInfo.success ? assetInfo.data?.projectId : null
-    const assetDesc = assetInfo.success && assetInfo.data
-      ? `${assetInfo.data.name} (${assetInfo.data.ownership})`
+    var projectId = assetInfo.success ? assetInfo.data?.projectId : null
+    var assetDesc = assetInfo.success && assetInfo.data
+      ? assetInfo.data.name + ' (' + assetInfo.data.ownership + ')'
       : id
 
     Promise.all([
       safeDbOp(
         () => db.auditLog.create({
-          data: { userId: user.id, projectId, action: 'delete', entity: 'company_asset', entityId: id, details: `حذف أصل: ${assetDesc}` },
+          data: { userId: user.id, projectId, action: 'delete', entity: 'company_asset', entityId: id, details: 'حذف أصل: ' + assetDesc },
         }),
         'سجل التدقيق'
       ),
       safeDbOp(
         () => db.notification.create({
-          data: { projectId, type: 'equipment_breakdown', title: 'حذف أصل/مستأجر', message: `تم حذف: ${assetDesc} بواسطة ${user.name}`, severity: 'warning' },
+          data: { projectId, type: 'equipment_breakdown', title: 'حذف أصل/مستأجر', message: 'تم حذف: ' + assetDesc + ' بواسطة ' + user.name, severity: 'warning' },
         }),
         'إشعار الحذف'
       ),
-    ]).catch(() => {})
+    ]).catch(function() {})
 
     return NextResponse.json({ success: true })
   } catch (error: any) {
