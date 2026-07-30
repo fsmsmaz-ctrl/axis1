@@ -21,6 +21,12 @@ import { useAppStore } from '@/lib/store'
 import { authedFetch, apiRequest, getErrorMessage } from '@/lib/api-client'
 import { toast } from 'sonner'
 
+function canCreateProject(user: any): boolean {
+  if (!user) return false
+  if (user.email && user.email.toLowerCase().trim() === 'admin@axis.om') return true
+  return user.role === 'top_management' || user.role === 'project_manager'
+}
+
 const workTypeLabels: Record<string, { ar: string; en: string }> = {
   pipe_jacking: { ar: 'Pipe Jacking', en: 'Pipe Jacking' },
   microtunneling: { ar: 'Microtunneling', en: 'Microtunneling' },
@@ -53,6 +59,7 @@ export default function ProjectsPage() {
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const language = useAppStore((s) => s.language)
   const token = useAppStore((s) => s.token)
+  const user = useAppStore((s) => s.user)
   const isRtl = language === 'ar'
 
   const [formData, setFormData] = useState({
@@ -173,10 +180,12 @@ export default function ProjectsPage() {
             {isRtl ? `${projects.length} مشروع` : `${projects.length} projects`}
           </p>
         </div>
-        <Button onClick={openCreate}>
-          <Plus className="h-4 w-4 ml-2" />
-          {isRtl ? 'مشروع جديد' : 'New Project'}
-        </Button>
+        {canCreateProject(user) && (
+          <Button onClick={openCreate}>
+            <Plus className="h-4 w-4 ml-2" />
+            {isRtl ? 'مشروع جديد' : 'New Project'}
+          </Button>
+        )}
       </div>
 
       {/* Filters */}
