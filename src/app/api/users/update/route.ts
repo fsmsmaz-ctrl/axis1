@@ -2,11 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import bcrypt from 'bcryptjs'
+import { handleDbError } from '@/lib/api-helpers'
+import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 
-const ADMIN_EMAIL = 'admin@axis.om'
-const VALID_ROLES = ['top_management', 'project_manager', 'site_engineer', 'hse_officer', 'foreman', 'accountant']
+var ADMIN_EMAIL = 'admin@axis.om'
+var VALID_ROLES = ['top_management', 'project_manager', 'site_engineer', 'hse_officer', 'foreman', 'accountant']
 
-const ALL_PERMISSIONS = [
+var ALL_PERMISSIONS = [
   'drive_lines', 'daily_reports', 'safety', 'equipment', 'costs', 'finishings', 'performance', 'notifications',
   'rpt_daily_site', 'rpt_production', 'rpt_safety', 'rpt_attendance',
   'rpt_revenue', 'rpt_costs', 'rpt_profit', 'rpt_equipment',
@@ -14,20 +16,35 @@ const ALL_PERMISSIONS = [
 ]
 
 export async function PATCH(req: NextRequest) {
+  // Rate limit user updates
+  var rl = checkRateLimit(req, RateLimitPresets.write)
+  if (rl.limited) {
+    return NextResponse.json(
+      { error: 'too_many_requests', message: 'طلبات كثيرة جداً، يرجى الانتظار' },
+      { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } }
+    )
+  }
+
   try {
-    const authUser = await getAuthUser(req)
+    var authUser = await getAuthUser(req)
     if (!authUser || authUser.email.toLowerCase().trim() !== ADMIN_EMAIL) {
       return NextResponse.json({ error: 'unauthorized' }, { status: 403 })
     }
 
-    const body = await req.json()
-    const { userId, name, nameEn, role, phone, password, permissions } = body
+    var body = await req.json()
+    var userId = body.userId
+    var name = body.name
+    var nameEn = body.nameEn
+    var role = body.role
+    var phone = body.phone
+    var password = body.password
+    var permissions = body.permissions
 
     if (!userId) {
       return NextResponse.json({ error: 'User ID is required' }, { status: 400 })
     }
 
-    const targetUser = await db.user.findUnique({ where: { id: userId } })
+    var targetUser = await db.user.findUnique({ where: { id: userId } })
     if (!targetUser) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
@@ -36,7 +53,7 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: 'Cannot modify admin account' }, { status: 403 })
     }
 
-    const updateData: Record<string, any> = {}
+    var updateData: Record<string, any> = {}
 
     if (name !== undefined && name.trim()) updateData.name = name.trim()
     if (nameEn !== undefined && nameEn.trim()) updateData.nameEn = nameEn.trim()
@@ -49,9 +66,10 @@ export async function PATCH(req: NextRequest) {
     }
 
     if (permissions !== undefined) {
-      const cleanPerms: Record<string, boolean> = {}
+      var cleanPerms: Record<string, boolean> = {}
       if (permissions && typeof permissions === 'object') {
-        for (const key of ALL_PERMISSIONS) {
+        for (var i = 0; i < ALL_PERMISSIONS.length; i++) {
+          var key = ALL_PERMISSIONS[i]
           if (typeof permissions[key] === 'boolean') {
             cleanPerms[key] = permissions[key]
           }
@@ -68,7 +86,7 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: 'No fields to update' }, { status: 400 })
     }
 
-    const updated = await db.user.update({
+    var updated = await db.user.update({
       where: { id: userId },
       data: updateData,
       select: {
@@ -83,6 +101,6 @@ export async function PATCH(req: NextRequest) {
     })
   } catch (error) {
     console.error('Update user error:', error)
-    return NextResponse.json({ error: 'Failed to update user' }, { status: 500 })
+    return handleDbError(error, 'تحديث المستخدم')
   }
 }
