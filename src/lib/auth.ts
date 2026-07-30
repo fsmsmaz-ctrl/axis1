@@ -112,6 +112,12 @@ export function hasPermission(role: string, resource: string, userPermissions?: 
   }
 
   const perms = ROLE_PERMISSIONS[role] || []
+
+  // Report sub-permissions (rpt_*): if role has general 'reports' access, allow all report types
+  if (resource.startsWith('rpt_') && perms.includes('reports')) {
+    return true
+  }
+
   return perms.includes('*') || perms.includes(resource)
 }
 
