@@ -2,21 +2,22 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { handleDbError, validateRequired, safeDbOp } from '@/lib/api-helpers'
+import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 
 export async function GET(req: NextRequest) {
-  const user = await getAuthUser(req)
+  var user = await getAuthUser(req)
 
   if (!user) {
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
   }
 
-  const { searchParams } = new URL(req.url)
-  const projectId = searchParams.get('projectId')
+  var searchParams = new URL(req.url).searchParams
+  var projectId = searchParams.get('projectId')
 
-  const where: any = {}
+  var where: any = {}
   if (projectId) where.projectId = projectId
 
-  const result = await safeDbOp(
+  var result = await safeDbOp(
     () => db.finishing.findMany({
       where,
       include: {
@@ -33,19 +34,28 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const user = await getAuthUser(req)
+  var user = await getAuthUser(req)
 
   if (!user) {
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
   }
 
-  try {
-    const body = await req.json()
+  // Rate limit write operations
+  var rl = checkRateLimit(req, RateLimitPresets.write)
+  if (rl.limited) {
+    return NextResponse.json(
+      { error: 'too_many_requests', message: 'طلبات كثيرة جداً، يرجى الانتظار قليلاً' },
+      { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } }
+    )
+  }
 
-    const validationError = validateRequired(body, ['projectId', 'date'])
+  try {
+    var body = await req.json()
+
+    var validationError = validateRequired(body, ['projectId', 'date'])
     if (validationError) return validationError
 
-    const createResult = await safeDbOp(
+    var createResult = await safeDbOp(
       () => db.finishing.create({
         data: {
           projectId: String(body.projectId),
