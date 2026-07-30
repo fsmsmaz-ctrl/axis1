@@ -119,3 +119,62 @@ export async function POST(req: NextRequest) {
     return handleDbError(error, 'إنشاء المعدة')
   }
 }
+
+export async function DELETE(req: NextRequest) {
+  var user = await getAuthUser(req)
+
+  if (!user) {
+    return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
+  }
+
+  // Only system admin can delete equipment
+  if (user.email.toLowerCase().trim() !== 'admin@axis.om') {
+    return NextResponse.json({ error: 'forbidden', message: 'صلاحية الحذف لمدير النظام فقط' }, { status: 403 })
+  }
+
+  var searchParams = new URL(req.url).searchParams
+  var id = searchParams.get('id')
+  if (!id) {
+    return NextResponse.json({ error: 'missing_id', message: 'معرف المعدة مطلوب' }, { status: 400 })
+  }
+
+  var rl = checkRateLimit(req, RateLimitPresets.write)
+  if (rl.limited) {
+    return NextResponse.json(
+      { error: 'too_many_requests', message: 'طلبات كثيرة جداً، يرجى الانتظار قليلاً' },
+      { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } }
+    )
+  }
+
+  try {
+    // Delete related maintenance records first
+    await safeDbOp(
+      () => db.maintenance.deleteMany({ where: { equipmentId: id } }),
+      'حذف سجلات الصيانة'
+    )
+
+    var deleteResult = await safeDbOp(
+      () => db.equipment.delete({ where: { id: id } }),
+      'حذف المعدة'
+    )
+    if (!deleteResult.success) return deleteResult.response
+
+    // Audit log (fire-and-forget)
+    safeDbOp(
+      () => db.auditLog.create({
+        data: {
+          userId: user.id,
+          action: 'delete',
+          entity: 'equipment',
+          entityId: id,
+          details: 'Deleted equipment ' + deleteResult.data.number + ' - ' + deleteResult.data.name,
+        },
+      }),
+      'سجل التدقيق'
+    ).catch(function() {})
+
+    return NextResponse.json({ success: true })
+  } catch (error: any) {
+    return handleDbError(error, 'حذف المعدة')
+  }
+}
