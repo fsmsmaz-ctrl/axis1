@@ -1,23 +1,33 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
-import { safeDbOp, buildAuditDetails } from '@/lib/api-helpers'
+import { safeDbOp, buildAuditDetails, handleDbError } from '@/lib/api-helpers'
+import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const user = await getAuthUser(req)
+  var user = await getAuthUser(req)
 
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const { id } = await params
-  const body = await req.json()
+  // Rate limit write operations
+  var rl = checkRateLimit(req, RateLimitPresets.write)
+  if (rl.limited) {
+    return NextResponse.json(
+      { error: 'too_many_requests', message: 'طلبات كثيرة جداً، يرجى الانتظار قليلاً' },
+      { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } }
+    )
+  }
+
+  var { id } = await params
+  var body = await req.json()
 
   try {
     // Fetch old data before update
-    const oldEq = await db.equipment.findUnique({ where: { id } })
+    var oldEq = await db.equipment.findUnique({ where: { id } })
 
-    const equipment = await db.equipment.update({
+    var equipment = await db.equipment.update({
       where: { id },
       data: {
         name: body.name,
@@ -33,19 +43,19 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     })
 
     // Build detailed changes diff
-    const oldForCompare = oldEq ? {
+    var oldForCompare = oldEq ? {
       name: oldEq.name, number: oldEq.number, type: oldEq.type, status: oldEq.status,
       dailyHours: oldEq.dailyHours,
-      lastMaintenance: oldEq.lastMaintenance?.toISOString?.()?.split('T')[0] || oldEq.lastMaintenance,
-      nextMaintenance: oldEq.nextMaintenance?.toISOString?.()?.split('T')[0] || oldEq.nextMaintenance,
+      lastMaintenance: oldEq.lastMaintenance && oldEq.lastMaintenance.toISOString ? oldEq.lastMaintenance.toISOString().split('T')[0] : oldEq.lastMaintenance,
+      nextMaintenance: oldEq.nextMaintenance && oldEq.nextMaintenance.toISOString ? oldEq.nextMaintenance.toISOString().split('T')[0] : oldEq.nextMaintenance,
       notes: oldEq.notes,
     } : null
 
-    const details = oldForCompare
-      ? buildAuditDetails(oldForCompare, body, `تعديل المعدة: ${equipment.number} - ${equipment.name}`, {
+    var details = oldForCompare
+      ? buildAuditDetails(oldForCompare, body, 'تعديل المعدة: ' + equipment.number + ' - ' + equipment.name, {
           skipFields: ['id', 'createdAt', 'updatedAt', 'projectId', 'breakdowns', 'spareParts'],
         })
-      : `تعديل المعدة: ${equipment.number} - ${equipment.name}`
+      : 'تعديل المعدة: ' + equipment.number + ' - ' + equipment.name
 
     Promise.all([
       safeDbOp(
@@ -60,65 +70,79 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
             projectId: equipment.projectId,
             type: 'equipment_breakdown',
             title: 'تعديل معدة',
-            message: `تم تعديل بيانات المعدة: ${equipment.number} - ${equipment.name} بواسطة ${user.name}`,
+            message: 'تم تعديل بيانات المعدة: ' + equipment.number + ' - ' + equipment.name + ' بواسطة ' + user.name,
             severity: 'info',
           },
         }),
         'إشعار التعديل'
       ),
-    ]).catch(() => {})
+    ]).catch(function() {})
 
     return NextResponse.json({ equipment })
   } catch (error) {
     console.error('Update equipment error:', error)
-    return NextResponse.json({ error: 'Failed to update equipment' }, { status: 500 })
+    return handleDbError(error, 'تحديث المعدة')
   }
 }
 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const user = await getAuthUser(req)
+  var user = await getAuthUser(req)
 
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const { id } = await params
+  // Only managers and top management can delete equipment
+  if (user.role !== 'top_management' && user.role !== 'project_manager') {
+    return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
+  }
+
+  // Rate limit write operations
+  var rl = checkRateLimit(req, RateLimitPresets.write)
+  if (rl.limited) {
+    return NextResponse.json(
+      { error: 'too_many_requests', message: 'طلبات كثيرة جداً، يرجى الانتظار قليلاً' },
+      { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } }
+    )
+  }
+
+  var { id } = await params
 
   try {
-    const eqInfo = await safeDbOp(
+    var eqInfo = await safeDbOp(
       () => db.equipment.findUnique({ where: { id }, select: { projectId: true, name: true, number: true } }),
       'جلب بيانات المعدة'
     )
 
-    const deleteResult = await safeDbOp(
+    var deleteResult = await safeDbOp(
       () => db.equipment.delete({ where: { id } }),
       'حذف المعدة'
     )
     if (!deleteResult.success) return deleteResult.response
 
-    const projectId = eqInfo.success ? eqInfo.data?.projectId : null
-    const eqDesc = eqInfo.success && eqInfo.data
-      ? `${eqInfo.data.number} - ${eqInfo.data.name}`
+    var projectId = eqInfo.success ? eqInfo.data?.projectId : null
+    var eqDesc = eqInfo.success && eqInfo.data
+      ? eqInfo.data.number + ' - ' + eqInfo.data.name
       : id
 
     Promise.all([
       safeDbOp(
         () => db.auditLog.create({
-          data: { userId: user.id, projectId, action: 'delete', entity: 'equipment', entityId: id, details: `حذف معدة: ${eqDesc}` },
+          data: { userId: user.id, projectId, action: 'delete', entity: 'equipment', entityId: id, details: 'حذف معدة: ' + eqDesc },
         }),
         'سجل التدقيق'
       ),
       safeDbOp(
         () => db.notification.create({
-          data: { projectId, type: 'equipment_breakdown', title: 'حذف معدة', message: `تم حذف: ${eqDesc} بواسطة ${user.name}`, severity: 'warning' },
+          data: { projectId, type: 'equipment_breakdown', title: 'حذف معدة', message: 'تم حذف: ' + eqDesc + ' بواسطة ' + user.name, severity: 'warning' },
         }),
         'إشعار الحذف'
       ),
-    ]).catch(() => {})
+    ]).catch(function() {})
 
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error('Delete equipment error:', error)
-    return NextResponse.json({ error: 'Failed to delete equipment' }, { status: 500 })
+    return handleDbError(error, 'حذف المعدة')
   }
 }
