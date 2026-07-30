@@ -17,6 +17,12 @@ import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
 import { toast } from 'sonner'
 
+function canCreateDriveLine(user: any): boolean {
+  if (!user) return false
+  if (user.email && user.email.toLowerCase().trim() === 'admin@axis.om') return true
+  return user.role === 'top_management' || user.role === 'project_manager'
+}
+
 const statusLabels: Record<string, { ar: string; en: string; color: string }> = {
   not_started: { ar: 'لم يبدأ', en: 'Not Started', color: 'secondary' },
   in_progress: { ar: 'جارٍ', en: 'In Progress', color: 'default' },
@@ -32,6 +38,7 @@ export default function DriveLinesPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const language = useAppStore((s) => s.language)
   const token = useAppStore((s) => s.token)
+  const user = useAppStore((s) => s.user)
   const isRtl = language === 'ar'
 
   const [formData, setFormData] = useState({
@@ -99,17 +106,19 @@ export default function DriveLinesPage() {
             {isRtl ? `${driveLines.length} خط حفر` : `${driveLines.length} drive lines`}
           </p>
         </div>
-        <Button onClick={() => {
-          setFormData({
-            projectId: projects[0]?.id || '', lineNumber: '', startPoint: '', endPoint: '',
-            totalLength: '', diameter: '1200mm', pipeType: 'pipe', soilType: 'mixed',
-            depth: '', status: 'not_started', problems: '',
-          })
-          setDialogOpen(true)
-        }}>
-          <Plus className="h-4 w-4 ml-2" />
-          {isRtl ? 'خط حفر جديد' : 'New Drive Line'}
-        </Button>
+        {canCreateDriveLine(user) && (
+          <Button onClick={() => {
+            setFormData({
+              projectId: projects[0]?.id || '', lineNumber: '', startPoint: '', endPoint: '',
+              totalLength: '', diameter: '1200mm', pipeType: 'pipe', soilType: 'mixed',
+              depth: '', status: 'not_started', problems: '',
+            })
+            setDialogOpen(true)
+          }}>
+            <Plus className="h-4 w-4 ml-2" />
+            {isRtl ? 'خط حفر جديد' : 'New Drive Line'}
+          </Button>
+        )}
       </div>
 
       <Select value={selectedProject} onValueChange={setSelectedProject}>
