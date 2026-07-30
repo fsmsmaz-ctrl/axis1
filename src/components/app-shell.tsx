@@ -189,11 +189,12 @@ export default function AppShell() {
 
   async function loadSlotInfo() {
     try {
-      const res = await authedFetch('/api/users/list', { noCache: true })
+      const res = await authedFetch('/api/users', { noCache: true })
       const data = await res.json()
       if (res.ok) {
-        setRemainingSlots(data.remainingSlots ?? 50)
-        setExistingUsers(data.users || [])
+        var users = data.users || []
+        setRemainingSlots(Math.max(0, 50 - users.length))
+        setExistingUsers(users)
       }
     } catch {}
   }
@@ -201,11 +202,12 @@ export default function AppShell() {
   async function loadUserList() {
     setListLoading(true)
     try {
-      const res = await authedFetch('/api/users/list', { noCache: true })
+      const res = await authedFetch('/api/users', { noCache: true })
       const data = await res.json()
       if (res.ok) {
-        setExistingUsers(data.users || [])
-        setRemainingSlots(data.remainingSlots)
+        var users = data.users || []
+        setExistingUsers(users)
+        setRemainingSlots(Math.max(0, 50 - users.length))
       }
     } catch {} finally {
       setListLoading(false)
