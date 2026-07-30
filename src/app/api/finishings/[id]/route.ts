@@ -1,18 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
-import { safeDbOp, buildAuditDetails } from '@/lib/api-helpers'
+import { safeDbOp, buildAuditDetails, handleDbError } from '@/lib/api-helpers'
+import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const user = await getAuthUser(req)
+  var user = await getAuthUser(req)
 
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const { id } = await params
+  var { id } = await params
 
-  const finishing = await db.finishing.findUnique({
+  var finishing = await db.finishing.findUnique({
     where: { id },
     include: { project: true, signedByUser: true, attachments: true },
   })
@@ -25,23 +26,32 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 }
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const user = await getAuthUser(req)
+  var user = await getAuthUser(req)
 
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const { id } = await params
-  const body = await req.json()
+  // Rate limit write operations
+  var rl = checkRateLimit(req, RateLimitPresets.write)
+  if (rl.limited) {
+    return NextResponse.json(
+      { error: 'too_many_requests', message: 'طلبات كثيرة جداً، يرجى الانتظار قليلاً' },
+      { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } }
+    )
+  }
+
+  var { id } = await params
+  var body = await req.json()
 
   try {
     // Fetch old data before update
-    const oldFin = await safeDbOp(
+    var oldFin = await safeDbOp(
       () => db.finishing.findUnique({ where: { id } }),
       'جلب التشطيب القديم'
     )
 
-    const updateResult = await safeDbOp(
+    var updateResult = await safeDbOp(
       () => db.finishing.update({
         where: { id },
         data: {
@@ -59,16 +69,16 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     if (!updateResult.success) return updateResult.response
 
     // Build detailed changes diff
-    const details = oldFin.success && oldFin.data
+    var details = oldFin.success && oldFin.data
       ? buildAuditDetails(
           oldFin.data,
           body,
-          `تعديل التشطيب`,
+          'تعديل التشطيب',
           { skipFields: ['id', 'createdAt', 'updatedAt', 'projectId', 'driveLineId', 'date', 'signedBy', 'signedById', 'signedAt'] }
         )
-      : `تعديل التشطيب`
+      : 'تعديل التشطيب'
 
-    // Audit log (was missing before)
+    // Audit log
     Promise.all([
       safeDbOp(
         () => db.auditLog.create({
@@ -76,11 +86,11 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         }),
         'سجل التدقيق'
       ),
-    ]).catch(() => {})
+    ]).catch(function() {})
 
     return NextResponse.json({ finishing: updateResult.data })
   } catch (error) {
     console.error('Update finishing error:', error)
-    return NextResponse.json({ error: 'Failed to update finishing' }, { status: 500 })
+    return handleDbError(error, 'تحديث التشطيب')
   }
 }
