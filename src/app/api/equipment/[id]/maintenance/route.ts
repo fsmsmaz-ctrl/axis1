@@ -1,19 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
+import { handleDbError } from '@/lib/api-helpers'
+import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const user = await getAuthUser(req)
+  var user = await getAuthUser(req)
 
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const { id } = await params
-  const body = await req.json()
+  // Rate limit write operations
+  var rl = checkRateLimit(req, RateLimitPresets.write)
+  if (rl.limited) {
+    return NextResponse.json(
+      { error: 'too_many_requests', message: 'طلبات كثيرة جداً، يرجى الانتظار قليلاً' },
+      { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } }
+    )
+  }
+
+  var { id } = await params
+  var body = await req.json()
 
   try {
-    const maintenance = await db.equipmentMaintenance.create({
+    var maintenance = await db.equipmentMaintenance.create({
       data: {
         equipmentId: id,
         date: new Date(body.date),
@@ -37,6 +48,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ maintenance })
   } catch (error) {
     console.error('Create maintenance error:', error)
-    return NextResponse.json({ error: 'Failed to create maintenance record' }, { status: 500 })
+    return handleDbError(error, 'إنشاء سجل الصيانة')
   }
 }
