@@ -217,6 +217,10 @@ export default function CreateUserDialog({ open, onOpenChange }: CreateUserDialo
   function getRoleDefault(role: string, resource: string): boolean {
     if (role === 'top_management') return true
     const perms = ROLE_PERMISSIONS[role] || []
+    // Report sub-permissions (rpt_*): if role has general 'reports' access, allow all report types
+    if (resource.startsWith('rpt_') && perms.includes('reports')) {
+      return true
+    }
     return perms.includes('*') || perms.includes(resource)
   }
 
