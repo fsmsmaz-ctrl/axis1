@@ -4,23 +4,26 @@ import { db } from '@/lib/db'
 import { safeDbOp, handleDbError } from '@/lib/api-helpers'
 
 export async function GET(req: NextRequest) {
-  const user = await getAuthUser(req)
+  var user = await getAuthUser(req)
 
   if (!user) {
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
   }
 
-  const { searchParams } = new URL(req.url)
-  const entity = searchParams.get('entity')
-  const action = searchParams.get('action')
-  const projectId = searchParams.get('projectId')
-  const userId = searchParams.get('userId')
-  const dateFrom = searchParams.get('dateFrom')
-  const dateTo = searchParams.get('dateTo')
-  const page = parseInt(searchParams.get('page') || '1')
-  const limit = parseInt(searchParams.get('limit') || '50')
+  var searchParams = new URL(req.url).searchParams
+  var entity = searchParams.get('entity')
+  var action = searchParams.get('action')
+  var projectId = searchParams.get('projectId')
+  var userId = searchParams.get('userId')
+  var dateFrom = searchParams.get('dateFrom')
+  var dateTo = searchParams.get('dateTo')
+  var page = parseInt(searchParams.get('page') || '1')
+  var limit = parseInt(searchParams.get('limit') || '50')
 
-  const where: any = {}
+  // Cap limit
+  if (limit > 200) limit = 200
+
+  var where: any = {}
   if (entity) where.entity = entity
   if (action) where.action = action
   if (projectId) where.projectId = projectId
@@ -29,15 +32,15 @@ export async function GET(req: NextRequest) {
     where.createdAt = {}
     if (dateFrom) where.createdAt.gte = new Date(dateFrom)
     if (dateTo) {
-      const d = new Date(dateTo)
+      var d = new Date(dateTo)
       d.setHours(23, 59, 59, 999)
       where.createdAt.lte = d
     }
   }
 
-  const skip = (page - 1) * limit
+  var skip = (page - 1) * limit
 
-  const [logsResult, countResult, usersResult] = await Promise.all([
+  var results = await Promise.all([
     safeDbOp(
       () => db.auditLog.findMany({
         where,
@@ -51,36 +54,35 @@ export async function GET(req: NextRequest) {
       }),
       'جلب سجلات المراقبة'
     ),
-    safeDbOp(() => db.auditLog.count({ where }), 'عد سجلات المراقبة'),
+    safeDbOp(function() { return db.auditLog.count({ where }) }, 'عد سجلات المراقبة'),
     safeDbOp(
       () => db.user.findMany({ select: { id: true, name: true, nameEn: true, email: true }, orderBy: { name: 'asc' } }),
       'جلب قائمة المستخدمين'
     ),
   ])
 
-  if (!logsResult.success) return logsResult.response
+  if (!results[0].success) return results[0].response
 
-  const logs = logsResult.data
-  const total = countResult.success ? countResult.data : 0
-  const users = usersResult.success ? usersResult.data : []
+  var logs = results[0].data
+  var total = results[1].success ? results[1].data : 0
+  var users = results[2].success ? results[2].data : []
 
   // Entity stats
-  const entityStats = [
-    { entity: 'project', ar: 'المشاريع', en: 'Projects', count: logs.filter((l: any) => l.entity === 'project').length },
-    { entity: 'daily_report', ar: 'التقارير اليومية', en: 'Daily Reports', count: logs.filter((l: any) => l.entity === 'daily_report').length },
-    { entity: 'safety_report', ar: 'تقارير السلامة', en: 'Safety Reports', count: logs.filter((l: any) => l.entity === 'safety_report').length },
-    { entity: 'cost', ar: 'التكاليف', en: 'Costs', count: logs.filter((l: any) => l.entity === 'cost').length },
-    { entity: 'equipment', ar: 'المعدات', en: 'Equipment', count: logs.filter((l: any) => l.entity === 'equipment').length },
-    { entity: 'drive_line', ar: 'خطوط الحفر', en: 'Drive Lines', count: logs.filter((l: any) => l.entity === 'drive_line').length },
-    { entity: 'finishing', ar: 'التشطيبات', en: 'Finishings', count: logs.filter((l: any) => l.entity === 'finishing').length },
+  var entityStats = [
+    { entity: 'project', ar: 'المشاريع', en: 'Projects', count: logs.filter(function(l: any) { return l.entity === 'project' }).length },
+    { entity: 'daily_report', ar: 'التقارير اليومية', en: 'Daily Reports', count: logs.filter(function(l: any) { return l.entity === 'daily_report' }).length },
+    { entity: 'safety_report', ar: 'تقارير السلامة', en: 'Safety Reports', count: logs.filter(function(l: any) { return l.entity === 'safety_report' }).length },
+    { entity: 'cost', ar: 'التكاليف', en: 'Costs', count: logs.filter(function(l: any) { return l.entity === 'cost' }).length },
+    { entity: 'equipment', ar: 'المعدات', en: 'Equipment', count: logs.filter(function(l: any) { return l.entity === 'equipment' }).length },
+    { entity: 'drive_line', ar: 'خطوط الحفر', en: 'Drive Lines', count: logs.filter(function(l: any) { return l.entity === 'drive_line' }).length },
+    { entity: 'finishing', ar: 'التشطيبات', en: 'Finishings', count: logs.filter(function(l: any) { return l.entity === 'finishing' }).length },
   ]
 
-  const actionStats = [
-    { action: 'create', ar: 'إنشاء', en: 'Create', count: logs.filter((l: any) => l.action === 'create').length },
-    { action: 'update', ar: 'تعديل', en: 'Update', count: logs.filter((l: any) => l.action === 'update').length },
-    { action: 'delete', ar: 'حذف', en: 'Delete', count: logs.filter((l: any) => l.action === 'delete').length },
-    { action: 'approve', ar: 'اعتماد', en: 'Approve', count: logs.filter((l: any) => l.action === 'approve').length },
-    { action: 'reject', ar: 'رفض', en: 'Reject', count: logs.filter((l: any) => l.action === 'reject').length },
+  var actionStats = [
+    { action: 'create', ar: 'إنشاء', en: 'Create', count: logs.filter(function(l: any) { return l.action === 'create' }).length },
+    { action: 'update', ar: 'تعديل', en: 'Update', count: logs.filter(function(l: any) { return l.action === 'update' }).length },
+    { action: 'delete', ar: 'حذف', en: 'Delete', count: logs.filter(function(l: any) { return l.action === 'delete' }).length },
+    { action: 'approve', ar: 'اعتماد', en: 'Approve', count: logs.filter(function(l: any) { return l.action === 'approve' }).length },
   ]
 
   return NextResponse.json({
