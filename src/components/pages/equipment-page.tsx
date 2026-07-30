@@ -67,6 +67,8 @@ export default function EquipmentPage() {
   const [viewEquipment, setViewEquipment] = useState<any | null>(null)
   const [viewDialogOpen, setViewDialogOpen] = useState(false)
   const [maintenanceDialogOpen, setMaintenanceDialogOpen] = useState(false)
+  const user = useAppStore((s) => s.user)
+  const isAdmin = user ? user.email.toLowerCase().trim() === 'admin@axis.om' : false
   const language = useAppStore((s) => s.language)
   const token = useAppStore((s) => s.token)
   const isRtl = language === 'ar'
@@ -384,6 +386,22 @@ export default function EquipmentPage() {
                     }}>
                       <Settings className="h-4 w-4" />
                     </Button>
+                    {isAdmin && (
+                      <Button variant="outline" size="sm" className="text-red-600 hover:text-red-700 hover:bg-red-50" onClick={function() {
+                        if (confirm(isRtl ? 'هل تريد حذف هذه المعدة؟' : 'Delete this equipment?')) {
+                          authedFetch('/api/equipment?id=' + eq.id, { method: 'DELETE' }).then(function(r) { return r.json() }).then(function(d) {
+                            if (d.success) {
+                              toast.success(isRtl ? 'تم حذف المعدة' : 'Equipment deleted')
+                              fetchEquipment()
+                            } else {
+                              toast.error(d.message || (isRtl ? 'فشل الحذف' : 'Delete failed'))
+                            }
+                          })
+                        }
+                      }}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
                   </div>
                 </CardContent>
               </Card>
