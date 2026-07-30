@@ -1,86 +1,87 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
+import { handleDbError } from '@/lib/api-helpers'
 
 export async function GET(req: NextRequest) {
   try {
-  const user = await getAuthUser(req)
+  var user = await getAuthUser(req)
 
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const today = new Date()
+  var today = new Date()
   today.setHours(0, 0, 0, 0)
-  const tomorrow = new Date(today)
+  var tomorrow = new Date(today)
   tomorrow.setDate(tomorrow.getDate() + 1)
 
-  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1)
-  const weekStart = new Date(today)
+  var monthStart = new Date(today.getFullYear(), today.getMonth(), 1)
+  var weekStart = new Date(today)
   weekStart.setDate(weekStart.getDate() - 7)
 
   // Active projects count
-  const activeProjects = await db.project.count({
+  var activeProjects = await db.project.count({
     where: { status: 'in_progress' },
   })
 
   // Today's reports
-  const todayReports = await db.dailyReport.findMany({
+  var todayReports = await db.dailyReport.findMany({
     where: {
       reportDate: { gte: today, lt: tomorrow },
       status: 'approved',
     },
   })
 
-  const metersToday = todayReports.reduce((sum, r) => sum + r.dailyMeters, 0)
-  const revenueToday = todayReports.reduce((sum, r) => sum + r.dailyRevenue, 0)
+  var metersToday = todayReports.reduce(function(sum: number, r: any) { return sum + r.dailyMeters }, 0)
+  var revenueToday = todayReports.reduce(function(sum: number, r: any) { return sum + r.dailyRevenue }, 0)
 
   // This month reports
-  const monthReports = await db.dailyReport.findMany({
+  var monthReports = await db.dailyReport.findMany({
     where: {
       reportDate: { gte: monthStart },
       status: 'approved',
     },
   })
 
-  const metersThisMonth = monthReports.reduce((sum, r) => sum + r.dailyMeters, 0)
-  const revenueThisMonth = monthReports.reduce((sum, r) => sum + r.dailyRevenue, 0)
+  var metersThisMonth = monthReports.reduce(function(sum: number, r: any) { return sum + r.dailyMeters }, 0)
+  var revenueThisMonth = monthReports.reduce(function(sum: number, r: any) { return sum + r.dailyRevenue }, 0)
 
   // Total costs this month
-  const monthCosts = await db.cost.aggregate({
+  var monthCosts = await db.cost.aggregate({
     where: { date: { gte: monthStart } },
     _sum: { amount: true },
   })
 
   // All costs (total)
-  const totalCosts = await db.cost.aggregate({
+  var totalCosts = await db.cost.aggregate({
     _sum: { amount: true },
   })
 
   // Total revenue (all approved reports)
-  const totalRevenueResult = await db.dailyReport.aggregate({
+  var totalRevenueResult = await db.dailyReport.aggregate({
     where: { status: 'approved' },
     _sum: { dailyRevenue: true },
   })
 
   // Stopped equipment
-  const stoppedEquipment = await db.equipment.count({
+  var stoppedEquipment = await db.equipment.count({
     where: { status: { in: ['stopped', 'maintenance_needed'] } },
   })
 
   // Today's workers
-  const presentWorkers = todayReports.reduce((sum, r) => sum + r.workersCount, 0)
+  var presentWorkers = todayReports.reduce(function(sum: number, r: any) { return sum + r.workersCount }, 0)
 
   // Unread notifications
-  const unreadNotifications = await db.notification.count({
+  var unreadNotifications = await db.notification.count({
     where: { read: false },
   })
 
   // Production trend (last 14 days)
-  const fourteenDaysAgo = new Date(today)
+  var fourteenDaysAgo = new Date(today)
   fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14)
 
-  const trendReports = await db.dailyReport.findMany({
+  var trendReports = await db.dailyReport.findMany({
     where: {
       reportDate: { gte: fourteenDaysAgo },
       status: 'approved',
@@ -95,32 +96,39 @@ export async function GET(req: NextRequest) {
   })
 
   // Group by date
-  const trendMap = new Map<string, { meters: number; revenue: number; cost: number }>()
-  const trendCosts = await db.cost.findMany({
+  var trendMap = new Map<string, { meters: number; revenue: number; cost: number }>()
+  var trendCosts = await db.cost.findMany({
     where: { date: { gte: fourteenDaysAgo } },
     select: { date: true, amount: true },
   })
 
-  for (const r of trendReports) {
-    const key = r.reportDate.toISOString().split('T')[0]
+  for (var ri = 0; ri < trendReports.length; ri++) {
+    var r = trendReports[ri]
+    var key = r.reportDate.toISOString().split('T')[0]
     if (!trendMap.has(key)) trendMap.set(key, { meters: 0, revenue: 0, cost: 0 })
-    const item = trendMap.get(key)!
-    item.meters += r.dailyMeters
-    item.revenue += r.dailyRevenue
+    var item = trendMap.get(key)
+    if (item) {
+      item.meters += r.dailyMeters
+      item.revenue += r.dailyRevenue
+    }
   }
 
-  for (const c of trendCosts) {
-    const key = c.date.toISOString().split('T')[0]
-    if (!trendMap.has(key)) trendMap.set(key, { meters: 0, revenue: 0, cost: 0 })
-    trendMap.get(key)!.cost += c.amount
+  for (var ci = 0; ci < trendCosts.length; ci++) {
+    var c = trendCosts[ci]
+    var cKey = c.date.toISOString().split('T')[0]
+    if (!trendMap.has(cKey)) trendMap.set(cKey, { meters: 0, revenue: 0, cost: 0 })
+    var cItem = trendMap.get(cKey)
+    if (cItem) {
+      cItem.cost += c.amount
+    }
   }
 
-  const trend = Array.from(trendMap.entries())
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([date, vals]) => ({ date, ...vals }))
+  var trend = Array.from(trendMap.entries())
+    .sort(function(a, b) { return a[0].localeCompare(b[0]) })
+    .map(function(entry) { return { date: entry[0], meters: entry[1].meters, revenue: entry[1].revenue, cost: entry[1].cost } })
 
   // Projects with progress
-  const projects = await db.project.findMany({
+  var projects = await db.project.findMany({
     select: {
       id: true,
       name: true,
@@ -134,7 +142,7 @@ export async function GET(req: NextRequest) {
   })
 
   // Recent reports
-  const recentReports = await db.dailyReport.findMany({
+  var recentReports = await db.dailyReport.findMany({
     take: 10,
     orderBy: { reportDate: 'desc' },
     include: {
@@ -144,31 +152,30 @@ export async function GET(req: NextRequest) {
   })
 
   // Notifications
-  const notifications = await db.notification.findMany({
+  var notifications = await db.notification.findMany({
     take: 5,
     orderBy: { createdAt: 'desc' },
     include: { project: { select: { name: true } } },
   })
 
   // Equipment list
-  const equipment = await db.equipment.findMany({
+  var equipment = await db.equipment.findMany({
     include: { project: { select: { name: true } } },
   })
 
   // Cost breakdown by category (this month)
-  const costsByCategoryRaw = await db.cost.groupBy({
+  var costsByCategoryRaw = await db.cost.groupBy({
     by: ['category'],
     where: { date: { gte: monthStart } },
     _sum: { amount: true },
   })
 
-  const costsByCategory = costsByCategoryRaw.map((c) => ({
-    category: c.category,
-    amount: c._sum.amount || 0,
-  }))
+  var costsByCategory = costsByCategoryRaw.map(function(c: any) {
+    return { category: c.category, amount: c._sum.amount || 0 }
+  })
 
   // Calculate net profit
-  const netProfit = (totalRevenueResult._sum.dailyRevenue || 0) - (totalCosts._sum.amount || 0)
+  var netProfit = (totalRevenueResult._sum.dailyRevenue || 0) - (totalCosts._sum.amount || 0)
 
   return NextResponse.json({
     stats: {
@@ -195,9 +202,6 @@ export async function GET(req: NextRequest) {
   })
   } catch (error: any) {
     console.error('[Dashboard API] Error:', error)
-    return NextResponse.json(
-      { error: 'dashboard_error', details: error?.message || 'Unknown error' },
-      { status: 500 }
-    )
+    return handleDbError(error, 'لوحة التحكم')
   }
 }
