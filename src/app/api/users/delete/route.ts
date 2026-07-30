@@ -1,24 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
+import { handleDbError } from '@/lib/api-helpers'
+import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 
-const ADMIN_EMAIL = 'admin@axis.om'
+var ADMIN_EMAIL = 'admin@axis.om'
 
 export async function DELETE(req: NextRequest) {
+  // Rate limit user deletion
+  var rl = checkRateLimit(req, RateLimitPresets.auth)
+  if (rl.limited) {
+    return NextResponse.json(
+      { error: 'too_many_requests', message: 'طلبات كثيرة جداً، يرجى الانتظار' },
+      { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } }
+    )
+  }
+
   try {
-    const authUser = await getAuthUser(req)
+    var authUser = await getAuthUser(req)
     if (!authUser || authUser.email.toLowerCase().trim() !== ADMIN_EMAIL) {
       return NextResponse.json({ error: 'unauthorized' }, { status: 403 })
     }
 
-    const { searchParams } = new URL(req.url)
-    const userId = searchParams.get('id')
+    var searchParams = new URL(req.url).searchParams
+    var userId = searchParams.get('id')
 
     if (!userId) {
       return NextResponse.json({ error: 'User ID is required' }, { status: 400 })
     }
 
-    const targetUser = await db.user.findUnique({ where: { id: userId } })
+    var targetUser = await db.user.findUnique({ where: { id: userId } })
     if (!targetUser) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
@@ -29,7 +40,7 @@ export async function DELETE(req: NextRequest) {
 
     await db.user.delete({ where: { id: userId } })
 
-    const remaining = await db.user.count()
+    var remaining = await db.user.count()
 
     return NextResponse.json({
       message: 'User deleted successfully.',
@@ -37,6 +48,6 @@ export async function DELETE(req: NextRequest) {
     })
   } catch (error) {
     console.error('Delete user error:', error)
-    return NextResponse.json({ error: 'Failed to delete user' }, { status: 500 })
+    return handleDbError(error, 'حذف المستخدم')
   }
 }
