@@ -3,18 +3,35 @@ import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import bcrypt from 'bcryptjs'
 import { handleDbError } from '@/lib/api-helpers'
+import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 
-const ADMIN_EMAIL = 'admin@axis.om'
+var ADMIN_EMAIL = 'admin@axis.om'
+
+var VALID_PERMS = [
+  'drive_lines', 'daily_reports', 'safety', 'equipment', 'costs', 'finishings', 'performance',
+  'rpt_daily_site', 'rpt_production', 'rpt_safety', 'rpt_attendance',
+  'rpt_revenue', 'rpt_costs', 'rpt_profit', 'rpt_equipment',
+  'rpt_weekly', 'rpt_monthly', 'rpt_handover',
+]
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params
-  const me = await getAuthUser(req)
+  // Rate limit user updates
+  var rl = checkRateLimit(req, RateLimitPresets.write)
+  if (rl.limited) {
+    return NextResponse.json(
+      { error: 'too_many_requests', message: 'طلبات كثيرة جداً، يرجى الانتظار' },
+      { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } }
+    )
+  }
+
+  var { id } = await params
+  var me = await getAuthUser(req)
   if (!me) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   if (me.role !== 'top_management') return NextResponse.json({ error: 'forbidden' }, { status: 403 })
 
   try {
-    const body = await req.json()
-    const updateData: Record<string, any> = {}
+    var body = await req.json()
+    var updateData: Record<string, any> = {}
 
     if (body.name !== undefined) updateData.name = body.name.trim()
     if (body.nameEn !== undefined) updateData.nameEn = body.nameEn?.trim() || null
@@ -24,15 +41,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     if (body.language !== undefined) updateData.language = body.language
 
     if (body.permissions !== undefined) {
-      const VALID_PERMS = [
-        'drive_lines', 'daily_reports', 'safety', 'equipment', 'costs', 'finishings', 'performance',
-        'rpt_daily_site', 'rpt_production', 'rpt_safety', 'rpt_attendance',
-        'rpt_revenue', 'rpt_costs', 'rpt_profit', 'rpt_equipment',
-        'rpt_weekly', 'rpt_monthly', 'rpt_handover',
-      ]
-      const cleanPerms: Record<string, boolean> = {}
+      var cleanPerms: Record<string, boolean> = {}
       if (body.permissions && typeof body.permissions === 'object') {
-        for (const key of VALID_PERMS) {
+        for (var i = 0; i < VALID_PERMS.length; i++) {
+          var key = VALID_PERMS[i]
           if (typeof body.permissions[key] === 'boolean') {
             cleanPerms[key] = body.permissions[key]
           }
@@ -61,8 +73,17 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 }
 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params
-  const me = await getAuthUser(req)
+  // Rate limit user deletion
+  var rl = checkRateLimit(req, RateLimitPresets.auth)
+  if (rl.limited) {
+    return NextResponse.json(
+      { error: 'too_many_requests', message: 'طلبات كثيرة جداً، يرجى الانتظار' },
+      { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } }
+    )
+  }
+
+  var { id } = await params
+  var me = await getAuthUser(req)
   if (!me) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   if (me.role !== 'top_management') return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   if (id === me.id) return NextResponse.json({ error: 'forbidden', message: 'لا يمكنك حذف حسابك الخاص' }, { status: 403 })
