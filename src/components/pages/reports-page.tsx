@@ -25,17 +25,17 @@ interface ReportType {
 }
 
 const reportTypes: ReportType[] = [
-  { id: 'daily_site', labelAr: 'التقرير اليومي للموقع', labelEn: 'Daily Site Report', icon: FileText, color: 'text-blue-600', description: 'تقرير شامل لكل ما يحدث في الموقع يومياً' },
-  { id: 'production', labelAr: 'تقرير الإنتاج اليومي', labelEn: 'Production Report', icon: TrendingUp, color: 'text-emerald-600', description: 'تفاصيل الإنتاج اليومي والأمتار المنجزة' },
-  { id: 'safety', labelAr: 'تقرير السلامة اليومي', labelEn: 'Safety Report', icon: Shield, color: 'text-orange-600', description: 'فحوصات السلامة والمخالفات' },
-  { id: 'attendance', labelAr: 'تقرير الحضور', labelEn: 'Attendance Report', icon: Users, color: 'text-purple-600', description: 'حضور العمال والغياب' },
-  { id: 'revenue', labelAr: 'تقرير الإيرادات', labelEn: 'Revenue Report', icon: DollarSign, color: 'text-emerald-600', description: 'الإيرادات اليومية والشهرية من التقارير المعتمدة' },
-  { id: 'costs', labelAr: 'تقرير التكاليف', labelEn: 'Cost Report', icon: DollarSign, color: 'text-red-600', description: 'التكاليف حسب الفئة والمشروع' },
-  { id: 'profit', labelAr: 'تقرير صافي الربح', labelEn: 'Profit Report', icon: DollarSign, color: 'text-blue-600', description: 'صافي الربح وهامش الربحية التفصيلي' },
-  { id: 'equipment', labelAr: 'تقرير المعدات', labelEn: 'Equipment Report', icon: Wrench, color: 'text-cyan-600', description: 'حالة المعدات والصيانة' },
-  { id: 'weekly', labelAr: 'تقرير الإنجاز الأسبوعي', labelEn: 'Weekly Progress', icon: Calendar, color: 'text-indigo-600', description: 'ملخص أسبوعي لجميع الأعمال' },
-  { id: 'monthly', labelAr: 'تقرير شهري للإدارة', labelEn: 'Monthly Management', icon: FileBarChart, color: 'text-purple-600', description: 'تقرير شهري للإدارة العليا' },
-  { id: 'handover', labelAr: 'تقرير تسليم الأعمال', labelEn: 'Handover Report', icon: CheckCircle2, color: 'text-emerald-600', description: 'تقارير التشطيب والتسليم' },
+  { id: 'rpt_daily_site', labelAr: 'التقرير اليومي للموقع', labelEn: 'Daily Site Report', icon: FileText, color: 'text-blue-600', description: 'تقرير شامل لكل ما يحدث في الموقع يومياً' },
+  { id: 'rpt_production', labelAr: 'تقرير الإنتاج اليومي', labelEn: 'Production Report', icon: TrendingUp, color: 'text-emerald-600', description: 'تفاصيل الإنتاج اليومي والأمتار المنجزة' },
+  { id: 'rpt_safety', labelAr: 'تقرير السلامة اليومي', labelEn: 'Safety Report', icon: Shield, color: 'text-orange-600', description: 'فحوصات السلامة والمخالفات' },
+  { id: 'rpt_attendance', labelAr: 'تقرير الحضور', labelEn: 'Attendance Report', icon: Users, color: 'text-purple-600', description: 'حضور العمال والغياب' },
+  { id: 'rpt_revenue', labelAr: 'تقرير الإيرادات', labelEn: 'Revenue Report', icon: DollarSign, color: 'text-emerald-600', description: 'الإيرادات اليومية والشهرية من التقارير المعتمدة' },
+  { id: 'rpt_costs', labelAr: 'تقرير التكاليف', labelEn: 'Cost Report', icon: DollarSign, color: 'text-red-600', description: 'التكاليف حسب الفئة والمشروع' },
+  { id: 'rpt_profit', labelAr: 'تقرير صافي الربح', labelEn: 'Profit Report', icon: DollarSign, color: 'text-blue-600', description: 'صافي الربح وهامش الربحية التفصيلي' },
+  { id: 'rpt_equipment', labelAr: 'تقرير المعدات', labelEn: 'Equipment Report', icon: Wrench, color: 'text-cyan-600', description: 'حالة المعدات والصيانة' },
+  { id: 'rpt_weekly', labelAr: 'تقرير الإنجاز الأسبوعي', labelEn: 'Weekly Progress', icon: Calendar, color: 'text-indigo-600', description: 'ملخص أسبوعي لجميع الأعمال' },
+  { id: 'rpt_monthly', labelAr: 'تقرير شهري للإدارة', labelEn: 'Monthly Management', icon: FileBarChart, color: 'text-purple-600', description: 'تقرير شهري للإدارة العليا' },
+  { id: 'rpt_handover', labelAr: 'تقرير تسليم الأعمال', labelEn: 'Handover Report', icon: CheckCircle2, color: 'text-emerald-600', description: 'تقارير التشطيب والتسليم' },
 ]
 
 export default function ReportsPage() {
@@ -75,11 +75,11 @@ export default function ReportsPage() {
       if (toDate) params.set('to', toDate)
 
       var endpoint = '/api/dashboard'
-      if (selectedReport === 'production' || selectedReport === 'daily_site' || selectedReport === 'attendance') {
+      if (selectedReport === 'rpt_production' || selectedReport === 'rpt_daily_site' || selectedReport === 'rpt_attendance') {
         endpoint = '/api/daily-reports?' + params.toString()
-      } else if (selectedReport === 'safety') {
+      } else if (selectedReport === 'rpt_safety') {
         endpoint = '/api/daily-reports?' + params.toString()
-      } else if (selectedReport === 'costs' || selectedReport === 'profit' || selectedReport === 'revenue') {
+      } else if (selectedReport === 'rpt_costs' || selectedReport === 'rpt_profit' || selectedReport === 'rpt_revenue') {
         // Fetch both costs and daily reports for complete financial picture
         var costsRes = await authedFetch('/api/costs?' + params.toString())
         var costsData = await costsRes.json()
@@ -102,11 +102,11 @@ export default function ReportsPage() {
         toast.success(isRtl ? 'تم توليد التقرير' : 'Report generated')
         setGenerating(false)
         return
-      } else if (selectedReport === 'equipment') {
+      } else if (selectedReport === 'rpt_equipment') {
         endpoint = '/api/equipment?' + params.toString()
-      } else if (selectedReport === 'handover') {
+      } else if (selectedReport === 'rpt_handover') {
         endpoint = '/api/finishings?' + params.toString()
-      } else if (selectedReport === 'monthly' || selectedReport === 'weekly') {
+      } else if (selectedReport === 'rpt_monthly' || selectedReport === 'rpt_weekly') {
         endpoint = '/api/dashboard'
       }
 
@@ -253,7 +253,7 @@ function ReportPreview({ data }: { data: any }) {
       </div>
 
       {/* Revenue Report - Complete */}
-      {data.type === 'revenue' ? (
+      {data.type === 'rpt_revenue' ? (
         <div className="space-y-4">
           {/* Summary Cards */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -308,7 +308,7 @@ function ReportPreview({ data }: { data: any }) {
             </table>
           </div>
         </div>
-      ) : data.type === 'costs' ? (
+      ) : data.type === 'rpt_costs' ? (
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div className="p-3 rounded-lg border bg-red-50/50">
@@ -365,7 +365,7 @@ function ReportPreview({ data }: { data: any }) {
             </table>
           </div>
         </div>
-      ) : data.type === 'profit' ? (
+      ) : data.type === 'rpt_profit' ? (
         <div className="space-y-4">
           {/* Profit Summary */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -439,7 +439,7 @@ function ReportPreview({ data }: { data: any }) {
             </table>
           </div>
         </div>
-      ) : data.type === 'daily_site' || data.type === 'production' ? (
+      ) : data.type === 'rpt_daily_site' || data.type === 'rpt_production' ? (
         <div className="space-y-3">
           <h3 className="font-semibold text-sm">{isRtl ? 'سجل التقارير' : 'Reports Log'}</h3>
           <div className="overflow-x-auto">
@@ -473,7 +473,7 @@ function ReportPreview({ data }: { data: any }) {
             </table>
           </div>
         </div>
-      ) : data.type === 'safety' ? (
+      ) : data.type === 'rpt_safety' ? (
         <div className="space-y-3">
           <h3 className="font-semibold text-sm">{isRtl ? 'تقارير السلامة' : 'Safety Reports'}</h3>
           <div className="overflow-x-auto">
@@ -503,7 +503,7 @@ function ReportPreview({ data }: { data: any }) {
             </table>
           </div>
         </div>
-      ) : data.type === 'attendance' ? (
+      ) : data.type === 'rpt_attendance' ? (
         <div className="space-y-3">
           <h3 className="font-semibold text-sm">{isRtl ? 'سجل الحضور' : 'Attendance Log'}</h3>
           <div className="overflow-x-auto">
@@ -533,7 +533,7 @@ function ReportPreview({ data }: { data: any }) {
             </table>
           </div>
         </div>
-      ) : data.type === 'equipment' ? (
+      ) : data.type === 'rpt_equipment' ? (
         <div className="space-y-3">
           <h3 className="font-semibold text-sm">{isRtl ? 'قائمة المعدات' : 'Equipment List'}</h3>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -557,7 +557,7 @@ function ReportPreview({ data }: { data: any }) {
             })}
           </div>
         </div>
-      ) : data.type === 'monthly' || data.type === 'weekly' ? (
+      ) : data.type === 'rpt_monthly' || data.type === 'rpt_weekly' ? (
         <div className="space-y-3">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="p-3 rounded-lg border">
@@ -589,7 +589,7 @@ function ReportPreview({ data }: { data: any }) {
             })}
           </div>
         </div>
-      ) : data.type === 'handover' ? (
+      ) : data.type === 'rpt_handover' ? (
         <div className="space-y-3">
           <h3 className="font-semibold text-sm">{isRtl ? 'سجلات التسليم' : 'Handover Records'}</h3>
           <div className="space-y-2">
