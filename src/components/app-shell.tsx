@@ -129,7 +129,7 @@ export default function AppShell() {
   const setLanguage = useAppStore((s) => s.setLanguage)
   const sidebarOpen = useAppStore((s) => s.sidebarOpen)
   const setSidebarOpen = useAppStore((s) => s.setSidebarOpen)
-  const [currentPage, setCurrentPage] = useState<PageId>('dashboard')
+  const [currentPage, setCurrentPage] = useState<PageId>('projects')
   const [userDialogOpen, setUserDialogOpen] = useState(false)
   const [formData, setFormData] = useState({ email: '', name: '', nameEn: '', password: '', role: 'site_engineer', phone: '', permissions: {} as Record<string, boolean> })
   const [createLoading, setCreateLoading] = useState(false)
@@ -158,10 +158,21 @@ export default function AppShell() {
     }
   }, [language])
 
+  const isAdmin = user ? user.email.toLowerCase().trim() === 'admin@axis.om' : false
+  const canViewDashboard = !!user && (isAdmin || user.role === 'top_management' || user.role === 'project_manager')
+
+  useEffect(() => {
+    if (canViewDashboard && currentPage === 'projects') {
+      setCurrentPage('dashboard')
+    }
+  }, [canViewDashboard])
+
   if (!user) return null
 
-  const allowedItems = navItems.filter(item => hasPermission(user.role, item.resource, user.permissions))
-  const isAdmin = user.email.toLowerCase().trim() === 'admin@axis.om'
+  const allowedItems = navItems.filter(item => {
+    if (item.id === 'dashboard') return canViewDashboard
+    return hasPermission(user.role, item.resource, user.permissions)
+  })
   const isAr = language === 'ar'
   const isRtl = isAr
 
@@ -314,7 +325,9 @@ export default function AppShell() {
       case 'performance': return <PerformancePage />
       case 'reports': return <ReportsPage />
       case 'notifications': return <NotificationsPage />
-      default: return <DashboardPage onNavigate={setCurrentPage} />
+      default: return canViewDashboard
+        ? <DashboardPage onNavigate={setCurrentPage} />
+        : <ProjectsPage />
     }
   }
 
