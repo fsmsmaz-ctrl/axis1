@@ -90,7 +90,7 @@ export default function DailyReportsPage() {
 
   async function fetchProjects() {
     try {
-      var res = await authedFetch('/api/projects/list')
+      var res = await authedFetch('/api/projects/list?_t=' + Date.now(), { cache: 'no-store' })
       var data = await res.json()
       setProjects(data.projects || [])
     } catch {
