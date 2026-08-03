@@ -121,9 +121,19 @@ export default function CreateUserDialog({ open, onOpenChange }: CreateUserDialo
 
   function togglePermission(key: string, isEdit: boolean) {
     if (isEdit) {
-      setEditPermissions(prev => ({ ...prev, [key]: !prev[key] }))
+      setEditPermissions(prev => {
+        const current = typeof prev[key] === 'boolean'
+          ? prev[key]
+          : getRoleDefault(editForm.role, key)
+        return { ...prev, [key]: !current }
+      })
     } else {
-      setPermissions(prev => ({ ...prev, [key]: !prev[key] }))
+      setPermissions(prev => {
+        const current = typeof prev[key] === 'boolean'
+          ? prev[key]
+          : getRoleDefault(form.role, key)
+        return { ...prev, [key]: !current }
+      })
     }
   }
 
