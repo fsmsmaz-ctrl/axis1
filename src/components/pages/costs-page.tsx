@@ -94,11 +94,28 @@ export default function CostsPage() {
     setLoading(false)
   }
 
+  async function fetchProjects() {
+    try {
+      var res = await authedFetch('/api/projects/list?_t=' + Date.now(), { cache: 'no-store' })
+      if (!res.ok) { setProjects([]); return }
+      var data = await res.json()
+      setProjects(data.projects || [])
+    } catch {
+      setProjects([])
+    }
+  }
+
   useEffect(function() {
     if (!token) return
     fetchCosts()
-    authedFetch('/api/projects/list').then(function(r) { return r.json() }).then(function(d) { setProjects(d.projects || []) })
-  }, [selectedProject, token])
+    fetchProjects()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token])
+
+  useEffect(function() {
+    if (!token) return
+    fetchCosts()
+  }, [selectedProject])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
