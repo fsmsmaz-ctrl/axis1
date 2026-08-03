@@ -190,3 +190,93 @@ export async function POST(req: NextRequest) {
     return handleDbError(error, 'إنشاء فحص السلامة')
   }
 }
+
+var ADMIN_EMAIL = 'admin@axis.om'
+
+export async function DELETE(req: NextRequest) {
+  var user = await getAuthUser(req)
+
+  if (!user) {
+    return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
+  }
+
+  if (user.email.toLowerCase().trim() !== ADMIN_EMAIL) {
+    return NextResponse.json({ error: 'forbidden', message: 'هذه العملية متاحة فقط لمدير النظام' }, { status: 403 })
+  }
+
+  var rl = checkRateLimit(req, RateLimitPresets.write)
+  if (rl.limited) {
+    return NextResponse.json(
+      { error: 'too_many_requests', message: 'طلبات كثيرة جداً، يرجى الانتظار قليلاً' },
+      { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } }
+    )
+  }
+
+  try {
+    var body = await req.json()
+    var reportId = body.id
+
+    if (!reportId) {
+      return NextResponse.json({ error: 'missing_fields', message: 'معرف التقرير مطلوب' }, { status: 400 })
+    }
+
+    var reportResult = await safeDbOp(
+      () => db.safetyReport.findUnique({
+        where: { id: reportId },
+        include: { dailyReport: { select: { id: true, status: true } } },
+      }),
+      'البحث عن تقرير السلامة'
+    )
+
+    if (!reportResult.success) return reportResult.response
+    if (!reportResult.data) {
+      return NextResponse.json({ error: 'not_found', message: 'تقرير السلامة غير موجود' }, { status: 404 })
+    }
+
+    var report = reportResult.data
+    var dailyReportId = report.dailyReportId
+
+    // Delete the safety report (cascade will not delete daily report since it is the parent)
+    var deleteSafetyResult = await safeDbOp(
+      () => db.safetyReport.delete({ where: { id: reportId } }),
+      'حذف تقرير السلامة'
+    )
+
+    if (!deleteSafetyResult.success) return deleteSafetyResult.response
+
+    // Delete the associated daily report if it is a draft with no real data
+    if (dailyReportId) {
+      await safeDbOp(
+        () => db.dailyReport.deleteMany({
+          where: {
+            id: dailyReportId,
+            status: 'draft',
+            dailyMeters: 0,
+            workersCount: 0,
+            operatingHours: 0,
+          },
+        }),
+        'حذف التقرير اليومي المرتبط'
+      )
+    }
+
+    // Audit log
+    await safeDbOp(
+      () => db.auditLog.create({
+        data: {
+          userId: user.id,
+          projectId: report.projectId,
+          action: 'delete',
+          entity: 'safety_report',
+          entityId: reportId,
+          details: 'Deleted safety report ' + reportId,
+        },
+      }),
+      'سجل التدقيق'
+    )
+
+    return NextResponse.json({ message: 'تم حذف تقرير السلامة بنجاح' })
+  } catch (error: any) {
+    return handleDbError(error, 'حذف تقرير السلامة')
+  }
+}
