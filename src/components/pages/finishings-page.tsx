@@ -49,10 +49,21 @@ export default function FinishingsPage() {
     setLoading(false)
   }
 
+  async function fetchProjectList() {
+    try {
+      var res = await authedFetch('/api/projects/list?_t=' + Date.now(), { cache: 'no-store' })
+      if (!res.ok) { setProjects([]); return }
+      var data = await res.json()
+      setProjects(data.projects || [])
+    } catch {
+      setProjects([])
+    }
+  }
+
   useEffect(() => {
     if (!token) return
     fetchFinishings()
-    authedFetch('/api/projects/list').then(r => r.json()).then(d => setProjects(d.projects || []))
+    fetchProjectList()
   }, [token])
 
   useEffect(() => {
