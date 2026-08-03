@@ -122,12 +122,40 @@ export default function EquipmentPage() {
     setAssetsLoading(false)
   }, [selectedProject, assetFilter])
 
+  async function fetchProjectList() {
+    try {
+      var res = await authedFetch('/api/projects/list?_t=' + Date.now(), { cache: 'no-store' })
+      if (!res.ok) { setProjects([]); return }
+      var data = await res.json()
+      setProjects(data.projects || [])
+    } catch {
+      setProjects([])
+    }
+  }
+
+  async function fetchUserList() {
+    try {
+      var res = await authedFetch('/api/users/list?_t=' + Date.now(), { cache: 'no-store' })
+      if (!res.ok) { setUsers([]); return }
+      var data = await res.json()
+      setUsers(data.users || [])
+    } catch {
+      setUsers([])
+    }
+  }
+
   useEffect(() => {
     if (!token) return
     fetchEquipment()
-    authedFetch('/api/projects/list').then(r => r.json()).then(d => setProjects(d.projects || []))
-    authedFetch('/api/users/list').then(r => r.json()).then(d => setUsers(d.users || []))
-  }, [selectedProject, token])
+    fetchProjectList()
+    fetchUserList()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token])
+
+  useEffect(() => {
+    if (!token) return
+    fetchEquipment()
+  }, [selectedProject])
 
   useEffect(() => {
     if (!token) return
