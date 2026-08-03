@@ -33,10 +33,11 @@ export function getCookieOptions() {
 
 // ─── Module permissions (sidebar sections) ───────────────────────────
 export const MODULE_PERMISSIONS = [
-  'drive_lines', 'daily_reports', 'safety', 'equipment', 'costs', 'finishings', 'performance', 'notifications',
+  'projects', 'drive_lines', 'daily_reports', 'safety', 'equipment', 'costs', 'finishings', 'performance', 'notifications',
 ] as const
 
 export const MODULE_PERMISSION_LABELS: Record<string, { ar: string; en: string }> = {
+  projects:       { ar: 'المشاريع',          en: 'Projects' },
   drive_lines:    { ar: 'خطوط الحفر',       en: 'Drive Lines' },
   daily_reports:  { ar: 'التقارير اليومية',  en: 'Daily Reports' },
   safety:         { ar: 'السلامة',           en: 'Safety' },
