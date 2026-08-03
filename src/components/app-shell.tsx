@@ -161,18 +161,24 @@ export default function AppShell() {
   const isAdmin = user ? user.email.toLowerCase().trim() === 'admin@axis.om' : false
   const canViewDashboard = !!user && (isAdmin || user.role === 'top_management' || user.role === 'project_manager')
 
+  const allowedItems = user ? navItems.filter(item => {
+    if (item.id === 'dashboard') return canViewDashboard
+    return hasPermission(user.role, item.resource, user.permissions)
+  }) : []
+  const firstAllowedPage = allowedItems.length > 0 ? allowedItems[0].id : 'projects'
+
   useEffect(() => {
     if (canViewDashboard && currentPage === 'projects') {
       setCurrentPage('dashboard')
+      return
     }
-  }, [canViewDashboard])
+    if (allowedItems.length > 0 && !allowedItems.some(item => item.id === currentPage)) {
+      setCurrentPage(firstAllowedPage)
+    }
+  }, [canViewDashboard, allowedItems, currentPage, firstAllowedPage])
 
   if (!user) return null
 
-  const allowedItems = navItems.filter(item => {
-    if (item.id === 'dashboard') return canViewDashboard
-    return hasPermission(user.role, item.resource, user.permissions)
-  })
   const isAr = language === 'ar'
   const isRtl = isAr
 
@@ -313,7 +319,9 @@ export default function AppShell() {
   }
 
   function renderPage() {
-    switch (currentPage) {
+    const isAllowed = allowedItems.some(item => item.id === currentPage)
+    const safePage = isAllowed ? currentPage : firstAllowedPage
+    switch (safePage) {
       case 'dashboard': return <DashboardPage onNavigate={setCurrentPage} />
       case 'projects': return <ProjectsPage />
       case 'driveLines': return <DriveLinesPage />
