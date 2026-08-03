@@ -51,9 +51,20 @@ export default function ReportsPage() {
   const token = useAppStore((s) => s.token)
   const isRtl = language === 'ar'
 
+  async function fetchProjectList() {
+    try {
+      var res = await authedFetch('/api/projects/list?_t=' + Date.now(), { cache: 'no-store' })
+      if (!res.ok) { setProjects([]); return }
+      var data = await res.json()
+      setProjects(data.projects || [])
+    } catch {
+      setProjects([])
+    }
+  }
+
   useEffect(function() {
     if (!token) return
-    authedFetch('/api/projects/list').then(function(r) { return r.json() }).then(function(d) { setProjects(d.projects || []) })
+    fetchProjectList()
     var today = new Date()
     var thirtyAgo = new Date()
     thirtyAgo.setDate(thirtyAgo.getDate() - 30)
