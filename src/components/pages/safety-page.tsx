@@ -96,11 +96,28 @@ export default function SafetyPage() {
     }
   }
 
+  async function fetchProjects() {
+    try {
+      var res = await authedFetch('/api/projects/list?_t=' + Date.now(), { cache: 'no-store' })
+      if (!res.ok) { setProjects([]); return }
+      var data = await res.json()
+      setProjects(data.projects || [])
+    } catch {
+      setProjects([])
+    }
+  }
+
   useEffect(() => {
     if (!token) return
     fetchReports()
-    authedFetch('/api/projects/list').then(function(r) { return r.json() }).then(function(d) { setProjects(d.projects || []) })
-  }, [selectedProject, token])
+    fetchProjects()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token])
+
+  useEffect(() => {
+    if (!token) return
+    fetchReports()
+  }, [selectedProject])
 
   async function handleSave() {
     if (!form.projectId || !form.reportDate) {
