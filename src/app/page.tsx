@@ -13,15 +13,6 @@ import dynamic from 'next/dynamic'
 
 const AppShell = dynamic(() => import('@/components/app-shell'), { ssr: false })
 
-const features = [
-  { ar: 'لوحة تحكم مباشرة', en: 'Live Dashboard', icon: '📊' },
-  { ar: 'تقارير PDF و Excel', en: 'PDF & Excel Reports', icon: '📄' },
-  { ar: 'إدارة السلامة', en: 'Safety Management', icon: '🧩' },
-  { ar: 'حساب الإيرادات تلقائياً', en: 'Auto Revenue Calc', icon: '💰' },
-  { ar: 'إدارة المعدات', en: 'Equipment Mgmt', icon: '⚙️' },
-  { ar: 'دعم الموبايل', en: 'Mobile Support', icon: '📱' },
-]
-
 export default function HomePage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -85,10 +76,7 @@ export default function HomePage() {
     connectionError: isAr ? 'فشل الاتصال بالخادم' : 'Connection failed',
     welcomeBack: isAr ? 'مرحباً بعودتك، ' : 'Welcome back, ',
     heroTitle: isAr ? 'نظام إدارة عمليات الحفر الاحترافي' : 'Professional Pipe Jacking Management System',
-    heroDesc: isAr
-      ? 'منصة متكاملة لإدارة مشاريع Pipe Jacking / Microtunneling - متابعة الإنتاج اليومي، السلامة، المعدات، التكاليف والإيرادات، وتقارير الأداء من خلال لوحة تحكم مباشرة.'
-      : 'Integrated platform for managing Pipe Jacking / Microtunneling projects - daily production tracking, safety, equipment, costs & revenue, and performance reports through a live dashboard.',
-    copyright: isAr ? '© 2025 AXIS - جميع الحقوق محفوظة' : '© 2025 AXIS - All rights reserved',
+    copyright: isAr ? '© 2026 AXIS - جميع الحقوق محفوظة' : '© 2026 AXIS - All rights reserved',
     langBtn: isAr ? 'EN' : 'ع',
   }
 
@@ -150,15 +138,7 @@ export default function HomePage() {
         </div>
         <div className="relative z-10 space-y-6">
           <h2 className="text-3xl lg:text-4xl font-bold leading-tight">{t.heroTitle}</h2>
-          <p className="text-lg text-primary-foreground/90 leading-relaxed">{t.heroDesc}</p>
-          <div className="grid grid-cols-2 gap-3 max-w-md">
-            {features.map((item) => (
-              <div key={item.en} className="flex items-center gap-2 bg-white/10 backdrop-blur rounded-lg px-3 py-2">
-                <span className="text-lg">{item.icon}</span>
-                <span className="text-sm">{isAr ? item.ar : item.en}</span>
-              </div>
-            ))}
-          </div>
+
         </div>
         <div className="relative z-10 text-sm text-primary-foreground/70">{t.copyright}</div>
       </div>
