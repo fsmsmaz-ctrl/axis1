@@ -29,19 +29,40 @@ export default function PerformancePage() {
     direction: isRtl ? 'rtl' as const : 'ltr' as const,
   }), [isRtl])
 
+  async function fetchPerformance() {
+    setLoading(true)
+    try {
+      var res = await authedFetch('/api/performance' + (selectedProject !== 'all' ? '?projectId=' + selectedProject : ''))
+      var data = await res.json()
+      setPerformance(data.performance || [])
+    } catch {
+      setPerformance([])
+    }
+    setLoading(false)
+  }
+
+  async function fetchProjectList() {
+    try {
+      var res = await authedFetch('/api/projects/list?_t=' + Date.now(), { cache: 'no-store' })
+      if (!res.ok) { setProjects([]); return }
+      var data = await res.json()
+      setProjects(data.projects || [])
+    } catch {
+      setProjects([])
+    }
+  }
+
   useEffect(() => {
     if (!token) return
-    setLoading(true)
-    Promise.all([
-      authedFetch('/api/performance' + (selectedProject !== 'all' ? `?projectId=${selectedProject}` : '')),
-      authedFetch('/api/projects/list'),
-    ]).then(async ([perfRes, projRes]) => {
-      const perfData = await perfRes.json()
-      const projData = await projRes.json()
-      setPerformance(perfData.performance || [])
-      setProjects(projData.projects || [])
-    }).finally(() => setLoading(false))
-  }, [selectedProject, token])
+    fetchPerformance()
+    fetchProjectList()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token])
+
+  useEffect(() => {
+    if (!token) return
+    fetchPerformance()
+  }, [selectedProject])
 
   // Memoize all derived computations
   const { totals, avgDailyMeters, overallProfitMargin, avgSafety, avgAttendance } = useMemo(() => {
