@@ -11,7 +11,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet'
-import { ShieldCheck, ShieldAlert, AlertTriangle, CheckCircle2, XCircle, Calendar, Plus, Loader2 } from 'lucide-react'
+import { ShieldCheck, ShieldAlert, AlertTriangle, CheckCircle2, XCircle, Calendar, Plus, Loader2, Trash2 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
 import { toast } from 'sonner'
@@ -78,6 +78,30 @@ export default function SafetyPage() {
   const token = useAppStore((s) => s.token)
   const setPage = useAppStore((s) => s.setPage)
   const isRtl = language === 'ar'
+  const isAdmin = useAppStore((s) => s.user)?.email?.toLowerCase().trim() === 'admin@axis.om'
+
+  async function deleteReport(reportId: string) {
+    var msg = isRtl
+      ? 'هل أنت متأكد من حذف تقرير السلامة؟ يمكن للموظف إنشاء تقرير جديد بعد الحذف.'
+      : 'Are you sure you want to delete this safety report? The employee can create a new one after deletion.'
+    if (!confirm(msg)) return
+    try {
+      var res = await authedFetch('/api/safety-inspection', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: reportId }),
+      })
+      if (res.ok) {
+        toast.success(isRtl ? 'تم حذف تقرير السلامة' : 'Safety report deleted')
+        fetchReports()
+      } else {
+        var data = await res.json().catch(function() { return {} })
+        toast.error(data.message || (isRtl ? 'فشل الحذف' : 'Delete failed'))
+      }
+    } catch {
+      toast.error(isRtl ? 'حدث خطأ' : 'Error')
+    }
+  }
 
   async function fetchReports() {
     setLoading(true)
@@ -358,6 +382,16 @@ export default function SafetyPage() {
                         </Button>
                       )}
                     </div>
+                    {isAdmin && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0 text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
+                        onClick={function() { deleteReport(r.id) }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
                   </div>
                 </CardContent>
               </Card>
