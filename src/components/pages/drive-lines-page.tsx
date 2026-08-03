@@ -47,23 +47,40 @@ export default function DriveLinesPage() {
     depth: '', status: 'not_started', problems: '',
   })
 
-  async function fetchData() {
+  async function fetchDriveLines() {
     setLoading(true)
-    const [linesRes, projRes] = await Promise.all([
-      authedFetch('/api/drive-lines' + (selectedProject !== 'all' ? `?projectId=${selectedProject}` : '')),
-      authedFetch('/api/projects/list'),
-    ])
-    const linesData = await linesRes.json()
-    const projData = await projRes.json()
-    setDriveLines(linesData.driveLines || [])
-    setProjects(projData.projects || [])
+    try {
+      var res = await authedFetch('/api/drive-lines' + (selectedProject !== 'all' ? '?projectId=' + selectedProject : ''))
+      var data = await res.json()
+      setDriveLines(data.driveLines || [])
+    } catch {
+      setDriveLines([])
+    }
     setLoading(false)
+  }
+
+  async function fetchProjectList() {
+    try {
+      var res = await authedFetch('/api/projects/list?_t=' + Date.now(), { cache: 'no-store' })
+      if (!res.ok) { setProjects([]); return }
+      var data = await res.json()
+      setProjects(data.projects || [])
+    } catch {
+      setProjects([])
+    }
   }
 
   useEffect(() => {
     if (!token) return
-    fetchData()
-  }, [selectedProject, token])
+    fetchDriveLines()
+    fetchProjectList()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token])
+
+  useEffect(() => {
+    if (!token) return
+    fetchDriveLines()
+  }, [selectedProject])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -81,7 +98,7 @@ export default function DriveLinesPage() {
           totalLength: '', diameter: '1200mm', pipeType: 'pipe', soilType: 'mixed',
           depth: '', status: 'not_started', problems: '',
         })
-        fetchData()
+        fetchDriveLines()
       }
     } catch {
       toast.error(isRtl ? 'حدث خطأ' : 'Error')
