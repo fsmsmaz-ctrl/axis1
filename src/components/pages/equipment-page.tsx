@@ -64,6 +64,8 @@ export default function EquipmentPage() {
   const [loading, setLoading] = useState(true)
   const [selectedProject, setSelectedProject] = useState<string>('all')
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [editEqDialogOpen, setEditEqDialogOpen] = useState(false)
+  const [editingEquipment, setEditingEquipment] = useState<any | null>(null)
   const [viewEquipment, setViewEquipment] = useState<any | null>(null)
   const [viewDialogOpen, setViewDialogOpen] = useState(false)
   const [maintenanceDialogOpen, setMaintenanceDialogOpen] = useState(false)
@@ -72,6 +74,17 @@ export default function EquipmentPage() {
   const language = useAppStore((s) => s.language)
   const token = useAppStore((s) => s.token)
   const isRtl = language === 'ar'
+
+  function canEditEq(eq: any) {
+    if (isAdmin) return true
+    if (user && eq.createdById && eq.createdById === user.id) return true
+    return false
+  }
+  function canEditAsset(a: any) {
+    if (isAdmin) return true
+    if (user && a.createdById && a.createdById === user.id) return true
+    return false
+  }
 
   const [assets, setAssets] = useState<any[]>([])
   const [assetsLoading, setAssetsLoading] = useState(false)
@@ -258,6 +271,41 @@ export default function EquipmentPage() {
     setAssetDialogOpen(true)
   }
 
+  function openEditEquipment(eq: any) {
+    setEditingEquipment(eq)
+    setFormData({
+      projectId: eq.projectId || '', name: eq.name, number: eq.number, type: eq.type,
+      status: eq.status, dailyHours: String(eq.dailyHours),
+      lastMaintenance: eq.lastMaintenance ? eq.lastMaintenance.split('T')[0] : '',
+      nextMaintenance: eq.nextMaintenance ? eq.nextMaintenance.split('T')[0] : '',
+      notes: eq.notes || '',
+    })
+    setEditEqDialogOpen(true)
+  }
+
+  async function handleEditEquipmentSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!editingEquipment) return
+    try {
+      var res = await authedFetch('/api/equipment/' + editingEquipment.id, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData),
+      })
+      if (res.ok) {
+        toast.success(isRtl ? 'تم تحديث المعدة' : 'Equipment updated')
+        setEditEqDialogOpen(false)
+        setEditingEquipment(null)
+        fetchEquipment()
+      } else {
+        var errData = await res.json().catch(function() { return {} })
+        toast.error(errData.message || (isRtl ? 'فشل التحديث' : 'Update failed'))
+      }
+    } catch {
+      toast.error(isRtl ? 'حدث خطأ' : 'Error')
+    }
+  }
+
   async function handleMaintenanceSubmit(e: React.FormEvent) {
     e.preventDefault()
     try {
@@ -421,6 +469,12 @@ export default function EquipmentPage() {
                         <span className="text-xs truncate">{eq.project.name}</span>
                       </div>
                     )}
+                    {eq.createdBy && (
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <UserCircle className="h-3.5 w-3.5" />
+                        <span className="text-xs truncate">{eq.createdBy.name}</span>
+                      </div>
+                    )}
                     <div className="flex items-center gap-2 text-muted-foreground">
                       <Clock className="h-3.5 w-3.5" />
                       <span className="text-xs">{eq.dailyHours} {isRtl ? 'ساعة/يوم' : 'h/day'}</span>
@@ -438,13 +492,20 @@ export default function EquipmentPage() {
                     <Button variant="outline" size="sm" className="flex-1" onClick={() => openView(eq)}>
                       {isRtl ? 'تفاصيل' : 'Details'}
                     </Button>
-                    <Button variant="outline" size="sm" onClick={() => {
-                      setMaintenanceForm({ ...maintenanceForm, equipmentId: eq.id, setStatus: eq.status === 'maintenance_needed' ? 'operational' : 'operational' })
-                      setMaintenanceDialogOpen(true)
-                    }}>
-                      <Settings className="h-4 w-4" />
-                    </Button>
-                    {isAdmin && (
+                    {canEditEq(eq) && (
+                      <Button variant="outline" size="sm" onClick={() => {
+                        setMaintenanceForm({ ...maintenanceForm, equipmentId: eq.id, setStatus: eq.status === 'maintenance_needed' ? 'operational' : 'operational' })
+                        setMaintenanceDialogOpen(true)
+                      }}>
+                        <Settings className="h-4 w-4" />
+                      </Button>
+                    )}
+                    {canEditEq(eq) && (
+                      <Button variant="outline" size="sm" onClick={() => openEditEquipment(eq)}>
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                    )}
+                    {canEditEq(eq) && (
                       <Button variant="outline" size="sm" className="text-red-600 hover:text-red-700 hover:bg-red-50" onClick={function() {
                         if (confirm(isRtl ? 'هل تريد حذف هذه المعدة؟' : 'Delete this equipment?')) {
                           authedFetch('/api/equipment?id=' + eq.id, { method: 'DELETE' }).then(function(r) { return r.json() }).then(function(d) {
@@ -557,12 +618,15 @@ export default function EquipmentPage() {
                           {a.ownership === 'rented' && a.rentalCost > 0 && <span className="text-orange-600 font-medium">{a.rentalCost} {isRtl ? 'ر.ع/شهر' : 'OMR/mo'}</span>}
                           {a.ownership === 'borrowed' && a.rentalEnd && <span>{isRtl ? 'إرجاع' : 'Return'}: {new Date(a.rentalEnd).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')}</span>}
                           {a.supplier && <span>{isRtl ? 'الجهة' : 'From'}: {a.supplier}</span>}
+                          {a.createdBy && <span>{isRtl ? 'بواسطة' : 'By'}: {a.createdBy.name}</span>}
                         </div>
                       </div>
-                      <div className="flex gap-1 shrink-0">
-                        <Button variant="ghost" size="sm" onClick={() => openAssetDialog(a)}><Pencil className="h-3.5 w-3.5" /></Button>
-                        <Button variant="ghost" size="sm" onClick={() => deleteAsset(a.id)}><Trash2 className="h-3.5 w-3.5 text-red-500" /></Button>
-                      </div>
+                      {canEditAsset(a) && (
+                        <div className="flex gap-1 shrink-0">
+                          <Button variant="ghost" size="sm" onClick={() => openAssetDialog(a)}><Pencil className="h-3.5 w-3.5" /></Button>
+                          <Button variant="ghost" size="sm" onClick={() => deleteAsset(a.id)}><Trash2 className="h-3.5 w-3.5 text-red-500" /></Button>
+                        </div>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -623,6 +687,60 @@ export default function EquipmentPage() {
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>{isRtl ? 'إلغاء' : 'Cancel'}</Button>
               <Button type="submit">{isRtl ? 'إنشاء' : 'Create'}</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={editEqDialogOpen} onOpenChange={(v) => { setEditEqDialogOpen(v); if (!v) setEditingEquipment(null) }}>
+        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{isRtl ? 'تعديل المعدة' : 'Edit Equipment'}</DialogTitle>
+            <DialogDescription>{isRtl ? 'تعديل بيانات المعدة' : 'Update equipment details'}</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleEditEquipmentSubmit} className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5"><Label>{isRtl ? 'اسم المعدة' : 'Equipment Name'} *</Label><Input value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required /></div>
+              <div className="space-y-1.5"><Label>{isRtl ? 'رقم المعدة' : 'Number'} *</Label><Input value={formData.number} onChange={(e) => setFormData({ ...formData, number: e.target.value })} required /></div>
+              <div className="space-y-1.5">
+                <Label>{isRtl ? 'النوع' : 'Type'}</Label>
+                <Select value={formData.type} onValueChange={(v) => setFormData({ ...formData, type: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="jacking_machine">{isRtl ? 'ماكينة Jacking' : 'Jacking Machine'}</SelectItem>
+                    <SelectItem value="crane">{isRtl ? 'رافعة' : 'Crane'}</SelectItem>
+                    <SelectItem value="excavator">{isRtl ? 'حفار' : 'Excavator'}</SelectItem>
+                    <SelectItem value="pump">{isRtl ? 'مضخة' : 'Pump'}</SelectItem>
+                    <SelectItem value="other">{isRtl ? 'أخرى' : 'Other'}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>{isRtl ? 'الحالة' : 'Status'}</Label>
+                <Select value={formData.status} onValueChange={(v) => setFormData({ ...formData, status: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="operational">{isRtl ? 'تعمل' : 'Operational'}</SelectItem>
+                    <SelectItem value="stopped">{isRtl ? 'متوقفة' : 'Stopped'}</SelectItem>
+                    <SelectItem value="maintenance_needed">{isRtl ? 'تحتاج صيانة' : 'Maintenance Needed'}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5"><Label>{isRtl ? 'ساعات التشغيل اليومية' : 'Daily Hours'}</Label><Input type="number" step="0.1" value={formData.dailyHours} onChange={(e) => setFormData({ ...formData, dailyHours: e.target.value })} /></div>
+              <div className="space-y-1.5">
+                <Label>{isRtl ? 'المشروع' : 'Project'}</Label>
+                <Select value={formData.projectId} onValueChange={(v) => setFormData({ ...formData, projectId: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>{projects.map((p) => (<SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>))}</SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5"><Label>{isRtl ? 'آخر صيانة' : 'Last Maintenance'}</Label><Input type="date" value={formData.lastMaintenance} onChange={(e) => setFormData({ ...formData, lastMaintenance: e.target.value })} /></div>
+              <div className="space-y-1.5"><Label>{isRtl ? 'الصيانة القادمة' : 'Next Maintenance'}</Label><Input type="date" value={formData.nextMaintenance} onChange={(e) => setFormData({ ...formData, nextMaintenance: e.target.value })} /></div>
+            </div>
+            <div className="space-y-1.5"><Label>{isRtl ? 'ملاحظات' : 'Notes'}</Label><Textarea value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} rows={2} /></div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => { setEditEqDialogOpen(false); setEditingEquipment(null) }}>{isRtl ? 'إلغاء' : 'Cancel'}</Button>
+              <Button type="submit">{isRtl ? 'تحديث' : 'Update'}</Button>
             </DialogFooter>
           </form>
         </DialogContent>
