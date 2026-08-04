@@ -102,22 +102,34 @@ export default function EquipmentPage() {
 
   async function fetchEquipment() {
     setLoading(true)
-    const res = await authedFetch('/api/equipment' + (selectedProject !== 'all' ? `?projectId=${selectedProject}` : ''))
-    const data = await res.json()
-    setEquipment(data.equipment || [])
+    try {
+      var url = '/api/equipment?_t=' + Date.now()
+      if (selectedProject !== 'all') url += '&projectId=' + selectedProject
+      var res = await authedFetch(url)
+      if (!res.ok) { setEquipment([]); setLoading(false); return }
+      var data = await res.json()
+      setEquipment(data.equipment || [])
+    } catch {
+      setEquipment([])
+    }
     setLoading(false)
   }
 
   const fetchAssets = useCallback(async () => {
     setAssetsLoading(true)
-    const params = new URLSearchParams()
-    if (selectedProject !== 'all') params.set('projectId', selectedProject)
-    if (assetFilter !== 'all') params.set('ownership', assetFilter)
-    const res = await authedFetch(`/api/company-assets?${params.toString()}`)
-    if (res.ok) {
-      const data = await res.json()
-      setAssets(data.assets || [])
-      setAssetStats(data.stats || { ownedCount: 0, rentedCount: 0, borrowedCount: 0, totalRentalCost: 0 })
+    try {
+      var params = new URLSearchParams()
+      if (selectedProject !== 'all') params.set('projectId', selectedProject)
+      if (assetFilter !== 'all') params.set('ownership', assetFilter)
+      params.set('_t', String(Date.now()))
+      var res = await authedFetch('/api/company-assets?' + params.toString(), { cache: 'no-store' })
+      if (res.ok) {
+        var data = await res.json()
+        setAssets(data.assets || [])
+        setAssetStats(data.stats || { ownedCount: 0, rentedCount: 0, borrowedCount: 0, totalRentalCost: 0 })
+      }
+    } catch {
+      setAssets([])
     }
     setAssetsLoading(false)
   }, [selectedProject, assetFilter])
@@ -135,7 +147,7 @@ export default function EquipmentPage() {
 
   async function fetchUserList() {
     try {
-      var res = await authedFetch('/api/users/list?_t=' + Date.now(), { cache: 'no-store' })
+      var res = await authedFetch('/api/users/list?_t=' + Date.now())
       if (!res.ok) { setUsers([]); return }
       var data = await res.json()
       setUsers(data.users || [])
@@ -174,6 +186,9 @@ export default function EquipmentPage() {
         toast.success(isRtl ? 'تم إنشاء المعدة' : 'Equipment created')
         setDialogOpen(false)
         fetchEquipment()
+      } else {
+        var errData = await res.json().catch(function() { return {} })
+        toast.error(errData.message || (isRtl ? 'فشل الإنشاء' : 'Failed to create'))
       }
     } catch {
       toast.error(isRtl ? 'حدث خطأ' : 'Error')
@@ -195,6 +210,9 @@ export default function EquipmentPage() {
         setAssetDialogOpen(false)
         setEditingAsset(null)
         fetchAssets()
+      } else {
+        var errData = await res.json().catch(function() { return {} })
+        toast.error(errData.message || (isRtl ? 'فشل العملية' : 'Operation failed'))
       }
     } catch {
       toast.error(isRtl ? 'حدث خطأ' : 'Error')
@@ -203,10 +221,16 @@ export default function EquipmentPage() {
 
   async function deleteAsset(id: string) {
     if (!confirm(isRtl ? 'هل تريد حذف هذا الأصل؟' : 'Delete this asset?')) return
-    const res = await authedFetch(`/api/company-assets/${id}`, { method: 'DELETE' })
-    if (res.ok) {
-      toast.success(isRtl ? 'تم الحذف' : 'Deleted')
-      fetchAssets()
+    try {
+      const res = await authedFetch(`/api/company-assets/${id}`, { method: 'DELETE' })
+      if (res.ok) {
+        toast.success(isRtl ? 'تم الحذف' : 'Deleted')
+        fetchAssets()
+      } else {
+        toast.error(isRtl ? 'فشل الحذف' : 'Delete failed')
+      }
+    } catch {
+      toast.error(isRtl ? 'حدث خطأ' : 'Error')
     }
   }
 
@@ -237,7 +261,7 @@ export default function EquipmentPage() {
   async function handleMaintenanceSubmit(e: React.FormEvent) {
     e.preventDefault()
     try {
-      const res = await fetch(`/api/equipment/${maintenanceForm.equipmentId}/maintenance`, {
+      var res = await authedFetch('/api/equipment/' + maintenanceForm.equipmentId + '/maintenance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(maintenanceForm),
@@ -246,6 +270,9 @@ export default function EquipmentPage() {
         toast.success(isRtl ? 'تم تسجيل الصيانة' : 'Maintenance recorded')
         setMaintenanceDialogOpen(false)
         fetchEquipment()
+      } else {
+        var errData = await res.json().catch(function() { return {} })
+        toast.error(errData.message || (isRtl ? 'فشل تسجيل الصيانة' : 'Maintenance failed'))
       }
     } catch {
       toast.error(isRtl ? 'حدث خطأ' : 'Error')
@@ -255,7 +282,10 @@ export default function EquipmentPage() {
   function openView(eq: any) {
     setViewEquipment(eq)
     setViewDialogOpen(true)
-    authedFetch(`/api/equipment/${eq.id}`).then(r => r.json()).then(d => setViewEquipment(d.equipment))
+    authedFetch('/api/equipment/' + eq.id + '?_t=' + Date.now(), { cache: 'no-store' })
+      .then(function(r) { return r.ok ? r.json() : null })
+      .then(function(d) { if (d && d.equipment) setViewEquipment(d.equipment) })
+      .catch(function() {})
   }
 
   const operational = equipment.filter(e => e.status === 'operational').length
