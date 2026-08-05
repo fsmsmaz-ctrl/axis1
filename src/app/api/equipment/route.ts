@@ -23,6 +23,7 @@ export async function GET(req: NextRequest) {
       include: {
         project: { select: { id: true, name: true, code: true } },
         maintenance: { orderBy: { date: 'desc' }, take: 5 },
+        createdBy: { select: { id: true, name: true } },
       },
       orderBy: { name: 'asc' },
     }),
@@ -79,7 +80,9 @@ export async function POST(req: NextRequest) {
           lastMaintenance: body.lastMaintenance ? new Date(body.lastMaintenance) : null,
           nextMaintenance: body.nextMaintenance ? new Date(body.nextMaintenance) : null,
           notes: body.notes ? String(body.notes) : null,
+          createdById: user.id,
         },
+        include: { createdBy: { select: { id: true, name: true } } },
       }),
       'إنشاء المعدة'
     )
@@ -127,15 +130,24 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
   }
 
-  // Only system admin can delete equipment
-  if (user.email.toLowerCase().trim() !== 'admin@axis.om') {
-    return NextResponse.json({ error: 'forbidden', message: 'صلاحية الحذف لمدير النظام فقط' }, { status: 403 })
-  }
+  var ADMIN_EMAIL = 'admin@axis.om'
+  var isAdmin = user.email.toLowerCase().trim() === ADMIN_EMAIL
 
   var searchParams = new URL(req.url).searchParams
   var id = searchParams.get('id')
   if (!id) {
     return NextResponse.json({ error: 'missing_id', message: 'معرف المعدة مطلوب' }, { status: 400 })
+  }
+
+  // Check ownership: only creator or system admin can delete
+  if (!isAdmin) {
+    var eqCheck = await safeDbOp(
+      () => db.equipment.findUnique({ where: { id }, select: { createdById: true } }),
+      'فحص ملكية المعدة'
+    )
+    if (eqCheck.success && eqCheck.data && eqCheck.data.createdById !== user.id) {
+      return NextResponse.json({ error: 'forbidden', message: 'يمكنك فقط حذف المعدات التي أنشأتها' }, { status: 403 })
+    }
   }
 
   var rl = checkRateLimit(req, RateLimitPresets.write)
