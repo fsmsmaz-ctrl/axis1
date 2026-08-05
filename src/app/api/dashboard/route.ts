@@ -163,6 +163,23 @@ export async function GET(req: NextRequest) {
     include: { project: { select: { name: true } } },
   })
 
+  // Monthly rental costs from CompanyAsset (rented items active this month)
+  var monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59, 999)
+  var activeRentals = await db.companyAsset.findMany({
+    where: {
+      ownership: 'rented',
+      rentalCost: { gt: 0 },
+      status: { notIn: ['returned', 'damaged'] },
+      rentalStart: { lte: monthEnd },
+      OR: [
+        { rentalEnd: null },
+        { rentalEnd: { gte: monthStart } },
+      ],
+    },
+    select: { rentalCost: true },
+  })
+  var monthlyRentalCost = activeRentals.reduce(function(sum: number, a: any) { return sum + (a.rentalCost || 0) }, 0)
+
   // Cost breakdown by category (this month)
   var costsByCategoryRaw = await db.cost.groupBy({
     by: ['category'],
@@ -174,8 +191,19 @@ export async function GET(req: NextRequest) {
     return { category: c.category, amount: c._sum.amount || 0 }
   })
 
-  // Calculate net profit
-  var netProfit = (totalRevenueResult._sum.dailyRevenue || 0) - (totalCosts._sum.amount || 0)
+  // Add rental costs to category breakdown
+  if (monthlyRentalCost > 0) {
+    var existingRental = costsByCategory.find(function(c) { return c.category === 'rental' })
+    if (existingRental) {
+      existingRental.amount += monthlyRentalCost
+    } else {
+      costsByCategory.push({ category: 'rental', amount: monthlyRentalCost })
+    }
+  }
+
+  // Calculate net profit (include rental costs in total)
+  var totalWithRentals = (totalCosts._sum.amount || 0) + monthlyRentalCost
+  var netProfit = (totalRevenueResult._sum.dailyRevenue || 0) - totalWithRentals
 
   return NextResponse.json({
     stats: {
@@ -187,8 +215,9 @@ export async function GET(req: NextRequest) {
       revenueThisMonth,
       totalRevenue: totalRevenueResult._sum.dailyRevenue || 0,
       totalCosts: totalCosts._sum.amount || 0,
-      monthCosts: monthCosts._sum.amount || 0,
-      netProfit,
+      monthCosts: (monthCosts._sum.amount || 0) + monthlyRentalCost,
+      monthlyRentalCost: monthlyRentalCost,
+      netProfit:
       stoppedEquipment,
       presentWorkers,
       unreadNotifications,
