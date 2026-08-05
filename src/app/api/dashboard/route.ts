@@ -217,7 +217,7 @@ export async function GET(req: NextRequest) {
       totalCosts: totalCosts._sum.amount || 0,
       monthCosts: (monthCosts._sum.amount || 0) + monthlyRentalCost,
       monthlyRentalCost: monthlyRentalCost,
-      netProfit:
+      netProfit: netProfit,
       stoppedEquipment,
       presentWorkers,
       unreadNotifications,
