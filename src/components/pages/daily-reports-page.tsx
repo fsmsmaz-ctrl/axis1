@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState, useRef } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -51,6 +51,8 @@ export default function DailyReportsPage() {
   const [viewDialogOpen, setViewDialogOpen] = useState(false)
   const [existingSafetyLoaded, setExistingSafetyLoaded] = useState(false)
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const driveLinesLoaded = useRef<string | null>(null)
   const language = useAppStore((s) => s.language)
   const token = useAppStore((s) => s.token)
   const user = useAppStore((s) => s.user)
@@ -105,12 +107,18 @@ export default function DailyReportsPage() {
   }, [selectedProject, token])
 
   useEffect(function() {
-    if (formData.projectId) {
-      authedFetch('/api/drive-lines?projectId=' + formData.projectId)
-        .then(function(r) { return r.json() })
-        .then(function(d) { setDriveLines(d.driveLines || []) })
-        .catch(function() { setDriveLines([]) })
+    if (!formData.projectId) {
+      setDriveLines([])
+      driveLinesLoaded.current = null
+      return
     }
+    // Skip if we already loaded drive lines for this project (e.g. from openEditReport)
+    if (driveLinesLoaded.current === formData.projectId) return
+    driveLinesLoaded.current = formData.projectId
+    authedFetch('/api/drive-lines?projectId=' + formData.projectId)
+      .then(function(r) { return r.json() })
+      .then(function(d) { setDriveLines(d.driveLines || []) })
+      .catch(function() { setDriveLines([]) })
   }, [formData.projectId])
 
   async function openEditReport(report: any) {
@@ -171,8 +179,9 @@ export default function DailyReportsPage() {
       setExistingSafetyLoaded(false)
     }
 
-    // Load drive lines for the project
+    // Load drive lines for the project (mark as loaded so useEffect skips)
     if (report.projectId) {
+      driveLinesLoaded.current = report.projectId
       try {
         var dlRes = await authedFetch('/api/drive-lines?projectId=' + report.projectId)
         var dlData = await dlRes.json()
@@ -183,29 +192,32 @@ export default function DailyReportsPage() {
     setDialogOpen(true)
   }
 
-  var safetyChecklistItems = [
-    { key: 'ppeAvailable', label: isRtl ? 'توفر PPE لجميع العمال' : 'PPE available for all workers' },
-    { key: 'helmetCheck', label: isRtl ? 'فحص الخوذة' : 'Helmet check' },
-    { key: 'bootsCheck', label: isRtl ? 'فحص الحذاء' : 'Boots check' },
-    { key: 'glovesCheck', label: isRtl ? 'فحص القفازات' : 'Gloves check' },
-    { key: 'glassesCheck', label: isRtl ? 'فحص النظارات' : 'Glasses check' },
-    { key: 'workAreaCheck', label: isRtl ? 'فحص منطقة العمل' : 'Work area check' },
-    { key: 'barriersCheck', label: isRtl ? 'وجود حواجز وتحذيرات' : 'Barriers & warnings' },
-    { key: 'shaftCheck', label: isRtl ? 'فحص الحفرة / shaft' : 'Shaft check' },
-    { key: 'ventilationCheck', label: isRtl ? 'فحص التهوية' : 'Ventilation check' },
-    { key: 'electricalCheck', label: isRtl ? 'فحص الكهرباء والكابلات' : 'Electrical check' },
-    { key: 'craneCheck', label: isRtl ? 'فحص الرافعة' : 'Crane check' },
-    { key: 'hydraulicCheck', label: isRtl ? 'فحص نظام الهيدرولك' : 'Hydraulic system check' },
-    { key: 'fireExtinguishers', label: isRtl ? 'توفر طفايات الحريق' : 'Fire extinguishers' },
-    { key: 'workPermit', label: isRtl ? 'وجود تصريح العمل' : 'Work permit' },
-    { key: 'toolboxTalk', label: isRtl ? 'اجتماع toolbox talk' : 'Toolbox talk' },
-  ]
+  var safetyChecklistItems = useMemo(function() {
+    return [
+      { key: 'ppeAvailable', label: isRtl ? 'توفر PPE لجميع العمال' : 'PPE available for all workers' },
+      { key: 'helmetCheck', label: isRtl ? 'فحص الخوذة' : 'Helmet check' },
+      { key: 'bootsCheck', label: isRtl ? 'فحص الحذاء' : 'Boots check' },
+      { key: 'glovesCheck', label: isRtl ? 'فحص القفازات' : 'Gloves check' },
+      { key: 'glassesCheck', label: isRtl ? 'فحص النظارات' : 'Glasses check' },
+      { key: 'workAreaCheck', label: isRtl ? 'فحص منطقة العمل' : 'Work area check' },
+      { key: 'barriersCheck', label: isRtl ? 'وجود حواجز وتحذيرات' : 'Barriers & warnings' },
+      { key: 'shaftCheck', label: isRtl ? 'فحص الحفرة / shaft' : 'Shaft check' },
+      { key: 'ventilationCheck', label: isRtl ? 'فحص التهوية' : 'Ventilation check' },
+      { key: 'electricalCheck', label: isRtl ? 'فحص الكهرباء والكابلات' : 'Electrical check' },
+      { key: 'craneCheck', label: isRtl ? 'فحص الرافعة' : 'Crane check' },
+      { key: 'hydraulicCheck', label: isRtl ? 'فحص نظام الهيدرولك' : 'Hydraulic system check' },
+      { key: 'fireExtinguishers', label: isRtl ? 'توفر طفايات الحريق' : 'Fire extinguishers' },
+      { key: 'workPermit', label: isRtl ? 'وجود تصريح العمل' : 'Work permit' },
+      { key: 'toolboxTalk', label: isRtl ? 'اجتماع toolbox talk' : 'Toolbox talk' },
+    ]
+  }, [isRtl])
 
   var safetyPassedCount = safetyChecklistItems.filter(function(item) { return safety[item.key as keyof typeof safety] }).length
   var allSafetyPassed = safetyPassedCount === safetyChecklistItems.length
 
   async function handleSaveDraft() {
-    if (!editingReportId) return
+    if (!editingReportId || saving) return
+    setSaving(true)
     try {
       var res = await authedFetch('/api/daily-reports/' + editingReportId, {
         method: 'PUT',
@@ -224,6 +236,8 @@ export default function DailyReportsPage() {
       }
     } catch {
       toast.error(isRtl ? 'حدث خطأ' : 'Error')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -233,7 +247,8 @@ export default function DailyReportsPage() {
 
   async function confirmSubmitReport() {
     setConfirmDialogOpen(false)
-    if (!editingReportId) return
+    if (!editingReportId || saving) return
+    setSaving(true)
     try {
       var res = await authedFetch('/api/daily-reports/' + editingReportId, {
         method: 'PUT',
@@ -252,6 +267,8 @@ export default function DailyReportsPage() {
       }
     } catch {
       toast.error(isRtl ? 'حدث خطأ' : 'Error')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -389,7 +406,7 @@ export default function DailyReportsPage() {
         setDialogOpen(open)
         if (!open) { setEditingReportId(null); setExistingSafetyLoaded(false) }
       }}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-3xl sm:max-h-[85vh] max-h-[100dvh] sm:top-[50%] sm:translate-y-[-50%] top-0 translate-y-0 overflow-y-auto p-4 sm:p-6">
           <DialogHeader>
             <DialogTitle>
               {editingReportId
@@ -526,7 +543,7 @@ export default function DailyReportsPage() {
               <div>
                 <div>
                   <TabsContent value="report" className={'space-y-4 ' + (editingReportId ? 'mt-0' : 'mt-4')}>
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="space-y-1.5">
                         <Label>{isRtl ? 'المشروع' : 'Project'} *</Label>
                         <Select value={formData.projectId} onValueChange={function(v) { setFormData({ ...formData, projectId: v, driveLineId: '' }) }}>
@@ -632,11 +649,13 @@ export default function DailyReportsPage() {
             <Button type="button" variant="outline" onClick={function() { setDialogOpen(false); setEditingReportId(null); setExistingSafetyLoaded(false) }}>
               {isRtl ? 'إلغاء' : 'Cancel'}
             </Button>
-            <Button type="button" variant="outline" onClick={handleSaveDraft} disabled={!editingReportId}>
-              <Pencil className="h-4 w-4 ml-2" />
-              {isRtl ? 'حفظ (تعديل)' : 'Save (Edit)'}
+            <Button type="button" variant="outline" onClick={handleSaveDraft} disabled={!editingReportId || saving}>
+              {saving
+                ? <span className="h-4 w-4 ml-2 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                : <Pencil className="h-4 w-4 ml-2" />}
+              {saving ? (isRtl ? 'جارٍ الحفظ...' : 'Saving...') : (isRtl ? 'حفظ (تعديل)' : 'Save (Edit)')}
             </Button>
-            <Button type="button" onClick={askSubmitReport} disabled={!editingReportId}>
+            <Button type="button" onClick={askSubmitReport} disabled={!editingReportId || saving}>
               <Check className="h-4 w-4 ml-2" />
               {isRtl ? 'تسليم التقرير' : 'Submit Report'}
             </Button>
@@ -668,7 +687,7 @@ export default function DailyReportsPage() {
 
       {/* View Dialog */}
       <Dialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-3xl sm:max-h-[85vh] max-h-[100dvh] sm:top-[50%] sm:translate-y-[-50%] top-0 translate-y-0 overflow-y-auto p-4 sm:p-6">
           <DialogHeader>
             <DialogTitle>{isRtl ? 'تفاصيل التقرير' : 'Report Details'}</DialogTitle>
           </DialogHeader>
