@@ -13,24 +13,28 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
   var { id } = await params
 
-  var report = await db.dailyReport.findUnique({
-    where: { id },
-    include: {
-      project: true,
-      driveLine: true,
-      safety: true,
-      costs: true,
-      attachments: true,
-      createdBy: { select: { name: true, nameEn: true } },
-      approver: { select: { name: true, nameEn: true } },
-    },
-  })
+  var result = await safeDbOp(
+    () => db.dailyReport.findUnique({
+      where: { id },
+      include: {
+        project: true,
+        driveLine: true,
+        safety: true,
+        costs: true,
+        attachments: true,
+        createdBy: { select: { name: true, nameEn: true } },
+        approver: { select: { name: true, nameEn: true } },
+      },
+    }),
+    'جلب التقرير اليومي'
+  )
 
-  if (!report) {
+  if (!result.success) return result.response
+  if (!result.data) {
     return NextResponse.json({ error: 'Report not found' }, { status: 404 })
   }
 
-  return NextResponse.json({ report })
+  return NextResponse.json({ report: result.data })
 }
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -51,95 +55,119 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
   var { id } = await params
 
-  // Fetch the report first to verify ownership and status
-  var existingReport = await db.dailyReport.findUnique({
-    where: { id },
-    select: { createdById: true, status: true, projectId: true },
-  })
-
-  if (!existingReport) {
-    return NextResponse.json({ error: 'Report not found' }, { status: 404 })
-  }
-
-  // Only allow editing own reports (or admin/manager can edit any)
-  if (user.role !== 'top_management' && user.role !== 'project_manager') {
-    if (existingReport.createdById !== user.id) {
-      return NextResponse.json({ error: 'forbidden', message: 'لا يمكنك تعديل تقرير آخر موظف' }, { status: 403 })
-    }
-  }
-
-  // Only draft reports can be edited
-  if (existingReport.status !== 'draft') {
-    return NextResponse.json({ error: 'forbidden', message: 'لا يمكن تعديل تقرير تم تسليمه أو اعتماده' }, { status: 403 })
-  }
-
-  var body = await req.json()
-
   try {
+    // Fetch the report first to verify ownership and status
+    var existingResult = await safeDbOp(
+      () => db.dailyReport.findUnique({
+        where: { id },
+        select: { createdById: true, status: true, projectId: true },
+      }),
+      'البحث عن التقرير'
+    )
+
+    if (!existingResult.success) return existingResult.response
+    var existingReport = existingResult.data
+
+    if (!existingReport) {
+      return NextResponse.json({ error: 'Report not found' }, { status: 404 })
+    }
+
+    // Only allow editing own reports (or admin/manager can edit any)
+    if (user.role !== 'top_management' && user.role !== 'project_manager') {
+      if (existingReport.createdById !== user.id) {
+        return NextResponse.json({ error: 'forbidden', message: 'لا يمكنك تعديل تقرير آخر موظف' }, { status: 403 })
+      }
+    }
+
+    // Only draft reports can be edited
+    if (existingReport.status !== 'draft') {
+      return NextResponse.json({ error: 'forbidden', message: 'لا يمكن تعديل تقرير تم تسليمه أو اعتماده' }, { status: 403 })
+    }
+
+    var body = await req.json()
+
     var startReading = parseFloat(body.startReading) || 0
     var endReading = parseFloat(body.endReading) || 0
     var dailyMeters = Math.max(0, endReading - startReading)
 
-    var driveLine = body.driveLineId
-      ? await db.driveLine.findUnique({ where: { id: body.driveLineId } })
-      : null
+    // Look up drive line (safe)
+    var driveLineResult = body.driveLineId
+      ? await safeDbOp(
+          () => db.driveLine.findUnique({ where: { id: body.driveLineId } }),
+          'جلب خط الحفر'
+        )
+      : { success: false }
 
-    var totalLength = driveLine?.totalLength || 0
+    var driveLine = driveLineResult.success ? driveLineResult.data : null
+    var totalLength = driveLine ? driveLine.totalLength : 0
     var totalMeters = endReading
     var remainingMeters = Math.max(0, totalLength - totalMeters)
     var progressPercent = totalLength > 0 ? (totalMeters / totalLength) * 100 : 0
 
-    var project = await db.project.findUnique({
-      where: { id: existingReport.projectId },
-      select: { pricePerMeter: true },
-    })
+    // Look up project for price (safe)
+    var projectResult = await safeDbOp(
+      () => db.project.findUnique({
+        where: { id: existingReport.projectId },
+        select: { pricePerMeter: true },
+      }),
+      'جلب بيانات المشروع'
+    )
 
-    var dailyRevenue = dailyMeters * (project?.pricePerMeter || 0)
+    var dailyRevenue = dailyMeters * ((projectResult.success && projectResult.data) ? projectResult.data.pricePerMeter : 0)
 
-    var report = await db.dailyReport.update({
-      where: { id },
-      data: {
-        projectId: existingReport.projectId,
-        driveLineId: body.driveLineId || null,
-        reportDate: new Date(body.reportDate),
-        weather: body.weather,
-        workStartTime: body.workStartTime,
-        workEndTime: body.workEndTime,
-        operatingHours: parseFloat(body.operatingHours) || 0,
-        stoppageHours: parseFloat(body.stoppageHours) || 0,
-        stoppageReason: body.stoppageReason,
-        workersCount: parseInt(body.workersCount) || 0,
-        attendees: body.attendees,
-        startReading,
-        endReading,
-        dailyMeters,
-        totalMeters,
-        remainingMeters,
-        progressPercent,
-        soilExcavated: body.soilExcavated,
-        pipesInstalled: parseInt(body.pipesInstalled) || 0,
-        productionNotes: body.productionNotes,
-        problems: body.problems,
-        dailyRevenue,
-        status: body.status || 'draft',
-      },
-    })
+    // Update the report (safe)
+    var updateResult = await safeDbOp(
+      () => db.dailyReport.update({
+        where: { id },
+        data: {
+          projectId: existingReport.projectId,
+          driveLineId: body.driveLineId || null,
+          reportDate: body.reportDate ? new Date(body.reportDate) : existingReport.reportDate,
+          weather: body.weather || null,
+          workStartTime: body.workStartTime || null,
+          workEndTime: body.workEndTime || null,
+          operatingHours: parseFloat(body.operatingHours) || 0,
+          stoppageHours: parseFloat(body.stoppageHours) || 0,
+          stoppageReason: body.stoppageReason || null,
+          workersCount: parseInt(body.workersCount) || 0,
+          attendees: body.attendees || null,
+          startReading: startReading,
+          endReading: endReading,
+          dailyMeters: dailyMeters,
+          totalMeters: totalMeters,
+          remainingMeters: remainingMeters,
+          progressPercent: progressPercent,
+          soilExcavated: body.soilExcavated || null,
+          pipesInstalled: parseInt(body.pipesInstalled) || 0,
+          productionNotes: body.productionNotes || null,
+          problems: body.problems || null,
+          dailyRevenue: dailyRevenue,
+          status: body.status || 'draft',
+        },
+      }),
+      'تحديث التقرير اليومي'
+    )
 
-    await db.auditLog.create({
-      data: {
-        userId: user.id,
-        projectId: existingReport.projectId,
-        dailyReportId: id,
-        action: 'update',
-        entity: 'daily_report',
-        entityId: id,
-        details: 'Updated daily report',
-      },
-    })
+    if (!updateResult.success) return updateResult.response
 
-    return NextResponse.json({ report })
+    // Audit log (non-critical)
+    safeDbOp(
+      () => db.auditLog.create({
+        data: {
+          userId: user.id,
+          projectId: existingReport.projectId,
+          dailyReportId: id,
+          action: 'update',
+          entity: 'daily_report',
+          entityId: id,
+          details: 'Updated daily report',
+        },
+      }),
+      'سجل التدقيق'
+    ).catch(function() {})
+
+    return NextResponse.json({ report: updateResult.data })
   } catch (error) {
-    console.error('Update daily report error:', error)
     return handleDbError(error, 'تحديث التقرير اليومي')
   }
 }
@@ -164,10 +192,16 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
 
   try {
     // Get report details before deleting
-    var report = await db.dailyReport.findUnique({
-      where: { id },
-      select: { projectId: true, status: true, createdById: true },
-    })
+    var reportResult = await safeDbOp(
+      () => db.dailyReport.findUnique({
+        where: { id },
+        select: { projectId: true, status: true, createdById: true },
+      }),
+      'البحث عن التقرير'
+    )
+
+    if (!reportResult.success) return reportResult.response
+    var report = reportResult.data
 
     if (!report) {
       return NextResponse.json({ error: 'Report not found' }, { status: 404 })
@@ -185,7 +219,12 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
       }
     }
 
-    await db.dailyReport.delete({ where: { id } })
+    var deleteResult = await safeDbOp(
+      () => db.dailyReport.delete({ where: { id } }),
+      'حذف التقرير اليومي'
+    )
+
+    if (!deleteResult.success) return deleteResult.response
 
     // Audit log + delete notification (non-critical, fire-and-forget)
     Promise.all([
@@ -215,11 +254,10 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
         }),
         'إشعار الحذف'
       ),
-    ]).catch(() => {})
+    ]).catch(function() {})
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Delete report error:', error)
     return handleDbError(error, 'حذف التقرير اليومي')
   }
 }
