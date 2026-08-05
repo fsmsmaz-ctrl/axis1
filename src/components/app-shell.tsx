@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useAppStore } from '@/lib/store'
 import { hasPermission, MODULE_PERMISSIONS, MODULE_PERMISSION_LABELS, REPORT_PERMISSIONS, REPORT_LABELS, ROLE_PERMISSIONS, type SessionUser } from '@/lib/auth'
 import { clearStoredToken, authedFetch } from '@/lib/api-client'
@@ -167,8 +167,14 @@ export default function AppShell() {
   }) : []
   const firstAllowedPage = allowedItems.length > 0 ? allowedItems[0].id : 'projects'
 
+  const initialRedirectDone = useRef(false)
+
+  // Only redirect on initial mount
   useEffect(() => {
-    if (canViewDashboard && currentPage === 'projects') {
+    if (initialRedirectDone.current) return
+    initialRedirectDone.current = true
+
+    if (canViewDashboard) {
       setCurrentPage('dashboard')
       return
     }
