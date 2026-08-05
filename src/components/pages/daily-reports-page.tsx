@@ -219,7 +219,8 @@ export default function DailyReportsPage() {
         setExistingSafetyLoaded(false)
         fetchReports()
       } else {
-        toast.error(isRtl ? 'فشل حفظ التقرير' : 'Failed to save report')
+        var errData = await res.json().catch(function() { return {} })
+        toast.error(errData.message || (isRtl ? 'فشل حفظ التقرير' : 'Failed to save report'))
       }
     } catch {
       toast.error(isRtl ? 'حدث خطأ' : 'Error')
@@ -246,7 +247,8 @@ export default function DailyReportsPage() {
         setExistingSafetyLoaded(false)
         fetchReports()
       } else {
-        toast.error(isRtl ? 'فشل رفع التقرير' : 'Failed to submit report')
+        var errData = await res.json().catch(function() { return {} })
+        toast.error(errData.message || (isRtl ? 'فشل رفع التقرير' : 'Failed to submit report'))
       }
     } catch {
       toast.error(isRtl ? 'حدث خطأ' : 'Error')
