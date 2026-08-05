@@ -43,10 +43,15 @@ export default function FinishingsPage() {
 
   async function fetchFinishings() {
     setLoading(true)
-    const res = await authedFetch('/api/finishings')
-    const data = await res.json()
-    setFinishings(data.finishings || [])
-    setLoading(false)
+    try {
+      var res = await authedFetch('/api/finishings')
+      var data = await res.json()
+      setFinishings(data.finishings || [])
+    } catch {
+      setFinishings([])
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function fetchProjectList() {
@@ -135,7 +140,7 @@ export default function FinishingsPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {finishings.map((f) => {
-            const status = statusLabels[f.handoverStatus]
+            const status = statusLabels[f.handoverStatus] || { ar: f.handoverStatus || '-', en: f.handoverStatus || '-', color: 'secondary' }
             const checks = [
               f.siteCleaned, f.wasteRemoved, f.shaftClosed, f.siteRestored, f.lineHandover,
             ]
