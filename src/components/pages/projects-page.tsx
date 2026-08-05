@@ -71,10 +71,15 @@ export default function ProjectsPage() {
 
   async function fetchProjects() {
     setLoading(true)
-    const res = await authedFetch('/api/projects/list' + (statusFilter !== 'all' ? `?status=${statusFilter}` : ''))
-    const data = await res.json()
-    setProjects(data.projects || [])
-    setLoading(false)
+    try {
+      const res = await authedFetch('/api/projects/list' + (statusFilter !== 'all' ? '?status=' + statusFilter : ''))
+      const data = await res.json()
+      setProjects(data.projects || [])
+    } catch {
+      setProjects([])
+    } finally {
+      setLoading(false)
+    }
   }
 
   useEffect(() => {
@@ -106,7 +111,8 @@ export default function ProjectsPage() {
       contractNumber: p.contractNumber || '', workType: p.workType,
       pipeDiameter: p.pipeDiameter, totalLength: String(p.totalLength),
       pricePerMeter: String(p.pricePerMeter), soilType: p.soilType,
-      startDate: p.startDate.split('T')[0], expectedEnd: p.expectedEnd.split('T')[0],
+      startDate: p.startDate ? p.startDate.split('T')[0] : '',
+      expectedEnd: p.expectedEnd ? p.expectedEnd.split('T')[0] : '',
       status: p.status, notes: p.notes || '',
     })
     setDialogOpen(true)
@@ -158,11 +164,18 @@ export default function ProjectsPage() {
 
   async function handleDelete() {
     if (!deleteId) return
-    const res = await authedFetch(`/api/projects/${deleteId}`, { method: 'DELETE' })
-    if (res.ok) {
-      toast.success(isRtl ? 'تم الحذف' : 'Deleted')
-      setDeleteId(null)
-      fetchProjects()
+    try {
+      const res = await authedFetch('/api/projects/' + deleteId, { method: 'DELETE' })
+      if (res.ok) {
+        toast.success(isRtl ? 'تم الحذف' : 'Deleted')
+        setDeleteId(null)
+        fetchProjects()
+      } else {
+        var errData = await res.json().catch(function() { return {} })
+        toast.error(errData.message || (isRtl ? 'فشل الحذف' : 'Delete failed'))
+      }
+    } catch {
+      toast.error(isRtl ? 'حدث خطأ' : 'Error')
     }
   }
 
@@ -234,9 +247,9 @@ export default function ProjectsPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filtered.map((p) => {
-            const status = statusLabels[p.status]
-            const workType = workTypeLabels[p.workType]
-            const soilType = soilTypeLabels[p.soilType]
+            const status = statusLabels[p.status] || { ar: p.status || '-', en: p.status || '-', color: 'secondary' }
+            const workType = workTypeLabels[p.workType] || { ar: p.workType || '-', en: p.workType || '-' }
+            const soilType = soilTypeLabels[p.soilType] || { ar: p.soilType || '-', en: p.soilType || '-' }
             return (
               <Card key={p.id} className="hover:shadow-md transition">
                 <CardContent className="p-5">
@@ -277,7 +290,7 @@ export default function ProjectsPage() {
                   <div className="mt-4">
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-xs text-muted-foreground">{isRtl ? 'نسبة الإنجاز' : 'Progress'}</span>
-                      <span className="text-xs font-semibold">{p.progress.toFixed(1)}%</span>
+                      <span className="text-xs font-semibold">{(p.progress || 0).toFixed(1)}%</span>
                     </div>
                     <Progress value={p.progress} className="h-2" />
                   </div>
@@ -496,7 +509,7 @@ function ProjectDetails({ id }: { id: string | null }) {
                 <Badge variant="outline">{l.lineNumber}</Badge>
                 <span className="flex-1">{l.startPoint} ← {l.endPoint}</span>
                 <span className="text-muted-foreground">{l.completedLength}/{l.totalLength} م</span>
-                <span className="font-medium">{l.progress.toFixed(1)}%</span>
+                <span className="font-medium">{(l.progress || 0).toFixed(1)}%</span>
               </div>
             ))}
           </div>
