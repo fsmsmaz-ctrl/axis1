@@ -25,6 +25,7 @@ export async function GET(req: NextRequest) {
       include: {
         project: { select: { id: true, name: true, code: true } },
         responsible: { select: { id: true, name: true, nameEn: true } },
+        createdBy: { select: { id: true, name: true } },
       },
       orderBy: { createdAt: 'desc' },
       take: 200,
@@ -34,7 +35,6 @@ export async function GET(req: NextRequest) {
 
   if (!result.success) return result.response
 
-  // Stats
   var assets = result.data
   var ownedCount = assets.filter(function(a: any) { return a.ownership === 'owned' }).length
   var rentedCount = assets.filter(function(a: any) { return a.ownership === 'rented' }).length
@@ -54,7 +54,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
   }
 
-  // Rate limit write operations
   var rl = checkRateLimit(req, RateLimitPresets.write)
   if (rl.limited) {
     return NextResponse.json(
@@ -84,13 +83,16 @@ export async function POST(req: NextRequest) {
           responsibleId: body.responsibleId || null,
           status: String(body.status || 'available'),
           notes: body.notes ? String(body.notes) : null,
+          createdById: user.id,
+        },
+        include: {
+          createdBy: { select: { id: true, name: true } },
         },
       }),
       'إنشاء الأصل'
     )
     if (!createResult.success) return createResult.response
 
-    // Audit log + notification
     var ownershipLabels: Record<string, string> = {
       owned: 'ملك الشركة',
       rented: 'مستأجر',
