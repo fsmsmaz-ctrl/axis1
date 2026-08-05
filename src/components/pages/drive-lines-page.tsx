@@ -172,7 +172,7 @@ export default function DriveLinesPage() {
               <CardContent>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                   {group.lines.map((line) => {
-                    const status = statusLabels[line.status]
+                    const status = statusLabels[line.status] || { ar: line.status || '-', en: line.status || '-', color: 'secondary' }
                     return (
                       <div key={line.id} className="border rounded-lg p-4 space-y-3 hover:shadow-sm transition">
                         <div className="flex items-center justify-between">
@@ -208,7 +208,7 @@ export default function DriveLinesPage() {
                         <div>
                           <div className="flex items-center justify-between mb-1">
                             <span className="text-xs text-muted-foreground">{isRtl ? 'الإنجاز' : 'Progress'}</span>
-                            <span className="text-xs font-semibold">{line.progress.toFixed(1)}%</span>
+                            <span className="text-xs font-semibold">{(line.progress || 0).toFixed(1)}%</span>
                           </div>
                           <Progress value={line.progress} className="h-1.5" />
                         </div>
