@@ -28,6 +28,7 @@ interface DashboardData {
     totalRevenue: number
     totalCosts: number
     monthCosts: number
+    monthlyRentalCost: number
     netProfit: number
     stoppedEquipment: number
     presentWorkers: number
@@ -140,7 +141,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
   const stats = data.stats || {
     activeProjects: 0, totalProjects: 0, metersToday: 0, metersThisMonth: 0,
     revenueToday: 0, revenueThisMonth: 0, totalRevenue: 0, totalCosts: 0,
-    monthCosts: 0, netProfit: 0, stoppedEquipment: 0, presentWorkers: 0,
+    monthCosts: 0, monthlyRentalCost: 0, netProfit: 0, stoppedEquipment: 0, presentWorkers: 0,
     unreadNotifications: 0,
   }
   const projects = Array.isArray(data.projects) ? data.projects : []
@@ -249,6 +250,14 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
           value={fmtCurrency(stats.monthCosts)}
           color="text-purple-600"
         />
+        {stats.monthlyRentalCost > 0 && (
+          <MiniStat
+            icon={Wallet}
+            label={isRtl ? 'إيجارات شهرية' : 'Monthly Rentals'}
+            value={fmtCurrency(stats.monthlyRentalCost)}
+            color="text-teal-600"
+          />
+        )}
         <MiniStat
           icon={Activity}
           label={isRtl ? 'أمتار الشهر' : 'Month Meters'}
