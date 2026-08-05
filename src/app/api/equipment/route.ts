@@ -161,7 +161,7 @@ export async function DELETE(req: NextRequest) {
   try {
     // Delete related maintenance records first
     await safeDbOp(
-      () => db.maintenance.deleteMany({ where: { equipmentId: id } }),
+      () => db.equipmentMaintenance.deleteMany({ where: { equipmentId: id } }),
       'حذف سجلات الصيانة'
     )
 
