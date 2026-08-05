@@ -4,6 +4,32 @@ import { db } from '@/lib/db'
 import { safeDbOp, buildAuditDetails, handleDbError } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  var user = await getAuthUser(req)
+  if (!user) {
+    return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  }
+
+  var { id } = await params
+  var result = await safeDbOp(
+    () => db.equipment.findUnique({
+      where: { id },
+      include: {
+        project: { select: { id: true, name: true, code: true } },
+        maintenance: { orderBy: { date: 'desc' }, take: 10 },
+        createdBy: { select: { id: true, name: true } },
+      },
+    }),
+    'جلب بيانات المعدة'
+  )
+
+  if (!result.success) return result.response
+  if (!result.data) {
+    return NextResponse.json({ error: 'not_found' }, { status: 404 })
+  }
+  return NextResponse.json({ equipment: result.data })
+}
+
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   var user = await getAuthUser(req)
 
@@ -22,6 +48,16 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
   var { id } = await params
   var body = await req.json()
+
+  // Check ownership: only creator or system admin can edit
+  var ADMIN_EMAIL = 'admin@axis.om'
+  var isAdmin = user.email.toLowerCase().trim() === ADMIN_EMAIL
+  if (!isAdmin) {
+    var ownerCheck = await db.equipment.findUnique({ where: { id }, select: { createdById: true } })
+    if (!ownerCheck || ownerCheck.createdById !== user.id) {
+      return NextResponse.json({ error: 'forbidden', message: 'يمكنك فقط تعديل المعدات التي أنشأتها' }, { status: 403 })
+    }
+  }
 
   try {
     // Fetch old data before update
@@ -92,9 +128,17 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  // Only managers and top management can delete equipment
-  if (user.role !== 'top_management' && user.role !== 'project_manager') {
-    return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
+  // Check ownership: only creator or system admin can delete
+  var ADMIN_EMAIL = 'admin@axis.om'
+  var isAdmin = user.email.toLowerCase().trim() === ADMIN_EMAIL
+
+  var { id } = await params
+
+  if (!isAdmin) {
+    var ownerCheck = await db.equipment.findUnique({ where: { id }, select: { createdById: true } })
+    if (!ownerCheck || ownerCheck.createdById !== user.id) {
+      return NextResponse.json({ error: 'forbidden', message: 'يمكنك فقط حذف المعدات التي أنشأتها' }, { status: 403 })
+    }
   }
 
   // Rate limit write operations
@@ -106,11 +150,9 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     )
   }
 
-  var { id } = await params
-
   try {
     var eqInfo = await safeDbOp(
-      () => db.equipment.findUnique({ where: { id }, select: { projectId: true, name: true, number: true } }),
+      () => db.equipment.findUnique({ where: { id }, select: { projectId: true, name: true, number: true, createdById: true } }),
       'جلب بيانات المعدة'
     )
 
