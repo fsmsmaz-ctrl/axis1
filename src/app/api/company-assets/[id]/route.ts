@@ -14,7 +14,6 @@ export async function PUT(
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
   }
 
-  // Rate limit write operations
   var rl = checkRateLimit(req, RateLimitPresets.write)
   if (rl.limited) {
     return NextResponse.json(
@@ -23,11 +22,24 @@ export async function PUT(
     )
   }
 
+  var { id } = await params
+
   try {
-    var { id } = await params
     var body = await req.json()
 
-    // Fetch old data before update
+    // Check ownership: only creator or system admin can edit
+    var ADMIN_EMAIL = 'admin@axis.om'
+    var isAdmin = user.email.toLowerCase().trim() === ADMIN_EMAIL
+    if (!isAdmin) {
+      var ownerCheck = await safeDbOp(
+        () => db.companyAsset.findUnique({ where: { id }, select: { createdById: true } }),
+        'فحص ملكية الأصل'
+      )
+      if (!ownerCheck.success || !ownerCheck.data || ownerCheck.data.createdById !== user.id) {
+        return NextResponse.json({ error: 'forbidden', message: 'يمكنك فقط تعديل الأصول التي أنشأتها' }, { status: 403 })
+      }
+    }
+
     var oldAsset = await safeDbOp(
       () => db.companyAsset.findUnique({ where: { id } }),
       'جلب الأصل القديم'
@@ -55,7 +67,6 @@ export async function PUT(
     )
     if (!updateResult.success) return updateResult.response
 
-    // Build detailed changes diff
     var details = oldAsset.success && oldAsset.data
       ? buildAuditDetails(
           {
@@ -94,7 +105,6 @@ export async function DELETE(
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
   }
 
-  // Rate limit write operations
   var rl = checkRateLimit(req, RateLimitPresets.write)
   if (rl.limited) {
     return NextResponse.json(
@@ -103,8 +113,21 @@ export async function DELETE(
     )
   }
 
+  var { id } = await params
+
   try {
-    var { id } = await params
+    // Check ownership: only creator or system admin can delete
+    var ADMIN_EMAIL = 'admin@axis.om'
+    var isAdmin = user.email.toLowerCase().trim() === ADMIN_EMAIL
+    if (!isAdmin) {
+      var ownerCheck = await safeDbOp(
+        () => db.companyAsset.findUnique({ where: { id }, select: { createdById: true } }),
+        'فحص ملكية الأصل'
+      )
+      if (!ownerCheck.success || !ownerCheck.data || ownerCheck.data.createdById !== user.id) {
+        return NextResponse.json({ error: 'forbidden', message: 'يمكنك فقط حذف الأصول التي أنشأتها' }, { status: 403 })
+      }
+    }
 
     var assetInfo = await safeDbOp(
       () => db.companyAsset.findUnique({ where: { id }, select: { projectId: true, name: true, ownership: true } }),
