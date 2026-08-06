@@ -49,7 +49,63 @@ export async function GET(req: NextRequest) {
     : []
   var total = costs.reduce(function(s: number, c: any) { return s + c.amount }, 0)
 
-  return NextResponse.json({ costs, byCategory, total })
+  // Active rental assets from CompanyAsset (this month)
+  var today = new Date()
+  today.setHours(0, 0, 0, 0)
+  var monthStart = new Date(today.getFullYear(), today.getMonth(), 1)
+  var monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59, 999)
+
+  var rentalResult = await safeDbOp(
+    () => db.companyAsset.findMany({
+      where: {
+        ownership: 'rented',
+        rentalCost: { gt: 0 },
+        status: { notIn: ['returned', 'damaged'] },
+        OR: [
+          { rentalStart: null, rentalEnd: null },
+          { rentalStart: null, rentalEnd: { gte: monthStart } },
+          { rentalStart: { lte: monthEnd }, rentalEnd: null },
+          { rentalStart: { lte: monthEnd }, rentalEnd: { gte: monthStart } },
+        ],
+        ...(projectId ? { projectId: projectId } : {}),
+      },
+      select: { id: true, name: true, supplier: true, rentalCost: true, project: { select: { name: true } } },
+    }),
+    'جلب الإيجارات'
+  )
+
+  var rentalAssets = rentalResult.success ? rentalResult.data : []
+  var totalRentalCost = rentalAssets.reduce(function(s: number, a: any) { return s + (a.rentalCost || 0) }, 0)
+
+  // Add rental to byCategory
+  var allByCategory = byCategory.slice()
+  if (totalRentalCost > 0) {
+    var existingRental = allByCategory.find(function(c: any) { return c.category === 'rental' })
+    if (existingRental) {
+      existingRental.amount += totalRentalCost
+    } else {
+      allByCategory.push({ category: 'rental', amount: totalRentalCost })
+    }
+  }
+
+  var grandTotal = total + totalRentalCost
+
+  return NextResponse.json({
+    costs,
+    byCategory: allByCategory,
+    total,
+    totalRentalCost,
+    grandTotal,
+    rentalAssets: rentalAssets.map(function(a: any) {
+      return {
+        id: a.id,
+        name: a.name,
+        supplier: a.supplier || '-',
+        rentalCost: a.rentalCost || 0,
+        projectName: a.project ? a.project.name : '-',
+      }
+    }),
+  })
 }
 
 export async function POST(req: NextRequest) {
