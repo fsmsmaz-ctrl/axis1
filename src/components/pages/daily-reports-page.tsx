@@ -540,9 +540,7 @@ export default function DailyReportsPage() {
               )}
 
               {/* Report Tab / Edit mode */}
-              <div>
-                <div>
-                  <TabsContent value="report" className={'space-y-4 ' + (editingReportId ? 'mt-0' : 'mt-4')}>
+              <TabsContent value="report" className={'space-y-4 ' + (editingReportId ? 'mt-0' : 'mt-4')}>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="space-y-1.5">
                         <Label>{isRtl ? 'المشروع' : 'Project'} *</Label>
@@ -561,7 +559,7 @@ export default function DailyReportsPage() {
                           <SelectTrigger><SelectValue placeholder={isRtl ? 'اختر' : 'Select'} /></SelectTrigger>
                           <SelectContent>
                             {driveLines.map(function(l) {
-                              return <SelectItem key={l.id} value={l.id}>{l.lineNumber + ' - ' + l.startPoint + ' \u2192 ' + l.endPoint}</SelectItem>
+                              return <SelectItem key={l.id} value={l.id}>{(l.lineNumber || '-') + ' - ' + (l.startPoint || '-') + ' \u2192 ' + (l.endPoint || '-')}</SelectItem>
                             })}
                           </SelectContent>
                         </Select>
@@ -639,9 +637,7 @@ export default function DailyReportsPage() {
                       <Label>{isRtl ? 'المشاكل' : 'Problems'}</Label>
                       <Textarea value={formData.problems} onChange={function(e) { setFormData({ ...formData, problems: e.target.value }) }} rows={2} />
                     </div>
-                  </TabsContent>
-                </div>
-              </div>
+              </TabsContent>
             </Tabs>
           </div>
 
