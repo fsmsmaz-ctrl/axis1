@@ -225,8 +225,8 @@ export default function ReportsPage() {
 
       {/* Report preview */}
       {reportData && (
-        <Card className="no-print">
-          <CardHeader>
+        <Card>
+          <CardHeader className="no-print">
             <CardTitle className="flex items-center justify-between">
               <span>{isRtl ? 'معاينة التقرير' : 'Report Preview'}</span>
               <Button variant="ghost" size="sm" onClick={function() { window.print() }}>
