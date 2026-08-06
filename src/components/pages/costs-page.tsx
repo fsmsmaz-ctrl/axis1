@@ -50,6 +50,9 @@ export default function CostsPage() {
   const [costs, setCosts] = useState<any[]>([])
   const [byCategory, setByCategory] = useState<any[]>([])
   const [total, setTotal] = useState(0)
+  const [totalRentalCost, setTotalRentalCost] = useState(0)
+  const [grandTotal, setGrandTotal] = useState(0)
+  const [rentalAssets, setRentalAssets] = useState<any[]>([])
   const [projects, setProjects] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedProject, setSelectedProject] = useState<string>('all')
@@ -78,6 +81,9 @@ export default function CostsPage() {
       setCosts(data.costs || [])
       setByCategory(data.byCategory || [])
       setTotal(data.total || 0)
+      setTotalRentalCost(data.totalRentalCost || 0)
+      setGrandTotal(data.grandTotal || 0)
+      setRentalAssets(data.rentalAssets || [])
 
       var repParams = new URLSearchParams()
       if (selectedProject !== 'all') repParams.set('projectId', selectedProject)
@@ -155,7 +161,7 @@ export default function CostsPage() {
     }
   }
 
-  var netProfit = revenue - total
+  var netProfit = revenue - grandTotal
   var profitMargin = revenue > 0 ? (netProfit / revenue) * 100 : 0
   var totalMeters = approvedReports.reduce(function(s, r) { return s + (r.dailyMeters || 0) }, 0)
   var costPerMeter = totalMeters > 0 ? total / totalMeters : 0
@@ -223,12 +229,17 @@ export default function CostsPage() {
           <CardContent className="p-4">
             <div className="flex items-center gap-2 mb-1">
               <TrendingDown className="h-4 w-4 text-red-600" />
-              <span className="text-xs text-muted-foreground">{isRtl ? 'التكاليف' : 'Costs'}</span>
+              <span className="text-xs text-muted-foreground">{isRtl ? 'التكاليف الكلية' : 'Total Costs'}</span>
             </div>
             <p className="text-xl font-bold text-red-700">
-              {total.toLocaleString(isRtl ? 'ar-EG' : 'en-US', { maximumFractionDigits: 0 })}
+              {grandTotal.toLocaleString(isRtl ? 'ar-EG' : 'en-US', { maximumFractionDigits: 0 })}
               <span className="text-sm font-normal mr-1">{isRtl ? 'ر.ع' : 'OMR'}</span>
             </p>
+            {totalRentalCost > 0 && (
+              <p className="text-xs text-teal-600 mt-1">
+                {isRtl ? 'شامل ' + totalRentalCost.toLocaleString(isRtl ? 'ar-EG' : 'en-US', { maximumFractionDigits: 0 }) + ' ر.ع إيجارات شهرية' : 'incl. ' + totalRentalCost.toLocaleString('en-US', { maximumFractionDigits: 0 }) + ' OMR monthly rentals'}
+              </p>
+            )}
           </CardContent>
         </Card>
         <Card className={netProfit >= 0 ? 'bg-gradient-to-br from-blue-50 to-blue-50/30 border-blue-200' : 'bg-gradient-to-br from-red-50 to-red-50/30 border-red-200'}>
@@ -348,6 +359,37 @@ export default function CostsPage() {
           </CardContent>
         )}
       </Card>
+
+      {/* Active Rental Assets Details */}
+      {rentalAssets.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Wallet className="h-5 w-5 text-teal-600" />
+              {isRtl ? 'تفاصيل الإيجارات الشهرية' : 'Monthly Rental Details'}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {rentalAssets.map(function(ra, idx) {
+                return (
+                  <div key={ra.id || idx} className="flex items-center justify-between p-2.5 rounded-lg bg-teal-50/50 hover:bg-teal-50 transition">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm truncate">{ra.name}</p>
+                      <p className="text-xs text-muted-foreground">{ra.supplier} {ra.projectName !== '-' ? '• ' + ra.projectName : ''}</p>
+                    </div>
+                    <span className="font-semibold text-sm text-teal-700 shrink-0 mr-3">{ra.rentalCost.toLocaleString(isRtl ? 'ar-EG' : 'en-US', { maximumFractionDigits: 0 })} {isRtl ? 'ر.ع/شهر' : 'OMR/mo'}</span>
+                  </div>
+                )
+              })}
+              <div className="flex items-center justify-between pt-2 mt-2 border-t font-semibold">
+                <span className="text-sm">{isRtl ? 'الإجمالي' : 'Total'}</span>
+                <span className="text-teal-700">{totalRentalCost.toLocaleString(isRtl ? 'ar-EG' : 'en-US', { maximumFractionDigits: 0 })} {isRtl ? 'ر.ع/شهر' : 'OMR/mo'}</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
