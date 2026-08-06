@@ -163,6 +163,17 @@ export async function GET(req: NextRequest) {
     include: { project: { select: { name: true } } },
   })
 
+  // All-time rental costs from CompanyAsset (active rentals regardless of month)
+  var allTimeRentals = await db.companyAsset.findMany({
+    where: {
+      ownership: 'rented',
+      rentalCost: { gt: 0 },
+      status: { notIn: ['returned', 'damaged'] },
+    },
+    select: { rentalCost: true },
+  })
+  var allTimeRentalTotal = allTimeRentals.reduce(function(sum: number, a: any) { return sum + (a.rentalCost || 0) }, 0)
+
   // Monthly rental costs from CompanyAsset (rented items active this month)
   var monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59, 999)
   var activeRentals = await db.companyAsset.findMany({
@@ -202,8 +213,8 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Calculate net profit (include rental costs in total)
-  var totalWithRentals = (totalCosts._sum.amount || 0) + monthlyRentalCost
+  // Calculate net profit (include all-time rental costs in total)
+  var totalWithRentals = (totalCosts._sum.amount || 0) + allTimeRentalTotal
   var netProfit = (totalRevenueResult._sum.dailyRevenue || 0) - totalWithRentals
 
   return NextResponse.json({
@@ -215,7 +226,7 @@ export async function GET(req: NextRequest) {
       revenueToday,
       revenueThisMonth,
       totalRevenue: totalRevenueResult._sum.dailyRevenue || 0,
-      totalCosts: totalCosts._sum.amount || 0,
+      totalCosts: (totalCosts._sum.amount || 0) + allTimeRentalTotal,
       monthCosts: (monthCosts._sum.amount || 0) + monthlyRentalCost,
       monthlyRentalCost: monthlyRentalCost,
       netProfit: netProfit,
