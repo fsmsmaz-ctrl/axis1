@@ -170,13 +170,14 @@ export async function GET(req: NextRequest) {
       ownership: 'rented',
       rentalCost: { gt: 0 },
       status: { notIn: ['returned', 'damaged'] },
-      rentalStart: { lte: monthEnd },
       OR: [
-        { rentalEnd: null },
-        { rentalEnd: { gte: monthStart } },
+        { rentalStart: null, rentalEnd: null },
+        { rentalStart: null, rentalEnd: { gte: monthStart } },
+        { rentalStart: { lte: monthEnd }, rentalEnd: null },
+        { rentalStart: { lte: monthEnd }, rentalEnd: { gte: monthStart } },
       ],
     },
-    select: { rentalCost: true },
+    select: { rentalCost: true, name: true, supplier: true, project: { select: { name: true } } },
   })
   var monthlyRentalCost = activeRentals.reduce(function(sum: number, a: any) { return sum + (a.rentalCost || 0) }, 0)
 
@@ -228,6 +229,14 @@ export async function GET(req: NextRequest) {
     notifications,
     equipment,
     costsByCategory,
+    rentalAssets: activeRentals.map(function(a: any) {
+      return {
+        name: a.name,
+        supplier: a.supplier || '-',
+        rentalCost: a.rentalCost || 0,
+        projectName: a.project ? a.project.name : '-',
+      }
+    }),
   })
   } catch (error: any) {
     console.error('[Dashboard API] Error:', error)
