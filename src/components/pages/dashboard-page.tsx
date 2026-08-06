@@ -40,6 +40,7 @@ interface DashboardData {
   notifications: any[]
   equipment: any[]
   costsByCategory: Array<{ category: string; amount: number }>
+  rentalAssets: Array<{ name: string; supplier: string; rentalCost: number; projectName: string }>
 }
 
 const categoryColors: Record<string, string> = {
@@ -150,6 +151,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
   const notifications = Array.isArray(data.notifications) ? data.notifications : []
   const equipment = Array.isArray(data.equipment) ? data.equipment : []
   const costsByCategory = Array.isArray(data.costsByCategory) ? data.costsByCategory : []
+  const rentalAssets = Array.isArray(data.rentalAssets) ? data.rentalAssets : []
 
   const fmt = (n: number) => (n || 0).toLocaleString(isRtl ? 'ar-EG' : 'en-US', { maximumFractionDigits: 1 })
   const fmtCurrency = (n: number) => `${fmt(n || 0)} ${isRtl ? 'ر.ع' : 'OMR'}`
@@ -265,6 +267,36 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
           color="text-cyan-600"
         />
       </div>
+
+      {/* Rental cost details */}
+      {rentalAssets.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Wallet className="h-5 w-5 text-primary" />
+              {isRtl ? 'تفاصيل الإيجارات الشهرية' : 'Monthly Rental Details'}
+            </CardTitle>
+            <CardDescription>{isRtl ? 'الأصول المستأجرة النشطة هذا الشهر' : 'Active rented assets this month'}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {rentalAssets.map((ra, idx) => (
+                <div key={idx} className="flex items-center justify-between p-2.5 rounded-lg bg-muted/30 hover:bg-muted/50 transition">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm truncate">{ra.name}</p>
+                    <p className="text-xs text-muted-foreground">{ra.supplier} {ra.projectName !== '-' ? '• ' + ra.projectName : ''}</p>
+                  </div>
+                  <span className="font-semibold text-sm text-teal-700 shrink-0 mr-3">{fmtCurrency(ra.rentalCost)}</span>
+                </div>
+              ))}
+              <div className="flex items-center justify-between pt-2 mt-2 border-t font-semibold">
+                <span className="text-sm">{isRtl ? 'الإجمالي' : 'Total'}</span>
+                <span className="text-teal-700">{fmtCurrency(stats.monthlyRentalCost)}</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Charts row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
