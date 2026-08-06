@@ -149,5 +149,37 @@
 /* Print styles for reports */
 @media print {
   .no-print { display: none !important; }
-  body { background: white !important; }
+  body { background: white !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+  /* Hide sidebar, header, mobile overlay */
+  aside { display: none !important; }
+  header { display: none !important; }
+  .fixed.inset-0 { display: none !important; }
+
+  /* Remove main content padding and margin - full width for print */
+  main { padding: 0 !important; margin: 0 !important; max-width: 100% !important; }
+  .lg\:pl-72, .lg\:pr-72 { padding-left: 0 !important; padding-right: 0 !important; }
+  .min-h-screen { min-height: auto !important; }
+  .bg-muted\/30 { background: white !important; }
+
+  /* Card styles */
+  .border { border-color: #e5e7eb !important; }
+  .rounded-lg { border-radius: 4px !important; }
+  .shadow-sm, .shadow { box-shadow: none !important; }
+
+  /* Table styles */
+  table { page-break-inside: auto !important; }
+  tr { page-break-inside: avoid !important; }
+  thead { display: table-header-group !important; }
+  tfoot { display: table-footer-group !important; }
+
+  /* Ensure text is visible */
+  .text-muted-foreground { color: #374151 !important; }
+
+  /* Page breaks */
+  .space-y-4 > * { page-break-inside: avoid !important; }
+
+  /* Hide interactive elements */
+  button { display: none !important; }
+  .overflow-y-auto, .overflow-x-auto { overflow: visible !important; max-height: none !important; }
 }
