@@ -103,7 +103,9 @@ export default function ReportsPage() {
           data: {
             costs: costsData.costs || [],
             byCategory: costsData.byCategory || [],
-            totalCosts: costsData.total || 0,
+            totalCosts: costsData.grandTotal || costsData.total || 0,
+            totalRentalCost: costsData.totalRentalCost || 0,
+            rentalAssets: costsData.rentalAssets || [],
             reports: reportsData.reports || [],
             stats: dashData.stats || {},
           },
@@ -325,10 +327,16 @@ function ReportPreview({ data }: { data: any }) {
             <div className="p-3 rounded-lg border bg-red-50/50">
               <p className="text-xs text-muted-foreground">{isRtl ? 'إجمالي التكاليف' : 'Total Costs'}</p>
               <p className="font-bold text-lg text-red-700">{fmt(data.data.totalCosts)} ر.ع</p>
+              {data.data.totalRentalCost > 0 && (
+                <p className="text-xs text-teal-600 mt-1">{isRtl ? 'شامل ' + fmt(data.data.totalRentalCost) + ' ر.ع إيجارات' : 'incl. ' + fmt(data.data.totalRentalCost) + ' OMR rentals'}</p>
+              )}
             </div>
             <div className="p-3 rounded-lg border">
               <p className="text-xs text-muted-foreground">{isRtl ? 'عدد المصروفات' : 'Expenses Count'}</p>
               <p className="font-bold text-lg">{(data.data.costs || []).length}</p>
+              {data.data.totalRentalCost > 0 && (
+                <p className="text-xs text-teal-600 mt-1">+{(data.data.rentalAssets || []).length} {isRtl ? 'أصل مستأجر' : 'rented assets'}</p>
+              )}
             </div>
           </div>
           <h3 className="font-semibold text-sm">{isRtl ? 'التكاليف حسب الفئة' : 'Costs by Category'}</h3>
@@ -375,6 +383,41 @@ function ReportPreview({ data }: { data: any }) {
               </tbody>
             </table>
           </div>
+          {(data.data.rentalAssets || []).length > 0 && (
+            <div>
+              <h3 className="font-semibold text-sm">{isRtl ? 'تفاصيل الأصول المستأجرة (شهري)' : 'Rented Assets Details (Monthly)'}</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b bg-teal-50">
+                      <th className="p-2 text-right">{isRtl ? 'الأصل' : 'Asset'}</th>
+                      <th className="p-2 text-right">{isRtl ? 'المورد' : 'Supplier'}</th>
+                      <th className="p-2 text-right">{isRtl ? 'المشروع' : 'Project'}</th>
+                      <th className="p-2 text-right">{isRtl ? 'الإيجار/شهر' : 'Rent/Month'}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(data.data.rentalAssets || []).map(function(ra: any, idx: number) {
+                      return (
+                        <tr key={idx} className="border-b">
+                          <td className="p-2">{ra.name}</td>
+                          <td className="p-2">{ra.supplier}</td>
+                          <td className="p-2">{ra.projectName}</td>
+                          <td className="p-2 text-teal-700 font-semibold">{ra.rentalCost.toLocaleString()} ر.ع</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t-2 font-bold">
+                      <td className="p-2" colSpan={3}>{isRtl ? 'الإجمالي' : 'Total'}</td>
+                      <td className="p-2 text-teal-700">{fmt(data.data.totalRentalCost)} ر.ع/شهر</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       ) : data.type === 'rpt_profit' ? (
         <div className="space-y-4">
@@ -399,6 +442,14 @@ function ReportPreview({ data }: { data: any }) {
               </p>
             </div>
           </div>
+
+          {/* Rental costs breakdown in profit report */}
+          {(data.data.stats.monthlyRentalCost || 0) > 0 && (
+            <div className="p-3 rounded-lg border bg-teal-50/50">
+              <p className="text-xs text-muted-foreground">{isRtl ? 'الإيجارات الشهرية' : 'Monthly Rentals'}</p>
+              <p className="font-bold text-lg text-teal-700">{fmt(data.data.stats.monthlyRentalCost)} ر.ع/شهر</p>
+            </div>
+          )}
 
           {/* Revenue breakdown */}
           <h3 className="font-semibold text-sm">{isRtl ? 'تفاصيل الإيرادات (التقارير المعتمدة)' : 'Revenue Details (Approved Reports)'}</h3>
