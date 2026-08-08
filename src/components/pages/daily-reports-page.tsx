@@ -227,8 +227,10 @@ export default function DailyReportsPage() {
         setDialogOpen(false)
         setEditingReportId(null)
         setExistingSafetyLoaded(false)
-        toast.success(isRtl ? 'تم حفظ التقرير' : 'Report saved')
-        setTimeout(function() { fetchReports() }, 300)
+        setTimeout(function() {
+          toast.success(isRtl ? 'تم حفظ التقرير' : 'Report saved')
+        }, 100)
+        setTimeout(function() { fetchReports() }, 500)
       } else {
         var errData = await res.json().catch(function() { return {} })
         toast.error(errData.message || (isRtl ? 'فشل حفظ التقرير' : 'Failed to save report'))
@@ -259,8 +261,10 @@ export default function DailyReportsPage() {
         setDialogOpen(false)
         setEditingReportId(null)
         setExistingSafetyLoaded(false)
-        toast.success(isRtl ? 'تم رفع التقرير بنجاح' : 'Report submitted successfully')
-        setTimeout(function() { fetchReports() }, 300)
+        setTimeout(function() {
+          toast.success(isRtl ? 'تم رفع التقرير بنجاح' : 'Report submitted successfully')
+        }, 100)
+        setTimeout(function() { fetchReports() }, 500)
       } else {
         var errData = await res.json().catch(function() { return {} })
         toast.error(errData.message || (isRtl ? 'فشل رفع التقرير' : 'Failed to submit report'))
@@ -280,7 +284,7 @@ export default function DailyReportsPage() {
     })
     if (res.ok) {
       toast.success(isRtl ? 'تم الاعتماد' : 'Approved')
-      setTimeout(function() { fetchReports() }, 300)
+      setTimeout(function() { fetchReports() }, 500)
     }
   }
 
@@ -407,7 +411,7 @@ export default function DailyReportsPage() {
         setDialogOpen(open)
         if (!open) { setEditingReportId(null); setExistingSafetyLoaded(false) }
       }}>
-        <DialogContent className="max-w-3xl sm:max-h-[85vh] max-h-[88vh] sm:top-[50%] sm:translate-y-[-50%] top-[2vh] translate-y-0 overflow-y-auto p-4 sm:p-6 data-[state=closed]:animate-none">
+        <DialogContent className="max-w-3xl sm:max-h-[85vh] max-h-[88vh] sm:top-[50%] sm:translate-y-[-50%] top-[2vh] translate-y-0 overflow-y-auto p-4 sm:p-6">
           <DialogHeader>
             <DialogTitle>
               {editingReportId
@@ -664,7 +668,7 @@ export default function DailyReportsPage() {
 
       {/* View Dialog */}
       <Dialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-        <DialogContent className="max-w-3xl sm:max-h-[85vh] max-h-[88vh] sm:top-[50%] sm:translate-y-[-50%] top-[2vh] translate-y-0 overflow-y-auto p-4 sm:p-6 data-[state=closed]:animate-none">
+        <DialogContent className="max-w-3xl sm:max-h-[85vh] max-h-[88vh] sm:top-[50%] sm:translate-y-[-50%] top-[2vh] translate-y-0 overflow-y-auto p-4 sm:p-6">
           <DialogHeader>
             <DialogTitle>{isRtl ? 'تفاصيل التقرير' : 'Report Details'}</DialogTitle>
           </DialogHeader>
