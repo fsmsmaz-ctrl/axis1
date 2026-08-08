@@ -72,16 +72,20 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: 'Report not found' }, { status: 404 })
     }
 
-    // Only allow editing own reports (or admin/manager can edit any)
-    if (user.role !== 'top_management' && user.role !== 'project_manager') {
-      if (existingReport.createdById !== user.id) {
+    // Permission: top_management, project_manager, site_engineer can edit any draft/submitted report
+    // Any authenticated user can edit draft reports (for safety → production handoff)
+    var canEditAny = user.role === 'top_management' || user.role === 'project_manager' || user.role === 'site_engineer'
+    if (!canEditAny && existingReport.createdById !== user.id) {
+      if (existingReport.status !== 'draft') {
         return NextResponse.json({ error: 'forbidden', message: 'لا يمكنك تعديل تقرير آخر موظف' }, { status: 403 })
       }
     }
 
-    // Only draft reports can be edited
-    if (existingReport.status !== 'draft') {
-      return NextResponse.json({ error: 'forbidden', message: 'لا يمكن تعديل تقرير تم تسليمه أو اعتماده' }, { status: 403 })
+    // Only draft and submitted reports can be edited (not approved)
+    if (existingReport.status === 'approved' || existingReport.status === 'rejected') {
+      if (user.role !== 'top_management') {
+        return NextResponse.json({ error: 'forbidden', message: 'لا يمكن تعديل تقرير تم اعتماده أو رفضه' }, { status: 403 })
+      }
     }
 
     var body = await req.json()
