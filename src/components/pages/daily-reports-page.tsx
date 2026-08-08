@@ -295,6 +295,7 @@ export default function DailyReportsPage() {
   }
 
   var canApprove = user?.role === 'project_manager' || user?.role === 'top_management'
+  var canEditOthers = user?.role === 'top_management' || user?.role === 'project_manager' || user?.role === 'site_engineer'
 
   // Check if a report came from safety section (has safety but minimal production data)
   function isFromSafetySection(r: any) {
@@ -379,7 +380,7 @@ export default function DailyReportsPage() {
                       )}
                     </div>
                     <div className="flex gap-1">
-                      {r.status === 'draft' && (
+                      {(r.status === 'draft' || (r.status === 'submitted' && (canEditOthers || r.createdById === user?.id))) && (
                         <Button variant="ghost" size="sm" onClick={function() { openEditReport(r) }}>
                           <Pencil className="h-4 w-4" />
                         </Button>
@@ -555,14 +556,16 @@ export default function DailyReportsPage() {
                       </div>
                       <div className="space-y-1.5">
                         <Label>{isRtl ? 'خط الحفر' : 'Drive Line'}</Label>
-                        <Select value={formData.driveLineId} onValueChange={function(v) { setFormData({ ...formData, driveLineId: v }) }}>
-                          <SelectTrigger><SelectValue placeholder={isRtl ? 'اختر' : 'Select'} /></SelectTrigger>
-                          <SelectContent>
-                            {driveLines.map(function(l) {
-                              return <SelectItem key={l.id} value={l.id}>{(l.lineNumber || '-') + ' - ' + (l.startPoint || '-') + ' \u2192 ' + (l.endPoint || '-')}</SelectItem>
-                            })}
-                          </SelectContent>
-                        </Select>
+                        <select
+                          value={formData.driveLineId}
+                          onChange={function(e) { setFormData({ ...formData, driveLineId: e.target.value }) }}
+                          className={"w-full h-9 rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:border-ring transition-[color,box-shadow] " + (isRtl ? 'dir-rtl' : '')}
+                        >
+                          <option value="">{isRtl ? 'اختر' : 'Select'}</option>
+                          {driveLines.map(function(l) {
+                            return <option key={l.id} value={l.id}>{(l.lineNumber || '-') + ' - ' + (l.startPoint || '-') + ' → ' + (l.endPoint || '-')}</option>
+                          })}
+                        </select>
                       </div>
                       <div className="space-y-1.5">
                         <Label>{isRtl ? 'التاريخ' : 'Date'} *</Label>
