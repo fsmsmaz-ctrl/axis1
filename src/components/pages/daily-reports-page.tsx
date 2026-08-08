@@ -407,7 +407,7 @@ export default function DailyReportsPage() {
         setDialogOpen(open)
         if (!open) { setEditingReportId(null); setExistingSafetyLoaded(false) }
       }}>
-        <DialogContent className="max-w-3xl sm:max-h-[85vh] max-h-[92dvh] sm:top-[50%] sm:translate-y-[-50%] top-[4dvh] translate-y-0 overflow-y-auto p-4 sm:p-6">
+        <DialogContent className="max-w-3xl sm:max-h-[85vh] max-h-[88vh] sm:top-[50%] sm:translate-y-[-50%] top-[2vh] translate-y-0 overflow-y-auto p-4 sm:p-6">
           <DialogHeader>
             <DialogTitle>
               {editingReportId
@@ -686,7 +686,7 @@ export default function DailyReportsPage() {
 
       {/* View Dialog */}
       <Dialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-        <DialogContent className="max-w-3xl sm:max-h-[85vh] max-h-[92dvh] sm:top-[50%] sm:translate-y-[-50%] top-[4dvh] translate-y-0 overflow-y-auto p-4 sm:p-6">
+        <DialogContent className="max-w-3xl sm:max-h-[85vh] max-h-[88vh] sm:top-[50%] sm:translate-y-[-50%] top-[2vh] translate-y-0 overflow-y-auto p-4 sm:p-6">
           <DialogHeader>
             <DialogTitle>{isRtl ? 'تفاصيل التقرير' : 'Report Details'}</DialogTitle>
           </DialogHeader>
