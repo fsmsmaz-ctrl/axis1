@@ -50,7 +50,6 @@ export default function DailyReportsPage() {
   const [viewReport, setViewReport] = useState<any | null>(null)
   const [viewDialogOpen, setViewDialogOpen] = useState(false)
   const [existingSafetyLoaded, setExistingSafetyLoaded] = useState(false)
-  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const driveLinesLoaded = useRef<string | null>(null)
   const language = useAppStore((s) => s.language)
@@ -225,11 +224,11 @@ export default function DailyReportsPage() {
         body: JSON.stringify(Object.assign({}, formData, { status: 'draft' })),
       })
       if (res.ok) {
-        toast.success(isRtl ? 'تم حفظ التقرير' : 'Report saved')
         setDialogOpen(false)
         setEditingReportId(null)
         setExistingSafetyLoaded(false)
-        fetchReports()
+        toast.success(isRtl ? 'تم حفظ التقرير' : 'Report saved')
+        setTimeout(function() { fetchReports() }, 300)
       } else {
         var errData = await res.json().catch(function() { return {} })
         toast.error(errData.message || (isRtl ? 'فشل حفظ التقرير' : 'Failed to save report'))
@@ -242,11 +241,12 @@ export default function DailyReportsPage() {
   }
 
   function askSubmitReport() {
-    setConfirmDialogOpen(true)
+    if (confirm(isRtl ? 'هل أنت متأكد من تسليم التقرير؟ لا يمكنك تعديله بعد التسليم.' : 'Are you sure you want to submit? You cannot edit after submission.')) {
+      confirmSubmitReport()
+    }
   }
 
   async function confirmSubmitReport() {
-    setConfirmDialogOpen(false)
     if (!editingReportId || saving) return
     setSaving(true)
     try {
@@ -256,11 +256,11 @@ export default function DailyReportsPage() {
         body: JSON.stringify(Object.assign({}, formData, { status: 'submitted' })),
       })
       if (res.ok) {
-        toast.success(isRtl ? 'تم رفع التقرير بنجاح' : 'Report submitted successfully')
         setDialogOpen(false)
         setEditingReportId(null)
         setExistingSafetyLoaded(false)
-        fetchReports()
+        toast.success(isRtl ? 'تم رفع التقرير بنجاح' : 'Report submitted successfully')
+        setTimeout(function() { fetchReports() }, 300)
       } else {
         var errData = await res.json().catch(function() { return {} })
         toast.error(errData.message || (isRtl ? 'فشل رفع التقرير' : 'Failed to submit report'))
@@ -280,7 +280,7 @@ export default function DailyReportsPage() {
     })
     if (res.ok) {
       toast.success(isRtl ? 'تم الاعتماد' : 'Approved')
-      fetchReports()
+      setTimeout(function() { fetchReports() }, 300)
     }
   }
 
@@ -407,7 +407,7 @@ export default function DailyReportsPage() {
         setDialogOpen(open)
         if (!open) { setEditingReportId(null); setExistingSafetyLoaded(false) }
       }}>
-        <DialogContent className="max-w-3xl sm:max-h-[85vh] max-h-[88vh] sm:top-[50%] sm:translate-y-[-50%] top-[2vh] translate-y-0 overflow-y-auto p-4 sm:p-6">
+        <DialogContent className="max-w-3xl sm:max-h-[85vh] max-h-[88vh] sm:top-[50%] sm:translate-y-[-50%] top-[2vh] translate-y-0 overflow-y-auto p-4 sm:p-6 data-[state=closed]:animate-none">
           <DialogHeader>
             <DialogTitle>
               {editingReportId
@@ -662,31 +662,9 @@ export default function DailyReportsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Submit Confirmation Dialog */}
-      <Dialog open={confirmDialogOpen} onOpenChange={setConfirmDialogOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>{isRtl ? 'تأكيد تسليم التقرير' : 'Confirm Submit'}</DialogTitle>
-            <DialogDescription>
-              {isRtl ? 'هل أنت متأكد من تسليم التقرير؟ لا يمكنك تعديل التقرير بعد التسليم.' : 'Are you sure you want to submit? You cannot edit the report after submission.'}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={function() { setConfirmDialogOpen(false) }}>
-              <Pencil className="h-4 w-4 ml-2" />
-              {isRtl ? 'تعديل' : 'Edit'}
-            </Button>
-            <Button onClick={confirmSubmitReport}>
-              <Check className="h-4 w-4 ml-2" />
-              {isRtl ? 'تسليم' : 'Submit'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       {/* View Dialog */}
       <Dialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-        <DialogContent className="max-w-3xl sm:max-h-[85vh] max-h-[88vh] sm:top-[50%] sm:translate-y-[-50%] top-[2vh] translate-y-0 overflow-y-auto p-4 sm:p-6">
+        <DialogContent className="max-w-3xl sm:max-h-[85vh] max-h-[88vh] sm:top-[50%] sm:translate-y-[-50%] top-[2vh] translate-y-0 overflow-y-auto p-4 sm:p-6 data-[state=closed]:animate-none">
           <DialogHeader>
             <DialogTitle>{isRtl ? 'تفاصيل التقرير' : 'Report Details'}</DialogTitle>
           </DialogHeader>
