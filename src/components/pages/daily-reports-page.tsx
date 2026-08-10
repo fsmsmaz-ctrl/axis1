@@ -56,6 +56,7 @@ export default function DailyReportsPage() {
   const token = useAppStore((s) => s.token)
   const user = useAppStore((s) => s.user)
   const isRtl = language === 'ar'
+  const isHse = user?.role === 'hse_officer'
 
   const [formData, setFormData] = useState({
     projectId: '', driveLineId: '', reportDate: new Date().toISOString().split('T')[0],
@@ -605,7 +606,14 @@ export default function DailyReportsPage() {
                       </div>
                       <div className="space-y-1.5">
                         <Label>{isRtl ? 'عدد العمال' : 'Workers Count'}</Label>
-                        <Input type="number" value={formData.workersCount} onChange={function(e) { setFormData({ ...formData, workersCount: e.target.value }) }} />
+                        {!isHse && existingSafetyLoaded ? (
+                          <div className="h-9 rounded-md border border-input bg-muted/50 px-3 py-2 text-sm flex items-center">
+                            <span className="font-medium">{formData.workersCount || '0'}</span>
+                            <span className="text-xs text-muted-foreground mr-2">({isRtl ? 'من السلامة' : 'from Safety'})</span>
+                          </div>
+                        ) : (
+                          <Input type="number" value={formData.workersCount} onChange={function(e) { setFormData({ ...formData, workersCount: e.target.value }) }} />
+                        )}
                       </div>
                       <div className="space-y-1.5">
                         <Label>{isRtl ? 'سبب التوقف' : 'Stoppage Reason'}</Label>
