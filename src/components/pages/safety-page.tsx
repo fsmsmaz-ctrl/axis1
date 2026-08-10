@@ -419,7 +419,7 @@ export default function SafetyPage() {
           </SheetHeader>
 
           <div className="mt-6 space-y-5">
-            {/* Project, Date & Workers */
+            {/* Project, Date & Workers */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="space-y-1.5">
                 <Label>{isRtl ? 'المشروع' : 'Project'} *</Label>
