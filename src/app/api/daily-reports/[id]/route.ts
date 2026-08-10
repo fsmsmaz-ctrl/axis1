@@ -90,6 +90,15 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
     var body = await req.json()
 
+    // Protect workersCount: only HSE can change it on reports that have safety data
+    var reportHasSafety = await safeDbOp(
+      function() { return db.safetyReport.findUnique({ where: { dailyReportId: id }, select: { id: true } }) },
+      'التحقق من بيانات السلامة'
+    )
+    if (reportHasSafety.success && reportHasSafety.data && user.role !== 'hse_officer') {
+      delete body.workersCount
+    }
+
     var startReading = parseFloat(body.startReading) || 0
     var endReading = parseFloat(body.endReading) || 0
     var dailyMeters = Math.max(0, endReading - startReading)
