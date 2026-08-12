@@ -44,7 +44,6 @@ const checklistItems = [
 const emptyForm = {
   projectId: '',
   reportDate: new Date().toISOString().split('T')[0],
-  workersCount: '',
   signedBy: '',
   ppeAvailable: false,
   helmetCheck: false,
@@ -150,18 +149,11 @@ export default function SafetyPage() {
       return
     }
 
-    var workersCount = parseInt(form.workersCount) || 0
-    if (workersCount < 0) {
-      toast.error(isRtl ? 'عدد العمال غير صحيح' : 'Invalid workers count')
-      return
-    }
-
     setSaving(true)
     try {
       const safetyData: any = {
         projectId: form.projectId,
         reportDate: form.reportDate,
-        workersCount: workersCount,
       }
       for (var i = 0; i < checklistItems.length; i++) {
         var item = checklistItems[i]
@@ -419,8 +411,8 @@ export default function SafetyPage() {
           </SheetHeader>
 
           <div className="mt-6 space-y-5">
-            {/* Project, Date & Workers */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {/* Project & Date */}
+            <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>{isRtl ? 'المشروع' : 'Project'} *</Label>
                 <Select value={form.projectId} onValueChange={function(v) { setForm({ ...form, projectId: v }) }}>
@@ -435,16 +427,6 @@ export default function SafetyPage() {
               <div className="space-y-1.5">
                 <Label>{isRtl ? 'التاريخ' : 'Date'} *</Label>
                 <Input type="date" value={form.reportDate} onChange={function(e) { setForm({ ...form, reportDate: e.target.value }) }} />
-              </div>
-              <div className="space-y-1.5">
-                <Label>{isRtl ? 'عدد العمال' : 'Workers Count'} *</Label>
-                <Input
-                  type="number"
-                  value={form.workersCount}
-                  onChange={function(e) { setForm({ ...form, workersCount: e.target.value }) }}
-                  placeholder={isRtl ? 'أدخل عدد العمال' : 'Enter workers count'}
-                  min="0"
-                />
               </div>
             </div>
 
