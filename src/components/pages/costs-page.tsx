@@ -20,8 +20,6 @@ import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
 import { toast } from 'sonner'
 
-const MASTER_PROJECT_NAME = 'Upgradimg of pump station at Ashoor & improvement in the existing water network of Salalah, Mirbat & Taqah'
-
 const categoryLabels: Record<string, { ar: string; en: string }> = {
   labor: { ar: 'أجور العمال', en: 'Labor' },
   housing: { ar: 'سكن', en: 'Housing' },
@@ -210,13 +208,6 @@ export default function CostsPage() {
         </Button>
       </div>
 
-      <Card className="border-primary/30 bg-primary/5">
-          <CardContent className="p-4 text-center">
-            <p className="text-xs text-muted-foreground mb-1">{isRtl ? 'المشروع' : 'Project'}</p>
-            <p className="text-sm font-bold text-primary leading-relaxed">{MASTER_PROJECT_NAME}</p>
-          </CardContent>
-        </Card>
-
       {/* Summary cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Card className="bg-gradient-to-br from-emerald-50 to-emerald-50/30 border-emerald-200">
@@ -297,7 +288,7 @@ export default function CostsPage() {
           <CardTitle className="flex items-center justify-between cursor-pointer select-none" onClick={function() { setShowRevenueTable(!showRevenueTable) }}>
             <span className="flex items-center gap-2">
               <TrendingUp className="h-5 w-5 text-emerald-600" />
-              {isRtl ? 'تفاصيل الإيرادات' : 'Revenue Details'}
+              {isRtl ? 'تفاصيل الإيرادات (من التقارير المعتمدة)' : 'Revenue Details (from approved reports)'}
             </span>
             {showRevenueTable ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
           </CardTitle>
@@ -474,7 +465,7 @@ export default function CostsPage() {
       {/* Costs list */}
       <Card>
         <CardHeader>
-          <CardTitle>{isRtl ? 'التكاليف المسجلة' : 'Recorded Costs'}</CardTitle>
+          <CardTitle>{isRtl ? 'آخر التكاليف المسجلة' : 'Recent Costs'}</CardTitle>
         </CardHeader>
         <CardContent>
           {loading ? (
