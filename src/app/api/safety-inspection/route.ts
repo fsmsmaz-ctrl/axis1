@@ -110,7 +110,7 @@ export async function POST(req: NextRequest) {
           workEndTime: null,
           operatingHours: 0,
           stoppageHours: 0,
-          workersCount: parseInt(body.workersCount) || 0,
+          workersCount: 0,
           startReading: 0,
           endReading: 0,
           dailyMeters: 0,
