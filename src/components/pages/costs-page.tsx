@@ -105,7 +105,7 @@ export default function CostsPage() {
       var res = await authedFetch('/api/projects/list?_t=' + Date.now(), { cache: 'no-store' })
       if (!res.ok) { setProjects([]); return }
       var data = await res.json()
-      setProjects(data.projects || [])
+      setProjects((data.projects || []).filter(function(p: any) { return p.showInCosts !== false }))
     } catch {
       setProjects((data.projects || []).filter(function(p: any) { return p.showInCosts !== false }))
     }
