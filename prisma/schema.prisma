@@ -37,8 +37,6 @@ model User {
   notifications      Notification[]
   auditLogs          AuditLog[]
   companyAssets      CompanyAsset[]  @relation("AssetResponsible")
-  equipmentsCreated  Equipment[]       @relation("EquipmentCreator")
-  assetsCreated      CompanyAsset[]   @relation("AssetCreator")
 }
 
 // ==================== Projects ====================
@@ -59,6 +57,7 @@ model Project {
   actualEnd      DateTime?
   status         String   @default("not_started") // not_started, in_progress, suspended, completed
   progress       Float    @default(0) // 0-100
+  showInCosts    Boolean  @default(true) // show in costs & revenue section
   notes          String?
 
   managerId      String?
@@ -210,11 +209,9 @@ model Equipment {
   nextMaintenance DateTime?
   spareParts      String?
   notes           String?
-  createdById     String?
 
   project         Project? @relation(fields: [projectId], references: [id])
   maintenance     EquipmentMaintenance[]
-  createdBy       User?    @relation("EquipmentCreator", fields: [createdById], references: [id])
 
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -333,22 +330,20 @@ model AuditLog {
 model CompanyAsset {
   id             String   @id @default(cuid())
   projectId      String?
-  name           String
-  itemType       String
+  name           String   // اسم الغرض / item name
+  itemType       String   // النوع: machine, vehicle, tool, pipe, safety_gear, other
   quantity       Int      @default(1)
-  ownership      String
-  supplier       String?
-  rentalCost     Float?
-  rentalStart    DateTime?
-  rentalEnd      DateTime?
-  responsibleId  String?
-  status         String   @default("available")
+  ownership      String   // owned, rented, borrowed
+  supplier       String?  // جهة التأجير أو الإعارة (if rented/borrowed)
+  rentalCost     Float?   // تكلفة الإيجار الشهرية (monthly rental cost)
+  rentalStart    DateTime? // بداية الإيجار/الإعارة
+  rentalEnd      DateTime? // نهاية الإيجار / تاريخ الإرجاع المتوقع
+  responsibleId  String?  // المسؤول (usually equipment manager)
+  status         String   @default("available") // available, in_use, returned, damaged
   notes          String?
-  createdById    String?
 
   project        Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
   responsible    User?    @relation("AssetResponsible", fields: [responsibleId], references: [id])
-  createdBy      User?    @relation("AssetCreator", fields: [createdById], references: [id])
 
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
