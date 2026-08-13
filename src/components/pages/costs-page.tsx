@@ -107,7 +107,7 @@ export default function CostsPage() {
       var data = await res.json()
       setProjects(data.projects || [])
     } catch {
-      setProjects([])
+      setProjects((data.projects || []).filter(function(p: any) { return p.showInCosts !== false }))
     }
   }
 
