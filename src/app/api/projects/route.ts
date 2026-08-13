@@ -1,94 +1,143 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
-import { handleDbError, validateRequired, parseNumber, parseDate, safeDbOp } from '@/lib/api-helpers'
-import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
+import { safeDbOp } from '@/lib/api-helpers'
 
-export async function POST(req: NextRequest) {
-  var user = await getAuthUser(req)
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const user = await getAuthUser(req)
 
   if (!user) {
-    return NextResponse.json({
-      error: 'unauthorized',
-      message: 'يجب تسجيل الدخول أولاً',
-    }, { status: 401 })
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  // Rate limit write operations
-  var rl = checkRateLimit(req, RateLimitPresets.write)
-  if (rl.limited) {
-    return NextResponse.json(
-      { error: 'too_many_requests', message: 'طلبات كثيرة جداً، يرجى الانتظار قليلاً' },
-      { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } }
-    )
+  const { id } = await params
+
+  const project = await db.project.findUnique({
+    where: { id },
+    include: {
+      manager: { select: { id: true, name: true, nameEn: true } },
+      engineer: { select: { id: true, name: true, nameEn: true } },
+      driveLines: {
+        orderBy: { lineNumber: 'asc' },
+      },
+      equipments: true,
+      _count: {
+        select: { dailyReports: true, costs: true, finishings: true },
+      },
+    },
+  })
+
+  if (!project) {
+    return NextResponse.json({ error: 'Project not found' }, { status: 404 })
   }
+
+  // Calculate aggregate stats
+  const reports = await db.dailyReport.findMany({
+    where: { projectId: id, status: 'approved' },
+    select: { dailyMeters: true, dailyRevenue: true, reportDate: true },
+  })
+
+  const totalMeters = reports.reduce((s, r) => s + r.dailyMeters, 0)
+  const totalRevenue = reports.reduce((s, r) => s + r.dailyRevenue, 0)
+
+  const costsAgg = await db.cost.aggregate({
+    where: { projectId: id },
+    _sum: { amount: true },
+  })
+
+  const totalCost = costsAgg._sum.amount || 0
+
+  return NextResponse.json({
+    project: {
+      ...project,
+      totalMetersDrilled: totalMeters,
+      totalRevenue,
+      totalCost,
+      netProfit: totalRevenue - totalCost,
+    },
+  })
+}
+
+export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const user = await getAuthUser(req)
+
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  if (user.role !== 'top_management' && user.role !== 'project_manager') {
+    return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
+  }
+
+  const { id } = await params
+  const body = await req.json()
 
   try {
-    var body = await req.json()
+    const project = await db.project.update({
+      where: { id },
+      data: {
+        code: body.code,
+        name: body.name,
+        client: body.client,
+        location: body.location,
+        contractNumber: body.contractNumber,
+        workType: body.workType,
+        pipeDiameter: body.pipeDiameter,
+        totalLength: parseFloat(body.totalLength),
+        pricePerMeter: parseFloat(body.pricePerMeter),
+        soilType: body.soilType,
+        startDate: new Date(body.startDate),
+        expectedEnd: new Date(body.expectedEnd),
+        status: body.status,
+        showInCosts: body.showInCosts !== false,
+        notes: body.notes,
+      },
+    })
 
-    // Validate required fields
-    var validationError = validateRequired(body, [
-      'code', 'name', 'client', 'location', 'workType', 'pipeDiameter', 'soilType'
-    ])
-    if (validationError) return validationError
+    await db.auditLog.create({
+      data: {
+        userId: user.id,
+        projectId: id,
+        action: 'update',
+        entity: 'project',
+        entityId: id,
+        details: `Updated project ${project.code}`,
+      },
+    })
 
-    // Parse values safely
-    var totalLength = parseNumber(body.totalLength, 0)
-    var pricePerMeter = parseNumber(body.pricePerMeter, 0)
-    var startDate = parseDate(body.startDate, 0)
-    var expectedEnd = parseDate(body.expectedEnd, 90)
+    return NextResponse.json({ project })
+  } catch (error) {
+    console.error('Update project error:', error)
+    return NextResponse.json({ error: 'Failed to update project' }, { status: 500 })
+  }
+}
 
-    // Check for duplicate code
-    var dupCheck = await safeDbOp(
-      () => db.project.findUnique({ where: { code: String(body.code).trim() } }),
-      'فحص الرمز المكرر'
-    )
-    if (!dupCheck.success) return dupCheck.response
-    if (dupCheck.data) {
-      return NextResponse.json({
-        error: 'duplicate_code',
-        message: 'المشروع برمز "' + body.code + '" موجود بالفعل. يرجى استخدام رمز مختلف.',
-      }, { status: 400 })
-    }
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const user = await getAuthUser(req)
 
-    // Create project
-    var createResult = await safeDbOp(
-      () => db.project.create({
-        data: {
-          code: String(body.code).trim(),
-          name: String(body.name).trim(),
-          client: String(body.client).trim(),
-          location: String(body.location || '').trim(),
-          contractNumber: body.contractNumber ? String(body.contractNumber) : null,
-          workType: String(body.workType),
-          pipeDiameter: String(body.pipeDiameter),
-          totalLength,
-          pricePerMeter,
-          soilType: String(body.soilType),
-          startDate,
-          expectedEnd,
-          status: String(body.status || 'not_started'),
-          progress: 0,
-          managerId: user.role === 'project_manager' ? user.id : (body.managerId || null),
-          engineerId: body.engineerId || null,
-          notes: body.notes ? String(body.notes) : null,
-        },
-      }),
-      'إنشاء المشروع'
-    )
-    if (!createResult.success) return createResult.response
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
 
-    // Audit log + notification (non-critical, fire-and-forget)
+  if (user.role !== 'top_management' && user.role !== 'project_manager') {
+    return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
+  }
+
+  const { id } = await params
+
+  try {
+    await db.project.delete({ where: { id } })
+
+    // Audit log + delete notification (non-critical, fire-and-forget)
     Promise.all([
       safeDbOp(
         () => db.auditLog.create({
           data: {
             userId: user.id,
-            projectId: createResult.data.id,
-            action: 'create',
+            action: 'delete',
             entity: 'project',
-            entityId: createResult.data.id,
-            details: 'Created project ' + createResult.data.code + ' - ' + createResult.data.name,
+            entityId: id,
+            details: 'Deleted project',
           },
         }),
         'سجل التدقيق'
@@ -96,19 +145,19 @@ export async function POST(req: NextRequest) {
       safeDbOp(
         () => db.notification.create({
           data: {
-            projectId: createResult.data.id,
-            type: 'deadline_near',
-            title: 'مشروع جديد',
-            message: 'تم إنشاء مشروع جديد: ' + createResult.data.code + ' - ' + createResult.data.name + ' بواسطة ' + user.name,
-            severity: 'info',
+            type: 'work_stopped',
+            title: 'حذف مشروع',
+            message: `تم حذف مشروع (المعرف: ${id}) بواسطة ${user.name}`,
+            severity: 'critical',
           },
         }),
-        'إشعار الإضافة'
+        'إشعار الحذف'
       ),
-    ]).catch(function() {})
+    ]).catch(() => {})
 
-    return NextResponse.json({ project: createResult.data, success: true })
-  } catch (error: any) {
-    return handleDbError(error, 'إنشاء المشروع')
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error('Delete project error:', error)
+    return NextResponse.json({ error: 'Failed to delete project' }, { status: 500 })
   }
 }
