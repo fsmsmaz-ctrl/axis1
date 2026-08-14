@@ -30,6 +30,7 @@ const categoryLabels: Record<string, { ar: string; en: string }> = {
   oil: { ar: 'زيوت', en: 'Oil' },
   safety: { ar: 'سلامة', en: 'Safety' },
   rental: { ar: 'إيجار', en: 'Rental' },
+  food: { ar: 'طعام', en: 'Food' },
   other: { ar: 'أخرى', en: 'Other' },
 }
 
@@ -43,6 +44,7 @@ const categoryColors: Record<string, string> = {
   oil: '#6366f1',
   safety: '#ef4444',
   rental: '#14b8a6',
+  food: '#84cc16',
   other: '#64748b',
 }
 
