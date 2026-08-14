@@ -53,6 +53,7 @@ const categoryColors: Record<string, string> = {
   oil: '#6366f1',
   safety: '#ef4444',
   rental: '#14b8a6',
+  food: '#84cc16',
   other: '#64748b',
 }
 
@@ -66,6 +67,7 @@ const categoryLabelsAr: Record<string, string> = {
   oil: 'زيوت',
   safety: 'سلامة',
   rental: 'إيجار',
+  food: 'طعام',
   other: 'أخرى',
 }
 
