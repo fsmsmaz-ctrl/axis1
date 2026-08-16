@@ -190,6 +190,9 @@ export default function CostsPage() {
 
   return (
     <div className="space-y-4">
+      <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-4 py-3 rounded-lg text-center">
+        <p className="text-sm font-semibold leading-relaxed">Upgrading of the pump station at Ashoor & improvement in the existing water network of Salalah, Mirbat & Taqah</p>
+      </div>
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold">{isRtl ? 'التكاليف والإيرادات' : 'Costs & Revenue'}</h1>
