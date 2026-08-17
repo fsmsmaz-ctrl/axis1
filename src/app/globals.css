@@ -149,7 +149,7 @@
 /* Print styles for reports */
 @media print {
   .no-print { display: none !important; }
-  body { background: white !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { background: white !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; font-family: Cairo, Tajawal, sans-serif !important; }
 
   /* Hide sidebar, header, mobile overlay */
   aside { display: none !important; }
@@ -169,7 +169,7 @@
 
   /* Table styles */
   table { page-break-inside: auto !important; }
-  tr { page-break-inside: avoid !important; }
+  tr { page-break-inside: auto !important; }
   thead { display: table-header-group !important; }
   tfoot { display: table-footer-group !important; }
 
@@ -177,8 +177,6 @@
   .text-muted-foreground { color: #374151 !important; }
 
   /* Page breaks */
-  .space-y-4 > * { page-break-inside: avoid !important; }
-
   /* Hide interactive elements */
   button { display: none !important; }
   .overflow-y-auto, .overflow-x-auto { overflow: visible !important; max-height: none !important; }
