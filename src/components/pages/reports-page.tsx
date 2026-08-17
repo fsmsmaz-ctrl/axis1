@@ -180,7 +180,7 @@ export default function ReportsPage() {
       </div>
 
       {/* Filters */}
-      <Card>
+      <Card className="no-print">
         <CardHeader>
           <CardTitle className="text-base">{isRtl ? 'خيارات التقرير' : 'Report Options'}</CardTitle>
         </CardHeader>
@@ -347,7 +347,7 @@ function ReportPreview({ data }: { data: any }) {
                 transport: { ar: 'نقل', en: 'Transport' }, fuel: { ar: 'ديزل', en: 'Fuel' },
                 maintenance: { ar: 'صيانة', en: 'Maintenance' }, parts: { ar: 'قطع غيار', en: 'Parts' },
                 oil: { ar: 'زيوت', en: 'Oil' }, safety: { ar: 'سلامة', en: 'Safety' },
-                rental: { ar: 'إيجار', en: 'Rental' }, other: { ar: 'أخرى', en: 'Other' },
+                rental: { ar: 'إيجار', en: 'Rental' }, food: { ar: 'طعام', en: 'Food' }, other: { ar: 'أخرى', en: 'Other' },
               }
               var label = catNames[c.category] ? (isRtl ? catNames[c.category].ar : catNames[c.category].en) : c.category
               return (
@@ -370,7 +370,7 @@ function ReportPreview({ data }: { data: any }) {
                 </tr>
               </thead>
               <tbody>
-                {(data.data.costs || []).slice(0, 50).map(function(c: any) {
+                {(data.data.costs || []).map(function(c: any) {
                   return (
                     <tr key={c.id} className="border-b">
                       <td className="p-2">{new Date(c.date).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')}</td>
@@ -518,7 +518,7 @@ function ReportPreview({ data }: { data: any }) {
                 </tr>
               </thead>
               <tbody>
-                {(data.data.reports || []).slice(0, 30).map(function(r: any) {
+                {(data.data.reports || []).map(function(r: any) {
                   return (
                     <tr key={r.id} className="border-b">
                       <td className="p-2">{new Date(r.reportDate).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')}</td>
@@ -550,7 +550,7 @@ function ReportPreview({ data }: { data: any }) {
                 </tr>
               </thead>
               <tbody>
-                {(data.data.reports || []).filter(function(r: any) { return r.safety }).slice(0, 30).map(function(r: any) {
+                {(data.data.reports || []).filter(function(r: any) { return r.safety }).map(function(r: any) {
                   return (
                     <tr key={r.id} className="border-b">
                       <td className="p-2">{new Date(r.reportDate).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')}</td>
@@ -580,7 +580,7 @@ function ReportPreview({ data }: { data: any }) {
                 </tr>
               </thead>
               <tbody>
-                {(data.data.reports || []).slice(0, 30).map(function(r: any) {
+                {(data.data.reports || []).map(function(r: any) {
                   return (
                     <tr key={r.id} className="border-b">
                       <td className="p-2">{new Date(r.reportDate).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')}</td>
