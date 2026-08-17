@@ -481,7 +481,7 @@ export default function CostsPage() {
             </div>
           ) : (
             <div className="space-y-2 max-h-96 overflow-y-auto">
-              {costs.slice(0, 50).map(function(c) {
+              {costs.map(function(c) {
                 return (
                   <div key={c.id} className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-muted/50 transition group">
                     <div
