@@ -37,6 +37,7 @@ model User {
   notifications      Notification[]
   auditLogs          AuditLog[]
   companyAssets      CompanyAsset[]  @relation("AssetResponsible")
+  assetsCreated      CompanyAsset[]  @relation("AssetCreator")
 }
 
 // ==================== Projects ====================
@@ -340,10 +341,13 @@ model CompanyAsset {
   rentalEnd      DateTime? // نهاية الإيجار / تاريخ الإرجاع المتوقع
   responsibleId  String?  // المسؤول (usually equipment manager)
   status         String   @default("available") // available, in_use, returned, damaged
+  image          String?  // base64 data URL of equipment image
   notes          String?
+  createdById    String?
 
   project        Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
   responsible    User?    @relation("AssetResponsible", fields: [responsibleId], references: [id])
+  createdBy      User?    @relation("AssetCreator", fields: [createdById], references: [id])
 
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
