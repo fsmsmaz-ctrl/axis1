@@ -82,6 +82,7 @@ export async function POST(req: NextRequest) {
           rentalEnd: body.rentalEnd ? new Date(body.rentalEnd) : null,
           responsibleId: body.responsibleId || null,
           status: String(body.status || 'available'),
+          image: body.image ? String(body.image) : null,
           notes: body.notes ? String(body.notes) : null,
           createdById: user.id,
         },
