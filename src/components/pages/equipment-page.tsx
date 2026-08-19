@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -14,7 +14,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Plus, Wrench, Clock, AlertTriangle, Cpu, Settings, Calendar, DollarSign,
-  Package, Building2, ArrowDownToLine, ArrowRightLeft, Trash2, Pencil, Eye, UserCircle
+  Package, Building2, ArrowDownToLine, ArrowRightLeft, Trash2, Pencil, Eye, UserCircle, Camera, X
 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
@@ -110,8 +110,64 @@ export default function EquipmentPage() {
     projectId: '', name: '', itemType: 'machine', quantity: '1',
     ownership: 'owned', supplier: '', rentalCost: '',
     rentalStart: '', rentalEnd: '', responsibleId: '',
-    status: 'available', notes: '',
+    status: 'available', notes: '', image: '' as string,
   })
+
+  // Image upload handler
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  function handleImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    var file = e.target.files && e.target.files[0]
+    if (!file) return
+    // Limit to 2MB
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error(isRtl ? 'حجم الصورة كبير جداً (الحد الأقصى 2 ميجا)' : 'Image too large (max 2MB)')
+      return
+    }
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      toast.error(isRtl ? 'يرجى اختيار ملف صورة' : 'Please select an image file')
+      return
+    }
+    var reader = new FileReader()
+    reader.onload = function(ev) {
+      var result = ev.target?.result as string
+      // Compress by resizing to max 800px on longest side
+      var img = new Image()
+      img.onload = function() {
+        var maxW = 800
+        var maxH = 800
+        var w = img.width
+        var h = img.height
+        if (w > maxW || h > maxH) {
+          if (w > h) { h = Math.round(h * maxW / w); w = maxW }
+          else { w = Math.round(w * maxH / h); h = maxH }
+        }
+        var canvas = document.createElement('canvas')
+        canvas.width = w
+        canvas.height = h
+        var ctx = canvas.getContext('2d')
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, w, h)
+          var dataUrl = canvas.toDataURL('image/jpeg', 0.7)
+          setAssetForm(function(prev) { return { ...prev, image: dataUrl } })
+        }
+      }
+      img.src = result
+    }
+    reader.readAsDataURL(file)
+    // Reset so same file can be selected again
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  function removeImage() {
+    if (editingAsset && editingAsset.image) {
+      // Editing: send null to remove existing image
+      setAssetForm(function(prev) { return { ...prev, image: 'REMOVE' } })
+    } else {
+      setAssetForm(function(prev) { return { ...prev, image: '' } })
+    }
+  }
 
   async function fetchEquipment() {
     setLoading(true)
@@ -211,12 +267,24 @@ export default function EquipmentPage() {
   async function handleAssetSubmit(e: React.FormEvent) {
     e.preventDefault()
     try {
+      var payload: any = { ...assetForm }
+      // Handle image removal
+      if (payload.image === 'REMOVE') {
+        payload.image = null
+      } else if (!payload.image) {
+        delete payload.image
+      }
+      // Remove image from payload if empty string (no image selected)
+      if (payload.image === '') {
+        delete payload.image
+      }
+
       const url = editingAsset ? `/api/company-assets/${editingAsset.id}` : '/api/company-assets'
       const method = editingAsset ? 'PUT' : 'POST'
       const res = await authedFetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(assetForm),
+        body: JSON.stringify(payload),
       })
       if (res.ok) {
         toast.success(isRtl ? (editingAsset ? 'تم التحديث' : 'تم الإضافة') : (editingAsset ? 'Updated' : 'Added'))
@@ -258,6 +326,7 @@ export default function EquipmentPage() {
         rentalEnd: asset.rentalEnd ? asset.rentalEnd.split('T')[0] : '',
         responsibleId: asset.responsibleId || '',
         status: asset.status, notes: asset.notes || '',
+        image: asset.image || '',
       })
     } else {
       setEditingAsset(null)
@@ -265,10 +334,15 @@ export default function EquipmentPage() {
         projectId: projects[0]?.id || '', name: '', itemType: 'machine', quantity: '1',
         ownership: 'owned', supplier: '', rentalCost: '',
         rentalStart: '', rentalEnd: '', responsibleId: '',
-        status: 'available', notes: '',
+        status: 'available', notes: '', image: '',
       })
     }
     setAssetDialogOpen(true)
+  }
+
+  function openViewAsset(a: any) {
+    setViewAsset(a)
+    setViewAssetDialogOpen(true)
   }
 
   function openEditEquipment(eq: any) {
@@ -601,9 +675,19 @@ export default function EquipmentPage() {
                 <Card key={a.id} className="hover:shadow-sm transition">
                   <CardContent className="p-3">
                     <div className="flex items-center gap-3">
-                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${own.color.split(' ')[0]}`}>
-                        <OwnIcon className={`h-5 w-5 ${own.color.split(' ')[1]}`} />
-                      </div>
+                      {/* Thumbnail: show image or icon */}
+                      {a.image ? (
+                        <div
+                          className="w-14 h-14 rounded-lg object-cover shrink-0 cursor-pointer border"
+                          style={{ backgroundImage: 'url(' + a.image + ')', backgroundSize: 'cover', backgroundPosition: 'center' }}
+                          onClick={() => openViewAsset(a)}
+                          title={isRtl ? 'عرض التفاصيل' : 'View details'}
+                        />
+                      ) : (
+                        <div className={`w-14 h-14 rounded-lg flex items-center justify-center shrink-0 ${own.color.split(' ')[0]}`}>
+                          <OwnIcon className={`h-6 w-6 ${own.color.split(' ')[1]}`} />
+                        </div>
+                      )}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-semibold text-sm">{a.name}</span>
@@ -621,12 +705,15 @@ export default function EquipmentPage() {
                           {a.createdBy && <span>{isRtl ? 'بواسطة' : 'By'}: {a.createdBy.name}</span>}
                         </div>
                       </div>
-                      {canEditAsset(a) && (
-                        <div className="flex gap-1 shrink-0">
+                      <div className="flex gap-1 shrink-0">
+                        <Button variant="ghost" size="sm" onClick={() => openViewAsset(a)}><Eye className="h-3.5 w-3.5" /></Button>
+                        {canEditAsset(a) && (
                           <Button variant="ghost" size="sm" onClick={() => openAssetDialog(a)}><Pencil className="h-3.5 w-3.5" /></Button>
+                        )}
+                        {canEditAsset(a) && (
                           <Button variant="ghost" size="sm" onClick={() => deleteAsset(a.id)}><Trash2 className="h-3.5 w-3.5 text-red-500" /></Button>
-                        </div>
-                      )}
+                        )}
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
@@ -746,6 +833,7 @@ export default function EquipmentPage() {
         </DialogContent>
       </Dialog>
 
+      {/* ==================== Asset Add/Edit Dialog ==================== */}
       <Dialog open={assetDialogOpen} onOpenChange={(v) => { setAssetDialogOpen(v); if (!v) setEditingAsset(null) }}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -753,6 +841,55 @@ export default function EquipmentPage() {
             <DialogDescription>{isRtl ? 'تحديد نوع الملكية وتفاصيل الغرض' : 'Specify ownership type and item details'}</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleAssetSubmit} className="space-y-3">
+            {/* Image Upload Section */}
+            <div className="space-y-1.5">
+              <Label>{isRtl ? 'صورة المعدة' : 'Equipment Image'}</Label>
+              <div className="flex items-center gap-3">
+                {assetForm.image && assetForm.image !== 'REMOVE' ? (
+                  <div className="relative w-24 h-24 rounded-lg overflow-hidden border shrink-0">
+                    <img src={assetForm.image} alt="" className="w-full h-full object-cover" />
+                    <button
+                      type="button"
+                      onClick={removeImage}
+                      className="absolute top-0.5 right-0.5 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600 shadow"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <div
+                    className="w-24 h-24 rounded-lg border-2 border-dashed border-muted-foreground/30 flex flex-col items-center justify-center cursor-pointer hover:border-primary/50 hover:bg-muted/30 transition shrink-0"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <Camera className="h-6 w-6 text-muted-foreground/50" />
+                    <span className="text-[10px] text-muted-foreground/50 mt-1">{isRtl ? 'صورة' : 'Photo'}</span>
+                  </div>
+                )}
+                <div className="flex-1">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageSelect}
+                    className="hidden"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <Camera className="h-4 w-4 ml-1" />
+                    {assetForm.image && assetForm.image !== 'REMOVE'
+                      ? (isRtl ? 'تغيير الصورة' : 'Change Image')
+                      : (isRtl ? 'اختر صورة' : 'Choose Image')
+                    }
+                  </Button>
+                  <p className="text-[10px] text-muted-foreground mt-1">{isRtl ? 'JPG, PNG - الحد الأقصى 2 ميجا' : 'JPG, PNG - Max 2MB'}</p>
+                </div>
+              </div>
+            </div>
+
             <div className="space-y-1.5">
               <Label className="text-base font-semibold">{isRtl ? 'نوع الملكية *' : 'Ownership Type *'}</Label>
               <div className="grid grid-cols-3 gap-2">
@@ -838,6 +975,41 @@ export default function EquipmentPage() {
               <Button type="submit">{editingAsset ? (isRtl ? 'تحديث' : 'Update') : (isRtl ? 'إضافة' : 'Add')}</Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* ==================== Asset View Dialog ==================== */}
+      <Dialog open={viewAssetDialogOpen} onOpenChange={setViewAssetDialogOpen}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>{isRtl ? 'تفاصيل الأصل/المستأجر' : 'Asset Details'}</DialogTitle></DialogHeader>
+          {viewAsset && (
+            <div className="space-y-4">
+              {/* Image Display */}
+              {viewAsset.image && (
+                <div className="rounded-lg overflow-hidden border">
+                  <img src={viewAsset.image} alt={viewAsset.name} className="w-full max-h-64 object-contain bg-muted/30" />
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div><p className="text-xs text-muted-foreground">{isRtl ? 'الاسم' : 'Name'}</p><p className="font-medium">{viewAsset.name}</p></div>
+                <div><p className="text-xs text-muted-foreground">{isRtl ? 'النوع' : 'Type'}</p><p className="font-medium">{(assetTypeLabels[viewAsset.itemType] || assetTypeLabels.other)[isRtl ? 'ar' : 'en']}</p></div>
+                <div><p className="text-xs text-muted-foreground">{isRtl ? 'نوع الملكية' : 'Ownership'}</p><p className="font-medium">{(ownershipLabels[viewAsset.ownership] || ownershipLabels.owned)[isRtl ? 'ar' : 'en']}</p></div>
+                <div><p className="text-xs text-muted-foreground">{isRtl ? 'الكمية' : 'Quantity'}</p><p className="font-medium">{viewAsset.quantity}</p></div>
+                <div><p className="text-xs text-muted-foreground">{isRtl ? 'الحالة' : 'Status'}</p><Badge className={(assetStatusLabels[viewAsset.status] || assetStatusLabels.available).color + ' border-0'}>{(assetStatusLabels[viewAsset.status] || assetStatusLabels.available)[isRtl ? 'ar' : 'en']}</Badge></div>
+                {viewAsset.project && (<div><p className="text-xs text-muted-foreground">{isRtl ? 'المشروع' : 'Project'}</p><p className="font-medium">{viewAsset.project.name}</p></div>)}
+                {viewAsset.responsible && (<div><p className="text-xs text-muted-foreground">{isRtl ? 'المسؤول' : 'Responsible'}</p><p className="font-medium">{viewAsset.responsible.name}</p></div>)}
+              </div>
+              {(viewAsset.ownership === 'rented' || viewAsset.ownership === 'borrowed') && (
+                <div className="p-3 rounded-lg bg-muted/30 border text-sm space-y-1.5">
+                  {viewAsset.supplier && (<div><span className="text-muted-foreground">{isRtl ? 'الجهة' : 'From'}: </span><span className="font-medium">{viewAsset.supplier}</span></div>)}
+                  {viewAsset.ownership === 'rented' && viewAsset.rentalCost > 0 && (<div><span className="text-muted-foreground">{isRtl ? 'الإيجار' : 'Rent'}: </span><span className="font-medium text-orange-600">{viewAsset.rentalCost} {isRtl ? 'ر.ع/شهر' : 'OMR/mo'}</span></div>)}
+                  {viewAsset.rentalStart && (<div><span className="text-muted-foreground">{isRtl ? 'البداية' : 'Start'}: </span><span className="font-medium">{new Date(viewAsset.rentalStart).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')}</span></div>)}
+                  {viewAsset.rentalEnd && (<div><span className="text-muted-foreground">{isRtl ? 'النهاية' : 'End'}: </span><span className="font-medium">{new Date(viewAsset.rentalEnd).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')}</span></div>)}
+                </div>
+              )}
+              {viewAsset.notes && (<div><p className="text-xs text-muted-foreground">{isRtl ? 'ملاحظات' : 'Notes'}</p><p className="text-sm mt-0.5">{viewAsset.notes}</p></div>)}
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 
