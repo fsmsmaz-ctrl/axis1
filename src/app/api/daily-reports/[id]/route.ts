@@ -195,11 +195,14 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   var { id } = await params
 
   try {
-    // Get report details before deleting
+    var ADMIN_EMAIL = 'admin@axis.om'
+    var isSystemAdmin = user.email.toLowerCase().trim() === ADMIN_EMAIL
+
+    // Get full report details before deleting
     var reportResult = await safeDbOp(
       () => db.dailyReport.findUnique({
         where: { id },
-        select: { projectId: true, status: true, createdById: true },
+        select: { projectId: true, status: true, createdById: true, driveLineId: true },
       }),
       'البحث عن التقرير'
     )
@@ -211,18 +214,38 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
       return NextResponse.json({ error: 'Report not found' }, { status: 404 })
     }
 
-    // Only top management can delete approved reports
-    if (report.status === 'approved' && user.role !== 'top_management') {
-      return NextResponse.json({ error: 'Cannot delete approved report' }, { status: 403 })
-    }
+    // System admin can delete any report regardless of status
+    if (!isSystemAdmin) {
+      // Only top management can delete approved reports
+      if (report.status === 'approved' && user.role !== 'top_management') {
+        return NextResponse.json({ error: 'Cannot delete approved report' }, { status: 403 })
+      }
 
-    // Only allow deleting own draft/submitted reports (or admin/manager can delete any non-approved)
-    if (user.role !== 'top_management' && user.role !== 'project_manager') {
-      if (report.createdById !== user.id) {
-        return NextResponse.json({ error: 'forbidden', message: 'لا يمكنك حذف تقرير آخر موظف' }, { status: 403 })
+      // Only allow deleting own draft/submitted reports (or admin/manager can delete any non-approved)
+      if (user.role !== 'top_management' && user.role !== 'project_manager') {
+        if (report.createdById !== user.id) {
+          return NextResponse.json({ error: 'forbidden', message: 'لا يمكنك حذف تقرير آخر موظف' }, { status: 403 })
+        }
       }
     }
 
+    // === Delete all related data before deleting the report ===
+
+    // 1. Delete associated costs (no cascade in schema)
+    await safeDbOp(
+      () => db.cost.deleteMany({ where: { dailyReportId: id } }),
+      'حذف التكاليف المرتبطة'
+    ).catch(function() {})
+
+    // 2. Delete audit logs for this report (before deleting the report)
+    await safeDbOp(
+      () => db.auditLog.deleteMany({ where: { dailyReportId: id } }),
+      'حذف سجلات التدقيق'
+    ).catch(function() {})
+
+    // SafetyReport and Attachment will be auto-deleted via onDelete: Cascade
+
+    // 3. Now delete the daily report itself
     var deleteResult = await safeDbOp(
       () => db.dailyReport.delete({ where: { id } }),
       'حذف التقرير اليومي'
@@ -230,35 +253,73 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
 
     if (!deleteResult.success) return deleteResult.response
 
-    // Audit log + delete notification (non-critical, fire-and-forget)
-    Promise.all([
-      safeDbOp(
-        () => db.auditLog.create({
-          data: {
-            userId: user.id,
-            projectId: report.projectId,
-            dailyReportId: id,
-            action: 'delete',
-            entity: 'daily_report',
-            entityId: id,
-            details: 'Deleted daily report',
-          },
-        }),
-        'سجل التدقيق'
-      ),
-      safeDbOp(
-        () => db.notification.create({
-          data: {
-            projectId: report.projectId,
-            type: 'report_delay',
-            title: 'حذف تقرير يومي',
-            message: 'تم حذف تقرير يومي (المعرف: ' + id + ') بواسطة ' + user.name,
-            severity: 'warning',
-          },
-        }),
-        'إشعار الحذف'
-      ),
-    ]).catch(function() {})
+    // 4. Recalculate drive line progress if the report had a drive line
+    if (report.driveLineId) {
+      (async function() {
+        // Find the latest report for this drive line to get the correct completed length
+        var latestReport = await safeDbOp(
+          () => db.dailyReport.findFirst({
+            where: { driveLineId: report.driveLineId },
+            orderBy: { reportDate: 'desc' },
+            select: { endReading: true },
+          }),
+          'البحث عن آخر تقرير للخط'
+        )
+        var completedLength = (latestReport.success && latestReport.data) ? latestReport.data.endReading : 0
+
+        var dlResult = await safeDbOp(
+          () => db.driveLine.findUnique({ where: { id: report.driveLineId }, select: { totalLength: true } }),
+          'جلب بيانات الخط'
+        )
+        var dlTotalLength = (dlResult.success && dlResult.data) ? dlResult.data.totalLength : 0
+        var dlProgress = dlTotalLength > 0 ? (completedLength / dlTotalLength) * 100 : 0
+        var dlStatus = dlProgress >= 100 ? 'completed' : 'in_progress'
+
+        await safeDbOp(
+          () => db.driveLine.update({
+            where: { id: report.driveLineId },
+            data: { completedLength: completedLength, progress: dlProgress, status: dlStatus },
+          }),
+          'تحديث تقدم خط الحفر'
+        ).catch(function() {})
+
+        // 5. Recalculate project progress
+        var allLines = await safeDbOp(
+          () => db.driveLine.findMany({
+            where: { projectId: report.projectId },
+            select: { totalLength: true, completedLength: true },
+          }),
+          'جلب خطوط الحفر'
+        )
+        if (allLines.success && allLines.data) {
+          var totalAll = allLines.data.reduce(function(s: number, l: any) { return s + l.totalLength }, 0)
+          var completedAll = allLines.data.reduce(function(s: number, l: any) { return s + l.completedLength }, 0)
+          var projectProgress = totalAll > 0 ? (completedAll / totalAll) * 100 : 0
+          await safeDbOp(
+            () => db.project.update({
+              where: { id: report.projectId },
+              data: { progress: projectProgress },
+            }),
+            'تحديث تقدم المشروع'
+          ).catch(function() {})
+        }
+      })().catch(function() {})
+    }
+
+    // 6. Audit log for the deletion itself
+    safeDbOp(
+      () => db.auditLog.create({
+        data: {
+          userId: user.id,
+          projectId: report.projectId,
+          action: 'delete',
+          entity: 'daily_report',
+          entityId: id,
+          details: 'Deleted daily report (system admin: ' + isSystemAdmin + ')',
+        },
+      }),
+      'سجل التدقيق'
+    ).catch(function() {})
 
     return NextResponse.json({ success: true })
   } catch (error) {
