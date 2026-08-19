@@ -221,7 +221,7 @@ export default function DailyReportsPage() {
       var res = await authedFetch('/api/daily-reports/' + editingReportId, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(Object.assign({}, formData, { status: 'draft' })),
+        body: JSON.stringify(Object.assign({}, formData, { status: 'draft', safety: safety })),
       })
       if (res.ok) {
         setDialogOpen(false)
@@ -255,7 +255,7 @@ export default function DailyReportsPage() {
       var res = await authedFetch('/api/daily-reports/' + editingReportId, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(Object.assign({}, formData, { status: 'submitted' })),
+        body: JSON.stringify(Object.assign({}, formData, { status: 'submitted', safety: safety })),
       })
       if (res.ok) {
         setDialogOpen(false)
@@ -299,7 +299,7 @@ export default function DailyReportsPage() {
   }
 
   var canApprove = user?.role === 'project_manager' || user?.role === 'top_management'
-  var canEditOthers = user?.role === 'top_management' || user?.role === 'project_manager' || user?.role === 'site_engineer'
+  var canEditOthers = user?.role === 'top_management' || user?.role === 'project_manager' || user?.role === 'site_engineer' || user?.role === 'hse_officer'
 
   // Check if a report came from safety section (has safety but minimal production data)
   function isFromSafetySection(r: any) {
@@ -462,7 +462,6 @@ export default function DailyReportsPage() {
             )}
 
             <Tabs defaultValue={!editingReportId ? 'safety' : 'report'}>
-              {!editingReportId && (
                 <TabsList className="grid w-full grid-cols-2">
                   <TabsTrigger value="safety" className="gap-1.5">
                     <ShieldCheck className="h-4 w-4" />
@@ -473,9 +472,7 @@ export default function DailyReportsPage() {
                     {isRtl ? 'بيانات التقرير' : 'Report'}
                   </TabsTrigger>
                 </TabsList>
-              )}
 
-              {!editingReportId && (
                 <TabsContent value="safety" className="space-y-4 mt-4">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     {safetyChecklistItems.map(function(item) {
@@ -542,7 +539,6 @@ export default function DailyReportsPage() {
                     </div>
                   </div>
                 </TabsContent>
-              )}
 
               {/* Report Tab / Edit mode */}
               <TabsContent value="report" className={'space-y-4 ' + (editingReportId ? 'mt-0' : 'mt-4')}>
