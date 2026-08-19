@@ -16,7 +16,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   FileText, Calendar,
-  ShieldCheck, CheckCircle2, Eye, Check, X, Pencil
+  ShieldCheck, CheckCircle2, Eye, Check, X, Pencil, Trash2
 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
@@ -300,6 +300,28 @@ export default function DailyReportsPage() {
 
   var canApprove = user?.role === 'project_manager' || user?.role === 'top_management'
   var canEditOthers = user?.role === 'top_management' || user?.role === 'project_manager' || user?.role === 'site_engineer' || user?.role === 'hse_officer'
+  var isAdmin = user?.email?.toLowerCase().trim() === 'admin@axis.om'
+
+  async function deleteReport(report: any) {
+    var msg = isRtl
+      ? 'هل أنت متأكد من حذف هذا التقرير اليومي؟ سيتم حذف جميع البيانات المرتبطة به (تكاليف، سلامة، مرفقات) ولا يمكن التراجع.'
+      : 'Are you sure you want to delete this daily report? All related data (costs, safety, attachments) will be deleted and cannot be recovered.'
+    if (!confirm(msg)) return
+    try {
+      var res = await authedFetch('/api/daily-reports/' + report.id, {
+        method: 'DELETE',
+      })
+      if (res.ok) {
+        toast.success(isRtl ? 'تم حذف التقرير وجميع بياناته المرتبطة' : 'Report and all related data deleted')
+        fetchReports()
+      } else {
+        var data = await res.json().catch(function() { return {} })
+        toast.error(data.message || (isRtl ? 'فشل الحذف' : 'Delete failed'))
+      }
+    } catch {
+      toast.error(isRtl ? 'حدث خطأ' : 'Error')
+    }
+  }
 
   // Check if a report came from safety section (has safety but minimal production data)
   function isFromSafetySection(r: any) {
@@ -395,6 +417,16 @@ export default function DailyReportsPage() {
                       {canApprove && r.status === 'submitted' && (
                         <Button variant="outline" size="sm" className="text-emerald-600" onClick={function() { approveReport(r.id) }}>
                           <Check className="h-4 w-4" />
+                        </Button>
+                      )}
+                      {isAdmin && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 p-0 text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
+                          onClick={function() { deleteReport(r) }}
+                        >
+                          <Trash2 className="h-4 w-4" />
                         </Button>
                       )}
                     </div>
