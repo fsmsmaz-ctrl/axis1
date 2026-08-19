@@ -45,23 +45,31 @@ export async function PUT(
       'جلب الأصل القديم'
     )
 
+    // Build update data - only include image if explicitly provided
+    var updateData: any = {
+      name: String(body.name).trim(),
+      itemType: String(body.itemType),
+      quantity: body.quantity !== undefined ? parseInt(body.quantity) : undefined,
+      ownership: String(body.ownership),
+      supplier: body.supplier ? String(body.supplier).trim() : null,
+      rentalCost: body.rentalCost !== undefined && body.rentalCost !== '' ? parseFloat(body.rentalCost) : null,
+      rentalStart: body.rentalStart ? new Date(body.rentalStart) : null,
+      rentalEnd: body.rentalEnd ? new Date(body.rentalEnd) : null,
+      responsibleId: body.responsibleId || null,
+      projectId: body.projectId || null,
+      status: String(body.status),
+      notes: body.notes ? String(body.notes) : null,
+    }
+
+    // Handle image: body.image can be a base64 string, null (remove), or undefined (keep current)
+    if (body.hasOwnProperty('image')) {
+      updateData.image = body.image ? String(body.image) : null
+    }
+
     var updateResult = await safeDbOp(
       () => db.companyAsset.update({
         where: { id },
-        data: {
-          name: String(body.name).trim(),
-          itemType: String(body.itemType),
-          quantity: body.quantity !== undefined ? parseInt(body.quantity) : undefined,
-          ownership: String(body.ownership),
-          supplier: body.supplier ? String(body.supplier).trim() : null,
-          rentalCost: body.rentalCost !== undefined && body.rentalCost !== '' ? parseFloat(body.rentalCost) : null,
-          rentalStart: body.rentalStart ? new Date(body.rentalStart) : null,
-          rentalEnd: body.rentalEnd ? new Date(body.rentalEnd) : null,
-          responsibleId: body.responsibleId || null,
-          projectId: body.projectId || null,
-          status: String(body.status),
-          notes: body.notes ? String(body.notes) : null,
-        },
+        data: updateData,
       }),
       'تحديث الأصل'
     )
@@ -76,7 +84,7 @@ export async function PUT(
           },
           body,
           'تعديل أصل: ' + updateResult.data.name,
-          { skipFields: ['id', 'createdAt', 'updatedAt', 'projectId', 'responsibleId'] }
+          { skipFields: ['id', 'createdAt', 'updatedAt', 'projectId', 'responsibleId', 'image'] }
         )
       : 'تعديل أصل: ' + updateResult.data.name
 
