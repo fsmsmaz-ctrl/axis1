@@ -213,7 +213,7 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Calculate net profit (costs from Cost table + equipment rentals)
+  // Calculate net profit (include all-time rental costs in total)
   var totalWithRentals = (totalCosts._sum.amount || 0) + allTimeRentalTotal
   var netProfit = (totalRevenueResult._sum.dailyRevenue || 0) - totalWithRentals
 
@@ -226,7 +226,7 @@ export async function GET(req: NextRequest) {
       revenueToday,
       revenueThisMonth,
       totalRevenue: totalRevenueResult._sum.dailyRevenue || 0,
-      totalCosts: totalCosts._sum.amount || 0,
+      totalCosts: (totalCosts._sum.amount || 0) + allTimeRentalTotal,
       monthCosts: monthCosts._sum.amount || 0,
       monthlyRentalCost: monthlyRentalCost,
       netProfit: netProfit,
