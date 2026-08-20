@@ -41,7 +41,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
   }
 
-  // Rate limit write operations
   var rl = checkRateLimit(req, RateLimitPresets.write)
   if (rl.limited) {
     return NextResponse.json(
@@ -56,7 +55,6 @@ export async function POST(req: NextRequest) {
     var validationError = validateRequired(body, ['name', 'number', 'type'])
     if (validationError) return validationError
 
-    // Check for duplicate number
     var dupResult = await safeDbOp(
       () => db.equipment.findUnique({ where: { number: String(body.number).trim() } }),
       'فحص الرمز المكرر'
@@ -79,6 +77,7 @@ export async function POST(req: NextRequest) {
           dailyHours: parseNumber(body.dailyHours, 0),
           lastMaintenance: body.lastMaintenance ? new Date(body.lastMaintenance) : null,
           nextMaintenance: body.nextMaintenance ? new Date(body.nextMaintenance) : null,
+          image: body.image ? String(body.image) : null,
           notes: body.notes ? String(body.notes) : null,
           createdById: user.id,
         },
@@ -88,16 +87,12 @@ export async function POST(req: NextRequest) {
     )
     if (!createResult.success) return createResult.response
 
-    // Audit log + notification (non-critical, fire-and-forget)
     Promise.all([
       safeDbOp(
         () => db.auditLog.create({
           data: {
-            userId: user.id,
-            projectId: body.projectId,
-            action: 'create',
-            entity: 'equipment',
-            entityId: createResult.data.id,
+            userId: user.id, projectId: body.projectId, action: 'create',
+            entity: 'equipment', entityId: createResult.data.id,
             details: 'Created equipment ' + createResult.data.number + ' - ' + createResult.data.name,
           },
         }),
@@ -106,8 +101,7 @@ export async function POST(req: NextRequest) {
       safeDbOp(
         () => db.notification.create({
           data: {
-            projectId: body.projectId,
-            type: 'equipment_breakdown',
+            projectId: body.projectId, type: 'equipment_breakdown',
             title: 'إضافة معدة جديدة',
             message: 'تم إضافة معدة: ' + createResult.data.number + ' - ' + createResult.data.name + ' بواسطة ' + user.name,
             severity: 'info',
@@ -139,7 +133,6 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: 'missing_id', message: 'معرف المعدة مطلوب' }, { status: 400 })
   }
 
-  // Check ownership: only creator or system admin can delete
   if (!isAdmin) {
     var eqCheck = await safeDbOp(
       () => db.equipment.findUnique({ where: { id }, select: { createdById: true } }),
@@ -159,7 +152,6 @@ export async function DELETE(req: NextRequest) {
   }
 
   try {
-    // Delete related maintenance records first
     await safeDbOp(
       () => db.equipmentMaintenance.deleteMany({ where: { equipmentId: id } }),
       'حذف سجلات الصيانة'
@@ -171,14 +163,10 @@ export async function DELETE(req: NextRequest) {
     )
     if (!deleteResult.success) return deleteResult.response
 
-    // Audit log (fire-and-forget)
     safeDbOp(
       () => db.auditLog.create({
         data: {
-          userId: user.id,
-          action: 'delete',
-          entity: 'equipment',
-          entityId: id,
+          userId: user.id, action: 'delete', entity: 'equipment', entityId: id,
           details: 'Deleted equipment ' + deleteResult.data.number + ' - ' + deleteResult.data.name,
         },
       }),
