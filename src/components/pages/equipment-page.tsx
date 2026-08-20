@@ -98,7 +98,7 @@ export default function EquipmentPage() {
   const [formData, setFormData] = useState({
     projectId: '', name: '', number: '', type: 'jacking_machine',
     status: 'operational', dailyHours: '8', lastMaintenance: '',
-    nextMaintenance: '', notes: '',
+    nextMaintenance: '', notes: '', image: '' as string,
   })
 
   const [maintenanceForm, setMaintenanceForm] = useState({
@@ -113,8 +113,10 @@ export default function EquipmentPage() {
     status: 'available', notes: '', image: '' as string,
   })
 
-  // Image upload handler
+  // Image upload handler for assets
   const fileInputRef = useRef<HTMLInputElement>(null)
+  // Image upload handler for equipment
+  const eqFileInputRef = useRef<HTMLInputElement>(null)
 
   function handleImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
     var file = e.target.files && e.target.files[0]
@@ -166,6 +168,51 @@ export default function EquipmentPage() {
       setAssetForm(function(prev) { return { ...prev, image: 'REMOVE' } })
     } else {
       setAssetForm(function(prev) { return { ...prev, image: '' } })
+    }
+  }
+
+  // Equipment image upload handler
+  function handleEqImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    var file = e.target.files && e.target.files[0]
+    if (!file) return
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error(isRtl ? 'حجم الصورة كبير جداً (الحد الأقصى 2 ميجا)' : 'Image too large (max 2MB)')
+      return
+    }
+    if (!file.type.startsWith('image/')) {
+      toast.error(isRtl ? 'يرجى اختيار ملف صورة' : 'Please select an image file')
+      return
+    }
+    var reader = new FileReader()
+    reader.onload = function(ev) {
+      var result = ev.target?.result as string
+      var img = new Image()
+      img.onload = function() {
+        var maxW = 800, maxH = 800, w = img.width, h = img.height
+        if (w > maxW || h > maxH) {
+          if (w > h) { h = Math.round(h * maxW / w); w = maxW }
+          else { w = Math.round(w * maxH / h); h = maxH }
+        }
+        var canvas = document.createElement('canvas')
+        canvas.width = w; canvas.height = h
+        var ctx = canvas.getContext('2d')
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, w, h)
+          var dataUrl = canvas.toDataURL('image/jpeg', 0.7)
+          setFormData(function(prev) { return { ...prev, image: dataUrl } })
+        }
+      }
+      img.src = result
+    }
+    reader.readAsDataURL(file)
+    if (eqFileInputRef.current) eqFileInputRef.current.value = ''
+  }
+
+  function removeEqImage() {
+    if (editingEquipment && editingEquipment.image) {
+      setFormData(function(prev) { return { ...prev, image: 'REMOVE' } })
+    } else {
+      setFormData(function(prev) { return { ...prev, image: '' } })
     }
   }
 
@@ -246,10 +293,14 @@ export default function EquipmentPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     try {
+      var payload: any = { ...formData }
+      if (payload.image === 'REMOVE' || payload.image === '') {
+        delete payload.image
+      }
       const res = await authedFetch('/api/equipment', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(payload),
       })
       if (res.ok) {
         toast.success(isRtl ? 'تم إنشاء المعدة' : 'Equipment created')
@@ -353,6 +404,7 @@ export default function EquipmentPage() {
       lastMaintenance: eq.lastMaintenance ? eq.lastMaintenance.split('T')[0] : '',
       nextMaintenance: eq.nextMaintenance ? eq.nextMaintenance.split('T')[0] : '',
       notes: eq.notes || '',
+      image: eq.image || '',
     })
     setEditEqDialogOpen(true)
   }
@@ -361,10 +413,16 @@ export default function EquipmentPage() {
     e.preventDefault()
     if (!editingEquipment) return
     try {
+      var eqPayload: any = { ...formData }
+      if (eqPayload.image === 'REMOVE') {
+        eqPayload.image = null
+      } else if (!eqPayload.image) {
+        delete eqPayload.image
+      }
       var res = await authedFetch('/api/equipment/' + editingEquipment.id, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(eqPayload),
       })
       if (res.ok) {
         toast.success(isRtl ? 'تم تحديث المعدة' : 'Equipment updated')
@@ -432,7 +490,7 @@ export default function EquipmentPage() {
             setFormData({
               projectId: projects[0]?.id || '', name: '', number: '', type: 'jacking_machine',
               status: 'operational', dailyHours: '8', lastMaintenance: '',
-              nextMaintenance: '', notes: '',
+              nextMaintenance: '', notes: '', image: '',
             })
             setDialogOpen(true)
           }}>
@@ -515,6 +573,14 @@ export default function EquipmentPage() {
               <Card key={eq.id} className="hover:shadow-sm transition">
                 <CardContent className="p-4">
                   <div className="flex items-start gap-3 mb-3">
+                    {eq.image ? (
+                      <div
+                        className="w-10 h-10 rounded-lg object-cover shrink-0 cursor-pointer border"
+                        style={{ backgroundImage: 'url(' + eq.image + ')', backgroundSize: 'cover', backgroundPosition: 'center' }}
+                        onClick={() => openView(eq)}
+                        title={isRtl ? 'عرض التفاصيل' : 'View details'}
+                      />
+                    ) : (
                     <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
                       eq.status === 'operational' ? 'bg-emerald-50' :
                       eq.status === 'stopped' ? 'bg-red-50' : 'bg-orange-50'
@@ -524,6 +590,7 @@ export default function EquipmentPage() {
                         eq.status === 'stopped' ? 'text-red-600' : 'text-orange-600'
                       }`} />
                     </div>
+                    )}
                     <div className="flex-1 min-w-0">
                       <p className="font-semibold text-sm truncate">{eq.name}</p>
                       <p className="text-xs text-muted-foreground font-mono">{eq.number}</p>
@@ -732,6 +799,54 @@ export default function EquipmentPage() {
             <DialogDescription>{isRtl ? 'أدخل بيانات المعدة' : 'Enter equipment details'}</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-3">
+            {/* Image Upload */}
+            <div className="space-y-1.5">
+              <Label>{isRtl ? 'صورة المعدة' : 'Equipment Image'}</Label>
+              <div className="flex items-center gap-3">
+                {formData.image && formData.image !== 'REMOVE' ? (
+                  <div className="relative w-24 h-24 rounded-lg overflow-hidden border shrink-0">
+                    <img src={formData.image} alt="" className="w-full h-full object-cover" />
+                    <button
+                      type="button"
+                      onClick={removeEqImage}
+                      className="absolute top-0.5 right-0.5 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600 shadow"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <div
+                    className="w-24 h-24 rounded-lg border-2 border-dashed border-muted-foreground/30 flex flex-col items-center justify-center cursor-pointer hover:border-primary/50 hover:bg-muted/30 transition shrink-0"
+                    onClick={() => eqFileInputRef.current?.click()}
+                  >
+                    <Camera className="h-6 w-6 text-muted-foreground/50" />
+                    <span className="text-[10px] text-muted-foreground/50 mt-1">{isRtl ? 'صورة' : 'Photo'}</span>
+                  </div>
+                )}
+                <div className="flex-1">
+                  <input
+                    ref={eqFileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleEqImageSelect}
+                    className="hidden"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => eqFileInputRef.current?.click()}
+                  >
+                    <Camera className="h-4 w-4 ml-1" />
+                    {formData.image && formData.image !== 'REMOVE'
+                      ? (isRtl ? 'تغيير الصورة' : 'Change Image')
+                      : (isRtl ? 'اختر صورة' : 'Choose Image')
+                    }
+                  </Button>
+                  <p className="text-[10px] text-muted-foreground mt-1">{isRtl ? 'JPG, PNG - الحد الأقصى 2 ميجا' : 'JPG, PNG - Max 2MB'}</p>
+                </div>
+              </div>
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5"><Label>{isRtl ? 'اسم المعدة' : 'Equipment Name'} *</Label><Input value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required /></div>
               <div className="space-y-1.5"><Label>{isRtl ? 'رقم المعدة' : 'Number'} *</Label><Input value={formData.number} onChange={(e) => setFormData({ ...formData, number: e.target.value })} required /></div>
@@ -786,6 +901,54 @@ export default function EquipmentPage() {
             <DialogDescription>{isRtl ? 'تعديل بيانات المعدة' : 'Update equipment details'}</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleEditEquipmentSubmit} className="space-y-3">
+            {/* Image Upload */}
+            <div className="space-y-1.5">
+              <Label>{isRtl ? 'صورة المعدة' : 'Equipment Image'}</Label>
+              <div className="flex items-center gap-3">
+                {formData.image && formData.image !== 'REMOVE' ? (
+                  <div className="relative w-24 h-24 rounded-lg overflow-hidden border shrink-0">
+                    <img src={formData.image} alt="" className="w-full h-full object-cover" />
+                    <button
+                      type="button"
+                      onClick={removeEqImage}
+                      className="absolute top-0.5 right-0.5 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600 shadow"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <div
+                    className="w-24 h-24 rounded-lg border-2 border-dashed border-muted-foreground/30 flex flex-col items-center justify-center cursor-pointer hover:border-primary/50 hover:bg-muted/30 transition shrink-0"
+                    onClick={() => eqFileInputRef.current?.click()}
+                  >
+                    <Camera className="h-6 w-6 text-muted-foreground/50" />
+                    <span className="text-[10px] text-muted-foreground/50 mt-1">{isRtl ? 'صورة' : 'Photo'}</span>
+                  </div>
+                )}
+                <div className="flex-1">
+                  <input
+                    ref={eqFileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleEqImageSelect}
+                    className="hidden"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => eqFileInputRef.current?.click()}
+                  >
+                    <Camera className="h-4 w-4 ml-1" />
+                    {formData.image && formData.image !== 'REMOVE'
+                      ? (isRtl ? 'تغيير الصورة' : 'Change Image')
+                      : (isRtl ? 'اختر صورة' : 'Choose Image')
+                    }
+                  </Button>
+                  <p className="text-[10px] text-muted-foreground mt-1">{isRtl ? 'JPG, PNG - الحد الأقصى 2 ميجا' : 'JPG, PNG - Max 2MB'}</p>
+                </div>
+              </div>
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5"><Label>{isRtl ? 'اسم المعدة' : 'Equipment Name'} *</Label><Input value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required /></div>
               <div className="space-y-1.5"><Label>{isRtl ? 'رقم المعدة' : 'Number'} *</Label><Input value={formData.number} onChange={(e) => setFormData({ ...formData, number: e.target.value })} required /></div>
@@ -1018,6 +1181,11 @@ export default function EquipmentPage() {
           <DialogHeader><DialogTitle>{isRtl ? 'تفاصيل المعدة' : 'Equipment Details'}</DialogTitle></DialogHeader>
           {viewEquipment && (
             <div className="space-y-4">
+              {viewEquipment.image && (
+                <div className="rounded-lg overflow-hidden border">
+                  <img src={viewEquipment.image} alt={viewEquipment.name} className="w-full max-h-64 object-contain bg-muted/30" />
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div><p className="text-xs text-muted-foreground">{isRtl ? 'الاسم' : 'Name'}</p><p className="font-medium">{viewEquipment.name}</p></div>
                 <div><p className="text-xs text-muted-foreground">{isRtl ? 'الرقم' : 'Number'}</p><p className="font-medium font-mono">{viewEquipment.number}</p></div>
