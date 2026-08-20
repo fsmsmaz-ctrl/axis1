@@ -27,6 +27,7 @@ interface DashboardData {
     revenueThisMonth: number
     totalRevenue: number
     totalCosts: number
+    costsTotal: number
     monthCosts: number
     monthlyRentalCost: number
     netProfit: number
@@ -144,7 +145,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
   const stats = data.stats || {
     activeProjects: 0, totalProjects: 0, metersToday: 0, metersThisMonth: 0,
     revenueToday: 0, revenueThisMonth: 0, totalRevenue: 0, totalCosts: 0,
-    monthCosts: 0, monthlyRentalCost: 0, netProfit: 0, stoppedEquipment: 0, presentWorkers: 0,
+    monthCosts: 0, costsTotal: 0, monthlyRentalCost: 0, netProfit: 0, stoppedEquipment: 0, presentWorkers: 0,
     unreadNotifications: 0,
   }
   const projects = Array.isArray(data.projects) ? data.projects : []
@@ -250,8 +251,8 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
         />
         <MiniStat
           icon={TrendingDown}
-          label={isRtl ? 'التكاليف الشهريه' : 'Monthly Costs'}
-          value={fmtCurrency(stats.monthCosts)}
+          label={isRtl ? 'التكاليف' : 'Costs'}
+          value={fmtCurrency(stats.costsTotal)}
           color="text-purple-600"
         />
         <MiniStat
