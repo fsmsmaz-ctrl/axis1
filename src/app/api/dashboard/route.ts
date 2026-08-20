@@ -227,6 +227,7 @@ export async function GET(req: NextRequest) {
       revenueThisMonth,
       totalRevenue: totalRevenueResult._sum.dailyRevenue || 0,
       totalCosts: (totalCosts._sum.amount || 0) + allTimeRentalTotal,
+      costsTotal: totalCosts._sum.amount || 0,
       monthCosts: monthCosts._sum.amount || 0,
       monthlyRentalCost: monthlyRentalCost,
       netProfit: netProfit,
