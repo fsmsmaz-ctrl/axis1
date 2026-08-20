@@ -250,18 +250,16 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
         />
         <MiniStat
           icon={TrendingDown}
-          label={isRtl ? 'تكاليف الشهر' : 'Month Costs'}
+          label={isRtl ? 'التكاليف الشهريه' : 'Monthly Costs'}
           value={fmtCurrency(stats.monthCosts)}
           color="text-purple-600"
         />
-        {stats.monthlyRentalCost > 0 && (
-          <MiniStat
-            icon={Wallet}
-            label={isRtl ? 'إيجارات شهرية' : 'Monthly Rentals'}
-            value={fmtCurrency(stats.monthlyRentalCost)}
-            color="text-teal-600"
-          />
-        )}
+        <MiniStat
+          icon={Wallet}
+          label={isRtl ? 'الايجارات الشهريه' : 'Monthly Rentals'}
+          value={fmtCurrency(stats.monthlyRentalCost)}
+          color="text-teal-600"
+        />
         <MiniStat
           icon={Activity}
           label={isRtl ? 'أمتار الشهر' : 'Month Meters'}
