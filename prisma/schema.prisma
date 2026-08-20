@@ -209,6 +209,7 @@ model Equipment {
   lastMaintenance DateTime?
   nextMaintenance DateTime?
   spareParts      String?
+  image           String?  // base64 data URL of equipment image
   notes           String?
 
   project         Project? @relation(fields: [projectId], references: [id])
