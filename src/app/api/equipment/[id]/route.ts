@@ -66,20 +66,28 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       'جلب بيانات المعدة القديمة'
     )
 
+    // Build update data - only include image if explicitly provided
+    var updateData: any = {
+      name: body.name,
+      number: body.number,
+      type: body.type,
+      status: body.status,
+      dailyHours: parseFloat(body.dailyHours) || 0,
+      lastMaintenance: body.lastMaintenance ? new Date(body.lastMaintenance) : null,
+      nextMaintenance: body.nextMaintenance ? new Date(body.nextMaintenance) : null,
+      notes: body.notes,
+      projectId: body.projectId || null,
+    }
+
+    // Handle image: body.image can be a base64 string, null (remove), or undefined (keep current)
+    if (body.hasOwnProperty('image')) {
+      updateData.image = body.image ? String(body.image) : null
+    }
+
     var updateResult = await safeDbOp(
       () => db.equipment.update({
         where: { id },
-        data: {
-          name: body.name,
-          number: body.number,
-          type: body.type,
-          status: body.status,
-          dailyHours: parseFloat(body.dailyHours) || 0,
-          lastMaintenance: body.lastMaintenance ? new Date(body.lastMaintenance) : null,
-          nextMaintenance: body.nextMaintenance ? new Date(body.nextMaintenance) : null,
-          notes: body.notes,
-          projectId: body.projectId || null,
-        },
+        data: updateData,
       }),
       'تحديث المعدة'
     )
@@ -95,7 +103,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     } : null
 
     var details = oldForCompare
-      ? buildAuditDetails(oldForCompare, body, 'تعديل المعدة: ' + equipment.number + ' - ' + equipment.name, { skipFields: ['id', 'createdAt', 'updatedAt', 'projectId', 'breakdowns', 'spareParts'] })
+      ? buildAuditDetails(oldForCompare, body, 'تعديل المعدة: ' + equipment.number + ' - ' + equipment.name, { skipFields: ['id', 'createdAt', 'updatedAt', 'projectId', 'breakdowns', 'spareParts', 'image'] })
       : 'تعديل المعدة: ' + equipment.number + ' - ' + equipment.name
 
     Promise.all([
