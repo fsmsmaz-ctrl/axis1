@@ -154,6 +154,65 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
     if (!updateResult.success) return updateResult.response
 
+    // === Handle safety data ===
+    if (body.safety && typeof body.safety === 'object') {
+      var safetyBody = body.safety
+
+      // Check if a safety report already exists for this daily report
+      var existingSafetyResult = await safeDbOp(
+        () => db.safetyReport.findUnique({
+          where: { dailyReportId: id },
+        }),
+        'البحث عن تقرير السلامة'
+      )
+
+      var safetyData: any = {
+        projectId: existingReport.projectId,
+        reportDate: body.reportDate ? new Date(body.reportDate) : existingReport.reportDate,
+        ppeAvailable: !!safetyBody.ppeAvailable,
+        helmetCheck: !!safetyBody.helmetCheck,
+        bootsCheck: !!safetyBody.bootsCheck,
+        glovesCheck: !!safetyBody.glovesCheck,
+        glassesCheck: !!safetyBody.glassesCheck,
+        workAreaCheck: !!safetyBody.workAreaCheck,
+        barriersCheck: !!safetyBody.barriersCheck,
+        shaftCheck: !!safetyBody.shaftCheck,
+        ventilationCheck: !!safetyBody.ventilationCheck,
+        electricalCheck: !!safetyBody.electricalCheck,
+        craneCheck: !!safetyBody.craneCheck,
+        hydraulicCheck: !!safetyBody.hydraulicCheck,
+        fireExtinguishers: !!safetyBody.fireExtinguishers,
+        workPermit: !!safetyBody.workPermit,
+        toolboxTalk: !!safetyBody.toolboxTalk,
+        hazards: safetyBody.hazards || null,
+        observations: safetyBody.observations || null,
+        violations: safetyBody.violations || null,
+        incidentType: safetyBody.incidentType || 'none',
+        incidentDescription: safetyBody.incidentDescription || null,
+      }
+
+      if (existingSafetyResult.success && existingSafetyResult.data) {
+        // Update existing safety report
+        await safeDbOp(
+          () => db.safetyReport.update({
+            where: { dailyReportId: id },
+            data: safetyData,
+          }),
+          'تحديث تقرير السلامة'
+        ).catch(function() {})
+      } else {
+        // Create new safety report
+        safetyData.dailyReportId = id
+        safetyData.signedBy = user.name
+        safetyData.signedById = user.id
+        safetyData.signedAt = new Date()
+        await safeDbOp(
+          () => db.safetyReport.create({ data: safetyData }),
+          'إنشاء تقرير السلامة'
+        ).catch(function() {})
+      }
+    }
+
     // Audit log (non-critical)
     safeDbOp(
       () => db.auditLog.create({
