@@ -1,19 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
-import { handleDbError } from '@/lib/api-helpers'
+import { handleDbError, safeDbOp } from '@/lib/api-helpers'
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   var user = await getAuthUser(req)
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!user) return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
 
-  // H-2 FIX: Only allow marking own notifications as read
   var { id } = await params
-  var notification = await db.notification.findUnique({ where: { id }, select: { userId: true } })
-  if (!notification) return NextResponse.json({ error: 'not_found' }, { status: 404 })
-  // Allow if notification has no userId (broadcast) or belongs to user
-  if (notification.userId && notification.userId !== user.id && user.role !== 'top_management') {
-    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+
+  var notifResult = await safeDbOp(
+    () => db.notification.findUnique({ where: { id }, select: { userId: true } }),
+    'البحث عن التنبيه'
+  )
+  if (!notifResult.success) return notifResult.response
+  if (!notifResult.data) return NextResponse.json({ error: 'not_found', message: 'التنبيه غير موجود' }, { status: 404 })
+
+  // FIX: Use role check instead of email comparison
+  if (notifResult.data.userId && notifResult.data.userId !== user.id && user.role !== 'top_management') {
+    return NextResponse.json({ error: 'forbidden', message: 'لا يمكنك تعديل تنبيهات مستخدم آخر' }, { status: 403 })
   }
 
   var body = await req.json()
