@@ -21,8 +21,13 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     const validationError = validateRequired(body, ['date', 'category', 'description', 'amount'])
     if (validationError) return validationError
 
-    // H-2 FIX: Check ownership (creator or admin/PM)
-    var existing = await db.cost.findUnique({ where: { id }, select: { recordedById: true, projectId: true } })
+    // FIX-4.5: Wrapped in safeDbOp to prevent crash
+    var existingResult = await safeDbOp(
+      () => db.cost.findUnique({ where: { id }, select: { recordedById: true, projectId: true } }),
+      'البحث عن التكلفة'
+    )
+    if (!existingResult.success) return existingResult.response
+    var existing = existingResult.data
     if (!existing) return NextResponse.json({ error: 'not_found', message: 'التكلفة غير موجودة' }, { status: 404 })
     if (existing.recordedById !== user.id && user.role !== 'top_management' && user.role !== 'project_manager') {
       return NextResponse.json({ error: 'forbidden', message: 'يمكنك فقط تعديل التكاليف التي أنشأتها' }, { status: 403 })
@@ -34,7 +39,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     )
     if (!updateResult.success) return updateResult.response
     return NextResponse.json({ cost: updateResult.data, success: true })
-  } catch (error: any) {
+  } catch (error) {
     return handleDbError(error, 'تحديث التكلفة')
   }
 }
@@ -51,8 +56,13 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
 
   try {
     var { id } = await params
-    // H-2 FIX: Check ownership
-    var existing = await db.cost.findUnique({ where: { id }, select: { recordedById: true, projectId: true, category: true, description: true, amount: true } })
+    // FIX-4.5: Wrapped in safeDbOp to prevent crash
+    var existingResult = await safeDbOp(
+      () => db.cost.findUnique({ where: { id }, select: { recordedById: true, projectId: true, category: true, description: true, amount: true } }),
+      'البحث عن التكلفة'
+    )
+    if (!existingResult.success) return existingResult.response
+    var existing = existingResult.data
     if (!existing) return NextResponse.json({ error: 'not_found', message: 'التكلفة غير موجودة' }, { status: 404 })
     if (existing.recordedById !== user.id && user.role !== 'top_management' && user.role !== 'project_manager') {
       return NextResponse.json({ error: 'forbidden', message: 'يمكنك فقط حذف التكاليف التي أنشأتها' }, { status: 403 })
@@ -66,7 +76,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     ]).catch(function() {})
 
     return NextResponse.json({ success: true })
-  } catch (error: any) {
+  } catch (error) {
     return handleDbError(error, 'حذف التكلفة')
   }
 }
