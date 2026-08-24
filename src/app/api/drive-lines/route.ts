@@ -2,60 +2,52 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { handleDbError, validateRequired, parseNumber, safeDbOp } from '@/lib/api-helpers'
-import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 
-// GET drive lines, optionally filtered by projectId
 export async function GET(req: NextRequest) {
-  var user = await getAuthUser(req)
+  try {
+    const user = await getAuthUser(req)
+    if (!user) {
+      return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
+    }
 
-  if (!user) {
-    return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
+    const { searchParams } = new URL(req.url)
+    const projectId = searchParams.get('projectId')
+
+    const where: any = {}
+    if (projectId) where.projectId = projectId
+
+    const result = await safeDbOp(
+      () => db.driveLine.findMany({
+        where,
+        include: { project: { select: { id: true, name: true, code: true } } },
+        orderBy: [{ projectId: 'asc' }, { lineNumber: 'asc' }],
+        take: 200,
+      }),
+      'جلب خطوط الحفر'
+    )
+
+    if (!result.success) return result.response
+    return NextResponse.json({ driveLines: result.data })
+  } catch (error: any) {
+    return handleDbError(error, 'جلب خطوط الحفر')
   }
-
-  var searchParams = new URL(req.url).searchParams
-  var projectId = searchParams.get('projectId')
-
-  var where: any = {}
-  if (projectId) where.projectId = projectId
-
-  var result = await safeDbOp(
-    () => db.driveLine.findMany({
-      where,
-      include: { project: { select: { id: true, name: true, code: true } } },
-      orderBy: [{ projectId: 'asc' }, { lineNumber: 'asc' }],
-    }),
-    'جلب خطوط الحفر'
-  )
-
-  if (!result.success) return result.response
-  return NextResponse.json({ driveLines: result.data })
 }
 
 export async function POST(req: NextRequest) {
-  var user = await getAuthUser(req)
-
-  if (!user) {
-    return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
-  }
-
-  // Rate limit write operations
-  var rl = checkRateLimit(req, RateLimitPresets.write)
-  if (rl.limited) {
-    return NextResponse.json(
-      { error: 'too_many_requests', message: 'طلبات كثيرة جداً، يرجى الانتظار قليلاً' },
-      { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } }
-    )
-  }
-
   try {
-    var body = await req.json()
+    const user = await getAuthUser(req)
+    if (!user) {
+      return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
+    }
 
-    var validationError = validateRequired(body, [
+    const body = await req.json()
+
+    const validationError = validateRequired(body, [
       'projectId', 'lineNumber', 'startPoint', 'endPoint', 'totalLength', 'diameter', 'pipeType', 'soilType'
     ])
     if (validationError) return validationError
 
-    var createResult = await safeDbOp(
+    const createResult = await safeDbOp(
       () => db.driveLine.create({
         data: {
           projectId: String(body.projectId),
@@ -76,21 +68,6 @@ export async function POST(req: NextRequest) {
       'إنشاء خط الحفر'
     )
     if (!createResult.success) return createResult.response
-
-    // Audit log (non-critical)
-    await safeDbOp(
-      () => db.auditLog.create({
-        data: {
-          userId: user.id,
-          projectId: body.projectId,
-          action: 'create',
-          entity: 'drive_line',
-          entityId: createResult.data.id,
-          details: 'Created drive line ' + createResult.data.lineNumber,
-        },
-      }),
-      'سجل التدقيق'
-    )
 
     return NextResponse.json({ driveLine: createResult.data, success: true })
   } catch (error: any) {
