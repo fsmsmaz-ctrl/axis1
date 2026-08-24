@@ -2,71 +2,64 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { handleDbError, validateRequired, parseNumber, safeDbOp } from '@/lib/api-helpers'
-import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 
 export async function GET(req: NextRequest) {
-  var user = await getAuthUser(req)
+  try {
+    const user = await getAuthUser(req)
+    if (!user) {
+      return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
+    }
 
-  if (!user) {
-    return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
+    const { searchParams } = new URL(req.url)
+    const projectId = searchParams.get('projectId')
+
+    const where: any = {}
+    if (projectId) where.projectId = projectId
+
+    const result = await safeDbOp(
+      () => db.equipment.findMany({
+        where,
+        include: {
+          project: { select: { id: true, name: true, code: true } },
+          maintenance: { orderBy: { date: 'desc' }, take: 3 },
+        },
+        orderBy: { name: 'asc' },
+        take: 100,
+      }),
+      'جلب المعدات'
+    )
+
+    if (!result.success) return result.response
+    return NextResponse.json({ equipment: result.data })
+  } catch (error: any) {
+    return handleDbError(error, 'جلب المعدات')
   }
-
-  var searchParams = new URL(req.url).searchParams
-  var projectId = searchParams.get('projectId')
-
-  var where: any = {}
-  if (projectId) where.projectId = projectId
-
-  var result = await safeDbOp(
-    () => db.equipment.findMany({
-      where,
-      include: {
-        project: { select: { id: true, name: true, code: true } },
-        maintenance: { orderBy: { date: 'desc' }, take: 5 },
-        createdBy: { select: { id: true, name: true } },
-      },
-      orderBy: { name: 'asc' },
-    }),
-    'جلب المعدات'
-  )
-
-  if (!result.success) return result.response
-  return NextResponse.json({ equipment: result.data })
 }
 
 export async function POST(req: NextRequest) {
-  var user = await getAuthUser(req)
-
-  if (!user) {
-    return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
-  }
-
-  var rl = checkRateLimit(req, RateLimitPresets.write)
-  if (rl.limited) {
-    return NextResponse.json(
-      { error: 'too_many_requests', message: 'طلبات كثيرة جداً، يرجى الانتظار قليلاً' },
-      { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } }
-    )
-  }
-
   try {
-    var body = await req.json()
+    const user = await getAuthUser(req)
+    if (!user) {
+      return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
+    }
 
-    var validationError = validateRequired(body, ['name', 'number', 'type'])
+    const body = await req.json()
+
+    const validationError = validateRequired(body, ['name', 'number', 'type'])
     if (validationError) return validationError
 
-    var dupResult = await safeDbOp(
+    const dupResult = await safeDbOp(
       () => db.equipment.findUnique({ where: { number: String(body.number).trim() } }),
       'فحص الرمز المكرر'
     )
     if (dupResult.success && dupResult.data) {
       return NextResponse.json({
         error: 'duplicate_number',
-        message: 'المعدة برقم "' + body.number + '" موجودة بالفعل',
+        message: `المعدة برقم "${body.number}" موجودة بالفعل`,
       }, { status: 400 })
     }
 
-    var createResult = await safeDbOp(
+    const createResult = await safeDbOp(
       () => db.equipment.create({
         data: {
           projectId: body.projectId || null,
@@ -77,104 +70,15 @@ export async function POST(req: NextRequest) {
           dailyHours: parseNumber(body.dailyHours, 0),
           lastMaintenance: body.lastMaintenance ? new Date(body.lastMaintenance) : null,
           nextMaintenance: body.nextMaintenance ? new Date(body.nextMaintenance) : null,
-          image: body.image ? String(body.image) : null,
           notes: body.notes ? String(body.notes) : null,
-          createdById: user.id,
         },
-        include: { createdBy: { select: { id: true, name: true } } },
       }),
       'إنشاء المعدة'
     )
     if (!createResult.success) return createResult.response
 
-    Promise.all([
-      safeDbOp(
-        () => db.auditLog.create({
-          data: {
-            userId: user.id, projectId: body.projectId, action: 'create',
-            entity: 'equipment', entityId: createResult.data.id,
-            details: 'Created equipment ' + createResult.data.number + ' - ' + createResult.data.name,
-          },
-        }),
-        'سجل التدقيق'
-      ),
-      safeDbOp(
-        () => db.notification.create({
-          data: {
-            projectId: body.projectId, type: 'equipment_breakdown',
-            title: 'إضافة معدة جديدة',
-            message: 'تم إضافة معدة: ' + createResult.data.number + ' - ' + createResult.data.name + ' بواسطة ' + user.name,
-            severity: 'info',
-          },
-        }),
-        'إشعار الإضافة'
-      ),
-    ]).catch(function() {})
-
     return NextResponse.json({ equipment: createResult.data, success: true })
   } catch (error: any) {
     return handleDbError(error, 'إنشاء المعدة')
-  }
-}
-
-export async function DELETE(req: NextRequest) {
-  var user = await getAuthUser(req)
-
-  if (!user) {
-    return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
-  }
-
-  var ADMIN_EMAIL = 'admin@axis.om'
-  var isAdmin = user.email.toLowerCase().trim() === ADMIN_EMAIL
-
-  var searchParams = new URL(req.url).searchParams
-  var id = searchParams.get('id')
-  if (!id) {
-    return NextResponse.json({ error: 'missing_id', message: 'معرف المعدة مطلوب' }, { status: 400 })
-  }
-
-  if (!isAdmin) {
-    var eqCheck = await safeDbOp(
-      () => db.equipment.findUnique({ where: { id }, select: { createdById: true } }),
-      'فحص ملكية المعدة'
-    )
-    if (eqCheck.success && eqCheck.data && eqCheck.data.createdById !== user.id) {
-      return NextResponse.json({ error: 'forbidden', message: 'يمكنك فقط حذف المعدات التي أنشأتها' }, { status: 403 })
-    }
-  }
-
-  var rl = checkRateLimit(req, RateLimitPresets.write)
-  if (rl.limited) {
-    return NextResponse.json(
-      { error: 'too_many_requests', message: 'طلبات كثيرة جداً، يرجى الانتظار قليلاً' },
-      { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } }
-    )
-  }
-
-  try {
-    await safeDbOp(
-      () => db.equipmentMaintenance.deleteMany({ where: { equipmentId: id } }),
-      'حذف سجلات الصيانة'
-    )
-
-    var deleteResult = await safeDbOp(
-      () => db.equipment.delete({ where: { id: id } }),
-      'حذف المعدة'
-    )
-    if (!deleteResult.success) return deleteResult.response
-
-    safeDbOp(
-      () => db.auditLog.create({
-        data: {
-          userId: user.id, action: 'delete', entity: 'equipment', entityId: id,
-          details: 'Deleted equipment ' + deleteResult.data.number + ' - ' + deleteResult.data.name,
-        },
-      }),
-      'سجل التدقيق'
-    ).catch(function() {})
-
-    return NextResponse.json({ success: true })
-  } catch (error: any) {
-    return handleDbError(error, 'حذف المعدة')
   }
 }
