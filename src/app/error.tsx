@@ -4,13 +4,8 @@ import { useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { AlertTriangle } from 'lucide-react'
 
-export default function GlobalError({
-  error,
-  reset,
-}: {
-  error: Error & { digest?: string }
-  reset: () => void
-}) {
+// M-2 FIX: Show generic message only — never expose error.message
+export default function GlobalError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   useEffect(() => {
     console.error('Global error boundary caught:', error)
   }, [error])
@@ -22,12 +17,8 @@ export default function GlobalError({
           <AlertTriangle className="h-8 w-8 text-red-600" />
         </div>
         <h2 className="text-xl font-bold">حدث خطأ غير متوقع</h2>
-        <p className="text-muted-foreground text-sm">
-          {error?.message || 'حدث خطأ أثناء تحميل الصفحة. يرجى المحاولة مرة أخرى.'}
-        </p>
-        <Button onClick={reset} variant="outline">
-          إعادة المحاولة
-        </Button>
+        <p className="text-muted-foreground text-sm">حدث خطأ أثناء تحميل الصفحة. يرجى المحاولة مرة أخرى.</p>
+        <Button onClick={reset} variant="outline">إعادة المحاولة</Button>
       </div>
     </div>
   )
