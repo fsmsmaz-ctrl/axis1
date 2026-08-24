@@ -74,12 +74,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: 'not_found', message: 'التقرير غير موجود' }, { status: 404 })
     }
 
-    // Non-admin can only edit own draft reports
+    // FIX-5.1: Non-admin can only edit own reports (was allowing editing other users' drafts)
     var canEditAny = user.role === 'top_management' || user.role === 'project_manager' || user.role === 'site_engineer'
     if (!canEditAny && existingReport.createdById !== user.id) {
-      if (existingReport.status !== 'draft') {
-        return NextResponse.json({ error: 'forbidden', message: 'لا يمكنك تعديل تقرير آخر موظف' }, { status: 403 })
-      }
+      return NextResponse.json({ error: 'forbidden', message: 'لا يمكنك تعديل تقرير آخر موظف' }, { status: 403 })
     }
 
     if (existingReport.status === 'approved' || existingReport.status === 'rejected') {
