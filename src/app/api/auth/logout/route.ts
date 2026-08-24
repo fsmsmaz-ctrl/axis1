@@ -1,9 +1,15 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
+import { getAuthUser } from '@/lib/auth-server'
 import { SESSION_COOKIE, getCookieOptions } from '@/lib/auth'
 
-export async function POST() {
+// F-5 FIX: Require authentication before logout
+export async function POST(req: NextRequest) {
+  var user = await getAuthUser(req)
+  if (!user) {
+    return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  }
+
   const response = NextResponse.json({ success: true })
-  // Clear the session cookie — attributes MUST match how it was set
   response.cookies.set(SESSION_COOKIE, '', {
     ...getCookieOptions(),
     maxAge: 0,
