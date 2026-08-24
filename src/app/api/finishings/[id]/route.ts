@@ -1,28 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
+import { canWrite } from '@/lib/auth'
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = await getAuthUser(req)
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     const { id } = await params
-
     const finishing = await db.finishing.findUnique({
       where: { id },
-      include: {
-        project: { select: { id: true, name: true, code: true, client: true } },
-        signedByUser: { select: { name: true, nameEn: true } },
-      },
+      include: { project: { select: { id: true, name: true, code: true, client: true } }, signedByUser: { select: { name: true, nameEn: true } } },
     })
-
-    if (!finishing) {
-      return NextResponse.json({ error: 'Finishing not found' }, { status: 404 })
-    }
-
+    if (!finishing) return NextResponse.json({ error: 'Finishing not found' }, { status: 404 })
     return NextResponse.json({ finishing })
   } catch (error) {
     console.error('Get finishing error:', error)
@@ -33,26 +23,17 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = await getAuthUser(req)
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // H-1 FIX: RBAC
+    if (!canWrite(user.role, 'finishings', user.permissions)) {
+      return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية لتعديل التشطيبات' }, { status: 403 })
     }
-
     const { id } = await params
     const body = await req.json()
-
     const finishing = await db.finishing.update({
       where: { id },
-      data: {
-        siteCleaned: !!body.siteCleaned,
-        wasteRemoved: !!body.wasteRemoved,
-        shaftClosed: !!body.shaftClosed,
-        siteRestored: !!body.siteRestored,
-        lineHandover: !!body.lineHandover,
-        clientNotes: body.clientNotes,
-        handoverStatus: body.handoverStatus,
-      },
+      data: { siteCleaned: !!body.siteCleaned, wasteRemoved: !!body.wasteRemoved, shaftClosed: !!body.shaftClosed, siteRestored: !!body.siteRestored, lineHandover: !!body.lineHandover, clientNotes: body.clientNotes, handoverStatus: body.handoverStatus },
     })
-
     return NextResponse.json({ finishing })
   } catch (error) {
     console.error('Update finishing error:', error)
