@@ -6,9 +6,9 @@ import { handleDbError, safeDbOp } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 import { VALID_ROLES } from '@/lib/auth'
 
-// FIX-4.6: Added 'projects' to VALID_PERMS (was missing, causing permissions truncation)
+// FIX-5.2: Added 'notifications' to VALID_PERMS (was missing, causing silent permission stripping)
 var VALID_PERMS = [
-  'projects', 'drive_lines', 'daily_reports', 'safety', 'equipment', 'costs', 'finishings', 'performance',
+  'projects', 'drive_lines', 'daily_reports', 'safety', 'equipment', 'costs', 'finishings', 'performance', 'notifications',
   'rpt_daily_site', 'rpt_production', 'rpt_safety', 'rpt_attendance',
   'rpt_revenue', 'rpt_costs', 'rpt_profit', 'rpt_equipment',
   'rpt_weekly', 'rpt_monthly', 'rpt_handover',
@@ -20,11 +20,16 @@ export async function GET(req: NextRequest) {
   if (me.role !== 'top_management') return NextResponse.json({ error: 'forbidden' }, { status: 403 })
 
   try {
-    var users = await db.user.findMany({
-      select: { id: true, email: true, name: true, nameEn: true, phone: true, role: true, active: true, language: true, permissions: true, createdAt: true, updatedAt: true },
-      orderBy: { createdAt: 'desc' },
-    })
-    return NextResponse.json({ users: users.map(function(u) { return { ...u, permissions: u.permissions ?? {} } }) })
+    // FIX-5.3: Wrapped in safeDbOp for consistent error handling
+    var usersResult = await safeDbOp(
+      () => db.user.findMany({
+        select: { id: true, email: true, name: true, nameEn: true, phone: true, role: true, active: true, language: true, permissions: true, createdAt: true, updatedAt: true },
+        orderBy: { createdAt: 'desc' },
+      }),
+      'جلب المستخدمين'
+    )
+    if (!usersResult.success) return usersResult.response
+    return NextResponse.json({ users: usersResult.data.map(function(u) { return { ...u, permissions: u.permissions ?? {} } }) })
   } catch (error) {
     return handleDbError(error, 'جلب المستخدمين')
   }
