@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useAppStore } from '@/lib/store'
-import { saveStoredToken, clearStoredToken } from '@/lib/api-client'
+import { clearStoredToken } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -104,7 +104,7 @@ export default function HomePage() {
         }
         return
       }
-      if (data.token) { saveStoredToken(data.token) }
+      // FIX: Removed dead code — token is in httpOnly cookie, not in response body
       setLanguage(data.user.language === 'en' ? 'en' : 'ar')
       await new Promise(resolve => setTimeout(resolve, 100))
       setUser(data.user)
@@ -138,7 +138,6 @@ export default function HomePage() {
         </div>
         <div className="relative z-10 space-y-6">
           <h2 className="text-3xl lg:text-4xl font-bold leading-tight">{t.heroTitle}</h2>
-
         </div>
         <div className="relative z-10 text-sm text-primary-foreground/70">{t.copyright}</div>
       </div>
