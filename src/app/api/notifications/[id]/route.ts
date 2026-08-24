@@ -23,10 +23,12 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
   var body = await req.json()
 
-  try {
-    var updated = await db.notification.update({ where: { id }, data: { read: body.read ?? true } })
-    return NextResponse.json({ notification: updated })
-  } catch (error) {
-    return handleDbError(error, 'تحديث التنبيه')
-  }
+  // FIX-4.5: Wrapped in safeDbOp to prevent crash
+  var updateResult = await safeDbOp(
+    () => db.notification.update({ where: { id }, data: { read: body.read ?? true } }),
+    'تحديث التنبيه'
+  )
+  if (!updateResult.success) return updateResult.response
+
+  return NextResponse.json({ notification: updateResult.data })
 }
