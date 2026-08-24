@@ -1,5 +1,4 @@
 // Shared auth types and constants - safe for both client and server
-// This file does NOT import any server-only modules (no db, no fs, no crypto)
 
 export interface SessionUser {
   id: string
@@ -19,19 +18,18 @@ export function getSessionMaxAge(): number {
   return SESSION_MAX_AGE
 }
 
-// Cookie options — secure on production (Netlify HTTPS), relaxed on localhost
+// M-5 FIX: sameSite 'strict' for better CSRF protection
 export function getCookieOptions() {
   const isProduction = process.env.NODE_ENV === 'production'
   return {
     httpOnly: true,
     secure: isProduction,
-    sameSite: 'lax' as const,
+    sameSite: 'strict' as const,
     maxAge: SESSION_MAX_AGE,
     path: '/',
   }
 }
 
-// ─── Module permissions (sidebar sections) ───────────────────────────
 export const MODULE_PERMISSIONS = [
   'projects', 'drive_lines', 'daily_reports', 'safety', 'equipment', 'costs', 'finishings', 'performance', 'notifications',
 ] as const
@@ -48,7 +46,6 @@ export const MODULE_PERMISSION_LABELS: Record<string, { ar: string; en: string }
   notifications:  { ar: 'التنبيهات وسجل المراقبة', en: 'Notifications & Monitor' },
 }
 
-// ─── Report permissions ──────────────────────────────────────────────
 export const REPORT_PERMISSIONS = [
   'rpt_daily_site', 'rpt_production', 'rpt_safety', 'rpt_attendance',
   'rpt_revenue', 'rpt_costs', 'rpt_profit', 'rpt_equipment',
@@ -69,7 +66,6 @@ export const REPORT_LABELS: Record<string, { ar: string; en: string }> = {
   rpt_handover:    { ar: 'تقرير التسليم',        en: 'Handover Report' },
 }
 
-// ─── Combined (for legacy / create-user-dialog) ─────────────────────
 export const TOGGLABLE_PERMISSIONS = [
   ...MODULE_PERMISSIONS,
   ...REPORT_PERMISSIONS,
@@ -82,7 +78,6 @@ export const TOGGLABLE_PERMISSION_LABELS: Record<string, { ar: string; en: strin
   ...REPORT_LABELS,
 }
 
-// ─── Role permissions matrix (base permissions per role) ─────────────
 export const ROLE_PERMISSIONS: Record<string, string[]> = {
   top_management: ['*'],
   project_manager: [
@@ -104,6 +99,31 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
   ],
 }
 
+// H-1 FIX: Role-based access control helper for API routes
+export const VALID_ROLES = ['top_management', 'project_manager', 'site_engineer', 'hse_officer', 'foreman', 'accountant'] as const
+
+// Roles that can write to each resource
+export const WRITE_ROLES: Record<string, string[]> = {
+  projects: ['top_management', 'project_manager'],
+  drive_lines: ['top_management', 'project_manager', 'site_engineer'],
+  daily_reports: ['top_management', 'project_manager', 'site_engineer', 'foreman'],
+  safety: ['top_management', 'project_manager', 'site_engineer', 'hse_officer'],
+  equipment: ['top_management', 'project_manager', 'site_engineer'],
+  costs: ['top_management', 'project_manager', 'accountant'],
+  finishings: ['top_management', 'project_manager', 'site_engineer'],
+  company_assets: ['top_management', 'project_manager', 'site_engineer', 'accountant'],
+}
+
+export function canWrite(userRole: string, resource: string, userPermissions?: Record<string, boolean> | null): boolean {
+  // Check per-user permission override first
+  if (userPermissions && typeof userPermissions[resource] === 'boolean') {
+    return userPermissions[resource]
+  }
+  const allowed = WRITE_ROLES[resource]
+  if (!allowed) return false
+  return allowed.includes(userRole)
+}
+
 export function hasPermission(role: string, resource: string, userPermissions?: Record<string, boolean> | null): boolean {
   const isTogglable = (MODULE_PERMISSIONS as readonly string[]).includes(resource) ||
     (REPORT_PERMISSIONS as readonly string[]).includes(resource)
@@ -113,8 +133,6 @@ export function hasPermission(role: string, resource: string, userPermissions?: 
   }
 
   const perms = ROLE_PERMISSIONS[role] || []
-
-  // Report sub-permissions (rpt_*): if role has general 'reports' access, allow all report types
   if (resource.startsWith('rpt_') && perms.includes('reports')) {
     return true
   }
@@ -122,5 +140,4 @@ export function hasPermission(role: string, resource: string, userPermissions?: 
   return perms.includes('*') || perms.includes(resource)
 }
 
-// Alias used by reports-page.tsx — keep for backward compatibility
 export const hasReportPermission = hasPermission
