@@ -1,59 +1,57 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
-import { handleDbError } from '@/lib/api-helpers'
 
 export async function GET(req: NextRequest) {
-  var user = await getAuthUser(req)
+  const user = await getAuthUser(req)
 
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   try {
-    var searchParams = new URL(req.url).searchParams
-    var projectId = searchParams.get('projectId')
+    const { searchParams } = new URL(req.url)
+    const projectId = searchParams.get('projectId')
 
-    var where: any = { status: 'approved' }
+    const threeMonthsAgo = new Date()
+    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3)
+
+    const where: any = { status: 'approved', reportDate: { gte: threeMonthsAgo } }
     if (projectId) where.projectId = projectId
 
-    var safetyWhere: any = {}
+    const safetyWhere: any = { reportDate: { gte: threeMonthsAgo } }
     if (projectId) safetyWhere.projectId = projectId
 
-    var costWhere: any = {}
+    const costWhere: any = { date: { gte: threeMonthsAgo } }
     if (projectId) costWhere.projectId = projectId
 
-    var results = await Promise.all([
+    const [reports, safetyReports, costs] = await Promise.all([
       db.dailyReport.findMany({
         where,
-        include: {
-          project: { select: { id: true, name: true, code: true } },
-          driveLine: { select: { lineNumber: true } },
+        select: {
+          projectId: true, reportDate: true, dailyMeters: true, dailyRevenue: true,
+          stoppageHours: true, stoppageReason: true, workersCount: true,
+          project: { select: { name: true, code: true } },
         },
         orderBy: { reportDate: 'asc' },
-        take: 500,
+        take: 200,
       }),
       db.safetyReport.findMany({
         where: safetyWhere,
         select: { projectId: true, ppeAvailable: true, helmetCheck: true, bootsCheck: true, glovesCheck: true, glassesCheck: true, workAreaCheck: true, barriersCheck: true, shaftCheck: true, ventilationCheck: true, electricalCheck: true, craneCheck: true, hydraulicCheck: true, fireExtinguishers: true, workPermit: true, toolboxTalk: true },
-        take: 500,
+        take: 200,
       }),
       db.cost.findMany({
         where: costWhere,
         select: { projectId: true, amount: true },
-        take: 1000,
+        take: 500,
       }),
     ])
 
-    var reports = results[0]
-    var safetyReports = results[1]
-    var costs = results[2]
+    const projectStats = new Map<string, any>()
 
-    var projectStats = new Map<string, any>()
-
-    for (var ri = 0; ri < reports.length; ri++) {
-      var r = reports[ri]
-      var key = r.projectId
+    for (const r of reports) {
+      const key = r.projectId
       if (!projectStats.has(key)) {
         projectStats.set(key, {
           projectId: r.projectId,
@@ -71,53 +69,47 @@ export async function GET(req: NextRequest) {
           daysCount: 0,
         })
       }
-      var stat = projectStats.get(key)
-      if (stat) {
-        stat.reports.push(r)
-        stat.totalMeters += r.dailyMeters
-        stat.totalRevenue += r.dailyRevenue
-        stat.bestDay = Math.max(stat.bestDay, r.dailyMeters)
-        stat.worstDay = Math.min(stat.worstDay, r.dailyMeters)
-        if (r.stoppageHours > 2) {
-          stat.stoppageDays++
-          if (r.stoppageReason) stat.stoppageReasons.push(r.stoppageReason)
-        }
-        stat.totalWorkers += r.workersCount
-        stat.daysCount++
+      const stat = projectStats.get(key)!
+      stat.reports.push(r)
+      stat.totalMeters += r.dailyMeters
+      stat.totalRevenue += r.dailyRevenue
+      stat.bestDay = Math.max(stat.bestDay, r.dailyMeters)
+      stat.worstDay = Math.min(stat.worstDay, r.dailyMeters)
+      if (r.stoppageHours > 2) {
+        stat.stoppageDays++
+        if (r.stoppageReason) stat.stoppageReasons.push(r.stoppageReason)
       }
+      stat.totalWorkers += r.workersCount
+      stat.daysCount++
     }
 
-    var projectStatsArr = Array.from(projectStats.values()).map(function(s: any) {
+    const projectStatsArr = Array.from(projectStats.values()).map((s: any) => {
       s.avgDaily = s.daysCount > 0 ? s.totalMeters / s.daysCount : 0
       s.worstDay = s.worstDay === Infinity ? 0 : s.worstDay
       return s
     })
 
-    var safetyByProject = new Map<string, { total: number; passed: number }>()
-    for (var si = 0; si < safetyReports.length; si++) {
-      var s = safetyReports[si]
+    const safetyByProject = new Map<string, { total: number; passed: number }>()
+    for (const s of safetyReports) {
       if (!safetyByProject.has(s.projectId)) safetyByProject.set(s.projectId, { total: 0, passed: 0 })
-      var sStat = safetyByProject.get(s.projectId)
-      if (sStat) {
-        sStat.total += 15
-        var checks = [s.ppeAvailable, s.helmetCheck, s.bootsCheck, s.glovesCheck, s.glassesCheck, s.workAreaCheck, s.barriersCheck, s.shaftCheck, s.ventilationCheck, s.electricalCheck, s.craneCheck, s.hydraulicCheck, s.fireExtinguishers, s.workPermit, s.toolboxTalk]
-        sStat.passed += checks.filter(Boolean).length
-      }
+      const stat = safetyByProject.get(s.projectId)!
+      stat.total += 15
+      const checks = [s.ppeAvailable, s.helmetCheck, s.bootsCheck, s.glovesCheck, s.glassesCheck, s.workAreaCheck, s.barriersCheck, s.shaftCheck, s.ventilationCheck, s.electricalCheck, s.craneCheck, s.hydraulicCheck, s.fireExtinguishers, s.workPermit, s.toolboxTalk]
+      stat.passed += checks.filter(Boolean).length
     }
 
-    var costByProject = new Map<string, number>()
-    for (var ci = 0; ci < costs.length; ci++) {
-      var cost = costs[ci]
-      costByProject.set(cost.projectId, (costByProject.get(cost.projectId) || 0) + cost.amount)
+    const costByProject = new Map<string, number>()
+    for (const c of costs) {
+      costByProject.set(c.projectId, (costByProject.get(c.projectId) || 0) + c.amount)
     }
 
-    var performance = projectStatsArr.map(function(p: any) {
-      var safety = safetyByProject.get(p.projectId)
-      var safetyRate = safety && safety.total > 0 ? (safety.passed / safety.total) * 100 : 100
-      var totalCost = costByProject.get(p.projectId) || 0
-      var costPerMeter = p.totalMeters > 0 ? totalCost / p.totalMeters : 0
-      var profitMargin = p.totalRevenue > 0 ? ((p.totalRevenue - totalCost) / p.totalRevenue) * 100 : 0
-      var avgWorkers = p.daysCount > 0 ? p.totalWorkers / p.daysCount : 0
+    const performance = projectStatsArr.map((p: any) => {
+      const safety = safetyByProject.get(p.projectId)
+      const safetyRate = safety && safety.total > 0 ? (safety.passed / safety.total) * 100 : 100
+      const totalCost = costByProject.get(p.projectId) || 0
+      const costPerMeter = p.totalMeters > 0 ? totalCost / p.totalMeters : 0
+      const profitMargin = p.totalRevenue > 0 ? ((p.totalRevenue - totalCost) / p.totalRevenue) * 100 : 0
+      const avgWorkers = p.daysCount > 0 ? p.totalWorkers / p.daysCount : 0
 
       return {
         ...p,
@@ -134,6 +126,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ performance })
   } catch (error) {
     console.error('Performance data error:', error)
-    return handleDbError(error, 'بيانات الأداء')
+    return NextResponse.json({ error: 'Failed to fetch performance data' }, { status: 500 })
   }
 }
