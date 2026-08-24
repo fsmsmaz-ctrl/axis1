@@ -42,7 +42,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
   }
 
-  // H-1 FIX: RBAC check for safety reports
   if (!canWrite(user.role, 'safety', user.permissions)) {
     return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية لإنشاء تقارير سلامة' }, { status: 403 })
   }
@@ -113,15 +112,15 @@ export async function POST(req: NextRequest) {
   }
 }
 
-var ADMIN_EMAIL = 'admin@axis.om'
-
 export async function DELETE(req: NextRequest) {
   var user = await getAuthUser(req)
   if (!user) {
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
   }
-  if (user.email.toLowerCase().trim() !== ADMIN_EMAIL) {
-    return NextResponse.json({ error: 'forbidden', message: 'هذه العملية متاحة فقط لمدير النظام' }, { status: 403 })
+
+  // FIX: Use role check instead of hardcoded admin email
+  if (user.role !== 'top_management') {
+    return NextResponse.json({ error: 'forbidden', message: 'حذف تقارير السلامة متاح فقط للإدارة العليا' }, { status: 403 })
   }
 
   var rl = checkRateLimit(req, RateLimitPresets.write)
