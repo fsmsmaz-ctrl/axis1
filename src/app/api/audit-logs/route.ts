@@ -5,9 +5,13 @@ import { safeDbOp, handleDbError } from '@/lib/api-helpers'
 
 export async function GET(req: NextRequest) {
   var user = await getAuthUser(req)
-
   if (!user) {
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
+  }
+
+  // FIX: Restrict audit logs to top_management and project_manager
+  if (user.role !== 'top_management' && user.role !== 'project_manager') {
+    return NextResponse.json({ error: 'forbidden', message: 'سجل المراقبة متاح فقط للإدارة' }, { status: 403 })
   }
 
   var searchParams = new URL(req.url).searchParams
@@ -20,7 +24,6 @@ export async function GET(req: NextRequest) {
   var page = parseInt(searchParams.get('page') || '1')
   var limit = parseInt(searchParams.get('limit') || '50')
 
-  // Cap limit
   if (limit > 200) limit = 200
 
   var where: any = {}
@@ -28,6 +31,13 @@ export async function GET(req: NextRequest) {
   if (action) where.action = action
   if (projectId) where.projectId = projectId
   if (userId) where.userId = userId
+
+  // FIX: Non-top_management can only see their own project's logs
+  if (user.role !== 'top_management' && !projectId) {
+    // PM without projectId filter — return empty to avoid leaking other projects
+    return NextResponse.json({ logs: [], total: 0, page, totalPages: 0, entityStats: [], actionStats: [], users: [] })
+  }
+
   if (dateFrom || dateTo) {
     where.createdAt = {}
     if (dateFrom) where.createdAt.gte = new Date(dateFrom)
@@ -47,16 +57,13 @@ export async function GET(req: NextRequest) {
         orderBy: { createdAt: 'desc' },
         skip,
         take: limit,
-        include: {
-          user: { select: { id: true, name: true, nameEn: true, email: true } },
-          project: { select: { id: true, name: true, code: true } },
-        },
+        include: { user: { select: { id: true, name: true, nameEn: true, email: true } }, project: { select: { id: true, name: true, code: true } } },
       }),
       'جلب سجلات المراقبة'
     ),
     safeDbOp(function() { return db.auditLog.count({ where }) }, 'عد سجلات المراقبة'),
     safeDbOp(
-      () => db.user.findMany({ select: { id: true, name: true, nameEn: true, email: true }, orderBy: { name: 'asc' } }),
+      () => db.user.findMany({ where: { active: true }, select: { id: true, name: true, nameEn: true, email: true }, orderBy: { name: 'asc' } }),
       'جلب قائمة المستخدمين'
     ),
   ])
@@ -67,7 +74,6 @@ export async function GET(req: NextRequest) {
   var total = results[1].success ? results[1].data : 0
   var users = results[2].success ? results[2].data : []
 
-  // Entity stats
   var entityStats = [
     { entity: 'project', ar: 'المشاريع', en: 'Projects', count: logs.filter(function(l: any) { return l.entity === 'project' }).length },
     { entity: 'daily_report', ar: 'التقارير اليومية', en: 'Daily Reports', count: logs.filter(function(l: any) { return l.entity === 'daily_report' }).length },
@@ -86,12 +92,8 @@ export async function GET(req: NextRequest) {
   ]
 
   return NextResponse.json({
-    logs,
-    total,
-    page,
+    logs, total, page,
     totalPages: Math.ceil(total / limit),
-    entityStats,
-    actionStats,
-    users,
+    entityStats, actionStats, users,
   })
 }
