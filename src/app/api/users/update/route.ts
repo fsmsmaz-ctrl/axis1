@@ -2,11 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import bcrypt from 'bcryptjs'
-import { handleDbError } from '@/lib/api-helpers'
+import { handleDbError, safeDbOp } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
+import { VALID_ROLES } from '@/lib/auth'
 
-var ADMIN_EMAIL = 'admin@axis.om'
-var VALID_ROLES = ['top_management', 'project_manager', 'site_engineer', 'hse_officer', 'foreman', 'accountant']
+// FIX-3.2: Removed hardcoded ADMIN_EMAIL — now uses role-based check
 
 var ALL_PERMISSIONS = [
   'projects', 'drive_lines', 'daily_reports', 'safety', 'equipment', 'costs', 'finishings', 'performance', 'notifications',
@@ -26,8 +26,9 @@ export async function PATCH(req: NextRequest) {
 
   try {
     var authUser = await getAuthUser(req)
-    if (!authUser || authUser.email.toLowerCase().trim() !== ADMIN_EMAIL) {
-      return NextResponse.json({ error: 'forbidden', message: 'هذه العملية متاحة فقط لمدير النظام' }, { status: 403 })
+    // FIX-3.2: Use role check instead of hardcoded email
+    if (!authUser || authUser.role !== 'top_management') {
+      return NextResponse.json({ error: 'forbidden', message: 'هذه العملية متاحة فقط للإدارة العليا' }, { status: 403 })
     }
 
     var body = await req.json()
@@ -43,13 +44,18 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: 'missing_fields', message: 'معرف المستخدم مطلوب' }, { status: 400 })
     }
 
-    var targetUser = await db.user.findUnique({ where: { id: userId } })
-    if (!targetUser) {
+    var targetResult = await safeDbOp(
+      () => db.user.findUnique({ where: { id: userId }, select: { id: true, email: true, role: true } }),
+      'البحث عن المستخدم'
+    )
+    if (!targetResult.success) return targetResult.response
+    if (!targetResult.data) {
       return NextResponse.json({ error: 'not_found', message: 'المستخدم غير موجود' }, { status: 404 })
     }
 
-    if (targetUser.email.toLowerCase().trim() === ADMIN_EMAIL) {
-      return NextResponse.json({ error: 'forbidden', message: 'لا يمكن تعديل حساب مدير النظام' }, { status: 403 })
+    // FIX-3.2: Protect top_management accounts from modification by role, not email
+    if (targetResult.data.role === 'top_management' && targetResult.data.id !== authUser.id) {
+      return NextResponse.json({ error: 'forbidden', message: 'لا يمكن تعديل حسابات الإدارة العليا' }, { status: 403 })
     }
 
     var updateData: Record<string, any> = {}
@@ -58,8 +64,8 @@ export async function PATCH(req: NextRequest) {
     if (nameEn !== undefined && nameEn.trim()) updateData.nameEn = nameEn.trim()
     if (phone !== undefined) updateData.phone = phone.trim() || null
     if (role !== undefined) {
-      if (!VALID_ROLES.includes(role)) {
-        return NextResponse.json({ error: 'invalid_value', message: 'دور غير صالح. الأدوار المسموحة: ' + VALID_ROLES.join(', ') }, { status: 400 })
+      if (!(VALID_ROLES as readonly string[]).includes(role)) {
+        return NextResponse.json({ error: 'invalid_value', message: 'دور غير صالح. الأدوار المسموحة: ' + (VALID_ROLES as readonly string[]).join(', ') }, { status: 400 })
       }
       updateData.role = role
     }
@@ -78,7 +84,6 @@ export async function PATCH(req: NextRequest) {
     }
 
     if (password && password.trim()) {
-      // FIX: Enforce minimum password length on update
       if (password.trim().length < 6) {
         return NextResponse.json({ error: 'invalid_value', message: 'كلمة المرور قصيرة جداً (6 أحرف على الأقل)' }, { status: 400 })
       }
@@ -89,18 +94,22 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: 'missing_fields', message: 'لم يتم تحديد أي حقل للتحديث' }, { status: 400 })
     }
 
-    var updated = await db.user.update({
-      where: { id: userId },
-      data: updateData,
-      select: {
-        id: true, email: true, name: true, nameEn: true,
-        role: true, phone: true, active: true, permissions: true, createdAt: true,
-      }
-    })
+    var updateResult = await safeDbOp(
+      () => db.user.update({
+        where: { id: userId },
+        data: updateData,
+        select: {
+          id: true, email: true, name: true, nameEn: true,
+          role: true, phone: true, active: true, permissions: true, createdAt: true,
+        }
+      }),
+      'تحديث المستخدم'
+    )
+    if (!updateResult.success) return updateResult.response
 
     return NextResponse.json({
       message: 'تم تحديث المستخدم بنجاح',
-      user: { ...updated, permissions: updated.permissions ?? {} }
+      user: { ...updateResult.data, permissions: updateResult.data.permissions ?? {} }
     })
   } catch (error) {
     console.error('Update user error:', error)
