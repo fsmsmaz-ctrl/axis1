@@ -19,6 +19,7 @@ export async function GET(req: NextRequest) {
   const fourteenDaysAgo = new Date(today)
   fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14)
 
+  // === ALL QUERIES PARALLELIZED WITH Promise.all ===
   const [
     activeProjects,
     todayAgg,
@@ -36,51 +37,62 @@ export async function GET(req: NextRequest) {
     equipment,
     costsByCategoryRaw,
   ] = await Promise.all([
+    // 1. Active projects count
     db.project.count({ where: { status: 'in_progress' } }),
 
+    // 2. Today's aggregates (single query instead of findMany + reduce)
     db.dailyReport.aggregate({
       where: { reportDate: { gte: today, lt: tomorrow }, status: 'approved' },
       _sum: { dailyMeters: true, dailyRevenue: true, workersCount: true },
       _count: true,
     }),
 
+    // 3. This month aggregates (single query instead of findMany + reduce)
     db.dailyReport.aggregate({
       where: { reportDate: { gte: monthStart }, status: 'approved' },
       _sum: { dailyMeters: true, dailyRevenue: true },
     }),
 
+    // 4. Total costs this month
     db.cost.aggregate({
       where: { date: { gte: monthStart } },
       _sum: { amount: true },
     }),
 
+    // 5. All costs total
     db.cost.aggregate({
       _sum: { amount: true },
     }),
 
+    // 6. Total revenue (all approved reports)
     db.dailyReport.aggregate({
       where: { status: 'approved' },
       _sum: { dailyRevenue: true },
     }),
 
+    // 7. Stopped equipment count
     db.equipment.count({
       where: { status: { in: ['stopped', 'maintenance_needed'] } },
     }),
 
+    // 8. Unread notifications count
     db.notification.count({ where: { read: false } }),
 
+    // 9. Trend reports (last 14 days, select only needed fields)
     db.dailyReport.findMany({
       where: { reportDate: { gte: fourteenDaysAgo }, status: 'approved' },
       orderBy: { reportDate: 'asc' },
       select: { reportDate: true, dailyMeters: true, dailyRevenue: true },
     }),
 
+    // 10. Trend costs grouped by date (aggregate in DB instead of JS reduce)
     db.cost.groupBy({
       by: ['date'],
       where: { date: { gte: fourteenDaysAgo } },
       _sum: { amount: true },
     }),
 
+    // 11. Projects with progress (limited)
     db.project.findMany({
       select: {
         id: true, name: true, code: true, status: true,
@@ -90,6 +102,7 @@ export async function GET(req: NextRequest) {
       orderBy: { status: 'desc' },
     }),
 
+    // 12. Recent reports (already has take: 10)
     db.dailyReport.findMany({
       take: 10,
       orderBy: { reportDate: 'desc' },
@@ -99,18 +112,21 @@ export async function GET(req: NextRequest) {
       },
     }),
 
+    // 13. Notifications (already has take: 5)
     db.notification.findMany({
       take: 5,
       orderBy: { createdAt: 'desc' },
       include: { project: { select: { name: true } } },
     }),
 
+    // 14. Equipment list (PAGINATED - was unbounded before)
     db.equipment.findMany({
       take: 30,
       orderBy: { name: 'asc' },
       include: { project: { select: { name: true } } },
     }),
 
+    // 15. Cost breakdown by category (this month)
     db.cost.groupBy({
       by: ['category'],
       where: { date: { gte: monthStart } },
@@ -118,12 +134,14 @@ export async function GET(req: NextRequest) {
     }),
   ])
 
+  // Extract aggregated values
   const metersToday = todayAgg._sum.dailyMeters || 0
   const revenueToday = todayAgg._sum.dailyRevenue || 0
   const presentWorkers = todayAgg._sum.workersCount || 0
   const metersThisMonth = monthAgg._sum.dailyMeters || 0
   const revenueThisMonth = monthAgg._sum.dailyRevenue || 0
 
+  // Build trend map from reports
   const trendMap = new Map<string, { meters: number; revenue: number; cost: number }>()
   for (const r of trendReports) {
     const key = r.reportDate.toISOString().split('T')[0]
@@ -133,6 +151,7 @@ export async function GET(req: NextRequest) {
     item.revenue += r.dailyRevenue
   }
 
+  // Add grouped costs to trend (already aggregated by DB)
   for (const c of trendCostsGrouped) {
     const key = c.date.toISOString().split('T')[0]
     if (!trendMap.has(key)) trendMap.set(key, { meters: 0, revenue: 0, cost: 0 })
