@@ -4,7 +4,7 @@
 // C-3 FIX: No default passwords
 
 import { NextRequest, NextResponse } from 'next/server'
-import { verifyCredentials, createSession, getSessionMaxAge, getCookieOptions, SESSION_COOKIE } from '@/lib/auth-server'
+import { verifyCredentials, createSession, getCookieOptions, SESSION_COOKIE } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 
