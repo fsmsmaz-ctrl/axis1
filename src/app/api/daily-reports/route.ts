@@ -3,6 +3,7 @@ import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { handleDbError, validateRequired, parseNumber, safeDbOp } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
+import { canWrite } from '@/lib/auth'
 
 export async function GET(req: NextRequest) {
   var user = await getAuthUser(req)
@@ -15,7 +16,6 @@ export async function GET(req: NextRequest) {
   var projectId = searchParams.get('projectId')
   var limit = parseInt(searchParams.get('limit') || '50')
 
-  // Cap limit to prevent excessive data retrieval
   if (limit > 200) limit = 200
 
   var where: any = {}
@@ -48,7 +48,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
   }
 
-  // Rate limit write operations
+  // H-1 FIX: RBAC check for daily reports
+  if (!canWrite(user.role, 'daily_reports', user.permissions)) {
+    return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية لإنشاء تقارير يومية' }, { status: 403 })
+  }
+
   var rl = checkRateLimit(req, RateLimitPresets.write)
   if (rl.limited) {
     return NextResponse.json(
@@ -92,14 +96,11 @@ export async function POST(req: NextRequest) {
         { status: 409 }
       )
     }
-    // === End of duplicate check ===
 
-    // Calculate production data
     var startReading = parseNumber(body.startReading, 0)
     var endReading = parseNumber(body.endReading, 0)
     var dailyMeters = Math.max(0, endReading - startReading)
 
-    // Run drive line and project queries in parallel
     var dlResult = body.driveLineId
       ? await safeDbOp(
           () => db.driveLine.findUnique({ where: { id: body.driveLineId } }),
@@ -152,10 +153,8 @@ export async function POST(req: NextRequest) {
     )
     if (!createResult.success) return createResult.response
 
-    // Run non-critical updates in parallel (fire-and-forget style)
     var updatePromises: Promise<void>[] = []
 
-    // Update drive line progress
     if (body.driveLineId) {
       updatePromises.push(
         safeDbOp(
@@ -172,7 +171,6 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Update project progress
     if (projResult.success && projResult.data) {
       updatePromises.push(
         (async function() {
@@ -187,7 +185,6 @@ export async function POST(req: NextRequest) {
             var totalAll = allLinesResult.data.reduce(function(s: number, l: any) { return s + l.totalLength }, 0)
             var completedAll = allLinesResult.data.reduce(function(s: number, l: any) { return s + l.completedLength }, 0)
             var projectProgress = totalAll > 0 ? (completedAll / totalAll) * 100 : 0
-
             await safeDbOp(
               () => db.project.update({
                 where: { id: body.projectId },
@@ -200,7 +197,6 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Audit log
     updatePromises.push(
       safeDbOp(
         () => db.auditLog.create({
@@ -218,7 +214,6 @@ export async function POST(req: NextRequest) {
       ).then(function() {})
     )
 
-    // Fire all non-critical updates in parallel (don't await - let them run in background)
     Promise.all(updatePromises).catch(function() {})
 
     return NextResponse.json({ report: createResult.data, success: true })
