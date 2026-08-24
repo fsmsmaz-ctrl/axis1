@@ -3,10 +3,10 @@ import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { safeDbOp, handleDbError } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
+import { canWrite } from '@/lib/auth'
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   var user = await getAuthUser(req)
-
   if (!user) {
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
   }
@@ -39,9 +39,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   var user = await getAuthUser(req)
-
   if (!user) {
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
+  }
+
+  // FIX: Add centralized RBAC check
+  if (!canWrite(user.role, 'daily_reports', user.permissions)) {
+    return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية لتعديل التقارير اليومية' }, { status: 403 })
   }
 
   var rl = checkRateLimit(req, RateLimitPresets.write)
@@ -70,6 +74,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: 'not_found', message: 'التقرير غير موجود' }, { status: 404 })
     }
 
+    // Non-admin can only edit own draft reports
     var canEditAny = user.role === 'top_management' || user.role === 'project_manager' || user.role === 'site_engineer'
     if (!canEditAny && existingReport.createdById !== user.id) {
       if (existingReport.status !== 'draft') {
@@ -180,9 +185,13 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   var user = await getAuthUser(req)
-
   if (!user) {
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
+  }
+
+  // FIX: Use centralized RBAC instead of hardcoded admin email
+  if (!canWrite(user.role, 'daily_reports', user.permissions)) {
+    return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية لحذف التقارير اليومية' }, { status: 403 })
   }
 
   var rl = checkRateLimit(req, RateLimitPresets.write)
@@ -196,9 +205,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   var { id } = await params
 
   try {
-    var ADMIN_EMAIL = 'admin@axis.om'
-    var isSystemAdmin = user.email.toLowerCase().trim() === ADMIN_EMAIL
-
+    // FIX: Use role check instead of hardcoded admin email
     var reportResult = await safeDbOp(
       () => db.dailyReport.findUnique({ where: { id }, select: { projectId: true, status: true, createdById: true, driveLineId: true } }),
       'البحث عن التقرير'
@@ -211,14 +218,13 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
       return NextResponse.json({ error: 'not_found', message: 'التقرير غير موجود' }, { status: 404 })
     }
 
-    if (!isSystemAdmin) {
-      if (report.status === 'approved' && user.role !== 'top_management') {
-        return NextResponse.json({ error: 'forbidden', message: 'لا يمكن حذف تقرير تم اعتماده' }, { status: 403 })
-      }
-      if (user.role !== 'top_management' && user.role !== 'project_manager') {
-        if (report.createdById !== user.id) {
-          return NextResponse.json({ error: 'forbidden', message: 'لا يمكنك حذف تقرير آخر موظف' }, { status: 403 })
-        }
+    // FIX: Role-based delete permissions instead of email comparison
+    if (report.status === 'approved' && user.role !== 'top_management') {
+      return NextResponse.json({ error: 'forbidden', message: 'لا يمكن حذف تقرير تم اعتماده' }, { status: 403 })
+    }
+    if (user.role !== 'top_management' && user.role !== 'project_manager') {
+      if (report.createdById !== user.id) {
+        return NextResponse.json({ error: 'forbidden', message: 'لا يمكنك حذف تقرير آخر موظف' }, { status: 403 })
       }
     }
 
