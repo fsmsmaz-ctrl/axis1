@@ -3,15 +3,19 @@ import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { handleDbError, safeDbOp } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
+import { canWrite } from '@/lib/auth'
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   var user = await getAuthUser(req)
-
   if (!user) {
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
   }
 
-  // Rate limit write operations
+  // FIX: Use centralized RBAC instead of custom admin email check
+  if (!canWrite(user.role, 'equipment', user.permissions)) {
+    return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية لتسجيل صيانة المعدات' }, { status: 403 })
+  }
+
   var rl = checkRateLimit(req, RateLimitPresets.write)
   if (rl.limited) {
     return NextResponse.json(
@@ -22,31 +26,32 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   var { id } = await params
 
-  // Only creator or system admin can record maintenance for this equipment
-  var ADMIN_EMAIL = 'admin@axis.om'
-  var isAdmin = user.email.toLowerCase().trim() === ADMIN_EMAIL
-  if (!isAdmin) {
-    var eqOwner = await safeDbOp(
-      () => db.equipment.findUnique({ where: { id }, select: { createdById: true } }),
-      'فحص ملكية المعدة'
-    )
-    if (!eqOwner.success || !eqOwner.data || eqOwner.data.createdById !== user.id) {
-      return NextResponse.json({ error: 'forbidden', message: 'يمكنك فقط تسجيل صيانة للمعدات التي أنشأتها' }, { status: 403 })
-    }
-  }
-
   var body = await req.json()
 
+  if (!body.date || !body.type) {
+    return NextResponse.json({ error: 'missing_fields', message: 'التاريخ والنوع مطلوبان' }, { status: 400 })
+  }
+
   try {
+    // FIX: Validate equipment exists
+    var eqResult = await safeDbOp(
+      () => db.equipment.findUnique({ where: { id }, select: { id: true } }),
+      'فحص المعدة'
+    )
+    if (!eqResult.success) return eqResult.response
+    if (!eqResult.data) {
+      return NextResponse.json({ error: 'not_found', message: 'المعدة غير موجودة' }, { status: 404 })
+    }
+
     var maintenance = await safeDbOp(
       () => db.equipmentMaintenance.create({
         data: {
           equipmentId: id,
           date: new Date(body.date),
-          type: body.type,
-          description: body.description,
+          type: String(body.type),
+          description: body.description ? String(body.description) : null,
           cost: parseFloat(body.cost) || 0,
-          partsUsed: body.partsUsed,
+          partsUsed: body.partsUsed ? String(body.partsUsed) : null,
           performedById: user.id,
         },
       }),
@@ -65,6 +70,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       'تحديث حالة المعدة'
     )
     if (!updateResult.success) return updateResult.response
+
+    safeDbOp(
+      () => db.auditLog.create({ data: { userId: user.id, action: 'create', entity: 'equipment_maintenance', entityId: maintenance.data.id, details: 'Maintenance: ' + body.type + ' for equipment ' + id } }),
+      'سجل التدقيق'
+    ).catch(function() {})
 
     return NextResponse.json({ maintenance: maintenance.data })
   } catch (error) {
