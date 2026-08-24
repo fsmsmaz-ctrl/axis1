@@ -13,6 +13,7 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url)
     const projectId = searchParams.get('projectId')
 
+    // FIXED: Added time filter - last 3 months instead of all-time scan
     const threeMonthsAgo = new Date()
     threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3)
 
@@ -25,6 +26,7 @@ export async function GET(req: NextRequest) {
     const costWhere: any = { date: { gte: threeMonthsAgo } }
     if (projectId) costWhere.projectId = projectId
 
+    // FIXED: Reduced limits (200+200+500 instead of 500+500+1000)
     const [reports, safetyReports, costs] = await Promise.all([
       db.dailyReport.findMany({
         where,
