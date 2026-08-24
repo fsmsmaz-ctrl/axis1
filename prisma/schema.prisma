@@ -3,6 +3,10 @@
 // FIXED: Added @@index on all frequently filtered/sorted columns
 // This prevents sequential scans and dramatically improves query speed
 
+// FIX-4.1: Added missing CompanyAsset model (was causing 500 errors on company-assets endpoints)
+// FIX-4.2: Added missing createdById & image fields on Equipment
+// FIX-4.3: Added missing indexes on SafetyReport and EquipmentMaintenance
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -39,6 +43,9 @@ model User {
   finishings         Finishing[]
   notifications      Notification[]
   auditLogs          AuditLog[]
+  companyAssets      CompanyAsset[]  @relation("AssetResponsible")
+  equipmentsCreated  Equipment[]       @relation("EquipmentCreator")
+  assetsCreated      CompanyAsset[]   @relation("AssetCreator")
 
   @@index([active])
 }
@@ -76,6 +83,7 @@ model Project {
   finishings     Finishing[]
   notifications  Notification[]
   auditLogs      AuditLog[]
+  companyAssets  CompanyAsset[]
 
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -193,9 +201,11 @@ model SafetyReport {
   updatedAt           DateTime @updatedAt
 
   @@index([projectId, reportDate])
+  @@index([signedById])
 }
 
 // ==================== Equipment ====================
+// FIX-4.2: Added createdById and image fields
 model Equipment {
   id              String   @id @default(cuid())
   projectId       String?
@@ -209,8 +219,12 @@ model Equipment {
   nextMaintenance DateTime?
   spareParts      String?
   notes           String?
+  image           String?
+  createdById     String?
+
   project         Project? @relation(fields: [projectId], references: [id])
   maintenance     EquipmentMaintenance[]
+  createdBy       User?    @relation("EquipmentCreator", fields: [createdById], references: [id])
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -331,4 +345,34 @@ model AuditLog {
 
   @@index([createdAt])
   @@index([entity, entityId])
+}
+
+// ==================== Company Assets & Rentals ====================
+// FIX-4.1: This model was MISSING from the GitHub schema — caused 500 errors
+model CompanyAsset {
+  id             String   @id @default(cuid())
+  projectId      String?
+  name           String
+  itemType       String
+  quantity       Int      @default(1)
+  ownership      String
+  supplier       String?
+  rentalCost     Float?
+  rentalStart    DateTime?
+  rentalEnd      DateTime?
+  responsibleId  String?
+  status         String   @default("available")
+  image          String?
+  notes          String?
+  createdById    String?
+
+  project        Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  responsible    User?    @relation("AssetResponsible", fields: [responsibleId], references: [id])
+  createdBy      User?    @relation("AssetCreator", fields: [createdById], references: [id])
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([ownership])
+  @@index([projectId])
 }
