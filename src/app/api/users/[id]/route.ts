@@ -6,9 +6,9 @@ import { handleDbError, safeDbOp } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 import { VALID_ROLES } from '@/lib/auth'
 
-// FIX-4.6: Added 'projects' to VALID_PERMS (was missing)
+// FIX-5.2: Added 'notifications' to VALID_PERMS (was missing, causing silent permission stripping)
 var VALID_PERMS = [
-  'projects', 'drive_lines', 'daily_reports', 'safety', 'equipment', 'costs', 'finishings', 'performance',
+  'projects', 'drive_lines', 'daily_reports', 'safety', 'equipment', 'costs', 'finishings', 'performance', 'notifications',
   'rpt_daily_site', 'rpt_production', 'rpt_safety', 'rpt_attendance',
   'rpt_revenue', 'rpt_costs', 'rpt_profit', 'rpt_equipment',
   'rpt_weekly', 'rpt_monthly', 'rpt_handover',
