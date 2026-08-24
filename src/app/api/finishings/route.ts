@@ -3,94 +3,59 @@ import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { handleDbError, validateRequired, safeDbOp } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
+import { canWrite } from '@/lib/auth'
 
 export async function GET(req: NextRequest) {
-  var user = await getAuthUser(req)
+  try {
+    const user = await getAuthUser(req)
+    if (!user) return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
 
-  if (!user) {
-    return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
+    const searchParams = new URL(req.url).searchParams
+    const projectId = searchParams.get('projectId')
+    // M-4 FIX: Pagination
+    const page = parseInt(searchParams.get('page') || '1')
+    const limit = Math.min(parseInt(searchParams.get('limit') || '50'), 200)
+    const where: any = {}
+    if (projectId) where.projectId = projectId
+
+    const result = await safeDbOp(
+      () => db.finishing.findMany({
+        where, orderBy: { date: 'desc' }, skip: (page - 1) * limit, take: limit,
+        include: { project: { select: { id: true, name: true, code: true } }, signedByUser: { select: { name: true, nameEn: true } } },
+      }), 'جلب التشطيبات'
+    )
+    if (!result.success) return result.response
+    return NextResponse.json({ finishings: result.data, page, limit })
+  } catch (error: any) {
+    return handleDbError(error, 'جلب التشطيبات')
   }
-
-  var searchParams = new URL(req.url).searchParams
-  var projectId = searchParams.get('projectId')
-
-  var where: any = {}
-  if (projectId) where.projectId = projectId
-
-  var result = await safeDbOp(
-    () => db.finishing.findMany({
-      where,
-      include: {
-        project: { select: { id: true, name: true, code: true } },
-        signedByUser: { select: { name: true, nameEn: true } },
-      },
-      orderBy: { date: 'desc' },
-    }),
-    'جلب التشطيبات'
-  )
-
-  if (!result.success) return result.response
-  return NextResponse.json({ finishings: result.data })
 }
 
 export async function POST(req: NextRequest) {
-  var user = await getAuthUser(req)
+  const user = await getAuthUser(req)
+  if (!user) return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
 
-  if (!user) {
-    return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
+  // H-1 FIX: RBAC check
+  if (!canWrite(user.role, 'finishings', user.permissions)) {
+    return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية لإنشاء تشطيبات' }, { status: 403 })
   }
 
-  // Rate limit write operations
   var rl = checkRateLimit(req, RateLimitPresets.write)
-  if (rl.limited) {
-    return NextResponse.json(
-      { error: 'too_many_requests', message: 'طلبات كثيرة جداً، يرجى الانتظار قليلاً' },
-      { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } }
-    )
-  }
+  if (rl.limited) return NextResponse.json({ error: 'too_many_requests', message: 'طلبات كثيرة جداً' }, { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } })
 
   try {
-    var body = await req.json()
-
-    var validationError = validateRequired(body, ['projectId', 'date'])
+    const body = await req.json()
+    const validationError = validateRequired(body, ['projectId', 'date'])
     if (validationError) return validationError
 
-    var createResult = await safeDbOp(
+    const createResult = await safeDbOp(
       () => db.finishing.create({
-        data: {
-          projectId: String(body.projectId),
-          driveLineId: body.driveLineId || null,
-          date: new Date(body.date),
-          siteCleaned: !!body.siteCleaned,
-          wasteRemoved: !!body.wasteRemoved,
-          shaftClosed: !!body.shaftClosed,
-          siteRestored: !!body.siteRestored,
-          lineHandover: !!body.lineHandover,
-          clientNotes: body.clientNotes ? String(body.clientNotes) : null,
-          handoverStatus: String(body.handoverStatus || 'pending'),
-          signedBy: user.name,
-          signedById: user.id,
-          signedAt: new Date(),
-        },
-      }),
-      'إنشاء التشطيب'
+        data: { projectId: String(body.projectId), driveLineId: body.driveLineId || null, date: new Date(body.date), siteCleaned: !!body.siteCleaned, wasteRemoved: !!body.wasteRemoved, shaftClosed: !!body.shaftClosed, siteRestored: !!body.siteRestored, lineHandover: !!body.lineHandover, clientNotes: body.clientNotes ? String(body.clientNotes) : null, handoverStatus: String(body.handoverStatus || 'pending'), signedBy: user.name, signedById: user.id, signedAt: new Date() },
+      }), 'إنشاء التشطيب'
     )
     if (!createResult.success) return createResult.response
 
-    // Audit log (non-critical)
-    await safeDbOp(
-      () => db.auditLog.create({
-        data: {
-          userId: user.id,
-          projectId: body.projectId,
-          action: 'create',
-          entity: 'finishing',
-          entityId: createResult.data.id,
-          details: 'Created finishing record',
-        },
-      }),
-      'سجل التدقيق'
-    )
+    safeDbOp(() => db.auditLog.create({ data: { userId: user.id, projectId: body.projectId, action: 'create', entity: 'finishing', entityId: createResult.data.id, details: 'Created finishing record' } }), 'سجل التدقيق').catch(() => {})
 
     return NextResponse.json({ finishing: createResult.data, success: true })
   } catch (error: any) {
