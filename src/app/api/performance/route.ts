@@ -1,19 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
+import { handleDbError, safeDbOp } from '@/lib/api-helpers'
 
 export async function GET(req: NextRequest) {
   const user = await getAuthUser(req)
-
   if (!user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
   }
 
   try {
     const { searchParams } = new URL(req.url)
     const projectId = searchParams.get('projectId')
 
-    // FIXED: Added time filter - last 3 months instead of all-time scan
     const threeMonthsAgo = new Date()
     threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3)
 
@@ -26,29 +25,42 @@ export async function GET(req: NextRequest) {
     const costWhere: any = { date: { gte: threeMonthsAgo } }
     if (projectId) costWhere.projectId = projectId
 
-    // FIXED: Reduced limits (200+200+500 instead of 500+500+1000)
-    const [reports, safetyReports, costs] = await Promise.all([
-      db.dailyReport.findMany({
-        where,
-        select: {
-          projectId: true, reportDate: true, dailyMeters: true, dailyRevenue: true,
-          stoppageHours: true, stoppageReason: true, workersCount: true,
-          project: { select: { name: true, code: true } },
-        },
-        orderBy: { reportDate: 'asc' },
-        take: 200,
-      }),
-      db.safetyReport.findMany({
-        where: safetyWhere,
-        select: { projectId: true, ppeAvailable: true, helmetCheck: true, bootsCheck: true, glovesCheck: true, glassesCheck: true, workAreaCheck: true, barriersCheck: true, shaftCheck: true, ventilationCheck: true, electricalCheck: true, craneCheck: true, hydraulicCheck: true, fireExtinguishers: true, workPermit: true, toolboxTalk: true },
-        take: 200,
-      }),
-      db.cost.findMany({
-        where: costWhere,
-        select: { projectId: true, amount: true },
-        take: 500,
-      }),
+    // FIX: Wrap in safeDbOp for consistent error handling
+    const [reportsResult, safetyResult, costsResult] = await Promise.all([
+      safeDbOp(
+        () => db.dailyReport.findMany({
+          where,
+          select: { projectId: true, reportDate: true, dailyMeters: true, dailyRevenue: true, stoppageHours: true, stoppageReason: true, workersCount: true, project: { select: { name: true, code: true } } },
+          orderBy: { reportDate: 'asc' }, take: 200,
+        }),
+        'جلب التقارير للأداء'
+      ),
+      safeDbOp(
+        () => db.safetyReport.findMany({
+          where: safetyWhere,
+          select: { projectId: true, ppeAvailable: true, helmetCheck: true, bootsCheck: true, glovesCheck: true, glassesCheck: true, workAreaCheck: true, barriersCheck: true, shaftCheck: true, ventilationCheck: true, electricalCheck: true, craneCheck: true, hydraulicCheck: true, fireExtinguishers: true, workPermit: true, toolboxTalk: true },
+          take: 200,
+        }),
+        'جلب تقارير السلامة للأداء'
+      ),
+      safeDbOp(
+        () => db.cost.findMany({
+          where: costWhere,
+          select: { projectId: true, amount: true },
+          take: 500,
+        }),
+        'جلب التكاليف للأداء'
+      ),
     ])
+
+    // FIX: Check all results for errors
+    if (!reportsResult.success) return reportsResult.response
+    if (!safetyResult.success) return safetyResult.response
+    if (!costsResult.success) return costsResult.response
+
+    const reports = reportsResult.data
+    const safetyReports = safetyResult.data
+    const costs = costsResult.data
 
     const projectStats = new Map<string, any>()
 
@@ -56,19 +68,9 @@ export async function GET(req: NextRequest) {
       const key = r.projectId
       if (!projectStats.has(key)) {
         projectStats.set(key, {
-          projectId: r.projectId,
-          projectName: r.project?.name || '',
-          projectCode: r.project?.code || '',
-          reports: [],
-          totalMeters: 0,
-          totalRevenue: 0,
-          avgDaily: 0,
-          bestDay: 0,
-          worstDay: Infinity,
-          stoppageDays: 0,
-          stoppageReasons: [] as string[],
-          totalWorkers: 0,
-          daysCount: 0,
+          projectId: r.projectId, projectName: r.project?.name || '', projectCode: r.project?.code || '',
+          reports: [], totalMeters: 0, totalRevenue: 0, avgDaily: 0, bestDay: 0, worstDay: Infinity,
+          stoppageDays: 0, stoppageReasons: [] as string[], totalWorkers: 0, daysCount: 0,
         })
       }
       const stat = projectStats.get(key)!
@@ -77,10 +79,7 @@ export async function GET(req: NextRequest) {
       stat.totalRevenue += r.dailyRevenue
       stat.bestDay = Math.max(stat.bestDay, r.dailyMeters)
       stat.worstDay = Math.min(stat.worstDay, r.dailyMeters)
-      if (r.stoppageHours > 2) {
-        stat.stoppageDays++
-        if (r.stoppageReason) stat.stoppageReasons.push(r.stoppageReason)
-      }
+      if (r.stoppageHours > 2) { stat.stoppageDays++; if (r.stoppageReason) stat.stoppageReasons.push(r.stoppageReason) }
       stat.totalWorkers += r.workersCount
       stat.daysCount++
     }
@@ -113,21 +112,12 @@ export async function GET(req: NextRequest) {
       const profitMargin = p.totalRevenue > 0 ? ((p.totalRevenue - totalCost) / p.totalRevenue) * 100 : 0
       const avgWorkers = p.daysCount > 0 ? p.totalWorkers / p.daysCount : 0
 
-      return {
-        ...p,
-        safetyRate,
-        totalCost,
-        costPerMeter,
-        profit: p.totalRevenue - totalCost,
-        profitMargin,
-        avgWorkers,
-        attendanceRate: avgWorkers > 0 ? 100 : 0,
-      }
+      return { ...p, safetyRate, totalCost, costPerMeter, profit: p.totalRevenue - totalCost, profitMargin, avgWorkers, attendanceRate: avgWorkers > 0 ? 100 : 0 }
     })
 
     return NextResponse.json({ performance })
   } catch (error) {
-    console.error('Performance data error:', error)
-    return NextResponse.json({ error: 'Failed to fetch performance data' }, { status: 500 })
+    // FIX: Use handleDbError for consistent Arabic error messages
+    return handleDbError(error, 'جلب بيانات الأداء')
   }
 }
