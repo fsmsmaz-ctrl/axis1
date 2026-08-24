@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
+import { handleDbError, safeDbOp } from '@/lib/api-helpers'
 
 export async function GET(req: NextRequest) {
   try {
@@ -31,8 +32,12 @@ export async function GET(req: NextRequest) {
   // Build filtered where clauses for reports and costs
   var userProjectIds: string[] | null = null
   if (user.role === 'foreman' || user.role === 'site_engineer' || user.role === 'project_manager') {
-    var userProjects = await db.project.findMany({ where: projectWhere, select: { id: true } })
-    userProjectIds = userProjects.map(function(p: any) { return p.id })
+    var userProjectsResult = await safeDbOp(
+      () => db.project.findMany({ where: projectWhere, select: { id: true } }),
+      'جلب مشاريع المستخدم'
+    )
+    if (!userProjectsResult.success) return userProjectsResult.response
+    userProjectIds = userProjectsResult.data.map(function(p: any) { return p.id })
   }
 
   var todayReportWhere: any = { reportDate: { gte: today, lt: tomorrow }, status: 'approved' }
@@ -51,28 +56,57 @@ export async function GET(req: NextRequest) {
     costTrendWhere.projectId = { in: userProjectIds }
   }
 
+  // FIX-3.3: Notification filtering — non-admin users only see their own or broadcast
+  var notifWhere: any = {}
+  if (user.role !== 'top_management' && user.role !== 'project_manager') {
+    notifWhere = { OR: [{ userId: user.id }, { userId: null }] }
+  }
+
+  // FIX-3.4: Wrap all DB calls in safeDbOp for consistent error handling
   const [
-    activeProjects, todayAgg, monthAgg, monthCostsResult,
-    totalCostsResult, totalRevenueResult, stoppedEquipment,
-    unreadNotifications, trendReports, trendCostsGrouped,
-    projects, recentReports, notifications, equipment, costsByCategoryRaw,
+    activeProjectsResult, todayAggResult, monthAggResult, monthCostsResult,
+    totalCostsResult, totalRevenueResult, stoppedEquipmentResult,
+    unreadNotificationsResult, trendReportsResult, trendCostsGroupedResult,
+    projectsResult, recentReportsResult, notificationsResult, equipmentResult, costsByCategoryRawResult,
   ] = await Promise.all([
-    db.project.count({ where: { ...projectWhere, status: 'in_progress' } }),
-    db.dailyReport.aggregate({ where: todayReportWhere, _sum: { dailyMeters: true, dailyRevenue: true, workersCount: true }, _count: true }),
-    db.dailyReport.aggregate({ where: monthReportWhere, _sum: { dailyMeters: true, dailyRevenue: true } }),
-    db.cost.aggregate({ where: costMonthWhere, _sum: { amount: true } }),
-    db.cost.aggregate({ where: costTotalWhere, _sum: { amount: true } }),
-    db.dailyReport.aggregate({ where: { status: 'approved', ...(userProjectIds ? { projectId: { in: userProjectIds } } : {}) }, _sum: { dailyRevenue: true } }),
-    db.equipment.count({ where: { status: { in: ['stopped', 'maintenance_needed'] } } }),
-    db.notification.count({ where: { read: false } }),
-    db.dailyReport.findMany({ where: trendReportWhere, orderBy: { reportDate: 'asc' }, select: { reportDate: true, dailyMeters: true, dailyRevenue: true } }),
-    db.cost.groupBy({ by: ['date'], where: costTrendWhere, _sum: { amount: true } }),
-    db.project.findMany({ where: projectWhere, select: { id: true, name: true, code: true, status: true, progress: true, totalLength: true, pricePerMeter: true, client: true }, take: 50, orderBy: { status: 'desc' } }),
-    db.dailyReport.findMany({ where: userProjectIds ? { projectId: { in: userProjectIds } } : {}, take: 10, orderBy: { reportDate: 'desc' }, include: { project: { select: { name: true, code: true } }, driveLine: { select: { lineNumber: true } } } }),
-    db.notification.findMany({ take: 5, orderBy: { createdAt: 'desc' }, include: { project: { select: { name: true } } } }),
-    db.equipment.findMany({ take: 30, orderBy: { name: 'asc' }, include: { project: { select: { name: true } } } }),
-    db.cost.groupBy({ by: ['category'], where: costMonthWhere, _sum: { amount: true } }),
+    safeDbOp(() => db.project.count({ where: { ...projectWhere, status: 'in_progress' } }), 'عد المشاريع النشطة'),
+    safeDbOp(() => db.dailyReport.aggregate({ where: todayReportWhere, _sum: { dailyMeters: true, dailyRevenue: true, workersCount: true }, _count: true }), 'إحصائيات اليوم'),
+    safeDbOp(() => db.dailyReport.aggregate({ where: monthReportWhere, _sum: { dailyMeters: true, dailyRevenue: true } }), 'إحصائيات الشهر'),
+    safeDbOp(() => db.cost.aggregate({ where: costMonthWhere, _sum: { amount: true } }), 'تكاليف الشهر'),
+    safeDbOp(() => db.cost.aggregate({ where: costTotalWhere, _sum: { amount: true } }), 'إجمالي التكاليف'),
+    safeDbOp(() => db.dailyReport.aggregate({ where: { status: 'approved', ...(userProjectIds ? { projectId: { in: userProjectIds } } : {}) }, _sum: { dailyRevenue: true } }), 'إجمالي الإيرادات'),
+    safeDbOp(() => db.equipment.count({ where: { status: { in: ['stopped', 'maintenance_needed'] } } }), 'عد المعدات المتوقفة'),
+    safeDbOp(() => db.notification.count({ where: { ...notifWhere, read: false } }), 'عد الإشعارات غير المقروءة'),
+    safeDbOp(() => db.dailyReport.findMany({ where: trendReportWhere, orderBy: { reportDate: 'asc' }, select: { reportDate: true, dailyMeters: true, dailyRevenue: true } }), 'تقارير الاتجاه'),
+    safeDbOp(() => db.cost.groupBy({ by: ['date'], where: costTrendWhere, _sum: { amount: true } }), 'تكاليف الاتجاه'),
+    safeDbOp(() => db.project.findMany({ where: projectWhere, select: { id: true, name: true, code: true, status: true, progress: true, totalLength: true, pricePerMeter: true, client: true }, take: 50, orderBy: { status: 'desc' } }), 'قائمة المشاريع'),
+    safeDbOp(() => db.dailyReport.findMany({ where: userProjectIds ? { projectId: { in: userProjectIds } } : {}, take: 10, orderBy: { reportDate: 'desc' }, include: { project: { select: { name: true, code: true } }, driveLine: { select: { lineNumber: true } } } }), 'آخر التقارير'),
+    safeDbOp(() => db.notification.findMany({ where: notifWhere, take: 5, orderBy: { createdAt: 'desc' }, include: { project: { select: { name: true } } } }), 'آخر الإشعارات'),
+    safeDbOp(() => db.equipment.findMany({ take: 30, orderBy: { name: 'asc' }, include: { project: { select: { name: true } } } }), 'قائمة المعدات'),
+    safeDbOp(() => db.cost.groupBy({ by: ['category'], where: costMonthWhere, _sum: { amount: true } }), 'تكاليف حسب التصنيف'),
   ])
+
+  // Check all critical results
+  if (!activeProjectsResult.success) return activeProjectsResult.response
+  if (!todayAggResult.success) return todayAggResult.response
+  if (!monthAggResult.success) return monthAggResult.response
+  if (!projectsResult.success) return projectsResult.response
+
+  const activeProjects = activeProjectsResult.data
+  const todayAgg = todayAggResult.data
+  const monthAgg = monthAggResult.success ? monthAggResult.data : { _sum: { dailyMeters: 0, dailyRevenue: 0 } }
+  const monthCostsResult_data = monthCostsResult.success ? monthCostsResult.data : { _sum: { amount: 0 } }
+  const totalCostsResult_data = totalCostsResult.success ? totalCostsResult.data : { _sum: { amount: 0 } }
+  const totalRevenueResult_data = totalRevenueResult.success ? totalRevenueResult.data : { _sum: { dailyRevenue: 0 } }
+  const stoppedEquipment = stoppedEquipmentResult.success ? stoppedEquipmentResult.data : 0
+  const unreadNotifications = unreadNotificationsResult.success ? unreadNotificationsResult.data : 0
+  const trendReports = trendReportsResult.success ? trendReportsResult.data : []
+  const trendCostsGrouped = trendCostsGroupedResult.success ? trendCostsGroupedResult.data : []
+  const projects = projectsResult.data
+  const recentReports = recentReportsResult.success ? recentReportsResult.data : []
+  const notifications = notificationsResult.success ? notificationsResult.data : []
+  const equipment = equipmentResult.success ? equipmentResult.data : []
+  const costsByCategoryRaw = costsByCategoryRawResult.success ? costsByCategoryRawResult.data : []
 
   const metersToday = todayAgg._sum.dailyMeters || 0
   const revenueToday = todayAgg._sum.dailyRevenue || 0
@@ -94,11 +128,11 @@ export async function GET(req: NextRequest) {
     trendMap.get(key)!.cost += (c._sum.amount || 0)
   }
   const trend = Array.from(trendMap.entries()).sort((a, b) => a[0].localeCompare(b[0])).map(([date, vals]) => ({ date, ...vals }))
-  const costsByCategory = costsByCategoryRaw.map((c) => ({ category: c.category, amount: c._sum.amount || 0 }))
+  const costsByCategory = costsByCategoryRaw.map((c: any) => ({ category: c.category, amount: c._sum.amount || 0 }))
 
-  const totalRevenue = totalRevenueResult._sum.dailyRevenue || 0
-  const totalCostAmount = totalCostsResult._sum.amount || 0
-  const monthCostAmount = monthCostsResult._sum.amount || 0
+  const totalRevenue = totalRevenueResult_data._sum.dailyRevenue || 0
+  const totalCostAmount = totalCostsResult_data._sum.amount || 0
+  const monthCostAmount = monthCostsResult_data._sum.amount || 0
   const netProfit = totalRevenue - totalCostAmount
 
   return NextResponse.json({
@@ -112,9 +146,6 @@ export async function GET(req: NextRequest) {
   })
   } catch (error: any) {
     console.error('[Dashboard API] Error:', error)
-    return NextResponse.json(
-      { error: 'dashboard_error', message: 'فشل في تحميل بيانات لوحة المعلومات' },
-      { status: 500 }
-    )
+    return handleDbError(error, 'لوحة المعلومات')
   }
 }
