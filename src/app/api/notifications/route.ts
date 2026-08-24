@@ -5,7 +5,6 @@ import { handleDbError, safeDbOp } from '@/lib/api-helpers'
 
 export async function GET(req: NextRequest) {
   var user = await getAuthUser(req)
-
   if (!user) {
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
   }
@@ -16,7 +15,14 @@ export async function GET(req: NextRequest) {
   var where: any = {}
   if (unreadOnly) where.read = false
 
-  // Run both queries in parallel
+  // FIX: Non-admin users should only see their own notifications or broadcast (userId=null)
+  if (user.role !== 'top_management' && user.role !== 'project_manager') {
+    where.OR = [
+      { userId: null },
+      { userId: user.id },
+    ]
+  }
+
   var result = await safeDbOp(
     () => db.notification.findMany({
       where,
@@ -27,8 +33,13 @@ export async function GET(req: NextRequest) {
     'جلب التنبيهات'
   )
 
+  var countWhere: any = { read: false }
+  if (user.role !== 'top_management' && user.role !== 'project_manager') {
+    countWhere.OR = [{ userId: null }, { userId: user.id }]
+  }
+
   var countResult = await safeDbOp(
-    () => db.notification.count({ where: { read: false } }),
+    () => db.notification.count({ where: countWhere }),
     'عد التنبيهات غير المقروءة'
   )
 
