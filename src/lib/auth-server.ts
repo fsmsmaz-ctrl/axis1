@@ -84,6 +84,10 @@ export async function getSessionUser(token: string | undefined): Promise<Session
     const userId = payload.sub
     if (!userId) return null
 
+    // FIXED: Removed redundant DB query on every request.
+    // JWT already contains all needed user data and is verified above.
+    // The middleware already validates the token. This was causing
+    // an extra DB round-trip on EVERY API call.
     return {
       id: userId,
       email: payload.email as string || '',
@@ -99,11 +103,15 @@ export async function getSessionUser(token: string | undefined): Promise<Session
   }
 }
 
+// Re-export shared items for server-side use
 export { SESSION_COOKIE, getSessionMaxAge, getCookieOptions }
 export type { SessionUser }
 
 import type { NextRequest } from 'next/server'
 
+/**
+ * Extract the JWT token from request (cookie OR Authorization header)
+ */
 export function extractToken(req: NextRequest): string | undefined {
   let token = req.cookies.get(SESSION_COOKIE)?.value
 
@@ -117,6 +125,9 @@ export function extractToken(req: NextRequest): string | undefined {
   return token
 }
 
+/**
+ * Get the authenticated user from request
+ */
 export async function getAuthUser(req: NextRequest): Promise<SessionUser | null> {
   const token = extractToken(req)
   return await getSessionUser(token)
