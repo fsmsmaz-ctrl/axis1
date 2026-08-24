@@ -16,7 +16,6 @@ var ALL_PERMISSIONS = [
 ]
 
 export async function PATCH(req: NextRequest) {
-  // Rate limit user updates
   var rl = checkRateLimit(req, RateLimitPresets.write)
   if (rl.limited) {
     return NextResponse.json(
@@ -28,7 +27,7 @@ export async function PATCH(req: NextRequest) {
   try {
     var authUser = await getAuthUser(req)
     if (!authUser || authUser.email.toLowerCase().trim() !== ADMIN_EMAIL) {
-      return NextResponse.json({ error: 'unauthorized' }, { status: 403 })
+      return NextResponse.json({ error: 'forbidden', message: 'هذه العملية متاحة فقط لمدير النظام' }, { status: 403 })
     }
 
     var body = await req.json()
@@ -41,16 +40,16 @@ export async function PATCH(req: NextRequest) {
     var permissions = body.permissions
 
     if (!userId) {
-      return NextResponse.json({ error: 'User ID is required' }, { status: 400 })
+      return NextResponse.json({ error: 'missing_fields', message: 'معرف المستخدم مطلوب' }, { status: 400 })
     }
 
     var targetUser = await db.user.findUnique({ where: { id: userId } })
     if (!targetUser) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 })
+      return NextResponse.json({ error: 'not_found', message: 'المستخدم غير موجود' }, { status: 404 })
     }
 
     if (targetUser.email.toLowerCase().trim() === ADMIN_EMAIL) {
-      return NextResponse.json({ error: 'Cannot modify admin account' }, { status: 403 })
+      return NextResponse.json({ error: 'forbidden', message: 'لا يمكن تعديل حساب مدير النظام' }, { status: 403 })
     }
 
     var updateData: Record<string, any> = {}
@@ -60,7 +59,7 @@ export async function PATCH(req: NextRequest) {
     if (phone !== undefined) updateData.phone = phone.trim() || null
     if (role !== undefined) {
       if (!VALID_ROLES.includes(role)) {
-        return NextResponse.json({ error: 'Invalid role' }, { status: 400 })
+        return NextResponse.json({ error: 'invalid_value', message: 'دور غير صالح. الأدوار المسموحة: ' + VALID_ROLES.join(', ') }, { status: 400 })
       }
       updateData.role = role
     }
@@ -79,11 +78,15 @@ export async function PATCH(req: NextRequest) {
     }
 
     if (password && password.trim()) {
+      // FIX: Enforce minimum password length on update
+      if (password.trim().length < 6) {
+        return NextResponse.json({ error: 'invalid_value', message: 'كلمة المرور قصيرة جداً (6 أحرف على الأقل)' }, { status: 400 })
+      }
       updateData.password = await bcrypt.hash(password.trim(), 12)
     }
 
     if (Object.keys(updateData).length === 0) {
-      return NextResponse.json({ error: 'No fields to update' }, { status: 400 })
+      return NextResponse.json({ error: 'missing_fields', message: 'لم يتم تحديد أي حقل للتحديث' }, { status: 400 })
     }
 
     var updated = await db.user.update({
@@ -96,7 +99,7 @@ export async function PATCH(req: NextRequest) {
     })
 
     return NextResponse.json({
-      message: 'User updated successfully.',
+      message: 'تم تحديث المستخدم بنجاح',
       user: { ...updated, permissions: updated.permissions ?? {} }
     })
   } catch (error) {
