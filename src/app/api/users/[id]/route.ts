@@ -4,8 +4,7 @@ import { db } from '@/lib/db'
 import bcrypt from 'bcryptjs'
 import { handleDbError } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
-
-var ADMIN_EMAIL = 'admin@axis.om'
+import { VALID_ROLES } from '@/lib/auth'
 
 var VALID_PERMS = [
   'drive_lines', 'daily_reports', 'safety', 'equipment', 'costs', 'finishings', 'performance',
@@ -15,13 +14,9 @@ var VALID_PERMS = [
 ]
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  // Rate limit user updates
   var rl = checkRateLimit(req, RateLimitPresets.write)
   if (rl.limited) {
-    return NextResponse.json(
-      { error: 'too_many_requests', message: 'طلبات كثيرة جداً، يرجى الانتظار' },
-      { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } }
-    )
+    return NextResponse.json({ error: 'too_many_requests', message: 'طلبات كثيرة جداً، يرجى الانتظار' }, { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } })
   }
 
   var { id } = await params
@@ -36,24 +31,32 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     if (body.name !== undefined) updateData.name = body.name.trim()
     if (body.nameEn !== undefined) updateData.nameEn = body.nameEn?.trim() || null
     if (body.phone !== undefined) updateData.phone = body.phone?.trim() || null
-    if (body.role !== undefined) updateData.role = body.role
     if (body.active !== undefined) updateData.active = body.active
     if (body.language !== undefined) updateData.language = body.language
+
+    // H-5 FIX: Validate role
+    if (body.role !== undefined) {
+      if (!(VALID_ROLES as readonly string[]).includes(body.role)) {
+        return NextResponse.json({ error: 'invalid_value', message: 'دور غير صالح' }, { status: 400 })
+      }
+      updateData.role = body.role
+    }
 
     if (body.permissions !== undefined) {
       var cleanPerms: Record<string, boolean> = {}
       if (body.permissions && typeof body.permissions === 'object') {
         for (var i = 0; i < VALID_PERMS.length; i++) {
           var key = VALID_PERMS[i]
-          if (typeof body.permissions[key] === 'boolean') {
-            cleanPerms[key] = body.permissions[key]
-          }
+          if (typeof body.permissions[key] === 'boolean') cleanPerms[key] = body.permissions[key]
         }
       }
       updateData.permissions = Object.keys(cleanPerms).length > 0 ? cleanPerms : null
     }
 
     if (body.password && body.password.trim()) {
+      if (body.password.trim().length < 6) {
+        return NextResponse.json({ error: 'invalid_value', message: 'كلمة المرور قصيرة جداً (6 أحرف على الأقل)' }, { status: 400 })
+      }
       updateData.password = await bcrypt.hash(body.password.trim(), 12)
     }
 
@@ -61,11 +64,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: 'missing_fields', message: 'لم يتم تحديد أي حقل للتحديث' }, { status: 400 })
     }
 
-    await db.user.update({
-      where: { id },
-      data: updateData,
-    })
-
+    await db.user.update({ where: { id }, data: updateData })
     return NextResponse.json({ success: true })
   } catch (error) {
     return handleDbError(error, 'تحديث المستخدم')
@@ -73,13 +72,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 }
 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  // Rate limit user deletion
   var rl = checkRateLimit(req, RateLimitPresets.auth)
   if (rl.limited) {
-    return NextResponse.json(
-      { error: 'too_many_requests', message: 'طلبات كثيرة جداً، يرجى الانتظار' },
-      { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } }
-    )
+    return NextResponse.json({ error: 'too_many_requests', message: 'طلبات كثيرة جداً، يرجى الانتظار' }, { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } })
   }
 
   var { id } = await params
@@ -89,7 +84,11 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   if (id === me.id) return NextResponse.json({ error: 'forbidden', message: 'لا يمكنك حذف حسابك الخاص' }, { status: 403 })
 
   try {
-    await db.user.delete({ where: { id } })
+    // H-4 FIX: Soft delete instead of hard delete (prevents orphaned records)
+    await db.user.update({
+      where: { id },
+      data: { active: false, email: 'deleted_' + id, role: 'deleted' },
+    })
     return NextResponse.json({ success: true })
   } catch (error) {
     return handleDbError(error, 'حذف المستخدم')
