@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import bcrypt from 'bcryptjs'
-import { handleDbError } from '@/lib/api-helpers'
+import { handleDbError, safeDbOp } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 import { VALID_ROLES } from '@/lib/auth'
 
+// FIX-4.6: Added 'projects' to VALID_PERMS (was missing, causing permissions truncation)
 var VALID_PERMS = [
-  'drive_lines', 'daily_reports', 'safety', 'equipment', 'costs', 'finishings', 'performance',
+  'projects', 'drive_lines', 'daily_reports', 'safety', 'equipment', 'costs', 'finishings', 'performance',
   'rpt_daily_site', 'rpt_production', 'rpt_safety', 'rpt_attendance',
   'rpt_revenue', 'rpt_costs', 'rpt_profit', 'rpt_equipment',
   'rpt_weekly', 'rpt_monthly', 'rpt_handover',
@@ -61,8 +62,14 @@ export async function POST(req: NextRequest) {
     }
 
     var normalizedEmail = email.trim().toLowerCase()
-    var existing = await db.user.findUnique({ where: { email: normalizedEmail } })
-    if (existing) {
+
+    // FIX-4.5: Wrapped in safeDbOp to prevent unhandled crash on duplicate email
+    var existingResult = await safeDbOp(
+      () => db.user.findUnique({ where: { email: normalizedEmail } }),
+      'التحقق من البريد المكرر'
+    )
+    if (!existingResult.success) return existingResult.response
+    if (existingResult.data) {
       return NextResponse.json({ error: 'duplicate_entry', message: 'البريد الإلكتروني مستخدم بالفعل' }, { status: 400 })
     }
 
@@ -75,16 +82,22 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    var user = await db.user.create({
-      data: {
-        email: normalizedEmail, password: hashed, name: name.trim(),
-        nameEn: body.nameEn?.trim() || null, phone: body.phone?.trim() || null,
-        role, active: body.active !== false, language: body.language || 'ar',
-        permissions: Object.keys(cleanPerms).length > 0 ? cleanPerms : null,
-      },
-      select: { id: true, email: true, name: true },
-    })
-    return NextResponse.json({ success: true, userId: user.id })
+    // FIX-4.5: Wrapped in safeDbOp
+    var createResult = await safeDbOp(
+      () => db.user.create({
+        data: {
+          email: normalizedEmail, password: hashed, name: name.trim(),
+          nameEn: body.nameEn?.trim() || null, phone: body.phone?.trim() || null,
+          role, active: body.active !== false, language: body.language || 'ar',
+          permissions: Object.keys(cleanPerms).length > 0 ? cleanPerms : null,
+        },
+        select: { id: true, email: true, name: true },
+      }),
+      'إنشاء المستخدم'
+    )
+    if (!createResult.success) return createResult.response
+
+    return NextResponse.json({ success: true, userId: createResult.data.id })
   } catch (error) {
     return handleDbError(error, 'إنشاء المستخدم')
   }
