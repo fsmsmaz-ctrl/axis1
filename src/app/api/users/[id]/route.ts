@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import bcrypt from 'bcryptjs'
-import { handleDbError } from '@/lib/api-helpers'
+import { handleDbError, safeDbOp } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 import { VALID_ROLES } from '@/lib/auth'
 
+// FIX-4.6: Added 'projects' to VALID_PERMS (was missing)
 var VALID_PERMS = [
-  'drive_lines', 'daily_reports', 'safety', 'equipment', 'costs', 'finishings', 'performance',
+  'projects', 'drive_lines', 'daily_reports', 'safety', 'equipment', 'costs', 'finishings', 'performance',
   'rpt_daily_site', 'rpt_production', 'rpt_safety', 'rpt_attendance',
   'rpt_revenue', 'rpt_costs', 'rpt_profit', 'rpt_equipment',
   'rpt_weekly', 'rpt_monthly', 'rpt_handover',
@@ -24,7 +25,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!me) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   if (me.role !== 'top_management') return NextResponse.json({ error: 'forbidden' }, { status: 403 })
 
-  try {
+   try {
     var body = await req.json()
     var updateData: Record<string, any> = {}
 
@@ -64,7 +65,27 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: 'missing_fields', message: 'لم يتم تحديد أي حقل للتحديث' }, { status: 400 })
     }
 
-    await db.user.update({ where: { id }, data: updateData })
+    // FIX-4.7: Added top_management self-protection (was missing in this route)
+    if (updateData.role || updateData.active === false) {
+      var targetResult = await safeDbOp(
+        () => db.user.findUnique({ where: { id }, select: { id: true, role: true } }),
+        'البحث عن المستخدم'
+      )
+      if (!targetResult.success) return targetResult.response
+      if (!targetResult.data) return NextResponse.json({ error: 'not_found', message: 'المستخدم غير موجود' }, { status: 404 })
+
+      if (targetResult.data.role === 'top_management' && targetResult.data.id !== me.id) {
+        return NextResponse.json({ error: 'forbidden', message: 'لا يمكن تعديل حسابات الإدارة العليا' }, { status: 403 })
+      }
+    }
+
+    // FIX-4.5: Wrapped in safeDbOp
+    var updateResult = await safeDbOp(
+      () => db.user.update({ where: { id }, data: updateData }),
+      'تحديث المستخدم'
+    )
+    if (!updateResult.success) return updateResult.response
+
     return NextResponse.json({ success: true })
   } catch (error) {
     return handleDbError(error, 'تحديث المستخدم')
@@ -84,11 +105,28 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   if (id === me.id) return NextResponse.json({ error: 'forbidden', message: 'لا يمكنك حذف حسابك الخاص' }, { status: 403 })
 
   try {
+    // FIX-4.7: Added top_management protection check (was missing)
+    var targetResult = await safeDbOp(
+      () => db.user.findUnique({ where: { id }, select: { id: true, role: true } }),
+      'البحث عن المستخدم'
+    )
+    if (!targetResult.success) return targetResult.response
+    if (!targetResult.data) return NextResponse.json({ error: 'not_found', message: 'المستخدم غير موجود' }, { status: 404 })
+
+    if (targetResult.data.role === 'top_management') {
+      return NextResponse.json({ error: 'forbidden', message: 'لا يمكن حذف حسابات الإدارة العليا' }, { status: 403 })
+    }
+
     // H-4 FIX: Soft delete instead of hard delete (prevents orphaned records)
-    await db.user.update({
-      where: { id },
-      data: { active: false, email: 'deleted_' + id, role: 'deleted' },
-    })
+    var deleteResult = await safeDbOp(
+      () => db.user.update({
+        where: { id },
+        data: { active: false, email: 'deleted_' + id, role: 'deleted' },
+      }),
+      'حذف المستخدم'
+    )
+    if (!deleteResult.success) return deleteResult.response
+
     return NextResponse.json({ success: true })
   } catch (error) {
     return handleDbError(error, 'حذف المستخدم')
