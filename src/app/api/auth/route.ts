@@ -1,6 +1,6 @@
 // Login endpoint (POST /api/auth)
 // C-6 FIX: No token in response body — relies on httpOnly cookie only
-// M-6 FIX: Minimum password length 4
+// M-6 FIX: Minimum password length 6 (unified with all other routes)
 // C-3 FIX: No default passwords
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -38,16 +38,16 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // M-6 FIX: Minimum 4 characters
-    if (String(password).length < 4) {
+    // FIX-3.1: Unified minimum 6 characters (was 4, inconsistent with user creation routes)
+    if (String(password).length < 6) {
       return NextResponse.json(
-        { error: 'missing_fields', message: 'كلمة المرور قصيرة جداً (4 أحرف على الأقل)' },
+        { error: 'missing_fields', message: 'كلمة المرور قصيرة جداً (6 أحرف على الأقل)' },
         { status: 400 }
       )
     }
 
     try {
-      await db.$queryRaw\`SELECT 1\`
+      await db.$queryRaw`SELECT 1`
     } catch (dbErr) {
       console.error('Database connection failed during login:', dbErr)
       return NextResponse.json(
