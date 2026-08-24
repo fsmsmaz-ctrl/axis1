@@ -1,36 +1,36 @@
 // Server-side helper for consistent API error handling
-// Used by all API routes to ensure uniform error responses
+// H-3 FIX: Removed 'details' field from all error responses in production
 
 import { NextResponse } from 'next/server'
 
 export interface ApiError {
   error: string
   message: string
-  details?: string
   fields?: string[]
 }
 
-/**
- * Handle database errors with specific, helpful messages
- */
+const isDev = process.env.NODE_ENV !== 'production'
+
 export function handleDbError(error: any, operation: string = 'operation'): NextResponse {
   console.error('Database error during ' + operation + ':', error)
 
   const errorMsg = String(error?.message || error)
+  // H-3 FIX: Log internally but never expose to client
+  if (isDev) {
+    console.debug('[DB Error Detail]', errorMsg)
+  }
 
   if (errorMsg.includes('does not exist') || errorMsg.includes('no such table') || errorMsg.includes('relation')) {
     return NextResponse.json({
       error: 'database_not_initialized',
       message: 'قاعدة البيانات غير مهيأة. تأكد من تشغيل migrations على Supabase.',
-      details: errorMsg,
     }, { status: 500 })
   }
 
   if (errorMsg.includes('ECONNREFUSED') || errorMsg.includes('ENOTFOUND') || errorMsg.includes('connection') || errorMsg.includes('timeout') || errorMsg.includes('pool')) {
     return NextResponse.json({
       error: 'database_connection',
-      message: 'فشل الاتصال بقاعدة البيانات. تحكد من إعدادات Supabase وDATABASE_URL.',
-      details: errorMsg,
+      message: 'فشل الاتصال بقاعدة البيانات. تحقق من إعدادات Supabase وDATABASE_URL.',
     }, { status: 500 })
   }
 
@@ -38,7 +38,6 @@ export function handleDbError(error: any, operation: string = 'operation'): Next
     return NextResponse.json({
       error: 'duplicate_entry',
       message: 'القيمة المدخلة موجودة بالفعل. يرجى استخدام قيمة مختلفة.',
-      details: errorMsg,
     }, { status: 400 })
   }
 
@@ -46,7 +45,6 @@ export function handleDbError(error: any, operation: string = 'operation'): Next
     return NextResponse.json({
       error: 'invalid_reference',
       message: 'المرجع غير صالح. تأكد من صحة المعرفات المرتبطة.',
-      details: errorMsg,
     }, { status: 400 })
   }
 
@@ -54,7 +52,6 @@ export function handleDbError(error: any, operation: string = 'operation'): Next
     return NextResponse.json({
       error: 'missing_required_field',
       message: 'حقل مطلوب مفقود. يرجى ملء جميع الحقول الإلزامية.',
-      details: errorMsg,
     }, { status: 400 })
   }
 
@@ -62,14 +59,12 @@ export function handleDbError(error: any, operation: string = 'operation'): Next
     return NextResponse.json({
       error: 'invalid_value',
       message: 'قيمة غير صحيحة. يرجى التحقق من البيانات المدخلة.',
-      details: errorMsg,
     }, { status: 400 })
   }
 
   return NextResponse.json({
     error: 'database_error',
     message: 'فشل في ' + operation + '. يرجى المحاولة مرة أخرى.',
-    details: errorMsg,
   }, { status: 500 })
 }
 
@@ -124,6 +119,17 @@ export async function safeDbOp(
   }
 }
 
+// ==================== RBAC Helper ====================
+
+// H-1 FIX: Check role permission before write operations
+export function requireRole(user: { role: string; permissions?: Record<string, boolean> | null }, resource: string): NextResponse | null {
+  const { canWrite } = require('./auth')
+  if (!canWrite(user.role, resource, user.permissions)) {
+    return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية لهذا الإجراء' }, { status: 403 })
+  }
+  return null
+}
+
 // ==================== Change Tracking for Audit Logs ====================
 
 export interface FieldLabel {
@@ -131,9 +137,7 @@ export interface FieldLabel {
   en: string
 }
 
-// Common field labels for audit log display
 export const fieldLabels: Record<string, FieldLabel> = {
-  // Project fields
   code: { ar: 'رقم المشروع', en: 'Project Code' },
   name: { ar: 'الاسم', en: 'Name' },
   client: { ar: 'العميل', en: 'Client' },
@@ -149,18 +153,15 @@ export const fieldLabels: Record<string, FieldLabel> = {
   status: { ar: 'الحالة', en: 'Status' },
   notes: { ar: 'ملاحظات', en: 'Notes' },
   progress: { ar: 'التقدم', en: 'Progress' },
-  // Equipment fields
   number: { ar: 'الرقم', en: 'Number' },
   type: { ar: 'النوع', en: 'Type' },
   dailyHours: { ar: 'ساعات التشغيل/يوم', en: 'Daily Hours' },
   lastMaintenance: { ar: 'آخر صيانة', en: 'Last Maintenance' },
   nextMaintenance: { ar: 'الصيانة القادمة', en: 'Next Maintenance' },
-  // Cost fields
   date: { ar: 'التاريخ', en: 'Date' },
   category: { ar: 'التصنيف', en: 'Category' },
   description: { ar: 'الوصف', en: 'Description' },
   amount: { ar: 'المبلغ', en: 'Amount' },
-  // Company Asset fields
   itemType: { ar: 'نوع الغرض', en: 'Item Type' },
   quantity: { ar: 'الكمية', en: 'Quantity' },
   ownership: { ar: 'نوع الملكية', en: 'Ownership' },
@@ -169,7 +170,6 @@ export const fieldLabels: Record<string, FieldLabel> = {
   rentalStart: { ar: 'بداية الإيجار', en: 'Rental Start' },
   rentalEnd: { ar: 'نهاية الإيجار', en: 'Rental End' },
   responsibleId: { ar: 'المسؤول', en: 'Responsible' },
-  // Finishing fields
   siteCleaned: { ar: 'تنظيف الموقع', en: 'Site Cleaned' },
   wasteRemoved: { ar: 'إزالة النفايات', en: 'Waste Removed' },
   shaftClosed: { ar: 'إغلاق البئر', en: 'Shaft Closed' },
@@ -180,11 +180,8 @@ export const fieldLabels: Record<string, FieldLabel> = {
   projectId: { ar: 'المشروع', en: 'Project' },
 }
 
-// Ownership/Status value labels
 const valueLabels: Record<string, Record<string, string>> = {
-  ownership: {
-    owned: 'ملك الشركة', rented: 'مستأجر', borrowed: 'معار',
-  },
+  ownership: { owned: 'ملك الشركة', rented: 'مستأجر', borrowed: 'معار' },
   status: {
     not_started: 'لم يبدأ', in_progress: 'قيد التنفيذ', suspended: 'معلق', completed: 'مكتمل',
     operational: 'تعمل', stopped: 'متوقفة', maintenance_needed: 'تحتاج صيانة',
@@ -192,12 +189,8 @@ const valueLabels: Record<string, Record<string, string>> = {
     draft: 'مسودة', submitted: 'مقدم', approved: 'معتمد', rejected: 'مرفوض',
     pending: 'معلق', accepted: 'مقبول', needs_revision: 'يحتاج مراجعة',
   },
-  handoverStatus: {
-    pending: 'معلق', accepted: 'مقبول', needs_revision: 'يحتاج مراجعة', rejected: 'مرفوض',
-  },
-  workType: {
-    pipe_jacking: 'Pipe Jacking', microtunneling: 'Microtunneling', hdd: 'HDD', auger_boring: 'Auger Boring',
-  },
+  handoverStatus: { pending: 'معلق', accepted: 'مقبول', needs_revision: 'يحتاج مراجعة', rejected: 'مرفوض' },
+  workType: { pipe_jacking: 'Pipe Jacking', microtunneling: 'Microtunneling', hdd: 'HDD', auger_boring: 'Auger Boring' },
   category: {
     labor: 'أيدي عاملة', housing: 'سكن', transport: 'نقل', fuel: 'وقود',
     maintenance: 'صيانة', parts: 'قطع غيار', oil: 'زيت', safety: 'سلامة', rental: 'إيجار', other: 'أخرى',
@@ -206,8 +199,8 @@ const valueLabels: Record<string, Record<string, string>> = {
 
 function formatValue(key: string, value: any): string {
   if (value === null || value === undefined) return '—'
-  if (value === true) return '✓ نعم'
-  if (value === false) return '✗ لا'
+  if (value === true) return 'نعم'
+  if (value === false) return 'لا'
   if (value instanceof Date) return value.toLocaleDateString('ar-EG')
   if (typeof value === 'string' && value.match(/^\d{4}-\d{2}-\d{2}/)) {
     return new Date(value).toLocaleDateString('ar-EG')
@@ -230,72 +223,35 @@ export interface AuditChangeDetails {
   changes: ChangeDiff[]
 }
 
-/**
- * Compare old and new data objects, return structured changes for audit log.
- */
 export function getChangesDiff(
   oldData: Record<string, any>,
   newData: Record<string, any>,
-  options?: {
-    skipFields?: string[]
-    labelOverrides?: Record<string, FieldLabel>
-    valueOverrides?: Record<string, Record<string, string>>
-  }
+  options?: { skipFields?: string[]; labelOverrides?: Record<string, FieldLabel>; valueOverrides?: Record<string, Record<string, string>> }
 ): AuditChangeDetails {
-  const skipFields = new Set(options?.skipFields || [
-    'id', 'createdAt', 'updatedAt', 'projectId', 'cuid',
-  ])
+  const skipFields = new Set(options?.skipFields || ['id', 'createdAt', 'updatedAt', 'projectId', 'cuid'])
   const labelOverrides = options?.labelOverrides || {}
   const changes: ChangeDiff[] = []
 
   for (const key of Object.keys(newData)) {
     if (skipFields.has(key)) continue
-
     const oldVal = oldData[key]
     const newVal = newData[key]
-
-    // Normalize for comparison
     let oldNorm = oldVal
     let newNorm = newVal
-
-    // Handle dates
     if (oldVal instanceof Date) oldNorm = oldVal.toISOString().split('T')[0]
-    if (typeof newVal === 'string' && newVal.match(/^\d{4}-\d{2}-\d{2}/)) {
-      newNorm = newVal
-    } else if (newVal instanceof Date) {
-      newNorm = newVal.toISOString().split('T')[0]
-    }
-
-    // Handle numbers
-    if (typeof oldVal === 'number' && typeof newVal === 'string') {
-      newNorm = parseFloat(newVal)
-      if (isNaN(newNorm)) newNorm = newVal
-    }
-
-    // Handle empty strings vs null
+    if (typeof newVal === 'string' && newVal.match(/^\d{4}-\d{2}-\d{2}/)) { newNorm = newVal }
+    else if (newVal instanceof Date) { newNorm = newVal.toISOString().split('T')[0] }
+    if (typeof oldVal === 'number' && typeof newVal === 'string') { newNorm = parseFloat(newVal); if (isNaN(newNorm)) newNorm = newVal }
     if (newNorm === '' && (oldNorm === null || oldNorm === undefined)) continue
     if (oldNorm === '' && (newNorm === null || newNorm === undefined)) continue
-
-    // Compare
     if (String(oldNorm) === String(newNorm)) continue
-
     const label = labelOverrides[key] || fieldLabels[key] || { ar: key, en: key }
-
-    changes.push({
-      field: label.ar,
-      fieldEn: label.en,
-      old: formatValue(key, oldVal),
-      new: formatValue(key, newVal),
-    })
+    changes.push({ field: label.ar, fieldEn: label.en, old: formatValue(key, oldVal), new: formatValue(key, newVal) })
   }
 
   return { summary: '', changes }
 }
 
-/**
- * Build a JSON string for audit log details field.
- * If no changes, returns a simple summary string.
- */
 export function buildAuditDetails(
   oldData: Record<string, any>,
   newData: Record<string, any>,
@@ -304,8 +260,6 @@ export function buildAuditDetails(
 ): string {
   const diff = getChangesDiff(oldData, newData, options)
   diff.summary = summary
-  if (diff.changes.length === 0) {
-    return summary
-  }
+  if (diff.changes.length === 0) return summary
   return JSON.stringify(diff)
 }
