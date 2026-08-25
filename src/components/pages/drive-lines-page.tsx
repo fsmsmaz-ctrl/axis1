@@ -19,7 +19,7 @@ import { toast } from 'sonner'
 
 function canCreateDriveLine(user: any): boolean {
   if (!user) return false
-  if (user.email && user.email.toLowerCase().trim() === 'admin@axis.om') return true
+  // FIX-6.6: Removed hardcoded admin email check — role already covers this
   return user.role === 'top_management' || user.role === 'project_manager'
 }
 
