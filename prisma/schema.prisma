@@ -171,6 +171,7 @@ model SafetyReport {
   dailyReportId       String   @unique
   projectId           String
   reportDate          DateTime
+  drillingSiteName    String?
   ppeAvailable        Boolean  @default(false)
   helmetCheck         Boolean  @default(false)
   bootsCheck          Boolean  @default(false)
