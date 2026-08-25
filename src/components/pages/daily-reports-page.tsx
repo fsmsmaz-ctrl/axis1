@@ -300,7 +300,8 @@ export default function DailyReportsPage() {
 
   var canApprove = user?.role === 'project_manager' || user?.role === 'top_management'
   var canEditOthers = user?.role === 'top_management' || user?.role === 'project_manager' || user?.role === 'site_engineer' || user?.role === 'hse_officer'
-  var isAdmin = user?.email?.toLowerCase().trim() === 'admin@axis.om'
+  // FIX-6.6: Use role-based check instead of hardcoded admin email
+  var isAdmin = user?.role === 'top_management'
 
   async function deleteReport(report: any) {
     var msg = isRtl
