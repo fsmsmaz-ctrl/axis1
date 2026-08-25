@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { jwtVerify } from 'jose'
 
-// C-1 FIX: Removed /api/auth/logout from public paths (F-5)
-var PUBLIC_PATHS = ['/api/auth/login', '/api/auth/me', '/api/init']
+// FIX-6.3: Removed /api/auth/login (route doesn't exist — actual login is POST /api/auth)
+var PUBLIC_PATHS = ['/api/auth', '/api/auth/me', '/api/init']
 
 function getSecretKey(): Uint8Array {
   var secret = process.env.JWT_SECRET
