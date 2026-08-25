@@ -78,7 +78,8 @@ export default function SafetyPage() {
   const token = useAppStore((s) => s.token)
   const setPage = useAppStore((s) => s.setPage)
   const isRtl = language === 'ar'
-  const isAdmin = useAppStore((s) => s.user)?.email?.toLowerCase().trim() === 'admin@axis.om'
+  // FIX-6.6: Use role-based check instead of hardcoded admin email
+  const isAdmin = useAppStore((s) => s.user)?.role === 'top_management'
 
   async function deleteReport(reportId: string) {
     var msg = isRtl
