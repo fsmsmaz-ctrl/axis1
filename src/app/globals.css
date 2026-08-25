@@ -149,7 +149,7 @@
 /* Print styles for reports */
 @media print {
   .no-print { display: none !important; }
-  body { background: white !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; font-family: Cairo, Tajawal, sans-serif !important; }
+  body { background: white !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; font-family: Cairo, Tajawal, sans-serif !important; font-size: 11px !important; }
 
   /* Hide sidebar, header, mobile overlay */
   aside { display: none !important; }
@@ -163,21 +163,41 @@
   .bg-muted\/30 { background: white !important; }
 
   /* Card styles */
-  .border { border-color: #e5e7eb !important; }
+  .border { border-color: #d1d5db !important; }
   .rounded-lg { border-radius: 4px !important; }
   .shadow-sm, .shadow { box-shadow: none !important; }
 
-  /* Table styles */
-  table { page-break-inside: auto !important; }
-  tr { page-break-inside: auto !important; }
+  /* Table styles - ensure borders print */
+  table { page-break-inside: auto !important; border-collapse: collapse !important; }
+  tr { page-break-inside: avoid !important; }
   thead { display: table-header-group !important; }
   tfoot { display: table-footer-group !important; }
+  th, td { border: 1px solid #d1d5db !important; padding: 4px 6px !important; }
+  thead th { background-color: #f3f4f6 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 
   /* Ensure text is visible */
   .text-muted-foreground { color: #374151 !important; }
+  .text-emerald-700 { color: #047857 !important; }
+  .text-red-700 { color: #b91c1c !important; }
+  .text-blue-700 { color: #1d4ed8 !important; }
+  .text-orange-700 { color: #c2410c !important; }
+  .text-teal-700 { color: #0f766e !important; }
+  .text-purple-700 { color: #7e22ce !important; }
+  .text-destructive { color: #b91c1c !important; }
 
-  /* Page breaks */
+  /* Colored backgrounds for badges and stat cards */
+  .bg-emerald-50 { background-color: #ecfdf5 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .bg-red-50 { background-color: #fef2f2 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .bg-blue-50 { background-color: #eff6ff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .bg-orange-50 { background-color: #fff7ed !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .bg-teal-50 { background-color: #f0fdfa !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .bg-muted\/50 { background-color: #f9fafb !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .bg-muted { background-color: #f3f4f6 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
   /* Hide interactive elements */
   button { display: none !important; }
   .overflow-y-auto, .overflow-x-auto { overflow: visible !important; max-height: none !important; }
+
+  /* Page margins */
+  @page { margin: 15mm 10mm; }
 }
