@@ -70,7 +70,8 @@ export default function EquipmentPage() {
   const [viewDialogOpen, setViewDialogOpen] = useState(false)
   const [maintenanceDialogOpen, setMaintenanceDialogOpen] = useState(false)
   const user = useAppStore((s) => s.user)
-  const isAdmin = user ? user.email.toLowerCase().trim() === 'admin@axis.om' : false
+  // FIX-6.6: Use role-based check instead of hardcoded admin email
+  const isAdmin = user?.role === 'top_management'
   const language = useAppStore((s) => s.language)
   const token = useAppStore((s) => s.token)
   const isRtl = language === 'ar'
