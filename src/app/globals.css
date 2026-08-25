@@ -149,7 +149,7 @@
 /* Print styles for reports */
 @media print {
   .no-print { display: none !important; }
-  body { background: white !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; font-family: Cairo, Tajawal, sans-serif !important; font-size: 11px !important; }
+  body { background: white !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; font-family: Cairo, Tajawal, sans-serif !important; font-size: 11pt !important; color: #111827 !important; }
 
   /* Hide sidebar, header, mobile overlay */
   aside { display: none !important; }
@@ -167,37 +167,58 @@
   .rounded-lg { border-radius: 4px !important; }
   .shadow-sm, .shadow { box-shadow: none !important; }
 
-  /* Table styles - ensure borders print */
-  table { page-break-inside: auto !important; border-collapse: collapse !important; }
+  /* Table styles - FIX-PDF: ensure tables are readable */
+  .print-table { width: 100% !important; border-collapse: collapse !important; }
+  .print-table thead th { 
+    background: #f3f4f6 !important; 
+    color: #111827 !important; 
+    font-weight: 700 !important; 
+    padding: 8px 10px !important; 
+    border-bottom: 2px solid #9ca3af !important; 
+    font-size: 10pt !important;
+  }
+  .print-table tbody td { 
+    padding: 6px 10px !important; 
+    border-bottom: 1px solid #e5e7eb !important; 
+    color: #1f2937 !important; 
+    font-size: 10pt !important;
+  }
+  .print-table tfoot td { 
+    padding: 8px 10px !important; 
+    border-top: 2px solid #374151 !important; 
+    font-weight: 700 !important; 
+  }
+  table { page-break-inside: auto !important; }
   tr { page-break-inside: avoid !important; }
   thead { display: table-header-group !important; }
   tfoot { display: table-footer-group !important; }
-  th, td { border: 1px solid #d1d5db !important; padding: 4px 6px !important; }
-  thead th { background-color: #f3f4f6 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 
-  /* Ensure text is visible */
-  .text-muted-foreground { color: #374151 !important; }
+  /* Ensure text is visible - override oklch colors */
+  .text-muted-foreground { color: #4b5563 !important; }
+  .text-foreground { color: #111827 !important; }
   .text-emerald-700 { color: #047857 !important; }
-  .text-red-700 { color: #b91c1c !important; }
+  .text-red-700, .text-red-600 { color: #b91c1c !important; }
+  .text-orange-600, .text-orange-700 { color: #c2410c !important; }
   .text-blue-700 { color: #1d4ed8 !important; }
-  .text-orange-700 { color: #c2410c !important; }
-  .text-teal-700 { color: #0f766e !important; }
   .text-purple-700 { color: #7e22ce !important; }
-  .text-destructive { color: #b91c1c !important; }
+  .text-teal-700 { color: #0f766e !important; }
+  .bg-emerald-50 { background-color: #ecfdf5 !important; }
+  .bg-red-50 { background-color: #fef2f2 !important; }
+  .bg-orange-50 { background-color: #fff7ed !important; }
+  .bg-blue-50 { background-color: #eff6ff !important; }
+  .bg-teal-50 { background-color: #f0fdfa !important; }
+  .bg-muted { background-color: #f9fafb !important; }
+  .font-semibold, .font-bold { font-weight: 700 !important; }
+  .font-medium { font-weight: 500 !important; }
 
-  /* Colored backgrounds for badges and stat cards */
-  .bg-emerald-50 { background-color: #ecfdf5 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .bg-red-50 { background-color: #fef2f2 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .bg-blue-50 { background-color: #eff6ff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .bg-orange-50 { background-color: #fff7ed !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .bg-teal-50 { background-color: #f0fdfa !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .bg-muted\/50 { background-color: #f9fafb !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .bg-muted { background-color: #f3f4f6 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  /* Report header styling */
+  .print-header { margin-bottom: 16px !important; }
+  .print-title { font-size: 16pt !important; color: #111827 !important; }
 
   /* Hide interactive elements */
   button { display: none !important; }
   .overflow-y-auto, .overflow-x-auto { overflow: visible !important; max-height: none !important; }
 
   /* Page margins */
-  @page { margin: 15mm 10mm; }
+  @page { margin: 15mm; size: A4; }
 }
