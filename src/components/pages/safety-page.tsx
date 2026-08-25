@@ -44,6 +44,7 @@ const checklistItems = [
 const emptyForm = {
   projectId: '',
   reportDate: new Date().toISOString().split('T')[0],
+  drillingSiteName: '',
   signedBy: '',
   ppeAvailable: false,
   helmetCheck: false,
@@ -160,6 +161,7 @@ export default function SafetyPage() {
         var item = checklistItems[i]
         safetyData[item.key] = form[item.key as keyof typeof form]
       }
+      safetyData.drillingSiteName = form.drillingSiteName?.trim() || null
       safetyData.observations = form.observations || null
       safetyData.violations = form.violations || null
       safetyData.incidentType = form.incidentType
@@ -359,11 +361,16 @@ export default function SafetyPage() {
                           </Badge>
                         )}
                       </div>
-                      <p className="text-xs text-muted-foreground mb-2">
+                      <p className="text-xs text-muted-foreground mb-1">
                         {new Date(r.reportDate).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
                         {' \u2022 '}
                         {isRtl ? 'موقّع من' : 'Signed by'}: {r.signedByUser ? (r.signedByUser.name || r.signedByUser.nameEn || '-') : '-'}
                       </p>
+                      {r.drillingSiteName && (
+                        <p className="text-xs text-primary font-medium mb-1">
+                          {isRtl ? 'موقع الحفر' : 'Drilling Site'}: {r.drillingSiteName}
+                        </p>
+                      )}
                       <div className="flex items-center gap-2 mb-2">
                         <Progress value={compliance} className="h-1.5 flex-1" />
                         <span className="text-xs font-medium">{passed}/15</span>
@@ -412,22 +419,32 @@ export default function SafetyPage() {
           </SheetHeader>
 
           <div className="mt-6 space-y-5">
-            {/* Project & Date */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>{isRtl ? 'المشروع' : 'Project'} *</Label>
-                <Select value={form.projectId} onValueChange={function(v) { setForm({ ...form, projectId: v }) }}>
-                  <SelectTrigger><SelectValue placeholder={isRtl ? 'اختر' : 'Select'} /></SelectTrigger>
-                  <SelectContent>
-                    {projects.map(function(p) {
-                      return <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                    })}
-                  </SelectContent>
-                </Select>
+            {/* Project, Date & Drilling Site */}
+            <div className="grid grid-cols-1 gap-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>{isRtl ? 'المشروع' : 'Project'} *</Label>
+                  <Select value={form.projectId} onValueChange={function(v) { setForm({ ...form, projectId: v }) }}>
+                    <SelectTrigger><SelectValue placeholder={isRtl ? 'اختر' : 'Select'} /></SelectTrigger>
+                    <SelectContent>
+                      {projects.map(function(p) {
+                        return <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                      })}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>{isRtl ? 'التاريخ' : 'Date'} *</Label>
+                  <Input type="date" value={form.reportDate} onChange={function(e) { setForm({ ...form, reportDate: e.target.value }) }} />
+                </div>
               </div>
               <div className="space-y-1.5">
-                <Label>{isRtl ? 'التاريخ' : 'Date'} *</Label>
-                <Input type="date" value={form.reportDate} onChange={function(e) { setForm({ ...form, reportDate: e.target.value }) }} />
+                <Label>{isRtl ? 'اسم موقع الحفر' : 'Drilling Site Name'}</Label>
+                <Input
+                  value={form.drillingSiteName}
+                  onChange={function(e) { setForm({ ...form, drillingSiteName: e.target.value }) }}
+                  placeholder={isRtl ? 'مثال: موقع الحفر رقم 1 - السيب' : 'e.g. Drilling Site #1 - Seeb'}
+                />
               </div>
             </div>
 
