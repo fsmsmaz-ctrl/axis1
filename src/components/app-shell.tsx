@@ -124,7 +124,6 @@ const NotificationsPage = dynamic(() => import('@/components/pages/notifications
 export default function AppShell() {
   const user = useAppStore((s) => s.user)
   const setUser = useAppStore((s) => s.setUser)
-  const token = useAppStore((s) => s.token)
   const language = useAppStore((s) => s.language)
   const setLanguage = useAppStore((s) => s.setLanguage)
   const sidebarOpen = useAppStore((s) => s.sidebarOpen)
@@ -144,12 +143,12 @@ export default function AppShell() {
   const hasNotifPerm = user ? hasPermission(user.role, 'notifications', user.permissions) : false
 
   useEffect(() => {
-    if (!user || !token || !hasNotifPerm) return
+    if (!user || !hasNotifPerm) return
     authedFetch('/api/notifications?unreadOnly=true')
       .then(r => r.json())
       .then(data => setNotifications(data.notifications || []))
       .catch(() => {})
-  }, [user, token, hasNotifPerm])
+  }, [user, hasNotifPerm])
 
   useEffect(() => {
     if (typeof document !== 'undefined') {
@@ -213,7 +212,7 @@ export default function AppShell() {
 
   async function loadSlotInfo() {
     try {
-      const res = await authedFetch('/api/users', { noCache: true })
+      const res = await authedFetch('/api/users?_t=' + Date.now())
       const data = await res.json()
       if (res.ok) {
         var users = data.users || []
@@ -226,7 +225,7 @@ export default function AppShell() {
   async function loadUserList() {
     setListLoading(true)
     try {
-      const res = await authedFetch('/api/users', { noCache: true })
+      const res = await authedFetch('/api/users?_t=' + Date.now())
       const data = await res.json()
       if (res.ok) {
         var users = data.users || []
@@ -680,7 +679,7 @@ export default function AppShell() {
                           <p className="text-xs text-muted-foreground" dir="ltr">{u.email}</p>
                         </div>
                         <span className="text-xs px-2 py-1 rounded-full bg-primary/10 text-primary font-medium shrink-0">
-                          {u.roleLabel ? (isAr ? u.roleLabel.ar : u.roleLabel.en) : u.role}
+                          {roleLabels[u.role] ? (isAr ? roleLabels[u.role].ar : roleLabels[u.role].en) : u.role}
                         </span>
                         <div className="flex items-center gap-1 shrink-0">
                           {deleteConfirm === u.id ? (
