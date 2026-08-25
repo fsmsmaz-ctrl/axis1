@@ -145,7 +145,8 @@ export default function CreateUserDialog({ open, onOpenChange }: CreateUserDialo
 
     setSubmitting(true)
     try {
-      const res = await authedFetch('/api/users/register', {
+      // FIX-6.1: Changed /api/users/register (404) to /api/users/create
+      const res = await authedFetch('/api/users/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...form, permissions }),
@@ -296,7 +297,8 @@ export default function CreateUserDialog({ open, onOpenChange }: CreateUserDialo
     )
   }
 
-  const isAdmin = useAppStore((s) => s.user)?.email?.toLowerCase().trim() === 'admin@axis.om'
+  // FIX-6.2: Removed hardcoded admin email check — use role instead
+  const isAdmin = useAppStore((s) => s.user)?.role === 'top_management'
 
   return (
     <Dialog open={open} onOpenChange={(v) => { onOpenChange(v); if (!v) { setView('list'); setEditingUser(null) } }}>
@@ -352,7 +354,8 @@ export default function CreateUserDialog({ open, onOpenChange }: CreateUserDialo
               <div className="space-y-2 max-h-[50vh] overflow-y-auto">
                 {users.map((u) => {
                   const role = roleLabels[u.role] || { ar: u.role, en: u.role }
-                  const isCurrentUserAdmin = u.email?.toLowerCase().trim() === 'admin@axis.om'
+                  // FIX-6.2: Use role-based check instead of hardcoded admin email
+                  const isCurrentUserAdmin = u.role === 'top_management'
                   return (
                     <div key={u.id} className="flex items-center gap-3 p-3 rounded-lg border hover:bg-muted/30 transition">
                       <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
