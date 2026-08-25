@@ -171,7 +171,6 @@ model SafetyReport {
   dailyReportId       String   @unique
   projectId           String
   reportDate          DateTime
-  drillingSiteName    String?
   ppeAvailable        Boolean  @default(false)
   helmetCheck         Boolean  @default(false)
   bootsCheck          Boolean  @default(false)
@@ -195,6 +194,7 @@ model SafetyReport {
   signedBy            String?
   signedById          String?
   signedAt            DateTime?
+  drillingSiteName    String?
   dailyReport         DailyReport @relation(fields: [dailyReportId], references: [id], onDelete: Cascade)
   project             Project  @relation(fields: [projectId], references: [id])
   signedByUser        User?    @relation("SafetyReportSigner", fields: [signedById], references: [id])
