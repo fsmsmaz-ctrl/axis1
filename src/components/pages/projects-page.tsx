@@ -399,7 +399,7 @@ export default function ProjectsPage() {
                 </Select>
               </div>
             </div>
-            {(user?.email?.toLowerCase().trim() === 'admin@axis.om' || user?.role === 'top_management') && (
+            {user?.role === 'top_management' && (
               <div className="flex items-center gap-3 p-3 rounded-lg border bg-muted/30">
                 <Checkbox
                   id="showInCosts"
