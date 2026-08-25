@@ -158,8 +158,9 @@ export default function AppShell() {
     }
   }, [language])
 
-  const isAdmin = user ? user.email.toLowerCase().trim() === 'admin@axis.om' : false
-  const canViewDashboard = !!user && (isAdmin || user.role === 'top_management' || user.role === 'project_manager')
+  // FIX-6.6: Use role-based check instead of hardcoded admin email
+  const isAdmin = user?.role === 'top_management'
+  const canViewDashboard = !!user && (isAdmin || user.role === 'project_manager')
 
   const allowedItems = user ? navItems.filter(item => {
     if (item.id === 'dashboard') return canViewDashboard
