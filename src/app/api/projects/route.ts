@@ -49,7 +49,8 @@ export async function POST(req: NextRequest) {
 
     Promise.all([
       safeDbOp(() => db.auditLog.create({ data: { userId: user.id, projectId: createResult.data.id, action: 'create', entity: 'project', entityId: createResult.data.id, details: 'Created project ' + createResult.data.code } }), 'سجل التدقيق'),
-      safeDbOp(() => db.notification.create({ data: { projectId: createResult.data.id, type: 'deadline_near', title: 'مشروع جديد', message: 'تم إنشاء مشروع جديد: ' + createResult.data.code + ' بواسطة ' + user.name, severity: 'info' } }), 'إشعار'),
+      // FIX-6.4: Changed type from 'deadline_near' to 'project_created' (semantic correctness)
+      safeDbOp(() => db.notification.create({ data: { projectId: createResult.data.id, type: 'project_created', title: 'مشروع جديد', message: 'تم إنشاء مشروع جديد: ' + createResult.data.code + ' بواسطة ' + user.name, severity: 'info' } }), 'إشعار'),
     ]).catch(() => {})
 
     return NextResponse.json({ project: createResult.data, success: true })
