@@ -85,7 +85,6 @@ export async function POST(req: NextRequest) {
     var safetyData = {
       dailyReportId: createReportResult.data.id, projectId: String(body.projectId),
       reportDate: new Date(body.reportDate),
-      drillingSiteName: body.drillingSiteName?.trim() || null,
       ppeAvailable: !!body.ppeAvailable, helmetCheck: !!body.helmetCheck,
       bootsCheck: !!body.bootsCheck, glovesCheck: !!body.glovesCheck,
       glassesCheck: !!body.glassesCheck, workAreaCheck: !!body.workAreaCheck,
@@ -97,6 +96,7 @@ export async function POST(req: NextRequest) {
       observations: body.observations || null, violations: body.violations || null,
       incidentType: body.incidentType || 'none', incidentDescription: body.incidentDescription || null,
       signedBy: user.name, signedById: user.id, signedAt: new Date(),
+      drillingSiteName: body.drillingSiteName || null,
     }
 
     var createSafetyResult = await safeDbOp(() => db.safetyReport.create({ data: safetyData }), 'إنشاء تقرير السلامة')
