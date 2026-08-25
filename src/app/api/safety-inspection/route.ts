@@ -85,6 +85,7 @@ export async function POST(req: NextRequest) {
     var safetyData = {
       dailyReportId: createReportResult.data.id, projectId: String(body.projectId),
       reportDate: new Date(body.reportDate),
+      drillingSiteName: body.drillingSiteName?.trim() || null,
       ppeAvailable: !!body.ppeAvailable, helmetCheck: !!body.helmetCheck,
       bootsCheck: !!body.bootsCheck, glovesCheck: !!body.glovesCheck,
       glassesCheck: !!body.glassesCheck, workAreaCheck: !!body.workAreaCheck,
