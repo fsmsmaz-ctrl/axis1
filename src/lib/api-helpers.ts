@@ -119,17 +119,6 @@ export async function safeDbOp(
   }
 }
 
-// ==================== RBAC Helper ====================
-
-// H-1 FIX: Check role permission before write operations
-export function requireRole(user: { role: string; permissions?: Record<string, boolean> | null }, resource: string): NextResponse | null {
-  const { canWrite } = require('./auth')
-  if (!canWrite(user.role, resource, user.permissions)) {
-    return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية لهذا الإجراء' }, { status: 403 })
-  }
-  return null
-}
-
 // ==================== Change Tracking for Audit Logs ====================
 
 export interface FieldLabel {
@@ -137,7 +126,7 @@ export interface FieldLabel {
   en: string
 }
 
-export const fieldLabels: Record<string, FieldLabel> = {
+const fieldLabels: Record<string, FieldLabel> = {
   code: { ar: 'رقم المشروع', en: 'Project Code' },
   name: { ar: 'الاسم', en: 'Name' },
   client: { ar: 'العميل', en: 'Client' },
