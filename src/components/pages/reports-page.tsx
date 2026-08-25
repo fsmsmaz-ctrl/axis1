@@ -252,14 +252,34 @@ function ReportPreview({ data }: { data: any }) {
   if (!reportType) return null
 
   var fmt = function(n: number) { return (n || 0).toLocaleString(isRtl ? 'ar-EG' : 'en-US', { maximumFractionDigits: 0 }) }
+  var catNames: Record<string, { ar: string; en: string }> = {
+    labor: { ar: 'أجور العمال', en: 'Labor' }, housing: { ar: 'سكن', en: 'Housing' },
+    transport: { ar: 'نقل', en: 'Transport' }, fuel: { ar: 'ديزل', en: 'Fuel' },
+    maintenance: { ar: 'صيانة', en: 'Maintenance' }, parts: { ar: 'قطع غيار', en: 'Parts' },
+    oil: { ar: 'زيوت', en: 'Oil' }, safety: { ar: 'سلامة', en: 'Safety' },
+    rental: { ar: 'إيجار', en: 'Rental' }, food: { ar: 'طعام', en: 'Food' }, other: { ar: 'أخرى', en: 'Other' },
+  }
+  var catLabel = function(c: string) {
+    return catNames[c] ? (isRtl ? catNames[c].ar : catNames[c].en) : c
+  }
+  var statusLabel = function(s: string) {
+    return s === 'approved' ? (isRtl ? 'معتمد' : 'Approved') : s === 'submitted' ? (isRtl ? 'مرسل' : 'Submitted') : s === 'draft' ? (isRtl ? 'مسودة' : 'Draft') : s
+  }
+  var weatherLabel = function(w: string) {
+    var map: Record<string, { ar: string; en: string }> = {
+      sunny: { ar: 'مشمس', en: 'Sunny' }, cloudy: { ar: 'غائم', en: 'Cloudy' },
+      rainy: { ar: 'ممطر', en: 'Rainy' }, windy: { ar: 'عاصف', en: 'Windy' },
+    }
+    return map[w] ? (isRtl ? map[w].ar : map[w].en) : (w || '-')
+  }
 
   return (
     <div className="space-y-4">
-      <div className="text-center pb-4 border-b">
-        <h2 className="text-xl font-bold">AXIS - {isRtl ? reportType.labelAr : reportType.labelEn}</h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          {data.project ? data.project.name : (isRtl ? 'كل المشاريع' : 'All Projects')}
-        </p>
+      {/* Report Header */}
+      <div className="text-center pb-3 border-b-2">
+        <h2 className="text-lg font-bold">AXIS Pipe Jacking</h2>
+        <h3 className="text-base font-semibold mt-1">{isRtl ? reportType.labelAr : reportType.labelEn}</h3>
+        {data.project && <p className="text-sm font-medium mt-1">{data.project.name}</p>}
         <p className="text-xs text-muted-foreground mt-1">
           {isRtl ? 'الفترة' : 'Period'}: {data.fromDate} → {data.toDate}
         </p>
@@ -313,7 +333,7 @@ function ReportPreview({ data }: { data: any }) {
                       <td className="p-2">{r.dailyMeters || 0} م</td>
                       <td className="p-2">{r.project ? (r.project.pricePerMeter || 0) : 0} ر.ع</td>
                       <td className="p-2 font-semibold text-emerald-700">{(r.dailyRevenue || 0).toLocaleString()} ر.ع</td>
-                      <td className="p-2"><span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 text-xs">{isRtl ? 'معتمد' : 'Approved'}</span></td>
+                      <td className="p-2"><span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 text-xs">{statusLabel(r.status)}</span></td>
                     </tr>
                   )
                 })}
@@ -342,17 +362,9 @@ function ReportPreview({ data }: { data: any }) {
           <h3 className="font-semibold text-sm">{isRtl ? 'التكاليف حسب الفئة' : 'Costs by Category'}</h3>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {(data.data.byCategory || []).map(function(c: any) {
-              var catNames: Record<string, { ar: string; en: string }> = {
-                labor: { ar: 'أجور العمال', en: 'Labor' }, housing: { ar: 'سكن', en: 'Housing' },
-                transport: { ar: 'نقل', en: 'Transport' }, fuel: { ar: 'ديزل', en: 'Fuel' },
-                maintenance: { ar: 'صيانة', en: 'Maintenance' }, parts: { ar: 'قطع غيار', en: 'Parts' },
-                oil: { ar: 'زيوت', en: 'Oil' }, safety: { ar: 'سلامة', en: 'Safety' },
-                rental: { ar: 'إيجار', en: 'Rental' }, food: { ar: 'طعام', en: 'Food' }, other: { ar: 'أخرى', en: 'Other' },
-              }
-              var label = catNames[c.category] ? (isRtl ? catNames[c.category].ar : catNames[c.category].en) : c.category
               return (
                 <div key={c.category} className="p-3 rounded-lg border">
-                  <p className="text-xs text-muted-foreground">{label}</p>
+                  <p className="text-xs text-muted-foreground">{catLabel(c.category)}</p>
                   <p className="font-bold text-sm">{c.amount.toLocaleString()} ر.ع</p>
                 </div>
               )
@@ -374,7 +386,7 @@ function ReportPreview({ data }: { data: any }) {
                   return (
                     <tr key={c.id} className="border-b">
                       <td className="p-2">{new Date(c.date).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')}</td>
-                      <td className="p-2">{c.category}</td>
+                      <td className="p-2">{catLabel(c.category)}</td>
                       <td className="p-2">{c.description}</td>
                       <td className="p-2 text-red-600">{c.amount.toLocaleString()} ر.ع</td>
                     </tr>
@@ -492,7 +504,7 @@ function ReportPreview({ data }: { data: any }) {
                 {(data.data.byCategory || []).map(function(c: any) {
                   return (
                     <tr key={c.category} className="border-b">
-                      <td className="p-2">{c.category}</td>
+                      <td className="p-2">{catLabel(c.category)}</td>
                       <td className="p-2 text-red-600">{c.amount.toLocaleString()} ر.ع</td>
                     </tr>
                   )
@@ -541,9 +553,11 @@ function ReportPreview({ data }: { data: any }) {
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
-                <tr className="border-b text-right">
+                <tr className="border-b text-right bg-muted/50">
                   <th className="p-2">{isRtl ? 'التاريخ' : 'Date'}</th>
                   <th className="p-2">{isRtl ? 'المشروع' : 'Project'}</th>
+                  <th className="p-2">{isRtl ? 'موقع الحفر' : 'Drilling Site'}</th>
+                  <th className="p-2">{isRtl ? 'الالتزام' : 'Compliance'}</th>
                   <th className="p-2">{isRtl ? 'المخالفات' : 'Violations'}</th>
                   <th className="p-2">{isRtl ? 'الحوادث' : 'Incidents'}</th>
                   <th className="p-2">{isRtl ? 'موقّع من' : 'Signed by'}</th>
@@ -551,13 +565,19 @@ function ReportPreview({ data }: { data: any }) {
               </thead>
               <tbody>
                 {(data.data.reports || []).filter(function(r: any) { return r.safety }).map(function(r: any) {
+                  var s = r.safety
+                  var checkKeys = ['ppeAvailable','helmetCheck','bootsCheck','glovesCheck','glassesCheck','workAreaCheck','barriersCheck','shaftCheck','ventilationCheck','electricalCheck','craneCheck','hydraulicCheck','fireExtinguishers','workPermit','toolboxTalk']
+                  var passed = checkKeys.filter(function(k: string) { return s[k] }).length
+                  var pct = Math.round((passed / 15) * 100)
                   return (
                     <tr key={r.id} className="border-b">
                       <td className="p-2">{new Date(r.reportDate).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')}</td>
-                      <td className="p-2">{r.project?.name}</td>
-                      <td className="p-2">{r.safety.violations || '-'}</td>
-                      <td className="p-2">{r.safety.incidentType}</td>
-                      <td className="p-2">{r.safety.signedBy}</td>
+                      <td className="p-2">{r.project?.name || '-'}</td>
+                      <td className="p-2">{s.drillingSiteName || '-'}</td>
+                      <td className="p-2"><span className={"inline-block px-1.5 py-0.5 rounded text-xs " + (pct === 100 ? 'bg-emerald-50 text-emerald-700' : pct >= 80 ? 'bg-orange-50 text-orange-700' : 'bg-red-50 text-red-700')}>{passed}/15 ({pct}%)</span></td>
+                      <td className="p-2">{s.violations || '-'}</td>
+                      <td className="p-2">{s.incidentType === 'none' ? (isRtl ? 'لا يوجد' : 'None') : (s.incidentType || '-')}</td>
+                      <td className="p-2">{s.signedBy || '-'}</td>
                     </tr>
                   )
                 })}
@@ -565,7 +585,6 @@ function ReportPreview({ data }: { data: any }) {
             </table>
           </div>
         </div>
-      ) : data.type === 'rpt_attendance' ? (
         <div className="space-y-3">
           <h3 className="font-semibold text-sm">{isRtl ? 'سجل الحضور' : 'Attendance Log'}</h3>
           <div className="overflow-x-auto">
@@ -588,6 +607,42 @@ function ReportPreview({ data }: { data: any }) {
                       <td className="p-2">{r.workersCount}</td>
                       <td className="p-2">{r.operatingHours}</td>
                       <td className="p-2">{r.stoppageHours}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : data.type === 'rpt_attendance' ? (
+        <div className="space-y-3">
+          <h3 className="font-semibold text-sm">{isRtl ? 'سجل الحضور' : 'Attendance Log'}</h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b text-right bg-muted/50">
+                  <th className="p-2">{isRtl ? 'التاريخ' : 'Date'}</th>
+                  <th className="p-2">{isRtl ? 'المشروع' : 'Project'}</th>
+                  <th className="p-2">{isRtl ? 'الحاضرون' : 'Attendees'}</th>
+                  <th className="p-2">{isRtl ? 'الغائبون' : 'Absentees'}</th>
+                  <th className="p-2">{isRtl ? 'العمال' : 'Workers'}</th>
+                  <th className="p-2">{isRtl ? 'ساعات التشغيل' : 'Op. Hrs'}</th>
+                  <th className="p-2">{isRtl ? 'ساعات التوقف' : 'Stop. Hrs'}</th>
+                  <th className="p-2">{isRtl ? 'سبب التوقف' : 'Stop. Reason'}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(data.data.reports || []).map(function(r: any) {
+                  return (
+                    <tr key={r.id} className="border-b">
+                      <td className="p-2">{new Date(r.reportDate).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')}</td>
+                      <td className="p-2">{r.project?.name || '-'}</td>
+                      <td className="p-2">{r.attendees || '-'}</td>
+                      <td className="p-2">{r.absentees || '-'}</td>
+                      <td className="p-2">{r.workersCount || 0}</td>
+                      <td className="p-2">{r.operatingHours || 0}</td>
+                      <td className="p-2">{r.stoppageHours || 0}</td>
+                      <td className="p-2">{r.stoppageReason || '-'}</td>
                     </tr>
                   )
                 })}
@@ -675,6 +730,12 @@ function ReportPreview({ data }: { data: any }) {
           {isRtl ? 'اختر نوع تقرير لعرض المعاينة' : 'Select a report type to see preview'}
         </div>
       )}
+      {/* Report Footer */}
+      <div className="text-center pt-3 border-t mt-4">
+        <p className="text-[10px] text-muted-foreground">
+          AXIS Pipe Jacking | {isRtl ? 'توليد تلقائي' : 'Auto-generated'}: {new Date().toLocaleString(isRtl ? 'ar-EG' : 'en-US')}
+        </p>
+      </div>
     </div>
   )
 }
