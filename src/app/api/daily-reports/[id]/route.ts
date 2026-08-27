@@ -72,9 +72,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: 'Report not found' }, { status: 404 })
     }
 
+    var body = await req.json()
+
     // Enforce immutability: if safetyLocked, prevent changing locked fields
     if (existingReport.safetyLocked) {
-      // Strip locked fields from the body so they can't be overwritten
       delete body.projectId
       delete body.driveLineId
       delete body.reportDate
@@ -95,8 +96,6 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         return NextResponse.json({ error: 'forbidden', message: 'لا يمكن تعديل تقرير تم اعتماده أو رفضه' }, { status: 403 })
       }
     }
-
-    var body = await req.json()
 
     var startReading = parseFloat(body.startReading) || 0
     var endReading = parseFloat(body.endReading) || 0
@@ -133,8 +132,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         where: { id },
         data: {
           projectId: existingReport.projectId,
-          driveLineId: body.driveLineId || null,
-          reportDate: body.reportDate ? new Date(body.reportDate) : existingReport.reportDate,
+          driveLineId: existingReport.safetyLocked ? existingReport.driveLineId : (body.driveLineId || null),
+          reportDate: existingReport.reportDate,
           weather: body.weather || null,
           workStartTime: body.workStartTime || null,
           workEndTime: body.workEndTime || null,
