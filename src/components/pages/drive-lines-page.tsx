@@ -71,14 +71,14 @@ export default function DriveLinesPage() {
   }
 
   useEffect(() => {
-    if (!token) return
+    if (!user) return
     fetchDriveLines()
     fetchProjectList()
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token])
+  }, [user])
 
   useEffect(() => {
-    if (!token) return
+    if (!user) return
     fetchDriveLines()
   }, [selectedProject])
 
