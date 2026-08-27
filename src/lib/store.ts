@@ -38,9 +38,9 @@ export const useAppStore = create<AppState>()(
     {
       name: 'axis-storage',
       storage: createJSONStorage(() => localStorage),
-      // C-2 FIX: Only persist user, language, theme — NOT token
+      // Only persist preferences — NOT user session data
+      // Session is managed by httpOnly cookie (ends when browser closes)
       partialize: (state) => ({
-        user: state.user,
         language: state.language,
         theme: state.theme,
       }),
