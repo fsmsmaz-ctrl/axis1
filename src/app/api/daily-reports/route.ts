@@ -73,7 +73,7 @@ export async function POST(req: NextRequest) {
       () => db.dailyReport.findFirst({
         where: {
           projectId: body.projectId,
-          createdById: user.id,
+          createdById: user!.id,
           reportDate: { gte: dateStart, lte: dateEnd },
         },
         select: { id: true, status: true, reportDate: true },
@@ -145,7 +145,7 @@ export async function POST(req: NextRequest) {
           problems: body.problems || null,
           dailyRevenue,
           status: body.status || 'draft',
-          createdById: user.id,
+          createdById: user!.id,
         },
       }),
       'إنشاء التقرير اليومي'
@@ -205,7 +205,7 @@ export async function POST(req: NextRequest) {
       safeDbOp(
         () => db.auditLog.create({
           data: {
-            userId: user.id,
+            userId: user!.id,
             projectId: body.projectId,
             dailyReportId: createResult.data.id,
             action: 'create',
