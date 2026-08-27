@@ -55,7 +55,6 @@ export default function DailyReportsPage() {
   const driveLinesLoaded = useRef<string | null>(null)
   const [lockedDriveLine, setLockedDriveLine] = useState<any>(null)
   const language = useAppStore((s) => s.language)
-  const token = useAppStore((s) => s.token)
   const user = useAppStore((s) => s.user)
   const isRtl = language === 'ar'
 
