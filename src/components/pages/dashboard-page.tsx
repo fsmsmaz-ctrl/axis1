@@ -77,11 +77,11 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const language = useAppStore((s) => s.language)
-  const token = useAppStore((s) => s.token)
+  const user = useAppStore((s) => s.user)
   const isRtl = language === 'ar'
 
   async function fetchDashboard() {
-    if (!token) return
+    if (!user) return
     setLoading(true)
     setError(null)
     try {
@@ -105,7 +105,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
 
   useEffect(() => {
     fetchDashboard()
-  }, [token])
+  }, [user])
 
   if (loading) {
     return (
