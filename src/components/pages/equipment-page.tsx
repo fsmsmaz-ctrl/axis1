@@ -73,7 +73,6 @@ export default function EquipmentPage() {
   // FIX-6.6: Use role-based check instead of hardcoded admin email
   const isAdmin = user?.role === 'top_management'
   const language = useAppStore((s) => s.language)
-  const token = useAppStore((s) => s.token)
   const isRtl = language === 'ar'
 
   function canEditEq(eq: any) {
