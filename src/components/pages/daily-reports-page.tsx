@@ -102,10 +102,10 @@ export default function DailyReportsPage() {
   }
 
   useEffect(function() {
-    if (!token) return
+    if (!user) return
     fetchReports()
     fetchProjects()
-  }, [selectedProject, token])
+  }, [selectedProject, user])
 
   useEffect(function() {
     if (!formData.projectId) {
