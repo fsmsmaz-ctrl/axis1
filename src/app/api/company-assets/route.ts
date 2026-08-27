@@ -5,9 +5,6 @@ import { handleDbError, validateRequired, parseNumber, safeDbOp } from '@/lib/ap
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 import { canWrite } from '@/lib/auth'
 
-// M-3 FIX: Max base64 image size (500KB = ~670K chars)
-var MAX_IMAGE_SIZE = 700000
-
 export async function GET(req: NextRequest) {
   const user = await getAuthUser(req)
   if (!user) return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
@@ -51,18 +48,9 @@ export async function POST(req: NextRequest) {
     const validationError = validateRequired(body, ['name', 'itemType', 'ownership'])
     if (validationError) return validationError
 
-    // M-3 FIX: Validate image size
-    var image = body.image ? String(body.image) : null
-    if (image && image.length > MAX_IMAGE_SIZE) {
-      return NextResponse.json({ error: 'invalid_value', message: 'حجم الصورة كبير جداً. الحد الأقصى 500 كيلوبايت.' }, { status: 400 })
-    }
-    if (image && !image.startsWith('data:image/')) {
-      return NextResponse.json({ error: 'invalid_value', message: 'صيغة الصورة غير صحيحة' }, { status: 400 })
-    }
-
     const createResult = await safeDbOp(
       () => db.companyAsset.create({
-        data: { projectId: body.projectId || null, name: String(body.name).trim(), itemType: String(body.itemType), quantity: parseInt(body.quantity) || 1, ownership: String(body.ownership), supplier: body.supplier ? String(body.supplier).trim() : null, rentalCost: body.rentalCost ? parseFloat(body.rentalCost) : null, rentalStart: body.rentalStart ? new Date(body.rentalStart) : null, rentalEnd: body.rentalEnd ? new Date(body.rentalEnd) : null, responsibleId: body.responsibleId || null, status: String(body.status || 'available'), image, notes: body.notes ? String(body.notes) : null, createdById: user.id },
+        data: { projectId: body.projectId || null, name: String(body.name).trim(), itemType: String(body.itemType), quantity: parseInt(body.quantity) || 1, ownership: String(body.ownership), supplier: body.supplier ? String(body.supplier).trim() : null, rentalCost: body.rentalCost ? parseFloat(body.rentalCost) : null, rentalStart: body.rentalStart ? new Date(body.rentalStart) : null, rentalEnd: body.rentalEnd ? new Date(body.rentalEnd) : null, responsibleId: body.responsibleId || null, status: String(body.status || 'available'), notes: body.notes ? String(body.notes) : null, createdById: user.id },
         include: { createdBy: { select: { id: true, name: true } } },
       }), 'إنشاء الأصل'
     )
