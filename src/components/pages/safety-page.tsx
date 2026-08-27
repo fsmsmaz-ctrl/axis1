@@ -45,7 +45,7 @@ const emptyForm = {
   projectId: '',
   driveLineId: '',
   reportDate: new Date().toISOString().split('T')[0],
-  signedBy': '',
+  signedBy: '',
   ppeAvailable: false,
   helmetCheck: false,
   bootsCheck: false,
