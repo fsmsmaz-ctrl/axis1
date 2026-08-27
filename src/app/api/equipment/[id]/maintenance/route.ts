@@ -49,10 +49,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           equipmentId: id,
           date: new Date(body.date),
           type: String(body.type),
-          description: body.description ? String(body.description) : null,
+          description: body.description ? String(body.description) : "",
           cost: parseFloat(body.cost) || 0,
-          partsUsed: body.partsUsed ? String(body.partsUsed) : null,
-          performedById: user.id,
+          partsUsed: body.partsUsed ? String(body.partsUsed) : "",
+          performedById: user!.id,
         },
       }),
       'إنشاء سجل الصيانة'
@@ -72,7 +72,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (!updateResult.success) return updateResult.response
 
     safeDbOp(
-      () => db.auditLog.create({ data: { userId: user.id, action: 'create', entity: 'equipment_maintenance', entityId: maintenance.data.id, details: 'Maintenance: ' + body.type + ' for equipment ' + id } }),
+      () => db.auditLog.create({ data: { userId: user!.id, action: 'create', entity: 'equipment_maintenance', entityId: maintenance.data.id, details: 'Maintenance: ' + body.type + ' for equipment ' + id } }),
       'سجل التدقيق'
     ).catch(function() {})
 
