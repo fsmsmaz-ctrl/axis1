@@ -43,8 +43,7 @@ interface CreateUserDialogProps {
 export default function CreateUserDialog({ open, onOpenChange }: CreateUserDialogProps) {
   const language = useAppStore((s) => s.language)
   const isRtl = language === 'ar'
-  const token = useAppStore((s) => s.token)
-
+  
   // View mode: 'list' | 'create' | 'edit'
   const [view, setView] = useState<'list' | 'create' | 'edit'>('list')
   const [users, setUsers] = useState<any[]>([])
@@ -77,7 +76,7 @@ export default function CreateUserDialog({ open, onOpenChange }: CreateUserDialo
       }
     } catch {}
     setLoading(false)
-  }, [token])
+  }, [])
 
   useEffect(() => {
     if (open) fetchUsers()
