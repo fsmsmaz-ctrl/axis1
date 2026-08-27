@@ -274,22 +274,22 @@ export default function EquipmentPage() {
   }
 
   useEffect(() => {
-    if (!token) return
+    if (!user) return
     fetchEquipment()
     fetchProjectList()
     fetchUserList()
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token])
+  }, [user])
 
   useEffect(() => {
-    if (!token) return
+    if (!user) return
     fetchEquipment()
   }, [selectedProject])
 
   useEffect(() => {
-    if (!token) return
+    if (!user) return
     fetchAssets()
-  }, [token, fetchAssets])
+  }, [user, fetchAssets])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
