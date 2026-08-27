@@ -33,6 +33,7 @@ import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import dynamic from 'next/dynamic'
+import { SectionErrorBoundary } from '@/components/section-error-boundary'
 
 type PageId =
   | 'dashboard' | 'projects' | 'driveLines' | 'dailyReports' | 'safety'
@@ -480,7 +481,9 @@ export default function AppShell() {
         </header>
 
         <main className="p-4 lg:p-6 max-w-[1600px] mx-auto">
-          {renderPage()}
+          <SectionErrorBoundary sectionName={isAr ? navItems.find(i => i.id === currentPage)?.labelAr : navItems.find(i => i.id === currentPage)?.labelEn}>
+            {renderPage()}
+          </SectionErrorBoundary>
         </main>
       </div>
 
