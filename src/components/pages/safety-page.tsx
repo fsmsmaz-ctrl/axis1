@@ -460,11 +460,15 @@ export default function SafetyPage() {
               <select
                 value={form.driveLineId}
                 onChange={function(e) { setForm({ ...form, driveLineId: e.target.value }) }}
-                className={"w-full h-9 rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:border-ring transition-[color,box-shadow] " + (isRtl ? 'dir-rtl' : '')}
+                dir={isRtl ? 'rtl' : 'ltr'}
+                className="w-full h-9 rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:border-ring transition-[color,box-shadow]"
               >
-                <option value="">{isRtl ? 'اختر' : 'Select'}</option>
+                <option value="">{isRtl ? '-- اختر خط الحفر --' : '-- Select Drive Line --'}</option>
+                {driveLines.length === 0 && form.projectId && (
+                  <option disabled>{isRtl ? 'لا توجد خطوط حفر لهذا المشروع' : 'No drive lines for this project'}</option>
+                )}
                 {driveLines.map(function(l) {
-                  return <option key={l.id} value={l.id}>{(l.lineNumber || '-') + ' - ' + (l.startPoint || '-') + ' → ' + (l.endPoint || '-')}</option>
+                  return <option key={l.id} value={l.id}>{(l.lineNumber || '-') + ' - ' + (l.startPoint || '-') + ' \u2192 ' + (l.endPoint || '-')}</option>
                 })}
               </select>
             </div>
