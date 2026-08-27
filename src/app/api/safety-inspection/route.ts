@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
           workStartTime: null, workEndTime: null, operatingHours: 0, stoppageHours: 0,
           workersCount: 0, startReading: 0, endReading: 0, dailyMeters: 0,
           totalMeters: 0, remainingMeters: 0, progressPercent: 0, pipesInstalled: 0,
-          dailyRevenue: 0, status: 'draft', createdById: user.id,
+          dailyRevenue: 0, status: 'draft', safetyDataLocked: true, createdById: user.id,
         },
       }),
       'إنشاء التقرير اليومي'
