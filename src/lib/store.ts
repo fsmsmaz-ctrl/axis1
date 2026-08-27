@@ -9,8 +9,11 @@ import type { SessionUser } from './auth'
 interface AppState {
   user: SessionUser | null
   setUser: (user: SessionUser | null) => void
+  token: string | null
+  setToken: (token: string | null) => void
   language: Language
   setLanguage: (lang: Language) => void
+  setPage: (page: string) => void
   sidebarOpen: boolean
   setSidebarOpen: (open: boolean) => void
   theme: 'light' | 'dark'
@@ -22,8 +25,11 @@ export const useAppStore = create<AppState>()(
     (set) => ({
       user: null,
       setUser: (user) => set({ user }),
+      token: null,
+      setToken: (token) => set({ token }),
       language: 'ar',
       setLanguage: (language) => set({ language }),
+      setPage: (page) => { /* navigation handled by app-shell */ },
       sidebarOpen: false,
       setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
       theme: 'light',
