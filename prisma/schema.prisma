@@ -143,9 +143,10 @@ model DailyReport {
   pipesInstalled  Int      @default(0)
   productionNotes String?
   problems        String?
-  dailyRevenue    Float    @default(0)
-  status          String   @default("draft")
-  approvedById    String?
+  dailyRevenue      Float    @default(0)
+  status            String   @default("draft")
+  safetyDataLocked  Boolean  @default(false)
+  approvedById      String?
   approvedAt      DateTime?
   createdById     String?
   project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
