@@ -1,0 +1,21 @@
+{
+  "name": "AXIS - نظام إدارة Pipe Jacking",
+  "short_name": "AXIS",
+  "description": "نظام متكامل لإدارة عمليات الحفر بتقنية Pipe Jacking",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0a",
+  "theme_color": "#2563eb",
+  "orientation": "portrait-primary",
+  "dir": "rtl",
+  "lang": "ar",
+  "icons": [
+    {
+      "src": "/logo.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["business", "productivity"]
+}
