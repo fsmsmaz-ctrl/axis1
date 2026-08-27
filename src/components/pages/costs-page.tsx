@@ -61,7 +61,7 @@ export default function CostsPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingCostId, setEditingCostId] = useState<string | null>(null)
   const language = useAppStore((s) => s.language)
-  const token = useAppStore((s) => s.token)
+  const user = useAppStore((s) => s.user)
   const isRtl = language === 'ar'
 
   const [revenue, setRevenue] = useState(0)
@@ -114,14 +114,14 @@ export default function CostsPage() {
   }
 
   useEffect(function() {
-    if (!token) return
+    if (!user) return
     fetchCosts()
     fetchProjects()
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token])
+  }, [user])
 
   useEffect(function() {
-    if (!token) return
+    if (!user) return
     fetchCosts()
   }, [selectedProject])
 
