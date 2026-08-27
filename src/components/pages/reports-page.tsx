@@ -112,14 +112,14 @@ export default function ReportsPage() {
   }
 
   useEffect(function() {
-    if (!token) return
+    if (!user) return
     fetchProjectList()
     var today = new Date()
     var thirtyAgo = new Date()
     thirtyAgo.setDate(thirtyAgo.getDate() - 30)
     setToDate(today.toISOString().split('T')[0])
     setFromDate(thirtyAgo.toISOString().split('T')[0])
-  }, [token])
+  }, [user])
 
   async function generateReport() {
     if (!selectedReport) {
