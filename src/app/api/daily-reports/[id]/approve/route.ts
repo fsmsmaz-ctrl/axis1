@@ -56,7 +56,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         where: { id },
         data: {
           status: 'approved',
-          approvedById: user.id,
+          approvedById: user!.id,
           approvedAt: new Date(),
           dailyRevenue: dailyRevenue,
         },
@@ -68,7 +68,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     safeDbOp(
       () => db.auditLog.create({
         data: {
-          userId: user.id, dailyReportId: id, projectId: existingReport.projectId,
+          userId: user!.id, dailyReportId: id, projectId: existingReport.projectId,
           action: 'approve', entity: 'daily_report', entityId: id,
           details: 'Approved daily report (revenue: ' + dailyRevenue + ' OMR)',
         },
