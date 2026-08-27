@@ -78,7 +78,7 @@ export default function SafetyPage() {
   const [form, setForm] = useState({ ...emptyForm })
   const driveLinesLoaded = useRef<string | null>(null)
   const language = useAppStore((s) => s.language)
-  const token = useAppStore((s) => s.token)
+  const user = useAppStore((s) => s.user)
   const setPage = useAppStore((s) => s.setPage)
   const isRtl = language === 'ar'
   const isAdmin = useAppStore((s) => s.user)?.email?.toLowerCase().trim() === 'admin@axis.om'
@@ -135,14 +135,14 @@ export default function SafetyPage() {
   }
 
   useEffect(() => {
-    if (!token) return
+    if (!user) return
     fetchReports()
     fetchProjects()
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token])
+  }, [user])
 
   useEffect(() => {
-    if (!token) return
+    if (!user) return
     fetchReports()
   }, [selectedProject])
 
