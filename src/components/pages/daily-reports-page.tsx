@@ -16,7 +16,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   FileText, Calendar,
-  ShieldCheck, CheckCircle2, Eye, Check, X, Pencil, Trash2
+  ShieldCheck, CheckCircle2, Eye, Check, X, Pencil, AlertTriangle
 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
@@ -50,10 +50,13 @@ export default function DailyReportsPage() {
   const [viewReport, setViewReport] = useState<any | null>(null)
   const [viewDialogOpen, setViewDialogOpen] = useState(false)
   const [existingSafetyLoaded, setExistingSafetyLoaded] = useState(false)
+  const [safetyLocked, setSafetyLocked] = useState(false)
   const [saving, setSaving] = useState(false)
   const driveLinesLoaded = useRef<string | null>(null)
+  const [lockedDriveLine, setLockedDriveLine] = useState<any>(null)
   const language = useAppStore((s) => s.language)
-    const user = useAppStore((s) => s.user)
+  const token = useAppStore((s) => s.token)
+  const user = useAppStore((s) => s.user)
   const isRtl = language === 'ar'
 
   const [formData, setFormData] = useState({
@@ -63,7 +66,6 @@ export default function DailyReportsPage() {
     workersCount: '12', attendees: '', startReading: '', endReading: '',
     soilExcavated: 'mixed', pipesInstalled: '0', productionNotes: '',
     problems: '',
-    safetyDataLocked: false,
   })
 
   const [safety, setSafety] = useState({
@@ -100,9 +102,10 @@ export default function DailyReportsPage() {
   }
 
   useEffect(function() {
+    if (!token) return
     fetchReports()
     fetchProjects()
-  }, [selectedProject])
+  }, [selectedProject, token])
 
   useEffect(function() {
     if (!formData.projectId) {
@@ -121,10 +124,16 @@ export default function DailyReportsPage() {
 
   async function openEditReport(report: any) {
     setEditingReportId(report.id)
+    var isLocked = !!report.safetyLocked
+    setSafetyLocked(isLocked)
+    if (isLocked && report.driveLine) {
+      setLockedDriveLine(report.driveLine)
+    } else {
+      setLockedDriveLine(null)
+    }
     setFormData({
       projectId: report.projectId || '',
       driveLineId: report.driveLineId || '',
-      safetyDataLocked: !!report.safetyDataLocked,
       reportDate: report.reportDate ? report.reportDate.split('T')[0] : new Date().toISOString().split('T')[0],
       weather: report.weather || 'sunny',
       workStartTime: report.workStartTime || '06:30',
@@ -221,11 +230,7 @@ export default function DailyReportsPage() {
       var res = await authedFetch('/api/daily-reports/' + editingReportId, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(Object.assign({}, formData, { 
-        status: 'draft', 
-        safety: formData.safetyDataLocked ? undefined : safety,
-        driveLineId: formData.safetyDataLocked ? undefined : formData.driveLineId,
-      })),
+        body: JSON.stringify(Object.assign({}, formData, { status: 'draft' })),
       })
       if (res.ok) {
         setDialogOpen(false)
@@ -259,7 +264,7 @@ export default function DailyReportsPage() {
       var res = await authedFetch('/api/daily-reports/' + editingReportId, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(Object.assign({}, formData, { status: 'submitted', safety: formData.safetyDataLocked ? undefined : safety, driveLineId: formData.safetyDataLocked ? undefined : formData.driveLineId })),
+        body: JSON.stringify(Object.assign({}, formData, { status: 'submitted' })),
       })
       if (res.ok) {
         setDialogOpen(false)
@@ -303,30 +308,7 @@ export default function DailyReportsPage() {
   }
 
   var canApprove = user?.role === 'project_manager' || user?.role === 'top_management'
-  var canEditOthers = user?.role === 'top_management' || user?.role === 'project_manager' || user?.role === 'site_engineer' || user?.role === 'hse_officer'
-  // FIX-6.6: Use role-based check instead of hardcoded admin email
-  var isAdmin = user?.role === 'top_management'
-
-  async function deleteReport(report: any) {
-    var msg = isRtl
-      ? 'هل أنت متأكد من حذف هذا التقرير اليومي؟ سيتم حذف جميع البيانات المرتبطة به (تكاليف، سلامة، مرفقات) ولا يمكن التراجع.'
-      : 'Are you sure you want to delete this daily report? All related data (costs, safety, attachments) will be deleted and cannot be recovered.'
-    if (!confirm(msg)) return
-    try {
-      var res = await authedFetch('/api/daily-reports/' + report.id, {
-        method: 'DELETE',
-      })
-      if (res.ok) {
-        toast.success(isRtl ? 'تم حذف التقرير وجميع بياناته المرتبطة' : 'Report and all related data deleted')
-        fetchReports()
-      } else {
-        var data = await res.json().catch(function() { return {} })
-        toast.error(data.message || (isRtl ? 'فشل الحذف' : 'Delete failed'))
-      }
-    } catch {
-      toast.error(isRtl ? 'حدث خطأ' : 'Error')
-    }
-  }
+  var canEditOthers = user?.role === 'top_management' || user?.role === 'project_manager' || user?.role === 'site_engineer'
 
   // Check if a report came from safety section (has safety but minimal production data)
   function isFromSafetySection(r: any) {
@@ -424,16 +406,6 @@ export default function DailyReportsPage() {
                           <Check className="h-4 w-4" />
                         </Button>
                       )}
-                      {isAdmin && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 w-8 p-0 text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
-                          onClick={function() { deleteReport(r) }}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      )}
                     </div>
                   </div>
                 </CardContent>
@@ -446,7 +418,7 @@ export default function DailyReportsPage() {
       {/* Create/Edit Dialog with tabs */}
       <Dialog open={dialogOpen} onOpenChange={function(open) {
         setDialogOpen(open)
-        if (!open) { setEditingReportId(null); setExistingSafetyLoaded(false) }
+        if (!open) { setEditingReportId(null); setExistingSafetyLoaded(false); setSafetyLocked(false); setLockedDriveLine(null) }
       }}>
         <DialogContent className="max-w-3xl sm:max-h-[85vh] max-h-[88vh] sm:top-[50%] sm:translate-y-[-50%] top-[2vh] translate-y-0 overflow-y-auto p-4 sm:p-6">
           <DialogHeader>
@@ -465,6 +437,18 @@ export default function DailyReportsPage() {
           </DialogHeader>
 
           <div className="space-y-4">
+            {/* Safety locked banner */}
+            {safetyLocked && editingReportId && (
+              <div className="p-3 rounded-lg border-2 bg-amber-50 border-amber-200">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="h-5 w-5 text-amber-600" />
+                  <p className="font-medium text-sm text-amber-700">
+                    {isRtl ? 'بيانات السلامة مقفلة - لا يمكن تعديل المشروع وخط الحفر والتاريخ' : 'Safety data locked - project, drive line, and date cannot be modified'}
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Safety status banner */}
             {existingSafetyLoaded && editingReportId && (
               <div className="p-3 rounded-lg border-2 bg-emerald-50 border-emerald-200">
@@ -499,6 +483,7 @@ export default function DailyReportsPage() {
             )}
 
             <Tabs defaultValue={!editingReportId ? 'safety' : 'report'}>
+              {!editingReportId && (
                 <TabsList className="grid w-full grid-cols-2">
                   <TabsTrigger value="safety" className="gap-1.5">
                     <ShieldCheck className="h-4 w-4" />
@@ -509,36 +494,24 @@ export default function DailyReportsPage() {
                     {isRtl ? 'بيانات التقرير' : 'Report'}
                   </TabsTrigger>
                 </TabsList>
+              )}
 
+              {!editingReportId && (
                 <TabsContent value="safety" className="space-y-4 mt-4">
-                  {formData.safetyDataLocked && (
-                    <div className="p-3 rounded-lg border-2 bg-blue-50 border-blue-200">
-                      <div className="flex items-center gap-2">
-                        <ShieldCheck className="h-5 w-5 text-blue-600" />
-                        <div>
-                          <p className="font-medium text-sm text-blue-700">{isRtl ? 'بيانات السلامة مقفلة' : 'Safety data locked'}</p>
-                          <p className="text-xs text-blue-600">{isRtl ? 'تم ملء هذه البيانات من قسم السلامة ولا يمكن تعديلها هنا' : 'This data was filled from the Safety section and cannot be edited here'}</p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     {safetyChecklistItems.map(function(item) {
                       return (
                         <label
                           key={item.key}
-                          className={'flex items-center gap-3 p-3 rounded-lg border transition ' +
-                            (formData.safetyDataLocked ? 'bg-muted/30 border-border opacity-75 cursor-not-allowed' :
+                          className={'flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition ' +
                             (safety[item.key as keyof typeof safety]
-                              ? 'bg-emerald-50 border-emerald-200 cursor-pointer'
-                              : 'bg-card border-border hover:bg-muted/50 cursor-pointer'))
+                              ? 'bg-emerald-50 border-emerald-200'
+                              : 'bg-card border-border hover:bg-muted/50')
                           }
                         >
                           <Checkbox
                             checked={safety[item.key as keyof typeof safety]}
-                            disabled={formData.safetyDataLocked}
                             onCheckedChange={function(checked) {
-                              if (formData.safetyDataLocked) return
                               var updated = Object.assign({}, safety)
                               updated[item.key] = !!checked
                               setSafety(updated)
@@ -555,8 +528,7 @@ export default function DailyReportsPage() {
                       <Label>{isRtl ? 'المخاطر' : 'Hazards'}</Label>
                       <Textarea
                         value={safety.hazards}
-                        onChange={function(e) { if (formData.safetyDataLocked) return; setSafety({ ...safety, hazards: e.target.value }) }}
-                        disabled={formData.safetyDataLocked}
+                        onChange={function(e) { setSafety({ ...safety, hazards: e.target.value }) }}
                         rows={2}
                         placeholder={isRtl ? 'اذكر أي مخاطر ملاحظة' : 'Any hazards observed'}
                       />
@@ -565,8 +537,7 @@ export default function DailyReportsPage() {
                       <Label>{isRtl ? 'الملاحظات' : 'Observations'}</Label>
                       <Textarea
                         value={safety.observations}
-                        onChange={function(e) { if (formData.safetyDataLocked) return; setSafety({ ...safety, observations: e.target.value }) }}
-                        disabled={formData.safetyDataLocked}
+                        onChange={function(e) { setSafety({ ...safety, observations: e.target.value }) }}
                         rows={2}
                       />
                     </div>
@@ -574,8 +545,7 @@ export default function DailyReportsPage() {
                       <Label>{isRtl ? 'المخالفات' : 'Violations'}</Label>
                       <Textarea
                         value={safety.violations}
-                        onChange={function(e) { if (formData.safetyDataLocked) return; setSafety({ ...safety, violations: e.target.value }) }}
-                        disabled={formData.safetyDataLocked}
+                        onChange={function(e) { setSafety({ ...safety, violations: e.target.value }) }}
                         rows={2}
                       />
                     </div>
@@ -593,35 +563,59 @@ export default function DailyReportsPage() {
                     </div>
                   </div>
                 </TabsContent>
+              )}
 
               {/* Report Tab / Edit mode */}
               <TabsContent value="report" className={'space-y-4 ' + (editingReportId ? 'mt-0' : 'mt-4')}>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="space-y-1.5">
-                        <Label>{isRtl ? 'المشروع' : 'Project'} *</Label>
-                        <Select value={formData.projectId} onValueChange={function(v) { setFormData({ ...formData, projectId: v, driveLineId: '' }) }}>
-                          <SelectTrigger><SelectValue placeholder={isRtl ? 'اختر' : 'Select'} /></SelectTrigger>
-                          <SelectContent>
-                            {projects.map(function(p) {
-                              return <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                            })}
-                          </SelectContent>
-                        </Select>
+                        <Label className="flex items-center gap-1.5">
+                          {isRtl ? 'المشروع' : 'Project'} *
+                          {safetyLocked && <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-amber-50 text-amber-700 border-amber-200">{isRtl ? 'مقفل' : 'Locked'}</Badge>}
+                        </Label>
+                        {safetyLocked ? (
+                          <div className="h-9 flex items-center px-3 rounded-md border border-input bg-muted/50 text-sm">
+                            {projects.find(function(p) { return p.id === formData.projectId })?.name || '-'}
+                          </div>
+                        ) : (
+                          <Select value={formData.projectId} onValueChange={function(v) { setFormData({ ...formData, projectId: v, driveLineId: '' }) }}>
+                            <SelectTrigger><SelectValue placeholder={isRtl ? 'اختر' : 'Select'} /></SelectTrigger>
+                            <SelectContent>
+                              {projects.map(function(p) {
+                                return <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                              })}
+                            </SelectContent>
+                          </Select>
+                        )}
                       </div>
-                      {formData.safetyDataLocked && formData.driveLineId ? (
+                      {safetyLocked && lockedDriveLine ? (
+                        <div className="space-y-1.5">
+                          <Label className="flex items-center gap-1.5">
+                            {isRtl ? 'خط الحفر' : 'Drive Line'}
+                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-amber-50 text-amber-700 border-amber-200">{isRtl ? 'مقفل' : 'Locked'}</Badge>
+                          </Label>
+                          <div className="h-9 flex items-center px-3 rounded-md border border-input bg-muted/50 text-sm">
+                            {(lockedDriveLine.lineNumber || '-') + ' - ' + (lockedDriveLine.startPoint || '-') + ' → ' + (lockedDriveLine.endPoint || '-')}
+                          </div>
+                        </div>
+                      ) : (
                         <div className="space-y-1.5">
                           <Label>{isRtl ? 'خط الحفر' : 'Drive Line'}</Label>
-                          <div className="h-9 rounded-md border border-input bg-muted/50 px-3 py-2 text-sm text-foreground flex items-center">
-                            {driveLines.find(function(l) { return l.id === formData.driveLineId })
-                              ? ((driveLines.find(function(l) { return l.id === formData.driveLineId }).lineNumber || '-') + ' - ' + (driveLines.find(function(l) { return l.id === formData.driveLineId }).startPoint || '-') + ' → ' + (driveLines.find(function(l) { return l.id === formData.driveLineId }).endPoint || '-'))
-                              : (isRtl ? 'محدد من قسم السلامة' : 'Set from Safety section')}
-                          </div>
-                          <p className="text-xs text-muted-foreground">{isRtl ? 'مقفل - تم التحديد في تقرير السلامة' : 'Locked - set in safety report'}</p>
+                          <select
+                            value={formData.driveLineId}
+                            onChange={function(e) { setFormData({ ...formData, driveLineId: e.target.value }) }}
+                            className={"w-full h-9 rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:border-ring transition-[color,box-shadow] " + (isRtl ? 'dir-rtl' : '')}
+                          >
+                            <option value="">{isRtl ? 'اختر' : 'Select'}</option>
+                            {driveLines.map(function(l) {
+                              return <option key={l.id} value={l.id}>{(l.lineNumber || '-') + ' - ' + (l.startPoint || '-') + ' → ' + (l.endPoint || '-')}</option>
+                            })}
+                          </select>
                         </div>
-                      ) : null}
+                      )}
                       <div className="space-y-1.5">
                         <Label>{isRtl ? 'التاريخ' : 'Date'} *</Label>
-                        <Input type="date" value={formData.reportDate} onChange={function(e) { setFormData({ ...formData, reportDate: e.target.value }) }} />
+                        <Input type="date" value={formData.reportDate} onChange={function(e) { setFormData({ ...formData, reportDate: e.target.value }) }} disabled={safetyLocked} className={safetyLocked ? 'opacity-60 cursor-not-allowed bg-muted/50' : ''} />
                       </div>
                       <div className="space-y-1.5">
                         <Label>{isRtl ? 'الطقس' : 'Weather'}</Label>
