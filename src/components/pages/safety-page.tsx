@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
@@ -11,7 +11,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet'
-import { ShieldCheck, ShieldAlert, AlertTriangle, CheckCircle2, XCircle, Calendar, Plus, Loader2, Trash2 } from 'lucide-react'
+import { ShieldCheck, ShieldAlert, AlertTriangle, CheckCircle2, XCircle, Calendar, Plus, Loader2, Trash2, GitBranch } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
 import { toast } from 'sonner'
@@ -45,8 +45,7 @@ const emptyForm = {
   projectId: '',
   driveLineId: '',
   reportDate: new Date().toISOString().split('T')[0],
-  drillingSiteName: '',
-  signedBy: '',
+  signedBy': '',
   ppeAvailable: false,
   helmetCheck: false,
   bootsCheck: false,
@@ -70,18 +69,19 @@ const emptyForm = {
 
 export default function SafetyPage() {
   const [reports, setReports] = useState<any[]>([])
-  const [driveLines, setDriveLines] = useState<any[]>([])
   const [projects, setProjects] = useState<any[]>([])
+  const [driveLines, setDriveLines] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedProject, setSelectedProject] = useState<string>('all')
   const [sheetOpen, setSheetOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState({ ...emptyForm })
+  const driveLinesLoaded = useRef<string | null>(null)
   const language = useAppStore((s) => s.language)
-    const setPage = useAppStore((s) => s.setPage)
+  const token = useAppStore((s) => s.token)
+  const setPage = useAppStore((s) => s.setPage)
   const isRtl = language === 'ar'
-  // FIX-6.6: Use role-based check instead of hardcoded admin email
-  const isAdmin = useAppStore((s) => s.user)?.role === 'top_management'
+  const isAdmin = useAppStore((s) => s.user)?.email?.toLowerCase().trim() === 'admin@axis.om'
 
   async function deleteReport(reportId: string) {
     var msg = isRtl
@@ -135,26 +135,31 @@ export default function SafetyPage() {
   }
 
   useEffect(() => {
+    if (!token) return
     fetchReports()
     fetchProjects()
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [token])
 
   useEffect(() => {
+    if (!token) return
     fetchReports()
   }, [selectedProject])
-  // Load drive lines when project changes in form
+
+  // Load drive lines when project changes in the form
   useEffect(() => {
     if (!form.projectId) {
       setDriveLines([])
+      driveLinesLoaded.current = null
       return
     }
+    if (driveLinesLoaded.current === form.projectId) return
+    driveLinesLoaded.current = form.projectId
     authedFetch('/api/drive-lines?projectId=' + form.projectId)
       .then(function(r) { return r.json() })
       .then(function(d) { setDriveLines(d.driveLines || []) })
       .catch(function() { setDriveLines([]) })
   }, [form.projectId])
-
 
   async function handleSave() {
     if (!form.projectId || !form.reportDate) {
@@ -173,7 +178,6 @@ export default function SafetyPage() {
         var item = checklistItems[i]
         safetyData[item.key] = form[item.key as keyof typeof form]
       }
-      safetyData.drillingSiteName = form.drillingSiteName || null
       safetyData.observations = form.observations || null
       safetyData.violations = form.violations || null
       safetyData.incidentType = form.incidentType
@@ -251,6 +255,8 @@ export default function SafetyPage() {
         </div>
         <Button onClick={function() {
           setForm({ ...emptyForm, reportDate: new Date().toISOString().split('T')[0] })
+          setDriveLines([])
+          driveLinesLoaded.current = null
           setSheetOpen(true)
         }} disabled={todayReportExists}>
           <Plus className="h-4 w-4 ml-2" />
@@ -378,11 +384,6 @@ export default function SafetyPage() {
                         {' \u2022 '}
                         {isRtl ? 'موقّع من' : 'Signed by'}: {r.signedByUser ? (r.signedByUser.name || r.signedByUser.nameEn || '-') : '-'}
                       </p>
-                      {r.drillingSiteName && (
-                        <p className="text-xs text-muted-foreground mb-1">
-                          {isRtl ? 'موقع الحفر' : 'Drilling Site'}: <span className="font-medium text-foreground">{r.drillingSiteName}</span>
-                        </p>
-                      )}
                       <div className="flex items-center gap-2 mb-2">
                         <Progress value={compliance} className="h-1.5 flex-1" />
                         <span className="text-xs font-medium">{passed}/15</span>
@@ -431,32 +432,6 @@ export default function SafetyPage() {
           </SheetHeader>
 
           <div className="mt-6 space-y-5">
-            {/* Drilling Site Name */}
-            <div className="space-y-1.5">
-              <Label>{isRtl ? 'اسم موقع الحفر' : 'Drilling Site Name'}</Label>
-              <Input
-                value={form.drillingSiteName}
-                onChange={function(e) { setForm({ ...form, drillingSiteName: e.target.value }) }}
-                placeholder={isRtl ? 'أدخل اسم موقع الحفر...' : 'Enter drilling site name...'}
-              />
-            </div>
-
-            
-            {/* Drive Line */}
-            <div className="space-y-1.5">
-              <Label>{isRtl ? 'خط الحفر' : 'Drive Line'}</Label>
-              <select
-                value={form.driveLineId}
-                onChange={function(e) { setForm({ ...form, driveLineId: e.target.value }) }}
-                className={"w-full h-9 rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:border-ring transition-[color,box-shadow] " + (isRtl ? 'dir-rtl' : '')}
-              >
-                <option value="">{isRtl ? 'اختر خط الحفر' : 'Select drive line'}</option>
-                {driveLines.map(function(l) {
-                  return <option key={l.id} value={l.id}>{(l.lineNumber || '-') + ' - ' + (l.startPoint || '-') + ' → ' + (l.endPoint || '-')}</option>
-                })}
-              </select>
-            </div>
-
             {/* Project & Date */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
@@ -474,6 +449,24 @@ export default function SafetyPage() {
                 <Label>{isRtl ? 'التاريخ' : 'Date'} *</Label>
                 <Input type="date" value={form.reportDate} onChange={function(e) { setForm({ ...form, reportDate: e.target.value }) }} />
               </div>
+            </div>
+
+            {/* Drive Line */}
+            <div className="space-y-1.5">
+              <Label className="flex items-center gap-1.5">
+                <GitBranch className="h-3.5 w-3.5" />
+                {isRtl ? 'خط الحفر' : 'Drive Line'}
+              </Label>
+              <select
+                value={form.driveLineId}
+                onChange={function(e) { setForm({ ...form, driveLineId: e.target.value }) }}
+                className={"w-full h-9 rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:border-ring transition-[color,box-shadow] " + (isRtl ? 'dir-rtl' : '')}
+              >
+                <option value="">{isRtl ? 'اختر' : 'Select'}</option>
+                {driveLines.map(function(l) {
+                  return <option key={l.id} value={l.id}>{(l.lineNumber || '-') + ' - ' + (l.startPoint || '-') + ' → ' + (l.endPoint || '-')}</option>
+                })}
+              </select>
             </div>
 
             {/* Checklist */}
