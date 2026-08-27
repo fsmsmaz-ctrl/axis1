@@ -510,7 +510,7 @@ export default function DailyReportsPage() {
                           }
                         >
                           <Checkbox
-                            checked={safety[item.key as keyof typeof safety]}
+                            checked={safety[item.key as keyof typeof safety] as any}
                             onCheckedChange={function(checked) {
                               var updated = Object.assign({}, safety)
                               updated[item.key] = !!checked
