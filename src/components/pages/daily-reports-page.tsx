@@ -53,8 +53,7 @@ export default function DailyReportsPage() {
   const [saving, setSaving] = useState(false)
   const driveLinesLoaded = useRef<string | null>(null)
   const language = useAppStore((s) => s.language)
-  const token = useAppStore((s) => s.token)
-  const user = useAppStore((s) => s.user)
+    const user = useAppStore((s) => s.user)
   const isRtl = language === 'ar'
 
   const [formData, setFormData] = useState({
@@ -64,6 +63,7 @@ export default function DailyReportsPage() {
     workersCount: '12', attendees: '', startReading: '', endReading: '',
     soilExcavated: 'mixed', pipesInstalled: '0', productionNotes: '',
     problems: '',
+    safetyDataLocked: false,
   })
 
   const [safety, setSafety] = useState({
@@ -100,10 +100,9 @@ export default function DailyReportsPage() {
   }
 
   useEffect(function() {
-    if (!token) return
     fetchReports()
     fetchProjects()
-  }, [selectedProject, token])
+  }, [selectedProject])
 
   useEffect(function() {
     if (!formData.projectId) {
@@ -125,6 +124,7 @@ export default function DailyReportsPage() {
     setFormData({
       projectId: report.projectId || '',
       driveLineId: report.driveLineId || '',
+      safetyDataLocked: !!report.safetyDataLocked,
       reportDate: report.reportDate ? report.reportDate.split('T')[0] : new Date().toISOString().split('T')[0],
       weather: report.weather || 'sunny',
       workStartTime: report.workStartTime || '06:30',
@@ -221,7 +221,11 @@ export default function DailyReportsPage() {
       var res = await authedFetch('/api/daily-reports/' + editingReportId, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(Object.assign({}, formData, { status: 'draft', safety: safety })),
+        body: JSON.stringify(Object.assign({}, formData, { 
+        status: 'draft', 
+        safety: formData.safetyDataLocked ? undefined : safety,
+        driveLineId: formData.safetyDataLocked ? undefined : formData.driveLineId,
+      })),
       })
       if (res.ok) {
         setDialogOpen(false)
@@ -255,7 +259,7 @@ export default function DailyReportsPage() {
       var res = await authedFetch('/api/daily-reports/' + editingReportId, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(Object.assign({}, formData, { status: 'submitted', safety: safety })),
+        body: JSON.stringify(Object.assign({}, formData, { status: 'submitted', safety: formData.safetyDataLocked ? undefined : safety, driveLineId: formData.safetyDataLocked ? undefined : formData.driveLineId })),
       })
       if (res.ok) {
         setDialogOpen(false)
@@ -507,20 +511,34 @@ export default function DailyReportsPage() {
                 </TabsList>
 
                 <TabsContent value="safety" className="space-y-4 mt-4">
+                  {formData.safetyDataLocked && (
+                    <div className="p-3 rounded-lg border-2 bg-blue-50 border-blue-200">
+                      <div className="flex items-center gap-2">
+                        <ShieldCheck className="h-5 w-5 text-blue-600" />
+                        <div>
+                          <p className="font-medium text-sm text-blue-700">{isRtl ? 'بيانات السلامة مقفلة' : 'Safety data locked'}</p>
+                          <p className="text-xs text-blue-600">{isRtl ? 'تم ملء هذه البيانات من قسم السلامة ولا يمكن تعديلها هنا' : 'This data was filled from the Safety section and cannot be edited here'}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     {safetyChecklistItems.map(function(item) {
                       return (
                         <label
                           key={item.key}
-                          className={'flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition ' +
+                          className={'flex items-center gap-3 p-3 rounded-lg border transition ' +
+                            (formData.safetyDataLocked ? 'bg-muted/30 border-border opacity-75 cursor-not-allowed' :
                             (safety[item.key as keyof typeof safety]
-                              ? 'bg-emerald-50 border-emerald-200'
-                              : 'bg-card border-border hover:bg-muted/50')
+                              ? 'bg-emerald-50 border-emerald-200 cursor-pointer'
+                              : 'bg-card border-border hover:bg-muted/50 cursor-pointer'))
                           }
                         >
                           <Checkbox
                             checked={safety[item.key as keyof typeof safety]}
+                            disabled={formData.safetyDataLocked}
                             onCheckedChange={function(checked) {
+                              if (formData.safetyDataLocked) return
                               var updated = Object.assign({}, safety)
                               updated[item.key] = !!checked
                               setSafety(updated)
@@ -537,7 +555,8 @@ export default function DailyReportsPage() {
                       <Label>{isRtl ? 'المخاطر' : 'Hazards'}</Label>
                       <Textarea
                         value={safety.hazards}
-                        onChange={function(e) { setSafety({ ...safety, hazards: e.target.value }) }}
+                        onChange={function(e) { if (formData.safetyDataLocked) return; setSafety({ ...safety, hazards: e.target.value }) }}
+                        disabled={formData.safetyDataLocked}
                         rows={2}
                         placeholder={isRtl ? 'اذكر أي مخاطر ملاحظة' : 'Any hazards observed'}
                       />
@@ -546,7 +565,8 @@ export default function DailyReportsPage() {
                       <Label>{isRtl ? 'الملاحظات' : 'Observations'}</Label>
                       <Textarea
                         value={safety.observations}
-                        onChange={function(e) { setSafety({ ...safety, observations: e.target.value }) }}
+                        onChange={function(e) { if (formData.safetyDataLocked) return; setSafety({ ...safety, observations: e.target.value }) }}
+                        disabled={formData.safetyDataLocked}
                         rows={2}
                       />
                     </div>
@@ -554,7 +574,8 @@ export default function DailyReportsPage() {
                       <Label>{isRtl ? 'المخالفات' : 'Violations'}</Label>
                       <Textarea
                         value={safety.violations}
-                        onChange={function(e) { setSafety({ ...safety, violations: e.target.value }) }}
+                        onChange={function(e) { if (formData.safetyDataLocked) return; setSafety({ ...safety, violations: e.target.value }) }}
+                        disabled={formData.safetyDataLocked}
                         rows={2}
                       />
                     </div>
@@ -587,19 +608,17 @@ export default function DailyReportsPage() {
                           </SelectContent>
                         </Select>
                       </div>
-                      <div className="space-y-1.5">
-                        <Label>{isRtl ? 'خط الحفر' : 'Drive Line'}</Label>
-                        <select
-                          value={formData.driveLineId}
-                          onChange={function(e) { setFormData({ ...formData, driveLineId: e.target.value }) }}
-                          className={"w-full h-9 rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:border-ring transition-[color,box-shadow] " + (isRtl ? 'dir-rtl' : '')}
-                        >
-                          <option value="">{isRtl ? 'اختر' : 'Select'}</option>
-                          {driveLines.map(function(l) {
-                            return <option key={l.id} value={l.id}>{(l.lineNumber || '-') + ' - ' + (l.startPoint || '-') + ' → ' + (l.endPoint || '-')}</option>
-                          })}
-                        </select>
-                      </div>
+                      {formData.safetyDataLocked && formData.driveLineId ? (
+                        <div className="space-y-1.5">
+                          <Label>{isRtl ? 'خط الحفر' : 'Drive Line'}</Label>
+                          <div className="h-9 rounded-md border border-input bg-muted/50 px-3 py-2 text-sm text-foreground flex items-center">
+                            {driveLines.find(function(l) { return l.id === formData.driveLineId })
+                              ? ((driveLines.find(function(l) { return l.id === formData.driveLineId }).lineNumber || '-') + ' - ' + (driveLines.find(function(l) { return l.id === formData.driveLineId }).startPoint || '-') + ' → ' + (driveLines.find(function(l) { return l.id === formData.driveLineId }).endPoint || '-'))
+                              : (isRtl ? 'محدد من قسم السلامة' : 'Set from Safety section')}
+                          </div>
+                          <p className="text-xs text-muted-foreground">{isRtl ? 'مقفل - تم التحديد في تقرير السلامة' : 'Locked - set in safety report'}</p>
+                        </div>
+                      ) : null}
                       <div className="space-y-1.5">
                         <Label>{isRtl ? 'التاريخ' : 'Date'} *</Label>
                         <Input type="date" value={formData.reportDate} onChange={function(e) { setFormData({ ...formData, reportDate: e.target.value }) }} />
