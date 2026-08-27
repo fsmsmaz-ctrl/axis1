@@ -12,20 +12,20 @@ export interface SessionUser {
 }
 
 export const SESSION_COOKIE = 'axis_session'
-const SESSION_MAX_AGE = 7 * 24 * 60 * 60 // 7 days in seconds
+// Session cookie — expires when browser closes (no maxAge)
+const SESSION_MAX_AGE = 24 * 60 * 60 // 24 hours (JWT safety net only)
 
 export function getSessionMaxAge(): number {
   return SESSION_MAX_AGE
 }
 
-// M-5 FIX: sameSite 'strict' for better CSRF protection
+// Session cookie — NO maxAge = deleted when browser closes
 export function getCookieOptions() {
   const isProduction = process.env.NODE_ENV === 'production'
   return {
     httpOnly: true,
     secure: isProduction,
     sameSite: 'strict' as const,
-    maxAge: SESSION_MAX_AGE,
     path: '/',
   }
 }
