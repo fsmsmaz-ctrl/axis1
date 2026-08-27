@@ -31,7 +31,7 @@ export default function FinishingsPage() {
   const [loading, setLoading] = useState(true)
   const [dialogOpen, setDialogOpen] = useState(false)
   const language = useAppStore((s) => s.language)
-  const token = useAppStore((s) => s.token)
+  const user = useAppStore((s) => s.user)
   const isRtl = language === 'ar'
 
   const [formData, setFormData] = useState({
@@ -66,10 +66,10 @@ export default function FinishingsPage() {
   }
 
   useEffect(() => {
-    if (!token) return
+    if (!user) return
     fetchFinishings()
     fetchProjectList()
-  }, [token])
+  }, [user])
 
   useEffect(() => {
     if (formData.projectId) {
