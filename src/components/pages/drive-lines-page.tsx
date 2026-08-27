@@ -37,7 +37,6 @@ export default function DriveLinesPage() {
   const [selectedProject, setSelectedProject] = useState<string>('all')
   const [dialogOpen, setDialogOpen] = useState(false)
   const language = useAppStore((s) => s.language)
-  const token = useAppStore((s) => s.token)
   const user = useAppStore((s) => s.user)
   const isRtl = language === 'ar'
 
