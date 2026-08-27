@@ -43,6 +43,7 @@ const checklistItems = [
 
 const emptyForm = {
   projectId: '',
+  driveLineId: '',
   reportDate: new Date().toISOString().split('T')[0],
   drillingSiteName: '',
   signedBy: '',
@@ -69,6 +70,7 @@ const emptyForm = {
 
 export default function SafetyPage() {
   const [reports, setReports] = useState<any[]>([])
+  const [driveLines, setDriveLines] = useState<any[]>([])
   const [projects, setProjects] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedProject, setSelectedProject] = useState<string>('all')
@@ -76,8 +78,7 @@ export default function SafetyPage() {
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState({ ...emptyForm })
   const language = useAppStore((s) => s.language)
-  const token = useAppStore((s) => s.token)
-  const setPage = useAppStore((s) => s.setPage)
+    const setPage = useAppStore((s) => s.setPage)
   const isRtl = language === 'ar'
   // FIX-6.6: Use role-based check instead of hardcoded admin email
   const isAdmin = useAppStore((s) => s.user)?.role === 'top_management'
@@ -134,16 +135,26 @@ export default function SafetyPage() {
   }
 
   useEffect(() => {
-    if (!token) return
     fetchReports()
     fetchProjects()
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token])
+  }, [])
 
   useEffect(() => {
-    if (!token) return
     fetchReports()
   }, [selectedProject])
+  // Load drive lines when project changes in form
+  useEffect(() => {
+    if (!form.projectId) {
+      setDriveLines([])
+      return
+    }
+    authedFetch('/api/drive-lines?projectId=' + form.projectId)
+      .then(function(r) { return r.json() })
+      .then(function(d) { setDriveLines(d.driveLines || []) })
+      .catch(function() { setDriveLines([]) })
+  }, [form.projectId])
+
 
   async function handleSave() {
     if (!form.projectId || !form.reportDate) {
@@ -155,6 +166,7 @@ export default function SafetyPage() {
     try {
       const safetyData: any = {
         projectId: form.projectId,
+        driveLineId: form.driveLineId || null,
         reportDate: form.reportDate,
       }
       for (var i = 0; i < checklistItems.length; i++) {
@@ -429,11 +441,27 @@ export default function SafetyPage() {
               />
             </div>
 
+            
+            {/* Drive Line */}
+            <div className="space-y-1.5">
+              <Label>{isRtl ? 'خط الحفر' : 'Drive Line'}</Label>
+              <select
+                value={form.driveLineId}
+                onChange={function(e) { setForm({ ...form, driveLineId: e.target.value }) }}
+                className={"w-full h-9 rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:border-ring transition-[color,box-shadow] " + (isRtl ? 'dir-rtl' : '')}
+              >
+                <option value="">{isRtl ? 'اختر خط الحفر' : 'Select drive line'}</option>
+                {driveLines.map(function(l) {
+                  return <option key={l.id} value={l.id}>{(l.lineNumber || '-') + ' - ' + (l.startPoint || '-') + ' → ' + (l.endPoint || '-')}</option>
+                })}
+              </select>
+            </div>
+
             {/* Project & Date */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>{isRtl ? 'المشروع' : 'Project'} *</Label>
-                <Select value={form.projectId} onValueChange={function(v) { setForm({ ...form, projectId: v }) }}>
+                <Select value={form.projectId} onValueChange={function(v) { setForm({ ...form, projectId: v, driveLineId: '' }) }}>
                   <SelectTrigger><SelectValue placeholder={isRtl ? 'اختر' : 'Select'} /></SelectTrigger>
                   <SelectContent>
                     {projects.map(function(p) {
