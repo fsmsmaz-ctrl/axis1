@@ -1,12 +1,5 @@
 // AXIS Pipe Jacking Management System - Prisma Schema
 
-// FIXED: Added @@index on all frequently filtered/sorted columns
-// This prevents sequential scans and dramatically improves query speed
-
-// FIX-4.1: Added missing CompanyAsset model (was causing 500 errors on company-assets endpoints)
-// FIX-4.2: Added missing createdById & image fields on Equipment
-// FIX-4.3: Added missing indexes on SafetyReport and EquipmentMaintenance
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -25,11 +18,11 @@ model User {
   name         String
   nameEn       String?
   phone        String?
-  role         String   @default("site_engineer")
+  role         String   @default("site_engineer") // top_management, project_manager, site_engineer, hse_officer, foreman, accountant
   avatar       String?
   active       Boolean  @default(true)
-  language     String   @default("ar")
-  permissions  Json?
+  language     String   @default("ar") // ar, en
+  permissions  Json?    // Custom per-user permission overrides: { drive_lines: true, rpt_daily_site: false, ... }
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -46,8 +39,6 @@ model User {
   companyAssets      CompanyAsset[]  @relation("AssetResponsible")
   equipmentsCreated  Equipment[]       @relation("EquipmentCreator")
   assetsCreated      CompanyAsset[]   @relation("AssetCreator")
-
-  @@index([active])
 }
 
 // ==================== Projects ====================
@@ -58,16 +49,16 @@ model Project {
   client         String
   location       String
   contractNumber String?
-  workType       String
-  pipeDiameter   String
-  totalLength    Float
-  pricePerMeter  Float
-  soilType       String
+  workType       String   // pipe_jacking, microtunneling, hdd, auger_boring
+  pipeDiameter   String   // 800mm, 1000mm, 1200mm, other
+  totalLength    Float    // meters
+  pricePerMeter  Float    // OMR
+  soilType       String   // soft, hard, rocky, mixed
   startDate      DateTime
   expectedEnd    DateTime
   actualEnd      DateTime?
-  status         String   @default("not_started")
-  progress       Float    @default(0)
+  status         String   @default("not_started") // not_started, in_progress, suspended, completed
+  progress       Float    @default(0) // 0-100
   notes          String?
 
   managerId      String?
@@ -87,8 +78,6 @@ model Project {
 
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
-
-  @@index([status])
 }
 
 // ==================== Drive Lines ====================
@@ -98,14 +87,14 @@ model DriveLine {
   lineNumber    String
   startPoint    String
   endPoint      String
-  totalLength   Float
+  totalLength   Float    // meters
   diameter      String
-  pipeType      String
+  pipeType      String   // pipe, sleeve
   soilType      String
-  depth         Float
-  status        String   @default("not_started")
+  depth         Float    // meters
+  status        String   @default("not_started") // not_started, in_progress, completed, suspended
   completedLength Float  @default(0)
-  progress      Float    @default(0)
+  progress      Float    @default(0) // 0-100
   problems      String?
 
   project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -113,8 +102,6 @@ model DriveLine {
 
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
-
-  @@index([projectId])
 }
 
 // ==================== Daily Reports ====================
@@ -123,18 +110,20 @@ model DailyReport {
   projectId       String
   driveLineId     String?
   reportDate      DateTime
-  weather         String?
-  workStartTime   String?
-  workEndTime     String?
+  weather         String?  // sunny, cloudy, rainy, windy
+  workStartTime   String?  // HH:mm
+  workEndTime     String?  // HH:mm
   operatingHours  Float    @default(0)
   stoppageHours   Float    @default(0)
   stoppageReason  String?
   workersCount    Int      @default(0)
-  attendees       String?
+  attendees       String?  // JSON string of workers list
   absentees       String?
   attendanceNotes String?
-  startReading    Float    @default(0)
-  endReading      Float    @default(0)
+
+  // Production data
+  startReading    Float    @default(0) // meter
+  endReading      Float    @default(0) // meter
   dailyMeters     Float    @default(0)
   totalMeters     Float    @default(0)
   remainingMeters Float    @default(0)
@@ -143,11 +132,17 @@ model DailyReport {
   pipesInstalled  Int      @default(0)
   productionNotes String?
   problems        String?
-  dailyRevenue      Float    @default(0)
-  status            String   @default("draft")
-  safetyDataLocked  Boolean  @default(false)
-  approvedById      String?
+
+  // Revenue (auto-calculated)
+  dailyRevenue    Float    @default(0)
+
+  status          String   @default("draft") // draft, submitted, approved, rejected
+  approvedById    String?
   approvedAt      DateTime?
+
+  // Immutability flag: when true, fields set by safety report cannot be modified
+  safetyLocked    Boolean  @default(false)
+
   createdById     String?
   project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   driveLine       DriveLine? @relation(fields: [driveLineId], references: [id])
@@ -160,10 +155,6 @@ model DailyReport {
 
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
-
-  @@index([projectId, status])
-  @@index([reportDate, status])
-  @@index([createdById])
 }
 
 // ==================== Safety Reports ====================
@@ -172,6 +163,8 @@ model SafetyReport {
   dailyReportId       String   @unique
   projectId           String
   reportDate          DateTime
+
+  // Checklist items (boolean)
   ppeAvailable        Boolean  @default(false)
   helmetCheck         Boolean  @default(false)
   bootsCheck          Boolean  @default(false)
@@ -187,67 +180,62 @@ model SafetyReport {
   fireExtinguishers   Boolean  @default(false)
   workPermit          Boolean  @default(false)
   toolboxTalk         Boolean  @default(false)
-  hazards             String?
+
+  hazards             String?  // JSON list
   observations        String?
   violations          String?
-  incidentType        String?
+  incidentType        String?  // none, near_miss, incident, accident
   incidentDescription String?
+
   signedBy            String?
   signedById          String?
   signedAt            DateTime?
-  drillingSiteName    String?
+
   dailyReport         DailyReport @relation(fields: [dailyReportId], references: [id], onDelete: Cascade)
   project             Project  @relation(fields: [projectId], references: [id])
   signedByUser        User?    @relation("SafetyReportSigner", fields: [signedById], references: [id])
+
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
-
-  @@index([projectId, reportDate])
-  @@index([signedById])
 }
 
 // ==================== Equipment ====================
-// FIX-4.2: Added createdById and image fields
 model Equipment {
   id              String   @id @default(cuid())
   projectId       String?
   name            String
   number          String   @unique
-  type            String
-  status          String   @default("operational")
+  type            String   // jacking_machine, crane, excavator, pump, etc.
+  status          String   @default("operational") // operational, stopped, maintenance_needed
   dailyHours      Float    @default(0)
-  breakdowns      String?
+  breakdowns      String?  // JSON list of breakdowns
   lastMaintenance DateTime?
   nextMaintenance DateTime?
   spareParts      String?
   notes           String?
-  image           String?
   createdById     String?
 
   project         Project? @relation(fields: [projectId], references: [id])
   maintenance     EquipmentMaintenance[]
   createdBy       User?    @relation("EquipmentCreator", fields: [createdById], references: [id])
+
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
-
-  @@index([status])
-  @@index([projectId])
 }
 
 model EquipmentMaintenance {
   id            String   @id @default(cuid())
   equipmentId   String
   date          DateTime
-  type          String
+  type          String   // routine, repair, emergency
   description   String
   cost          Float    @default(0)
   partsUsed     String?
   performedById String?
   performedBy   User?    @relation(fields: [performedById], references: [id])
   equipment     Equipment @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
-  createdAt     DateTime @default(now())
 
-  @@index([equipmentId])
+  createdAt     DateTime @default(now())
 }
 
 // ==================== Costs ====================
@@ -256,20 +244,17 @@ model Cost {
   projectId     String
   dailyReportId String?
   date          DateTime
-  category      String
+  category      String   // labor, housing, transport, fuel, maintenance, parts, oil, safety, rental, other
   description   String
   amount        Float
   notes         String?
+
   project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   dailyReport   DailyReport? @relation(fields: [dailyReportId], references: [id])
   recordedBy    User?    @relation(fields: [recordedById], references: [id])
   recordedById  String?
-  createdAt     DateTime @default(now())
 
-  @@index([projectId, date])
-  @@index([date])
-  @@index([category, date])
-  @@index([recordedById])
+  createdAt     DateTime @default(now())
 }
 
 // ==================== Finishing / Handover ====================
@@ -284,31 +269,33 @@ model Finishing {
   siteRestored    Boolean  @default(false)
   lineHandover    Boolean  @default(false)
   clientNotes     String?
-  handoverStatus  String   @default("pending")
+  handoverStatus  String   @default("pending") // pending, accepted, needs_revision, rejected
   signedBy        String?
   signedById      String?
   signedAt        DateTime?
+
   project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   signedByUser    User?    @relation(fields: [signedById], references: [id])
   attachments     Attachment[]
+
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
-
-  @@index([projectId])
 }
 
 // ==================== Attachments ====================
 model Attachment {
   id            String   @id @default(cuid())
-  type          String
+  type          String   // site_photo, drilling_photo, safety_photo, finishing_photo, contract, po, invoice, report, worker_doc, certificate
   fileName      String
-  fileType      String
-  url           String
+  fileType      String   // image, pdf, doc
+  url           String   // base64 or path
   size          Int?
   dailyReportId String?
   finishingId   String?
+
   dailyReport   DailyReport? @relation(fields: [dailyReportId], references: [id], onDelete: Cascade)
   finishing     Finishing?   @relation(fields: [finishingId], references: [id], onDelete: Cascade)
+
   createdAt     DateTime @default(now())
 }
 
@@ -317,17 +304,15 @@ model Notification {
   id          String   @id @default(cuid())
   projectId   String?
   userId      String?
-  type        String
+  type        String   // safety_missing, work_stopped, low_production, equipment_breakdown, mass_absence, cost_overrun, deadline_near, safety_alert, report_delay
   title       String
   message     String
-  severity    String   @default("info")
+  severity    String   @default("info") // info, warning, critical
   read        Boolean  @default(false)
   createdAt   DateTime @default(now())
+
   project     Project? @relation(fields: [projectId], references: [id])
   user        User?    @relation(fields: [userId], references: [id])
-
-  @@index([read])
-  @@index([userId, read])
 }
 
 // ==================== Audit Log ====================
@@ -336,21 +321,18 @@ model AuditLog {
   userId      String?
   projectId   String?
   dailyReportId String?
-  action      String
-  entity      String
+  action      String   // create, update, delete, approve, reject
+  entity      String   // project, drive_line, daily_report, safety_report, cost, equipment, finishing
   entityId    String
   details     String?
   createdAt   DateTime @default(now())
+
   user        User?    @relation(fields: [userId], references: [id])
   project     Project? @relation(fields: [projectId], references: [id])
   dailyReport DailyReport? @relation(fields: [dailyReportId], references: [id])
-
-  @@index([createdAt])
-  @@index([entity, entityId])
 }
 
 // ==================== Company Assets & Rentals ====================
-// FIX-4.1: This model was MISSING from the GitHub schema — caused 500 errors
 model CompanyAsset {
   id             String   @id @default(cuid())
   projectId      String?
@@ -364,7 +346,6 @@ model CompanyAsset {
   rentalEnd      DateTime?
   responsibleId  String?
   status         String   @default("available")
-  image          String?
   notes          String?
   createdById    String?
 
@@ -374,7 +355,4 @@ model CompanyAsset {
 
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
-
-  @@index([ownership])
-  @@index([projectId])
 }
