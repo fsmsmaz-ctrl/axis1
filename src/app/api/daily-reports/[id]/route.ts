@@ -83,8 +83,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
     // Permission: top_management, project_manager, site_engineer can edit any draft/submitted report
     // Any authenticated user can edit draft reports (for safety → production handoff)
-    var canEditAny = user.role === 'top_management' || user.role === 'project_manager' || user.role === 'site_engineer'
-    if (!canEditAny && existingReport.createdById !== user.id) {
+    var canEditAny = user!.role === 'top_management' || user.role === 'project_manager' || user.role === 'site_engineer'
+    if (!canEditAny && existingReport.createdById !== user!.id) {
       if (existingReport.status !== 'draft') {
         return NextResponse.json({ error: 'forbidden', message: 'لا يمكنك تعديل تقرير آخر موظف' }, { status: 403 })
       }
@@ -165,7 +165,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     safeDbOp(
       () => db.auditLog.create({
         data: {
-          userId: user.id,
+          userId: user!.id,
           projectId: existingReport.projectId,
           dailyReportId: id,
           action: 'update',
@@ -225,7 +225,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
 
     // Only allow deleting own draft/submitted reports (or admin/manager can delete any non-approved)
     if (user.role !== 'top_management' && user.role !== 'project_manager') {
-      if (report.createdById !== user.id) {
+      if (report.createdById !== user!.id) {
         return NextResponse.json({ error: 'forbidden', message: 'لا يمكنك حذف تقرير آخر موظف' }, { status: 403 })
       }
     }
@@ -242,7 +242,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
       safeDbOp(
         () => db.auditLog.create({
           data: {
-            userId: user.id,
+            userId: user!.id,
             projectId: report.projectId,
             dailyReportId: id,
             action: 'delete',
@@ -259,7 +259,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
             projectId: report.projectId,
             type: 'report_delay',
             title: 'حذف تقرير يومي',
-            message: 'تم حذف تقرير يومي (المعرف: ' + id + ') بواسطة ' + user.name,
+            message: 'تم حذف تقرير يومي (المعرف: ' + id + ') بواسطة ' + user!.name,
             severity: 'warning',
           },
         }),
