@@ -1,6 +1,5 @@
-var CACHE_NAME = 'axis-v1';
-var URLS_TO_CACHE = [
-  '/',
+var CACHE_NAME = 'axis-v2';
+var STATIC_ASSETS = [
   '/manifest.json',
   '/logo.png'
 ];
@@ -8,7 +7,7 @@ var URLS_TO_CACHE = [
 self.addEventListener('install', function(event) {
   event.waitUntil(
     caches.open(CACHE_NAME).then(function(cache) {
-      return cache.addAll(URLS_TO_CACHE);
+      return cache.addAll(STATIC_ASSETS);
     })
   );
   self.skipWaiting();
@@ -26,24 +25,38 @@ self.addEventListener('activate', function(event) {
 });
 
 self.addEventListener('fetch', function(event) {
-  if (event.request.method !== 'GET') return;
   if (event.request.url.indexOf('/api/') !== -1) return;
+
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request)
+        .then(function(response) {
+          var clone = response.clone();
+          caches.open(CACHE_NAME).then(function(cache) {
+            cache.put(event.request, clone).catch(function() {});
+          });
+          return response;
+        })
+        .catch(function() {
+          return caches.match(event.request).then(function(cached) {
+            return cached || caches.match('/');
+          });
+        })
+    );
+    return;
+  }
+
   event.respondWith(
-    caches.match(event.request).then(function(response) {
-      if (response) return response;
-      return fetch(event.request).then(function(networkResponse) {
-        if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
-          var responseClone = networkResponse.clone();
+    caches.match(event.request).then(function(cached) {
+      if (cached) return cached;
+      return fetch(event.request).then(function(response) {
+        if (response && response.status === 200 && response.type === 'basic') {
+          var responseClone = response.clone();
           caches.open(CACHE_NAME).then(function(cache) {
             cache.put(event.request, responseClone).catch(function() {});
           });
         }
-        return networkResponse;
-      }).catch(function() {
-        if (event.request.mode === 'navigate') {
-          return caches.match('/');
-        }
-        return new Response('Offline', { status: 503 });
+        return response;
       });
     })
   );
