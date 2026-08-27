@@ -41,12 +41,10 @@ export default function HomePage() {
           }
         }
       } catch {}
-      // Clear stale data if session is invalid
       clearStoredToken()
       setUser(null)
-      setChecking(false)
     }
-    checkSession()
+    checkSession().finally(() => setChecking(false))
   }, [setUser])
 
   useEffect(() => {
