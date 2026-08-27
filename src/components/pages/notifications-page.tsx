@@ -206,7 +206,7 @@ export default function NotificationsPage() {
   const [notifications, setNotifications] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const language = useAppStore((s) => s.language)
-  const token = useAppStore((s) => s.token)
+  const user = useAppStore((s) => s.user)
   const isRtl = language === 'ar'
 
   // Monitor state
@@ -234,9 +234,9 @@ export default function NotificationsPage() {
   }, [])
 
   useEffect(() => {
-    if (!token) return
+    if (!user) return
     fetchNotifications()
-  }, [token, fetchNotifications])
+  }, [user, fetchNotifications])
 
   async function markAsRead(id: string) {
     await authedFetch('/api/notifications/' + id, {
@@ -281,9 +281,9 @@ export default function NotificationsPage() {
   }, [filterEntity, filterAction, filterUser, filterDateFrom, filterDateTo, logPage])
 
   useEffect(() => {
-    if (!token || activeTab !== 'monitor') return
+    if (!user || activeTab !== 'monitor') return
     fetchLogs()
-  }, [token, activeTab, fetchLogs])
+  }, [user, activeTab, fetchLogs])
 
   // Reset page on filter change
   useEffect(() => {
