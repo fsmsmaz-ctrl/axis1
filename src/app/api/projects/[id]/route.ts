@@ -181,7 +181,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     ).catch(function() {})
 
     // FIX-4.4: Fixed missing closing brace — was causing TypeScript build error
-    return NextResponse.json({ success: true, hadData })
+    return NextResponse.json({ success: true, hasData })
   } catch (error) {
     return handleDbError(error, 'حذف المشروع')
   }
