@@ -73,9 +73,9 @@ export default function ProjectsPage() {
   }
 
   useEffect(() => {
-    if (!token) return
+    if (!user) return
     fetchProjects()
-  }, [statusFilter, token])
+  }, [statusFilter, user])
 
   function openCreate() {
     const today = new Date()
