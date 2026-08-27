@@ -97,7 +97,6 @@ export default function ReportsPage() {
   const [reportData, setReportData] = useState<any>(null)
   const [generating, setGenerating] = useState(false)
   const language = useAppStore((s) => s.language)
-  const token = useAppStore((s) => s.token)
   const isRtl = language === 'ar'
 
   async function fetchProjectList() {
