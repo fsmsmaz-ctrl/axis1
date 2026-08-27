@@ -30,7 +30,7 @@ export async function DELETE(req: NextRequest) {
     }
 
     var targetResult = await safeDbOp(
-      () => db.user.findUnique({ where: { id: userId }, select: { id: true, role: true } }),
+      () => db.user.findUnique({ where: { id: userId as string }, select: { id: true, role: true } }),
       'البحث عن المستخدم'
     )
     if (!targetResult.success) return targetResult.response
@@ -50,7 +50,7 @@ export async function DELETE(req: NextRequest) {
     // Soft delete — prevents orphaned records and DB constraint errors
     var deleteResult = await safeDbOp(
       () => db.user.update({
-        where: { id: userId },
+        where: { id: userId as string },
         data: { active: false, email: 'deleted_' + userId, role: 'deleted' },
       }),
       'حذف المستخدم'
