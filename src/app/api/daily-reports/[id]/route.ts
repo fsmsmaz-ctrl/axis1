@@ -62,7 +62,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     var existingResult = await safeDbOp(
       () => db.dailyReport.findUnique({
         where: { id },
-        select: { createdById: true, status: true, projectId: true },
+        select: { createdById: true, status: true, projectId: true, safetyDataLocked: true, driveLineId: true },
       }),
       'البحث عن التقرير'
     )
@@ -87,6 +87,12 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     }
 
     var body = await req.json()
+
+    // If safety data is locked, prevent changing driveLineId and safety data
+    if (existingReport.safetyDataLocked) {
+      delete body.driveLineId
+      delete body.safety
+    }
 
     var startReading = parseFloat(body.startReading) || 0
     var endReading = parseFloat(body.endReading) || 0
