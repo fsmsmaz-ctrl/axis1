@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -11,10 +11,14 @@ import { Textarea } from '@/components/ui/textarea'
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle
 } from '@/components/ui/dialog'
-import { Plus, DollarSign, TrendingDown, Search, Trash2, Building2, Fuel, Wrench, Users, Home, Truck, Droplets, Package, MoreHorizontal } from 'lucide-react'
+import { Plus, DollarSign, TrendingDown, Search, Trash2, Building2, Fuel, Wrench, Users, Home, Truck, Droplets, Package, MoreHorizontal, BarChart3, PieChartIcon } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch, getErrorMessage } from '@/lib/api-client'
 import { toast } from 'sonner'
+import {
+  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid,
+  Tooltip, PieChart, Pie, Cell, Legend
+} from 'recharts'
 
 var categoryIcons: Record<string, any> = {
   labor: Users,
@@ -51,6 +55,23 @@ var categoryColors: Record<string, string> = {
   rental: 'bg-cyan-100 text-cyan-700',
   other: 'bg-gray-100 text-gray-700',
 }
+
+var chartColors: Record<string, string> = {
+  labor: '#3b82f6',
+  housing: '#a855f7',
+  transport: '#f97316',
+  fuel: '#ef4444',
+  maintenance: '#eab308',
+  parts: '#14b8a6',
+  oil: '#6366f1',
+  rental: '#06b6d4',
+  other: '#6b7280',
+}
+
+var allChartColors = ['#3b82f6', '#f97316', '#a855f7', '#14b8a6', '#ef4444', '#eab308', '#06b6d4', '#6366f1', '#ec4899', '#22c55e']
+
+var monthsAr = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر']
+var monthsEn = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 export default function CostsPage() {
   var [costs, setCosts] = useState<any[]>([])
@@ -171,6 +192,58 @@ export default function CostsPage() {
       String(c.amount).includes(s)
   })
 
+  /* ---- Chart Data ---- */
+  var pieData = useMemo(function() {
+    return byCategory.map(function(c: any) {
+      return { name: getCatLabel(c.category), value: c.amount || 0, color: chartColors[c.category] || '#6b7280' }
+    })
+  }, [byCategory])
+
+  var monthlyData = useMemo(function() {
+    var map: Record<string, number> = {}
+    costs.forEach(function(c: any) {
+      if (!c.date) return
+      var key = c.date.substring(0, 7)
+      map[key] = (map[key] || 0) + c.amount
+    })
+    return Object.keys(map).sort().map(function(k) {
+      var parts = k.split('-')
+      var label = isRtl
+        ? monthsAr[parseInt(parts[1]) - 1] + ' ' + parts[0]
+        : monthsEn[parseInt(parts[1]) - 1] + ' ' + parts[0]
+      return { month: label, amount: map[k] }
+    })
+  }, [costs, isRtl])
+
+  var projectData = useMemo(function() {
+    var map: Record<string, { name: string; amount: number }> = {}
+    costs.forEach(function(c: any) {
+      var pName = c.project?.name || (isRtl ? 'غير محدد' : 'Unassigned')
+      if (!map[pName]) map[pName] = { name: pName, amount: 0 }
+      map[pName].amount += c.amount
+    })
+    return Object.values(map).sort(function(a, b) { return b.amount - a.amount })
+  }, [costs, isRtl])
+
+  var catProjectData = useMemo(function() {
+    var catSet = new Set<string>()
+    costs.forEach(function(c: any) { if (c.category) catSet.add(c.category) })
+    var categories = Array.from(catSet)
+    var projectSet = new Set<string>()
+    costs.forEach(function(c: any) { projectSet.add(c.project?.name || (isRtl ? 'غير محدد' : 'Unassigned')) })
+    var projectNames = Array.from(projectSet)
+    return projectNames.map(function(pName) {
+      var row: any = { project: pName }
+      costs.forEach(function(c: any) {
+        if ((c.project?.name || (isRtl ? 'غير محدد' : 'Unassigned')) !== pName) return
+        row[c.category] = (row[c.category] || 0) + c.amount
+      })
+      return row
+    })
+  }, [costs, isRtl])
+
+  var hasChartData = pieData.length > 0 || monthlyData.length > 0
+
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -276,6 +349,183 @@ export default function CostsPage() {
           </Card>
         </div>
       </div>
+
+      {/* Charts Section */}
+      {hasChartData && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {/* Pie Chart - Category Distribution */}
+          {pieData.length > 0 && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <PieChartIcon className="h-4 w-4 text-primary" />
+                  {isRtl ? 'توزيع التكاليف حسب الفئة' : 'Cost Distribution by Category'}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ResponsiveContainer width="100%" height={260}>
+                  <PieChart>
+                    <Pie
+                      data={pieData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={50}
+                      outerRadius={90}
+                      paddingAngle={3}
+                      dataKey="value"
+                      stroke="none"
+                    >
+                      {pieData.map(function(entry: any, index: number) {
+                        return <Cell key={index} fill={entry.color} />
+                      })}
+                    </Pie>
+                    <Tooltip
+                      formatter={function(value: number) {
+                        return [value.toLocaleString() + ' ' + (isRtl ? 'ر.ع' : 'OMR'), isRtl ? 'المبلغ' : 'Amount']
+                      }}
+                      contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e5e7eb' }}
+                    />
+                    <Legend
+                      wrapperStyle={{ fontSize: 11 }}
+                      formatter={function(value: string) {
+                        return <span className="text-xs">{value}</span>
+                      }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Bar Chart - Monthly Trend */}
+          {monthlyData.length > 0 && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <BarChart3 className="h-4 w-4 text-primary" />
+                  {isRtl ? 'التكاليف الشهرية' : 'Monthly Costs'}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ResponsiveContainer width="100%" height={260}>
+                  <BarChart data={monthlyData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                    <XAxis
+                      dataKey="month"
+                      tick={{ fontSize: 10 }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      tick={{ fontSize: 10 }}
+                      axisLine={false}
+                      tickLine={false}
+                      tickFormatter={function(v) { return v >= 1000 ? (v / 1000).toFixed(0) + 'k' : String(v) }}
+                    />
+                    <Tooltip
+                      formatter={function(value: number) {
+                        return [value.toLocaleString() + ' ' + (isRtl ? 'ر.ع' : 'OMR'), isRtl ? 'المبلغ' : 'Amount']
+                      }}
+                      contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e5e7eb' }}
+                      labelStyle={{ fontWeight: 600 }}
+                    />
+                    <Bar dataKey="amount" fill="#f97316" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Horizontal Bar - Cost per Project */}
+          {projectData.length > 0 && (
+            <Card className={pieData.length === 0 && monthlyData.length === 0 ? '' : 'md:col-span-2 lg:col-span-1'}>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <BarChart3 className="h-4 w-4 text-primary" />
+                  {isRtl ? 'التكاليف حسب المشروع' : 'Costs by Project'}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ResponsiveContainer width="100%" height={260}>
+                  <BarChart data={projectData} layout="vertical" margin={{ left: 10, right: 20 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" horizontal={false} />
+                    <XAxis
+                      type="number"
+                      tick={{ fontSize: 10 }}
+                      axisLine={false}
+                      tickLine={false}
+                      tickFormatter={function(v) { return v >= 1000 ? (v / 1000).toFixed(0) + 'k' : String(v) }}
+                    />
+                    <YAxis
+                      type="category"
+                      dataKey="name"
+                      tick={{ fontSize: 10 }}
+                      axisLine={false}
+                      tickLine={false}
+                      width={100}
+                    />
+                    <Tooltip
+                      formatter={function(value: number) {
+                        return [value.toLocaleString() + ' ' + (isRtl ? 'ر.ع' : 'OMR'), isRtl ? 'المبلغ' : 'Amount']
+                      }}
+                      contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e5e7eb' }}
+                      labelStyle={{ fontWeight: 600 }}
+                    />
+                    <Bar dataKey="amount" fill="#3b82f6" radius={[0, 4, 4, 0]}>
+                      {projectData.map(function(_: any, index: number) {
+                        return <Cell key={index} fill={allChartColors[index % allChartColors.length]} />
+                      })}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
+
+      {/* Stacked Bar - Categories per Project (only if multiple projects) */}
+      {catProjectData.length > 1 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <BarChart3 className="h-4 w-4 text-primary" />
+              {isRtl ? 'مقارنة الفئات بين المشاريع' : 'Category Comparison Across Projects'}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={catProjectData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis
+                  dataKey="project"
+                  tick={{ fontSize: 10 }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <YAxis
+                  tick={{ fontSize: 10 }}
+                  axisLine={false}
+                  tickLine={false}
+                  tickFormatter={function(v) { return v >= 1000 ? (v / 1000).toFixed(0) + 'k' : String(v) }}
+                />
+                <Tooltip
+                  formatter={function(value: number) {
+                    return [value.toLocaleString() + ' ' + (isRtl ? 'ر.ع' : 'OMR')]
+                  }}
+                  contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e5e7eb' }}
+                />
+                <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} formatter={function(value: string) {
+                  return <span className="text-xs">{getCatLabel(value)}</span>
+                }} />
+                {Object.keys(categoryLabels).map(function(cat) {
+                  return <Bar key={cat} dataKey={cat} stackId="a" fill={chartColors[cat] || '#6b7280'} />
+                })}
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Rental Assets */}
       {rentalAssets.length > 0 && (
