@@ -109,7 +109,7 @@ export async function GET(req: NextRequest) {
   const metersThisMonth = monthAgg._sum.dailyMeters || 0
   const revenueThisMonth = monthAgg._sum.dailyRevenue || 0
 
-  // ========== DYNAMIC PROGRESS CALCULATION ==========
+  // ========== DYNAMIC PROGRESS (Method A + B fallback) ==========
   const projectIds = projects.map(function(p: any) { return p.id })
   var dynamicProgress: Record<string, number> = {}
 
@@ -149,11 +149,30 @@ export async function GET(req: NextRequest) {
         projectTotals[dl.projectId].completed += readingMap[dl.id] || 0
       }
 
+      // Method B fallback: sum of approved dailyMeters per project
+      var projectMetersMap: Record<string, number> = {}
+      try {
+        var allProjectMeters = await db.dailyReport.findMany({
+          where: { projectId: { in: projectIds }, status: 'approved' },
+          select: { projectId: true, dailyMeters: true },
+        })
+        for (var m = 0; m < allProjectMeters.length; m++) {
+          var pm = allProjectMeters[m]
+          if (!projectMetersMap[pm.projectId]) projectMetersMap[pm.projectId] = 0
+          projectMetersMap[pm.projectId] += pm.dailyMeters || 0
+        }
+      } catch (e2) { /* ignore */ }
+
       for (var pi = 0; pi < projectIds.length; pi++) {
         var pid = projectIds[pi]
         var pt = projectTotals[pid]
         if (pt && pt.total > 0) {
-          dynamicProgress[pid] = Math.min((pt.completed / pt.total) * 100, 100)
+          var driveLineProgress = Math.min((pt.completed / pt.total) * 100, 100)
+          if (driveLineProgress === 0 && (projectMetersMap[pid] || 0) > 0) {
+            dynamicProgress[pid] = Math.min(((projectMetersMap[pid] || 0) / pt.total) * 100, 100)
+          } else {
+            dynamicProgress[pid] = driveLineProgress
+          }
         } else {
           dynamicProgress[pid] = 0
         }
@@ -178,7 +197,6 @@ export async function GET(req: NextRequest) {
   for (var p = 0; p < projects.length; p++) {
     projects[p].progress = dynamicProgress[projects[p].id] || 0
   }
-  // ========== END DYNAMIC PROGRESS ==========
 
   const trendMap = new Map<string, { meters: number; revenue: number; cost: number }>()
   for (const r of trendReports) {
