@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
-import { handleDbError, validateRequired, parseNumber, safeDbOp } from '@/lib/api-helpers'
+import { handleDbError, validateRequired, parseNumber, safeDbOp, recalcProgress } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 
 export async function GET(req: NextRequest) {
@@ -152,74 +152,30 @@ export async function POST(req: NextRequest) {
     )
     if (!createResult.success) return createResult.response
 
-    // Run non-critical updates in parallel (fire-and-forget style)
-    var updatePromises: Promise<void>[] = []
-
-    // Update drive line progress
+    // CRITICAL: Await progress recalculation (not fire-and-forget!)
+    // In Vercel serverless, the function may be terminated after response is sent,
+    // so we MUST await these updates before returning.
     if (body.driveLineId) {
-      updatePromises.push(
-        safeDbOp(
-          () => db.driveLine.update({
-            where: { id: body.driveLineId },
-            data: {
-              completedLength: totalMeters,
-              progress: progressPercent,
-              status: progressPercent >= 100 ? 'completed' : 'in_progress',
-            },
-          }),
-          'تحديث تقدم خط الحفر'
-        ).then(function() {})
-      )
+      await recalcProgress(db, String(body.projectId), String(body.driveLineId))
+    } else if (projResult.success && projResult.data) {
+      await recalcProgress(db, String(body.projectId), null)
     }
 
-    // Update project progress
-    if (projResult.success && projResult.data) {
-      updatePromises.push(
-        (async function() {
-          var allLinesResult = await safeDbOp(
-            () => db.driveLine.findMany({
-              where: { projectId: body.projectId },
-              select: { totalLength: true, completedLength: true },
-            }),
-            'جلب جميع خطوط الحفر'
-          )
-          if (allLinesResult.success) {
-            var totalAll = allLinesResult.data.reduce(function(s: number, l: any) { return s + l.totalLength }, 0)
-            var completedAll = allLinesResult.data.reduce(function(s: number, l: any) { return s + l.completedLength }, 0)
-            var projectProgress = totalAll > 0 ? (completedAll / totalAll) * 100 : 0
-
-            await safeDbOp(
-              () => db.project.update({
-                where: { id: body.projectId },
-                data: { progress: projectProgress },
-              }),
-              'تحديث تقدم المشروع'
-            )
-          }
-        })()
-      )
-    }
-
-    // Audit log
-    updatePromises.push(
-      safeDbOp(
-        () => db.auditLog.create({
-          data: {
-            userId: user!.id,
-            projectId: body.projectId,
-            dailyReportId: createResult.data.id,
-            action: 'create',
-            entity: 'daily_report',
-            entityId: createResult.data.id,
-            details: 'Created daily report for ' + body.reportDate,
-          },
-        }),
-        'سجل التدقيق'
-      ).then(function() {})
-    )
-
-    // Fire all non-critical updates in parallel (don't await - let them run in background)
-    Promise.all(updatePromises).catch(function() {})
+    // Audit log (non-critical, can be fire-and-forget)
+    safeDbOp(
+      () => db.auditLog.create({
+        data: {
+          userId: user!.id,
+          projectId: body.projectId,
+          dailyReportId: createResult.data.id,
+          action: 'create',
+          entity: 'daily_report',
+          entityId: createResult.data.id,
+          details: 'Created daily report for ' + body.reportDate,
+        },
+      }),
+      'سجل التدقيق'
+    ).catch(function() {})
 
     return NextResponse.json({ report: createResult.data, success: true })
   } catch (error: any) {
