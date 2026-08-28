@@ -16,12 +16,45 @@ export async function GET(req: NextRequest) {
 
     const result = await safeDbOp(
       () => db.driveLine.findMany({
-        where, include: { project: { select: { id: true, name: true, code: true } } },
-        orderBy: [{ projectId: 'asc' }, { lineNumber: 'asc' }], take: 200,
+        where,
+        include: { project: { select: { id: true, name: true, code: true, pricePerMeter: true } } },
+        orderBy: [{ projectId: 'asc' }, { lineNumber: 'asc' }],
+        take: 200,
       }), 'جلب خطوط الحفر'
     )
     if (!result.success) return result.response
-    return NextResponse.json({ driveLines: result.data })
+
+    var driveLines = result.data
+
+    // Dynamic progress: calculate from MAX endReading of daily reports (single query)
+    if (driveLines.length > 0) {
+      try {
+        var dlIds = driveLines.map(function(dl: any) { return dl.id })
+        var maxReadings = await db.dailyReport.groupBy({
+          by: ['driveLineId'],
+          where: { driveLineId: { in: dlIds } },
+          _max: { endReading: true },
+        })
+        // Build map: driveLineId -> maxEndReading
+        var readingMap: Record<string, number> = {}
+        for (var i = 0; i < maxReadings.length; i++) {
+          readingMap[maxReadings[i].driveLineId] = maxReadings[i]._max.endReading || 0
+        }
+        // Apply to each drive line
+        for (var j = 0; j < driveLines.length; j++) {
+          var dl = driveLines[j]
+          var completedLength = readingMap[dl.id] || 0
+          var progress = dl.totalLength > 0 ? (completedLength / dl.totalLength) * 100 : 0
+          dl.completedLength = completedLength
+          dl.progress = Math.min(progress, 100)
+          dl.status = progress >= 100 ? 'completed' : (completedLength > 0 ? 'in_progress' : dl.status)
+        }
+      } catch (e) {
+        // Keep stored values if dynamic calc fails
+      }
+    }
+
+    return NextResponse.json({ driveLines: driveLines })
   } catch (error: any) {
     return handleDbError(error, 'جلب خطوط الحفر')
   }
@@ -32,7 +65,6 @@ export async function POST(req: NextRequest) {
     const user = await getAuthUser(req)
     if (!user) return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
 
-    // H-1 FIX: RBAC check
     if (!canWrite(user.role, 'drive_lines', user.permissions)) {
       return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية لإنشاء خطوط حفر' }, { status: 403 })
     }
@@ -58,11 +90,8 @@ export async function POST(req: NextRequest) {
     Promise.all([
       safeDbOp(() => db.auditLog.create({
         data: {
-          userId: user.id,
-          projectId: String(body.projectId),
-          action: 'create',
-          entity: 'drive_line',
-          entityId: createResult.data.id,
+          userId: user.id, projectId: String(body.projectId),
+          action: 'create', entity: 'drive_line', entityId: createResult.data.id,
           details: 'إنشاء خط حفر: ' + String(body.lineNumber).trim() + ' (' + String(body.startPoint).trim() + ' → ' + String(body.endPoint).trim() + ')',
         },
       }), 'سجل التدقيق'),
