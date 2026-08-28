@@ -17,11 +17,7 @@ import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
 import { toast } from 'sonner'
 
-function canCreateDriveLine(user: any): boolean {
-  if (!user) return false
-  // FIX-6.6: Removed hardcoded admin email check — role already covers this
-  return user.role === 'top_management' || user.role === 'project_manager'
-}
+// All users with section access can create drive lines
 
 const statusLabels: Record<string, { ar: string; en: string; color: string }> = {
   not_started: { ar: 'لم يبدأ', en: 'Not Started', color: 'secondary' },
@@ -122,7 +118,7 @@ export default function DriveLinesPage() {
             {isRtl ? `${driveLines.length} خط حفر` : `${driveLines.length} drive lines`}
           </p>
         </div>
-        {canCreateDriveLine(user) && (
+        {user && (
           <Button onClick={() => {
             setFormData({
               projectId: projects[0]?.id || '', lineNumber: '', startPoint: '', endPoint: '',
