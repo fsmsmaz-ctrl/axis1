@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
     const result = await safeDbOp(
       () => db.driveLine.findMany({
         where,
-        include: { project: { select: { id: true, name: true, code: true, pricePerMeter: true, totalLength: true } } },
+        include: { project: { select: { id: true, name: true, code: true, pricePerMeter: true } } },
         orderBy: [{ projectId: 'asc' }, { lineNumber: 'asc' }],
         take: 200,
       }), 'جلب خطوط الحفر'
@@ -26,72 +26,25 @@ export async function GET(req: NextRequest) {
 
     var driveLines = result.data
 
+    // Dynamic progress: calculate from MAX endReading of daily reports (single query)
     if (driveLines.length > 0) {
       try {
-        // Step 1: Get MAX(endReading) per drive line
-        var dlIds = driveLines.map(function(dl: any) { return dl.id }).filter(function(id: any) { return id != null })
+        var dlIds: string[] = driveLines.map(function(dl: any) { return dl.id })
+        var maxReadings = await (db.dailyReport.groupBy as any)({
+          by: ['driveLineId'],
+          where: { driveLineId: { in: dlIds } },
+          _max: { endReading: true },
+        })
+        // Build map: driveLineId -> maxEndReading
         var readingMap: Record<string, number> = {}
-        if (dlIds.length > 0) {
-          for (var dli = 0; dli < dlIds.length; dli++) {
-            var agg = await db.dailyReport.aggregate({
-              where: { driveLineId: dlIds[dli] },
-              _max: { endReading: true },
-            })
-            if (agg._max.endReading != null) {
-              readingMap[dlIds[dli]] = agg._max.endReading
-            }
-          }
+        for (var i = 0; i < maxReadings.length; i++) {
+          var dlKey = String(maxReadings[i].driveLineId || '')
+          readingMap[dlKey] = maxReadings[i]._max.endReading || 0
         }
-
-        // Step 2: Get SUM(dailyMeters) per drive line (as fallback)
-        var metersMap: Record<string, number> = {}
-        if (dlIds.length > 0) {
-          for (var mli = 0; mli < dlIds.length; mli++) {
-            var mAgg = await db.dailyReport.aggregate({
-              where: { driveLineId: dlIds[mli] },
-              _sum: { dailyMeters: true },
-            })
-            metersMap[dlIds[mli]] = mAgg._sum.dailyMeters || 0
-          }
-        }
-
-        // Step 3: Get project-level total meters (for drive lines with no linked reports)
-        var projIds: string[] = []
-        for (var pi = 0; pi < driveLines.length; pi++) {
-          if (projIds.indexOf(driveLines[pi].projectId) === -1) {
-            projIds.push(driveLines[pi].projectId)
-          }
-        }
-        var projMetersMap: Record<string, number> = {}
-        for (var pj = 0; pj < projIds.length; pj++) {
-          var pAgg = await db.dailyReport.aggregate({
-            where: { projectId: projIds[pj] },
-            _sum: { dailyMeters: true },
-          })
-          projMetersMap[projIds[pj]] = pAgg._sum.dailyMeters || 0
-        }
-
-        // Step 4: For each drive line, pick the best progress value
+        // Apply to each drive line
         for (var j = 0; j < driveLines.length; j++) {
           var dl = driveLines[j]
-          var method1 = readingMap[dl.id] || 0        // MAX endReading
-          var method2 = metersMap[dl.id] || 0        // SUM dailyMeters for this line
-          var completedLength = Math.max(method1, method2)
-
-          // If this line has 0 but project has meters, distribute proportionally
-          if (completedLength === 0 && (projMetersMap[dl.projectId] || 0) > 0) {
-            // Get total length of all drive lines in this project
-            var projTotalLen = 0
-            for (var k = 0; k < driveLines.length; k++) {
-              if (driveLines[k].projectId === dl.projectId) {
-                projTotalLen += driveLines[k].totalLength || 0
-              }
-            }
-            if (projTotalLen > 0) {
-              completedLength = (projMetersMap[dl.projectId] || 0) * ((dl.totalLength || 0) / projTotalLen)
-            }
-          }
-
+          var completedLength = readingMap[dl.id] || 0
           var progress = dl.totalLength > 0 ? (completedLength / dl.totalLength) * 100 : 0
           dl.completedLength = completedLength
           dl.progress = Math.min(progress, 100)
