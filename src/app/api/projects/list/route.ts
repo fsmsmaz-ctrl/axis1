@@ -39,13 +39,13 @@ export async function GET(req: NextRequest) {
 
     var projects = result.data
 
-    // Dynamic progress with fallback to dailyMeters
+    // SIMPLE progress: sum of ALL dailyMeters per project (not just approved)
     var projectIds = projects.map(function(p: any) { return p.id })
     var projectMetersMap: Record<string, number> = {}
     if (projectIds.length > 0) {
       try {
         var allMeters = await db.dailyReport.findMany({
-          where: { projectId: { in: projectIds }, status: 'approved' },
+          where: { projectId: { in: projectIds } },
           select: { projectId: true, dailyMeters: true },
         })
         for (var m = 0; m < allMeters.length; m++) {
@@ -58,18 +58,12 @@ export async function GET(req: NextRequest) {
 
     for (var i = 0; i < projects.length; i++) {
       var p = projects[i]
-      var dls = p.driveLines || []
-      var totalLen = 0
-      var completedLen = 0
-      for (var j = 0; j < dls.length; j++) {
-        totalLen += dls[j].totalLength || 0
-        completedLen += dls[j].completedLength || 0
-      }
-      var dlProgress = totalLen > 0 ? Math.min((completedLen / totalLen) * 100, 100) : 0
-      if (dlProgress === 0 && (projectMetersMap[p.id] || 0) > 0) {
-        p.progress = Math.min(((projectMetersMap[p.id] || 0) / (p.totalLength || totalLen || 1)) * 100, 100)
+      var totalLen = p.totalLength || 0
+      var completedMeters = projectMetersMap[p.id] || 0
+      if (totalLen > 0) {
+        p.progress = Math.min((completedMeters / totalLen) * 100, 100)
       } else {
-        p.progress = dlProgress
+        p.progress = 0
       }
     }
 
