@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
-import { safeDbOp, handleDbError } from '@/lib/api-helpers'
+import { safeDbOp, handleDbError, recalcProgress } from '@/lib/api-helpers'
+
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -161,6 +162,23 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
     if (!updateResult.success) return updateResult.response
 
+    // CRITICAL: Recalculate progress after editing a report
+    // Determine which drive line(s) to recalculate
+    var newDriveLineId = existingReport.safetyLocked ? existingReport.driveLineId : (body.driveLineId || null)
+    if (newDriveLineId) {
+      // If drive line changed, also recalc the old one
+      if (existingReport.driveLineId && existingReport.driveLineId !== newDriveLineId) {
+        await recalcProgress(db, existingReport.projectId, existingReport.driveLineId)
+      }
+      await recalcProgress(db, existingReport.projectId, String(newDriveLineId))
+    } else if (existingReport.driveLineId) {
+      // Drive line was removed from report, recalc the old one
+      await recalcProgress(db, existingReport.projectId, existingReport.driveLineId)
+    } else {
+      // No drive line involved, recalc all lines in project
+      await recalcProgress(db, existingReport.projectId, null)
+    }
+
     // Audit log (non-critical)
     safeDbOp(
       () => db.auditLog.create({
@@ -202,11 +220,11 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   var { id } = await params
 
   try {
-    // Get report details before deleting
+    // Get report details before deleting (include driveLineId for progress recalc)
     var reportResult = await safeDbOp(
       () => db.dailyReport.findUnique({
         where: { id },
-        select: { projectId: true, status: true, createdById: true },
+        select: { projectId: true, status: true, createdById: true, driveLineId: true },
       }),
       'البحث عن التقرير'
     )
@@ -217,6 +235,10 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     if (!report) {
       return NextResponse.json({ error: 'Report not found' }, { status: 404 })
     }
+
+    // Save driveLineId before deletion for progress recalculation
+    var deletedDriveLineId = report.driveLineId
+    var deletedProjectId = report.projectId
 
     // Only top management can delete approved reports
     if (report.status === 'approved' && user.role !== 'top_management') {
@@ -236,6 +258,9 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     )
 
     if (!deleteResult.success) return deleteResult.response
+
+    // CRITICAL: Recalculate progress after deleting a report
+    await recalcProgress(db, deletedProjectId, deletedDriveLineId)
 
     // Audit log + delete notification (non-critical, fire-and-forget)
     Promise.all([
