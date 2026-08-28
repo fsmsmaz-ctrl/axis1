@@ -1,4 +1,4 @@
-;'var CACHE_NAME = 'axis-v3
+var CACHE_NAME = 'axis-v4';
 var STATIC_ASSETS = [
   '/manifest.json',
   '/logo.png'
@@ -41,6 +41,29 @@ self.addEventListener('fetch', function(event) {
           return caches.match(event.request).then(function(cached) {
             return cached || caches.match('/');
           });
+        })
+    );
+    return;
+  }
+
+  if (
+    event.request.url.indexOf('/_next/static/') !== -1 ||
+    event.request.url.indexOf('.js') !== -1 ||
+    event.request.url.indexOf('.css') !== -1
+  ) {
+    event.respondWith(
+      fetch(event.request)
+        .then(function(response) {
+          if (response && response.status === 200) {
+            var clone = response.clone();
+            caches.open(CACHE_NAME).then(function(cache) {
+              cache.put(event.request, clone).catch(function() {});
+            });
+          }
+          return response;
+        })
+        .catch(function() {
+          return caches.match(event.request);
         })
     );
     return;
