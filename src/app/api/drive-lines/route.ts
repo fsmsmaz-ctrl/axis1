@@ -26,21 +26,25 @@ export async function GET(req: NextRequest) {
 
     var driveLines = result.data
 
-    // Dynamic progress: calculate from MAX endReading of daily reports (single query)
     if (driveLines.length > 0) {
       try {
-        var dlIds = driveLines.map(function(dl: any) { return dl.id })
-        var maxReadings = await db.dailyReport.groupBy({
-          by: ['driveLineId'],
-          where: { driveLineId: { in: dlIds } },
-          _max: { endReading: true },
-        })
-        // Build map: driveLineId -> maxEndReading
+        var dlIds = driveLines.map(function(dl: any) { return dl.id }).filter(function(id: any) { return id != null })
+        var maxReadings: any[] = []
+        if (dlIds.length > 0) {
+          for (var dli = 0; dli < dlIds.length; dli++) {
+            var agg = await db.dailyReport.aggregate({
+              where: { driveLineId: dlIds[dli] },
+              _max: { endReading: true },
+            })
+            if (agg._max.endReading != null) {
+              maxReadings.push({ driveLineId: dlIds[dli], _max: { endReading: agg._max.endReading } })
+            }
+          }
+        }
         var readingMap: Record<string, number> = {}
         for (var i = 0; i < maxReadings.length; i++) {
           readingMap[maxReadings[i].driveLineId] = maxReadings[i]._max.endReading || 0
         }
-        // Apply to each drive line
         for (var j = 0; j < driveLines.length; j++) {
           var dl = driveLines[j]
           var completedLength = readingMap[dl.id] || 0
