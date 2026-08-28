@@ -105,7 +105,7 @@ export const VALID_ROLES = ['top_management', 'project_manager', 'site_engineer'
 // Roles that can write to each resource
 export const WRITE_ROLES: Record<string, string[]> = {
   projects: ['top_management', 'project_manager'],
-  drive_lines: ['top_management', 'project_manager', 'site_engineer'],
+  drive_lines: ['top_management', 'project_manager', 'site_engineer', 'hse_officer'],
   daily_reports: ['top_management', 'project_manager', 'site_engineer', 'foreman'],
   safety: ['top_management', 'project_manager', 'site_engineer', 'hse_officer'],
   equipment: ['top_management', 'project_manager', 'site_engineer'],
