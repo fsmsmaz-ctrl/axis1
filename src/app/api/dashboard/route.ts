@@ -79,7 +79,7 @@ export async function GET(req: NextRequest) {
     safeDbOp(() => db.notification.count({ where: { ...notifWhere, read: false } }), 'عد الإشعارات غير المقروءة'),
     safeDbOp(() => db.dailyReport.findMany({ where: trendReportWhere, orderBy: { reportDate: 'asc' }, select: { reportDate: true, dailyMeters: true, dailyRevenue: true } }), 'تقارير الاتجاه'),
     safeDbOp(() => db.cost.groupBy({ by: ['date'], where: costTrendWhere, _sum: { amount: true } }), 'تكاليف الاتجاه'),
-    safeDbOp(() => db.project.findMany({ where: projectWhere, select: { id: true, name: true, code: true, status: true, progress: true, totalLength: true, pricePerMeter: true, client: true }, take: 50, orderBy: { status: 'desc' } }), 'قائمة المشاريع'),
+    safeDbOp(() => db.project.findMany({ where: projectWhere, select: { id: true, name: true, code: true, status: true, totalLength: true, pricePerMeter: true, client: true }, take: 50, orderBy: { status: 'desc' } }), 'قائمة المشاريع'),
     safeDbOp(() => db.dailyReport.findMany({ where: userProjectIds ? { projectId: { in: userProjectIds } } : {}, take: 10, orderBy: { reportDate: 'desc' }, include: { project: { select: { name: true, code: true } }, driveLine: { select: { lineNumber: true } } } }), 'آخر التقارير'),
     safeDbOp(() => db.notification.findMany({ where: notifWhere, take: 5, orderBy: { createdAt: 'desc' }, include: { project: { select: { name: true } } } }), 'آخر الإشعارات'),
     safeDbOp(() => db.equipment.findMany({ take: 30, orderBy: { name: 'asc' }, include: { project: { select: { name: true } } } }), 'قائمة المعدات'),
@@ -113,6 +113,82 @@ export async function GET(req: NextRequest) {
   const presentWorkers = todayAgg._sum.workersCount || 0
   const metersThisMonth = monthAgg._sum.dailyMeters || 0
   const revenueThisMonth = monthAgg._sum.dailyRevenue || 0
+
+  // ========== DYNAMIC PROGRESS CALCULATION ==========
+  // Calculate progress from actual daily report data, not stored values
+  const projectIds = projects.map(function(p: any) { return p.id })
+  var dynamicProgress: Record<string, number> = {}
+
+  if (projectIds.length > 0) {
+    try {
+      // Step 1: Fetch all drive lines for these projects
+      var driveLines = await db.driveLine.findMany({
+        where: { projectId: { in: projectIds } },
+        select: { id: true, projectId: true, totalLength: true },
+      })
+
+      // Step 2: Get MAX endReading per drive line from all daily reports
+      var dlIds = driveLines.map(function(dl: any) { return dl.id })
+      var maxReadings: any[] = []
+      if (dlIds.length > 0) {
+        maxReadings = await db.dailyReport.groupBy({
+          by: ['driveLineId'],
+          where: { driveLineId: { in: dlIds } },
+          _max: { endReading: true },
+        })
+      }
+
+      // Build map: driveLineId -> maxEndReading
+      var readingMap: Record<string, number> = {}
+      for (var ri = 0; ri < maxReadings.length; ri++) {
+        readingMap[maxReadings[ri].driveLineId] = maxReadings[ri]._max.endReading || 0
+      }
+
+      // Step 3: Calculate per-project totals from drive lines
+      var projectTotals: Record<string, { total: number; completed: number }> = {}
+      for (var di = 0; di < driveLines.length; di++) {
+        var dl = driveLines[di]
+        if (!projectTotals[dl.projectId]) {
+          projectTotals[dl.projectId] = { total: 0, completed: 0 }
+        }
+        projectTotals[dl.projectId].total += dl.totalLength || 0
+        projectTotals[dl.projectId].completed += readingMap[dl.id] || 0
+      }
+
+      // Step 4: Calculate progress for each project
+      for (var pi = 0; pi < projectIds.length; pi++) {
+        var pid = projectIds[pi]
+        var pt = projectTotals[pid]
+        if (pt && pt.total > 0) {
+          dynamicProgress[pid] = Math.min((pt.completed / pt.total) * 100, 100)
+        } else {
+          dynamicProgress[pid] = 0
+        }
+      }
+
+      // Step 5: Also update the stored project.progress in DB for consistency
+      // (fire-and-forget since it's non-critical for the response)
+      var updatePromises: Promise<void>[] = []
+      for (var ui = 0; ui < projectIds.length; ui++) {
+        var upId = projectIds[ui]
+        var newProgress = dynamicProgress[upId]
+        ;(function(pid: string, prog: number) {
+          updatePromises.push(
+            db.project.update({ where: { id: pid }, data: { progress: prog } }).catch(function() {})
+          )
+        })(upId, newProgress)
+      }
+      Promise.all(updatePromises).catch(function() {})
+    } catch (err) {
+      console.error('[Dashboard] Dynamic progress calc error:', err)
+    }
+  }
+
+  // Override project.progress with dynamically calculated value
+  for (var p = 0; p < projects.length; p++) {
+    projects[p].progress = dynamicProgress[projects[p].id] || 0
+  }
+  // ========== END DYNAMIC PROGRESS ==========
 
   const trendMap = new Map<string, { meters: number; revenue: number; cost: number }>()
   for (const r of trendReports) {
