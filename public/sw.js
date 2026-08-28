@@ -1,4 +1,4 @@
-var CACHE_NAME = 'axis-v2';
+var CACHE_NAME = 'axis-v3';
 var STATIC_ASSETS = [
   '/manifest.json',
   '/logo.png'
