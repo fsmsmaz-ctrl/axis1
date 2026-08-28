@@ -39,8 +39,23 @@ export async function GET(req: NextRequest) {
 
     var projects = result.data
 
-    // Dynamic progress calculation from drive lines
-    // This ensures correct progress even if stored values are stale
+    // Dynamic progress with fallback to dailyMeters
+    var projectIds = projects.map(function(p: any) { return p.id })
+    var projectMetersMap: Record<string, number> = {}
+    if (projectIds.length > 0) {
+      try {
+        var allMeters = await db.dailyReport.findMany({
+          where: { projectId: { in: projectIds }, status: 'approved' },
+          select: { projectId: true, dailyMeters: true },
+        })
+        for (var m = 0; m < allMeters.length; m++) {
+          var pm = allMeters[m]
+          if (!projectMetersMap[pm.projectId]) projectMetersMap[pm.projectId] = 0
+          projectMetersMap[pm.projectId] += pm.dailyMeters || 0
+        }
+      } catch (e) { /* ignore */ }
+    }
+
     for (var i = 0; i < projects.length; i++) {
       var p = projects[i]
       var dls = p.driveLines || []
@@ -50,8 +65,12 @@ export async function GET(req: NextRequest) {
         totalLen += dls[j].totalLength || 0
         completedLen += dls[j].completedLength || 0
       }
-      // Use drive line data for project progress
-      p.progress = totalLen > 0 ? Math.min((completedLen / totalLen) * 100, 100) : 0
+      var dlProgress = totalLen > 0 ? Math.min((completedLen / totalLen) * 100, 100) : 0
+      if (dlProgress === 0 && (projectMetersMap[p.id] || 0) > 0) {
+        p.progress = Math.min(((projectMetersMap[p.id] || 0) / (p.totalLength || totalLen || 1)) * 100, 100)
+      } else {
+        p.progress = dlProgress
+      }
     }
 
     return NextResponse.json({ projects: projects })
