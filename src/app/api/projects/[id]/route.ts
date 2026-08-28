@@ -34,7 +34,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const aggResult = await safeDbOp(
       () => db.dailyReport.aggregate({
         where: { projectId: id, status: 'approved' },
-        _sum: { dailyMeters: true, dailyRevenue: true },
+        _sum: { dailyMeters: true },
       }),
       'إحصائيات المشروع'
     )
@@ -45,7 +45,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     )
 
     const totalMeters = aggResult.success ? (aggResult.data._sum.dailyMeters || 0) : 0
-    const totalRevenue = aggResult.success ? (aggResult.data._sum.dailyRevenue || 0) : 0
+    // DYNAMIC: Calculate revenue from dailyMeters x current pricePerMeter
+    const totalRevenue = totalMeters * (result.data.pricePerMeter || 0)
     const totalCost = costAggResult.success ? (costAggResult.data._sum.amount || 0) : 0
 
     return NextResponse.json({
