@@ -19,7 +19,6 @@ export async function GET(req: NextRequest) {
   const fourteenDaysAgo = new Date(today)
   fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14)
 
-  // F-4 FIX: Role-based project filtering
   var projectWhere: any = {}
   if (user.role === 'foreman') {
     projectWhere = { OR: [{ managerId: user.id }, { engineerId: user.id }] }
@@ -29,7 +28,6 @@ export async function GET(req: NextRequest) {
     projectWhere = { managerId: user.id }
   }
 
-  // Build filtered where clauses for reports and costs
   var userProjectIds: string[] | null = null
   if (user.role === 'foreman' || user.role === 'site_engineer' || user.role === 'project_manager') {
     var userProjectsResult = await safeDbOp(
@@ -56,13 +54,11 @@ export async function GET(req: NextRequest) {
     costTrendWhere.projectId = { in: userProjectIds }
   }
 
-  // FIX-3.3: Notification filtering — non-admin users only see their own or broadcast
   var notifWhere: any = {}
   if (user.role !== 'top_management' && user.role !== 'project_manager') {
     notifWhere = { OR: [{ userId: user.id }, { userId: null }] }
   }
 
-  // FIX-3.4: Wrap all DB calls in safeDbOp for consistent error handling
   const [
     activeProjectsResult, todayAggResult, monthAggResult, monthCostsResult,
     totalCostsResult, totalRevenueResult, stoppedEquipmentResult,
@@ -86,7 +82,6 @@ export async function GET(req: NextRequest) {
     safeDbOp(() => db.cost.groupBy({ by: ['category'], where: costMonthWhere, _sum: { amount: true } }), 'تكاليف حسب التصنيف'),
   ])
 
-  // Check all critical results
   if (!activeProjectsResult.success) return activeProjectsResult.response
   if (!todayAggResult.success) return todayAggResult.response
   if (!monthAggResult.success) return monthAggResult.response
@@ -115,36 +110,35 @@ export async function GET(req: NextRequest) {
   const revenueThisMonth = monthAgg._sum.dailyRevenue || 0
 
   // ========== DYNAMIC PROGRESS CALCULATION ==========
-  // Calculate progress from actual daily report data, not stored values
   const projectIds = projects.map(function(p: any) { return p.id })
   var dynamicProgress: Record<string, number> = {}
 
   if (projectIds.length > 0) {
     try {
-      // Step 1: Fetch all drive lines for these projects
       var driveLines = await db.driveLine.findMany({
         where: { projectId: { in: projectIds } },
         select: { id: true, projectId: true, totalLength: true },
       })
 
-      // Step 2: Get MAX endReading per drive line from all daily reports
       var dlIds = driveLines.map(function(dl: any) { return dl.id })
       var maxReadings: any[] = []
       if (dlIds.length > 0) {
-        maxReadings = await db.dailyReport.groupBy({
-          by: ['driveLineId'],
-          where: { driveLineId: { in: dlIds } },
-          _max: { endReading: true },
-        })
+        for (var dli = 0; dli < dlIds.length; dli++) {
+          var agg = await db.dailyReport.aggregate({
+            where: { driveLineId: dlIds[dli] },
+            _max: { endReading: true },
+          })
+          if (agg._max.endReading != null) {
+            maxReadings.push({ driveLineId: dlIds[dli], _max: { endReading: agg._max.endReading } })
+          }
+        }
       }
 
-      // Build map: driveLineId -> maxEndReading
       var readingMap: Record<string, number> = {}
       for (var ri = 0; ri < maxReadings.length; ri++) {
         readingMap[maxReadings[ri].driveLineId] = maxReadings[ri]._max.endReading || 0
       }
 
-      // Step 3: Calculate per-project totals from drive lines
       var projectTotals: Record<string, { total: number; completed: number }> = {}
       for (var di = 0; di < driveLines.length; di++) {
         var dl = driveLines[di]
@@ -155,7 +149,6 @@ export async function GET(req: NextRequest) {
         projectTotals[dl.projectId].completed += readingMap[dl.id] || 0
       }
 
-      // Step 4: Calculate progress for each project
       for (var pi = 0; pi < projectIds.length; pi++) {
         var pid = projectIds[pi]
         var pt = projectTotals[pid]
@@ -166,15 +159,13 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      // Step 5: Also update the stored project.progress in DB for consistency
-      // (fire-and-forget since it's non-critical for the response)
-      var updatePromises: Promise<void>[] = []
+      var updatePromises: Promise<any>[] = []
       for (var ui = 0; ui < projectIds.length; ui++) {
         var upId = projectIds[ui]
         var newProgress = dynamicProgress[upId]
         ;(function(pid: string, prog: number) {
           updatePromises.push(
-            db.project.update({ where: { id: pid }, data: { progress: prog } }).catch(function() {})
+            db.project.update({ where: { id: pid }, data: { progress: prog } }).catch(function() { return null })
           )
         })(upId, newProgress)
       }
@@ -184,7 +175,6 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Override project.progress with dynamically calculated value
   for (var p = 0; p < projects.length; p++) {
     projects[p].progress = dynamicProgress[projects[p].id] || 0
   }
