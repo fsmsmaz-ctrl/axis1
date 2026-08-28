@@ -109,93 +109,56 @@ export async function GET(req: NextRequest) {
   const metersThisMonth = monthAgg._sum.dailyMeters || 0
   const revenueThisMonth = monthAgg._sum.dailyRevenue || 0
 
-  // ========== DYNAMIC PROGRESS (Method A + B fallback) ==========
-  const projectIds = projects.map(function(p: any) { return p.id })
+  // ========== SIMPLE PROGRESS: sum of all dailyMeters per project ==========
   var dynamicProgress: Record<string, number> = {}
+  var projectIds = projects.map(function(p: any) { return p.id })
 
   if (projectIds.length > 0) {
     try {
-      var driveLines = await db.driveLine.findMany({
+      // Fetch all dailyMeters for these projects (ALL statuses, not just approved)
+      var allReports = await db.dailyReport.findMany({
         where: { projectId: { in: projectIds } },
-        select: { id: true, projectId: true, totalLength: true },
+        select: { projectId: true, dailyMeters: true },
       })
 
-      var dlIds = driveLines.map(function(dl: any) { return dl.id })
-      var maxReadings: any[] = []
-      if (dlIds.length > 0) {
-        for (var dli = 0; dli < dlIds.length; dli++) {
-          var agg = await db.dailyReport.aggregate({
-            where: { driveLineId: dlIds[dli] },
-            _max: { endReading: true },
-          })
-          if (agg._max.endReading != null) {
-            maxReadings.push({ driveLineId: dlIds[dli], _max: { endReading: agg._max.endReading } })
-          }
-        }
+      var metersMap: Record<string, number> = {}
+      for (var mi = 0; mi < allReports.length; mi++) {
+        var mr = allReports[mi]
+        if (!metersMap[mr.projectId]) metersMap[mr.projectId] = 0
+        metersMap[mr.projectId] += mr.dailyMeters || 0
       }
 
-      var readingMap: Record<string, number> = {}
-      for (var ri = 0; ri < maxReadings.length; ri++) {
-        readingMap[maxReadings[ri].driveLineId] = maxReadings[ri]._max.endReading || 0
-      }
-
-      var projectTotals: Record<string, { total: number; completed: number }> = {}
-      for (var di = 0; di < driveLines.length; di++) {
-        var dl = driveLines[di]
-        if (!projectTotals[dl.projectId]) {
-          projectTotals[dl.projectId] = { total: 0, completed: 0 }
-        }
-        projectTotals[dl.projectId].total += dl.totalLength || 0
-        projectTotals[dl.projectId].completed += readingMap[dl.id] || 0
-      }
-
-      // Method B fallback: sum of approved dailyMeters per project
-      var projectMetersMap: Record<string, number> = {}
-      try {
-        var allProjectMeters = await db.dailyReport.findMany({
-          where: { projectId: { in: projectIds }, status: 'approved' },
-          select: { projectId: true, dailyMeters: true },
-        })
-        for (var m = 0; m < allProjectMeters.length; m++) {
-          var pm = allProjectMeters[m]
-          if (!projectMetersMap[pm.projectId]) projectMetersMap[pm.projectId] = 0
-          projectMetersMap[pm.projectId] += pm.dailyMeters || 0
-        }
-      } catch (e2) { /* ignore */ }
-
-      for (var pi = 0; pi < projectIds.length; pi++) {
-        var pid = projectIds[pi]
-        var pt = projectTotals[pid]
-        if (pt && pt.total > 0) {
-          var driveLineProgress = Math.min((pt.completed / pt.total) * 100, 100)
-          if (driveLineProgress === 0 && (projectMetersMap[pid] || 0) > 0) {
-            dynamicProgress[pid] = Math.min(((projectMetersMap[pid] || 0) / pt.total) * 100, 100)
-          } else {
-            dynamicProgress[pid] = driveLineProgress
-          }
+      // Calculate progress for each project
+      for (var pi = 0; pi < projects.length; pi++) {
+        var p = projects[pi]
+        var totalLen = p.totalLength || 0
+        var completedMeters = metersMap[p.id] || 0
+        if (totalLen > 0) {
+          dynamicProgress[p.id] = Math.min((completedMeters / totalLen) * 100, 100)
         } else {
-          dynamicProgress[pid] = 0
+          dynamicProgress[p.id] = 0
         }
       }
 
+      // Update stored progress in DB (fire-and-forget)
       var updatePromises: Promise<any>[] = []
       for (var ui = 0; ui < projectIds.length; ui++) {
         var upId = projectIds[ui]
-        var newProgress = dynamicProgress[upId]
+        var newProg = dynamicProgress[upId]
         ;(function(pid: string, prog: number) {
           updatePromises.push(
             db.project.update({ where: { id: pid }, data: { progress: prog } }).catch(function() { return null })
           )
-        })(upId, newProgress)
+        })(upId, newProg)
       }
       Promise.all(updatePromises).catch(function() {})
     } catch (err) {
-      console.error('[Dashboard] Dynamic progress calc error:', err)
+      console.error('[Dashboard] Progress calc error:', err)
     }
   }
 
-  for (var p = 0; p < projects.length; p++) {
-    projects[p].progress = dynamicProgress[projects[p].id] || 0
+  for (var pp = 0; pp < projects.length; pp++) {
+    projects[pp].progress = dynamicProgress[projects[pp].id] || 0
   }
 
   const trendMap = new Map<string, { meters: number; revenue: number; cost: number }>()
