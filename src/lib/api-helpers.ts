@@ -119,6 +119,78 @@ export async function safeDbOp(
   }
 }
 
+// ==================== Progress Recalculation ====================
+// Recalculates drive line completedLength/progress from daily reports,
+// then recalculates the parent project progress from all its drive lines.
+// MUST be awaited — do NOT use fire-and-forget in serverless environments.
+export async function recalcProgress(
+  db: any,
+  projectId: string,
+  specificDriveLineId?: string | null
+): Promise<void> {
+  try {
+    // Step 1: Determine which drive lines to update
+    var driveLineIds: string[] = []
+    if (specificDriveLineId) {
+      driveLineIds = [specificDriveLineId]
+    } else {
+      var allLines = await db.driveLine.findMany({
+        where: { projectId },
+        select: { id: true },
+      })
+      driveLineIds = allLines.map(function(l: any) { return l.id })
+    }
+
+    // Step 2: For each drive line, find the MAX endReading from all its daily reports
+    for (var i = 0; i < driveLineIds.length; i++) {
+      var dlId = driveLineIds[i]
+      var dl = await db.driveLine.findUnique({
+        where: { id: dlId },
+        select: { totalLength: true },
+      })
+      if (!dl) continue
+
+      var maxResult = await db.dailyReport.aggregate({
+        where: { driveLineId: dlId },
+        _max: { endReading: true },
+      })
+      var completedLength = maxResult._max.endReading || 0
+      var progress = dl.totalLength > 0 ? (completedLength / dl.totalLength) * 100 : 0
+      var newStatus = progress >= 100 ? 'completed' : (completedLength > 0 ? 'in_progress' : 'not_started')
+
+      await db.driveLine.update({
+        where: { id: dlId },
+        data: {
+          completedLength: completedLength,
+          progress: Math.min(progress, 100),
+          status: newStatus,
+        },
+      })
+    }
+
+    // Step 3: Recalculate project progress from all its drive lines
+    var allLinesForProject = await db.driveLine.findMany({
+      where: { projectId },
+      select: { totalLength: true, completedLength: true },
+    })
+    var totalAll = 0
+    var completedAll = 0
+    for (var j = 0; j < allLinesForProject.length; j++) {
+      totalAll += allLinesForProject[j].totalLength || 0
+      completedAll += allLinesForProject[j].completedLength || 0
+    }
+    var projectProgress = totalAll > 0 ? (completedAll / totalAll) * 100 : 0
+
+    await db.project.update({
+      where: { id: projectId },
+      data: { progress: Math.min(projectProgress, 100) },
+    })
+  } catch (err) {
+    // Log but don't throw — progress is non-critical
+    console.error('[recalcProgress] Error recalculating progress:', err)
+  }
+}
+
 // ==================== Change Tracking for Audit Logs ====================
 
 export interface FieldLabel {
