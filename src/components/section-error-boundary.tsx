@@ -12,21 +12,17 @@ interface Props {
 
 interface State {
   hasError: boolean
+  retryKey: number
 }
 
-/**
- * F-3 FIX: Section-level error boundary.
- * Wraps individual page sections to prevent white screens.
- * If a section crashes, only that section shows an error — not the whole page.
- */
 export class SectionErrorBoundary extends Component<Props, State> {
   constructor(props: Props) {
     super(props)
-    this.state = { hasError: false }
+    this.state = { hasError: false, retryKey: 0 }
   }
 
   static getDerivedStateFromError(): State {
-    return { hasError: true }
+    return { hasError: true, retryKey: 0 }
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
@@ -34,7 +30,7 @@ export class SectionErrorBoundary extends Component<Props, State> {
   }
 
   handleRetry = () => {
-    this.setState({ hasError: false })
+    this.setState({ hasError: false, retryKey: (this.state.retryKey || 0) + 1 })
   }
 
   render() {
@@ -53,6 +49,6 @@ export class SectionErrorBoundary extends Component<Props, State> {
         </div>
       )
     }
-    return this.props.children
+    return <div key={this.state.retryKey}>{this.props.children}</div>
   }
 }
