@@ -54,6 +54,20 @@ export async function POST(req: NextRequest) {
       }), 'إنشاء خط الحفر'
     )
     if (!createResult.success) return createResult.response
+
+    Promise.all([
+      safeDbOp(() => db.auditLog.create({
+        data: {
+          userId: user.id,
+          projectId: String(body.projectId),
+          action: 'create',
+          entity: 'drive_line',
+          entityId: createResult.data.id,
+          details: 'إنشاء خط حفر: ' + String(body.lineNumber).trim() + ' (' + String(body.startPoint).trim() + ' → ' + String(body.endPoint).trim() + ')',
+        },
+      }), 'سجل التدقيق'),
+    ]).catch(function() {})
+
     return NextResponse.json({ driveLine: createResult.data, success: true })
   } catch (error: any) {
     return handleDbError(error, 'إنشاء خط الحفر')
