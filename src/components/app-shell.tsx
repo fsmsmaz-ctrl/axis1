@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useMemo } from 'react'
 import { useAppStore } from '@/lib/store'
 import { hasPermission, MODULE_PERMISSIONS, MODULE_PERMISSION_LABELS, REPORT_PERMISSIONS, REPORT_LABELS, ROLE_PERMISSIONS, type SessionUser } from '@/lib/auth'
 import { clearStoredToken, authedFetch } from '@/lib/api-client'
@@ -162,10 +162,13 @@ export default function AppShell() {
   const isAdmin = user?.role === 'top_management'
   const canViewDashboard = !!user && (isAdmin || user.role === 'project_manager')
 
-  const allowedItems = user ? navItems.filter(item => {
-    if (item.id === 'dashboard') return canViewDashboard
-    return hasPermission(user.role, item.resource, user.permissions)
-  }) : []
+  const allowedItems = useMemo(function() {
+    if (!user) return []
+    return navItems.filter(function(item) {
+      if (item.id === 'dashboard') return canViewDashboard
+      return hasPermission(user.role, item.resource, user.permissions)
+    })
+  }, [user, canViewDashboard])
   const firstAllowedPage = allowedItems.length > 0 ? allowedItems[0].id : 'projects'
 
   const initialRedirectDone = useRef(false)
