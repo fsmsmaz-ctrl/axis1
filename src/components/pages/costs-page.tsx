@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -14,7 +14,7 @@ import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   PieChart, Pie, Cell, Legend
 } from 'recharts'
-import { Plus, DollarSign, TrendingUp, TrendingDown, Wallet, BarChart3, Pencil, Trash2 } from 'lucide-react'
+import { Plus, DollarSign, TrendingUp, TrendingDown, Wallet, BarChart3, Pencil, Trash2, AlertCircle, X } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
 import { toast } from 'sonner'
@@ -55,8 +55,10 @@ export default function CostsPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingCostId, setEditingCostId] = useState<string | null>(null)
   const language = useAppStore((s) => s.language)
-  const user = useAppStore((s) => s.user)
   const isRtl = language === 'ar'
+
+  // Visible debug state - shows API errors on screen
+  const [apiError, setApiError] = useState<string | null>(null)
 
   // Revenue data
   const [revenue, setRevenue] = useState(0)
@@ -67,18 +69,25 @@ export default function CostsPage() {
     category: 'labor', description: '', amount: '', notes: '',
   })
 
-  async function fetchCosts() {
+  const fetchCosts = useCallback(async function() {
     setLoading(true)
+    setApiError(null)
     try {
-      const res = await authedFetch('/api/costs' + (selectedProject !== 'all' ? `?projectId=${selectedProject}` : ''))
+      const url = '/api/costs' + (selectedProject !== 'all' ? `?projectId=${selectedProject}` : '')
+      const res = await authedFetch(url)
+      
       if (!res.ok) {
-        const errData = await res.json().catch(() => ({}))
+        const errData = await res.json().catch(function() { return {} })
+        const errMsg = `API ${res.status}: ${errData?.error || ''} - ${errData?.message || ''}`
         console.error('Costs API error:', res.status, errData)
+        setApiError(errMsg)
         toast.error(isRtl ? 'فشل جلب التكاليف' : 'Failed to fetch costs')
         setLoading(false)
         return
       }
+      
       const data = await res.json()
+      console.log('Costs API response:', data)
       setCosts(data.costs || [])
       setByCategory(data.byCategory || [])
       setTotal(data.total || 0)
@@ -90,23 +99,27 @@ export default function CostsPage() {
       const repRes = await authedFetch('/api/daily-reports?' + repParams.toString())
       if (repRes.ok) {
         const repData = await repRes.json()
-        const reports = (repData.reports || []).filter((r: any) => r.status === 'approved')
-        const totalRev = reports.reduce((s: number, r: any) => s + r.dailyRevenue, 0)
+        const reports = (repData.reports || []).filter(function(r: any) { return r.status === 'approved' })
+        const totalRev = reports.reduce(function(s: number, r: any) { return s + r.dailyRevenue }, 0)
         setRevenue(totalRev)
         setProjectReports(reports)
       }
     } catch (err) {
       console.error('fetchCosts error:', err)
+      setApiError(String(err))
       toast.error(isRtl ? 'خطأ في الاتصال' : 'Connection error')
     }
     setLoading(false)
-  }
+  }, [selectedProject, isRtl])
 
-  useEffect(() => {
-    if (!user) return
+  // REMOVED: if (!user) return  -- auth is handled by httpOnly cookie via authedFetch
+  // The AppShell already guards that user exists before rendering this page
+  useEffect(function() {
     fetchCosts()
-    authedFetch('/api/projects/list').then(r => r.json()).then(d => setProjects((d.projects || []).filter((p: any) => p.showInCosts !== false)))
-  }, [selectedProject, user])
+    authedFetch('/api/projects/list').then(function(r) { return r.json() }).then(function(d) {
+      setProjects((d.projects || []).filter(function(p: any) { return p.showInCosts !== false }))
+    }).catch(function() {})
+  }, [fetchCosts])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -148,15 +161,17 @@ export default function CostsPage() {
 
   const netProfit = revenue - total
   const profitMargin = revenue > 0 ? (netProfit / revenue) * 100 : 0
-  const totalMeters = projectReports.reduce((s, r) => s + r.dailyMeters, 0)
+  const totalMeters = projectReports.reduce(function(s, r) { return s + r.dailyMeters }, 0)
   const costPerMeter = totalMeters > 0 ? total / totalMeters : 0
 
   // Chart data
-  const pieData = byCategory.map(c => ({
-    name: isRtl ? categoryLabels[c.category]?.ar : categoryLabels[c.category]?.en || c.category,
-    value: c.amount,
-    color: categoryColors[c.category] || '#94a3b8',
-  }))
+  const pieData = byCategory.map(function(c) {
+    return {
+      name: isRtl ? categoryLabels[c.category]?.ar : categoryLabels[c.category]?.en || c.category,
+      value: c.amount,
+      color: categoryColors[c.category] || '#94a3b8',
+    }
+  })
 
   return (
     <div className="space-y-4">
@@ -167,7 +182,7 @@ export default function CostsPage() {
             {isRtl ? 'متابعة التكاليف والإيرادات وحساب الأرباح' : 'Track costs, revenue, and profit'}
           </p>
         </div>
-        <Button onClick={() => {
+        <Button onClick={function() {
           setEditingCostId(null)
           setFormData({
             projectId: projects[0]?.id || '', date: new Date().toISOString().split('T')[0],
@@ -179,6 +194,21 @@ export default function CostsPage() {
           {isRtl ? 'إضافة تكلفة' : 'Add Cost'}
         </Button>
       </div>
+
+      {/* Visible API Error Banner - shows on screen instead of hidden in console */}
+      {apiError && (
+        <div className="border border-red-300 bg-red-50 dark:bg-red-950/30 rounded-lg p-3 flex items-start gap-3">
+          <AlertCircle className="h-5 w-5 text-red-500 shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-red-700 dark:text-red-400">{isRtl ? 'خطأ في جلب التكاليف' : 'Costs API Error'}</p>
+            <p className="text-xs text-red-600 dark:text-red-400 mt-1 font-mono break-all" dir="ltr">{apiError}</p>
+            <p className="text-xs text-red-500 dark:text-red-400 mt-1">{isRtl ? 'صوّر هذه الرسالة وأرسلها للمطور' : 'Screenshot this and send to developer'}</p>
+          </div>
+          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 shrink-0" onClick={function() { setApiError(null) }}>
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+      )}
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -240,9 +270,9 @@ export default function CostsPage() {
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="all">{isRtl ? 'كل المشاريع' : 'All Projects'}</SelectItem>
-          {projects.map((p) => (
-            <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-          ))}
+          {projects.map(function(p) {
+            return <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+          })}
         </SelectContent>
       </Select>
 
@@ -269,15 +299,15 @@ export default function CostsPage() {
                     cx="50%"
                     cy="50%"
                     outerRadius={90}
-                    label={(entry: any) => `${entry.value.toFixed(0)}`}
+                    label={function(entry: any) { return entry.value.toFixed(0) }}
                   >
-                    {pieData.map((entry, idx) => (
-                      <Cell key={idx} fill={entry.color} />
-                    ))}
+                    {pieData.map(function(entry, idx) {
+                      return <Cell key={idx} fill={entry.color} />
+                    })}
                   </Pie>
                   <Tooltip
                     contentStyle={{ direction: isRtl ? 'rtl' : 'ltr', borderRadius: 8, fontSize: 12 }}
-                    formatter={(value: any) => [`${value.toLocaleString()} ر.ع`, '']}
+                    formatter={function(value: any) { return [value.toLocaleString() + ' ر.ع', ''] }}
                   />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
                 </PieChart>
@@ -303,12 +333,12 @@ export default function CostsPage() {
                   <YAxis dataKey="name" type="category" tick={{ fontSize: 11 }} width={80} orientation={isRtl ? 'right' : 'left'} />
                   <Tooltip
                     contentStyle={{ direction: isRtl ? 'rtl' : 'ltr', borderRadius: 8, fontSize: 12 }}
-                    formatter={(value: any) => [`${value.toLocaleString()} ر.ع`, isRtl ? 'المبلغ' : 'Amount']}
+                    formatter={function(value: any) { return [value.toLocaleString() + ' ر.ع', isRtl ? 'المبلغ' : 'Amount'] }}
                   />
                   <Bar dataKey="value" radius={[0, 4, 4, 0]}>
-                    {pieData.map((entry, idx) => (
-                      <Cell key={idx} fill={entry.color} />
-                    ))}
+                    {pieData.map(function(entry, idx) {
+                      return <Cell key={idx} fill={entry.color} />
+                    })}
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
@@ -331,49 +361,51 @@ export default function CostsPage() {
             </div>
           ) : (
             <div className="space-y-2 max-h-96 overflow-y-auto">
-              {costs.map((c) => (
-                <div key={c.id} className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-muted/50 transition group">
-                  <div
-                    className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
-                    style={{ backgroundColor: (categoryColors[c.category] || '#94a3b8') + '20' }}
-                  >
-                    <DollarSign className="h-4 w-4" style={{ color: categoryColors[c.category] || '#94a3b8' }} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{c.description}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {isRtl ? categoryLabels[c.category]?.ar : categoryLabels[c.category]?.en || c.category}
-                      {' • '}
-                      {new Date(c.date).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')}
-                      {c.project && ` • ${c.project.name}`}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <p className="font-semibold text-sm text-red-600">
-                      {c.amount.toLocaleString()} {isRtl ? 'ر.ع' : 'OMR'}
-                    </p>
-                    <div className="flex gap-1">
-                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-blue-600 hover:text-blue-700 hover:bg-blue-50" onClick={() => {
-                        setEditingCostId(c.id)
-                        setFormData({
-                          projectId: c.projectId || '',
-                          date: new Date(c.date).toISOString().split('T')[0],
-                          category: c.category,
-                          description: c.description,
-                          amount: String(c.amount),
-                          notes: c.notes || '',
-                        })
-                        setDialogOpen(true)
-                      }}>
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => deleteCost(c.id)}>
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
+              {costs.map(function(c) {
+                return (
+                  <div key={c.id} className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-muted/50 transition group">
+                    <div
+                      className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
+                      style={{ backgroundColor: (categoryColors[c.category] || '#94a3b8') + '20' }}
+                    >
+                      <DollarSign className="h-4 w-4" style={{ color: categoryColors[c.category] || '#94a3b8' }} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{c.description}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {isRtl ? categoryLabels[c.category]?.ar : categoryLabels[c.category]?.en || c.category}
+                        {' \u2022 '}
+                        {new Date(c.date).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')}
+                        {c.project && ' \u2022 ' + c.project.name}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <p className="font-semibold text-sm text-red-600">
+                        {c.amount.toLocaleString()} {isRtl ? 'ر.ع' : 'OMR'}
+                      </p>
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-blue-600 hover:text-blue-700 hover:bg-blue-50" onClick={function() {
+                          setEditingCostId(c.id)
+                          setFormData({
+                            projectId: c.projectId || '',
+                            date: new Date(c.date).toISOString().split('T')[0],
+                            category: c.category,
+                            description: c.description,
+                            amount: String(c.amount),
+                            notes: c.notes || '',
+                          })
+                          setDialogOpen(true)
+                        }}>
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500 hover:text-red-600 hover:bg-red-50" onClick={function() { deleteCost(c.id) }}>
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </CardContent>
@@ -392,45 +424,45 @@ export default function CostsPage() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>{isRtl ? 'المشروع' : 'Project'} *</Label>
-                <Select value={formData.projectId} onValueChange={(v) => setFormData({ ...formData, projectId: v })} required>
+                <Select value={formData.projectId} onValueChange={function(v) { setFormData({ ...formData, projectId: v }) }} required>
                   <SelectTrigger><SelectValue placeholder={isRtl ? 'اختر' : 'Select'} /></SelectTrigger>
                   <SelectContent>
-                    {projects.map((p) => (
-                      <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                    ))}
+                    {projects.map(function(p) {
+                      return <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                    })}
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-1.5">
                 <Label>{isRtl ? 'التاريخ' : 'Date'} *</Label>
-                <Input type="date" value={formData.date} onChange={(e) => setFormData({ ...formData, date: e.target.value })} required />
+                <Input type="date" value={formData.date} onChange={function(e) { setFormData({ ...formData, date: e.target.value }) }} required />
               </div>
               <div className="space-y-1.5">
                 <Label>{isRtl ? 'الفئة' : 'Category'} *</Label>
-                <Select value={formData.category} onValueChange={(v) => setFormData({ ...formData, category: v })}>
+                <Select value={formData.category} onValueChange={function(v) { setFormData({ ...formData, category: v }) }}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {Object.entries(categoryLabels).map(([key, val]) => (
-                      <SelectItem key={key} value={key}>{isRtl ? val.ar : val.en}</SelectItem>
-                    ))}
+                    {Object.entries(categoryLabels).map(function([key, val]) {
+                      return <SelectItem key={key} value={key}>{isRtl ? val.ar : val.en}</SelectItem>
+                    })}
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-1.5">
                 <Label>{isRtl ? 'المبلغ (ر.ع)' : 'Amount (OMR)'} *</Label>
-                <Input type="number" step="0.01" value={formData.amount} onChange={(e) => setFormData({ ...formData, amount: e.target.value })} required />
+                <Input type="number" step="0.01" value={formData.amount} onChange={function(e) { setFormData({ ...formData, amount: e.target.value }) }} required />
               </div>
             </div>
             <div className="space-y-1.5">
               <Label>{isRtl ? 'الوصف' : 'Description'} *</Label>
-              <Input value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} required />
+              <Input value={formData.description} onChange={function(e) { setFormData({ ...formData, description: e.target.value }) }} required />
             </div>
             <div className="space-y-1.5">
               <Label>{isRtl ? 'ملاحظات' : 'Notes'}</Label>
-              <Textarea value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} rows={2} />
+              <Textarea value={formData.notes} onChange={function(e) { setFormData({ ...formData, notes: e.target.value }) }} rows={2} />
             </div>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
+              <Button type="button" variant="outline" onClick={function() { setDialogOpen(false) }}>
                 {isRtl ? 'إلغاء' : 'Cancel'}
               </Button>
               <Button type="submit">{isRtl ? 'حفظ' : 'Save'}</Button>
