@@ -129,6 +129,8 @@ export async function POST(req: NextRequest) {
     var validationError = validateRequired(body, ['projectId', 'date', 'category', 'description', 'amount'])
     if (validationError) return validationError
 
+    var userId = user.id
+
     var createResult = await safeDbOp(
       () => db.cost.create({
         data: {
@@ -139,7 +141,7 @@ export async function POST(req: NextRequest) {
           description: String(body.description),
           amount: parseNumber(body.amount, 0),
           notes: body.notes ? String(body.notes) : null,
-          recordedById: user.id,
+          recordedById: userId,
         },
       }),
       'إنشاء التكلفة'
@@ -151,7 +153,7 @@ export async function POST(req: NextRequest) {
       safeDbOp(
         () => db.auditLog.create({
           data: {
-            userId: user.id,
+            userId: userId,
             projectId: String(body.projectId),
             action: 'create',
             entity: 'cost',
