@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -15,7 +14,7 @@ import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   PieChart, Pie, Cell, Legend
 } from 'recharts'
-import { Plus, DollarSign, TrendingUp, TrendingDown, Wallet, BarChart3 } from 'lucide-react'
+import { Plus, DollarSign, TrendingUp, TrendingDown, Wallet, BarChart3, Pencil, Trash2 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
 import { toast } from 'sonner'
@@ -56,7 +55,7 @@ export default function CostsPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingCostId, setEditingCostId] = useState<string | null>(null)
   const language = useAppStore((s) => s.language)
-  const token = useAppStore((s) => s.token)
+  const user = useAppStore((s) => s.user)
   const isRtl = language === 'ar'
 
   // Revenue data
@@ -70,31 +69,44 @@ export default function CostsPage() {
 
   async function fetchCosts() {
     setLoading(true)
-    const res = await authedFetch('/api/costs' + (selectedProject !== 'all' ? `?projectId=${selectedProject}` : ''))
-    const data = await res.json()
-    setCosts(data.costs || [])
-    setByCategory(data.byCategory || [])
-    setTotal(data.total || 0)
+    try {
+      const res = await authedFetch('/api/costs' + (selectedProject !== 'all' ? `?projectId=${selectedProject}` : ''))
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}))
+        console.error('Costs API error:', res.status, errData)
+        toast.error(isRtl ? 'فشل جلب التكاليف' : 'Failed to fetch costs')
+        setLoading(false)
+        return
+      }
+      const data = await res.json()
+      setCosts(data.costs || [])
+      setByCategory(data.byCategory || [])
+      setTotal(data.total || 0)
 
-    // Get revenue from reports
-    const repParams = new URLSearchParams()
-    if (selectedProject !== 'all') repParams.set('projectId', selectedProject)
-    repParams.set('limit', '500')
-    const repRes = await authedFetch('/api/daily-reports?' + repParams.toString())
-    const repData = await repRes.json()
-    const reports = (repData.reports || []).filter((r: any) => r.status === 'approved')
-    const totalRev = reports.reduce((s: number, r: any) => s + r.dailyRevenue, 0)
-    setRevenue(totalRev)
-    setProjectReports(reports)
-
+      // Get revenue from reports
+      const repParams = new URLSearchParams()
+      if (selectedProject !== 'all') repParams.set('projectId', selectedProject)
+      repParams.set('limit', '500')
+      const repRes = await authedFetch('/api/daily-reports?' + repParams.toString())
+      if (repRes.ok) {
+        const repData = await repRes.json()
+        const reports = (repData.reports || []).filter((r: any) => r.status === 'approved')
+        const totalRev = reports.reduce((s: number, r: any) => s + r.dailyRevenue, 0)
+        setRevenue(totalRev)
+        setProjectReports(reports)
+      }
+    } catch (err) {
+      console.error('fetchCosts error:', err)
+      toast.error(isRtl ? 'خطأ في الاتصال' : 'Connection error')
+    }
     setLoading(false)
   }
 
   useEffect(() => {
-    if (!token) return
+    if (!user) return
     fetchCosts()
     authedFetch('/api/projects/list').then(r => r.json()).then(d => setProjects((d.projects || []).filter((p: any) => p.showInCosts !== false)))
-  }, [selectedProject, token])
+  }, [selectedProject, user])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -341,7 +353,7 @@ export default function CostsPage() {
                       {c.amount.toLocaleString()} {isRtl ? 'ر.ع' : 'OMR'}
                     </p>
                     <div className="flex gap-1">
-                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => {
+                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-blue-600 hover:text-blue-700 hover:bg-blue-50" onClick={() => {
                         setEditingCostId(c.id)
                         setFormData({
                           projectId: c.projectId || '',
@@ -353,10 +365,10 @@ export default function CostsPage() {
                         })
                         setDialogOpen(true)
                       }}>
-                        ✏️
+                        <Pencil className="h-3.5 w-3.5" />
                       </Button>
-                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-destructive" onClick={() => deleteCost(c.id)}>
-                        🗑️
+                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => deleteCost(c.id)}>
+                        <Trash2 className="h-3.5 w-3.5" />
                       </Button>
                     </div>
                   </div>
