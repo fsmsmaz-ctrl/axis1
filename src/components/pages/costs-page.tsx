@@ -15,7 +15,7 @@ import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   PieChart, Pie, Cell, Legend
 } from 'recharts'
-import { Plus, DollarSign, TrendingUp, TrendingDown, Wallet, BarChart3, Pencil, Trash2 } from 'lucide-react'
+import { Plus, DollarSign, TrendingUp, TrendingDown, Wallet, BarChart3 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
 import { toast } from 'sonner'
@@ -318,9 +318,9 @@ export default function CostsPage() {
               {isRtl ? 'لا توجد تكاليف' : 'No costs'}
             </div>
           ) : (
-            <div className="space-y-2 max-h-[600px] overflow-y-auto">
+            <div className="space-y-2 max-h-96 overflow-y-auto">
               {costs.map((c) => (
-                <div key={c.id} className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-muted/50 transition">
+                <div key={c.id} className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-muted/50 transition group">
                   <div
                     className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
                     style={{ backgroundColor: (categoryColors[c.category] || '#94a3b8') + '20' }}
@@ -341,7 +341,7 @@ export default function CostsPage() {
                       {c.amount.toLocaleString()} {isRtl ? 'ر.ع' : 'OMR'}
                     </p>
                     <div className="flex gap-1">
-                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-blue-600 hover:text-blue-700 hover:bg-blue-50" onClick={() => {
+                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => {
                         setEditingCostId(c.id)
                         setFormData({
                           projectId: c.projectId || '',
@@ -353,10 +353,10 @@ export default function CostsPage() {
                         })
                         setDialogOpen(true)
                       }}>
-                        <Pencil className="h-3.5 w-3.5" />
+                        ✏️
                       </Button>
-                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => deleteCost(c.id)}>
-                        <Trash2 className="h-3.5 w-3.5" />
+                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-destructive" onClick={() => deleteCost(c.id)}>
+                        🗑️
                       </Button>
                     </div>
                   </div>
