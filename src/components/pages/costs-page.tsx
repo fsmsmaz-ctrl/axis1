@@ -350,7 +350,7 @@ export default function CostsPage() {
       {/* Costs list */}
       <Card>
         <CardHeader>
-          <CardTitle>{isRtl ? 'آخر التكاليف المسجلة' : 'Recent Costs'}</CardTitle>
+          <CardTitle>{isRtl ? 'التكاليف المسجلة' : 'Recorded Costs'}</CardTitle>
         </CardHeader>
         <CardContent>
           {loading ? (
@@ -360,7 +360,7 @@ export default function CostsPage() {
               {isRtl ? 'لا توجد تكاليف' : 'No costs'}
             </div>
           ) : (
-            <div className="space-y-2 max-h-96 overflow-y-auto">
+            <div className="space-y-2">
               {costs.map(function(c) {
                 return (
                   <div key={c.id} className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-muted/50 transition group">
