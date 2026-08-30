@@ -16,6 +16,7 @@ export async function GET(req: NextRequest) {
   const where: any = {}
   if (projectId) where.projectId = projectId
 
+  // Run both queries in parallel
   const [costsResult, byCategoryResult] = await Promise.all([
     safeDbOp(
       () => db.cost.findMany({
@@ -46,61 +47,7 @@ export async function GET(req: NextRequest) {
     : []
   const total = costs.reduce((s: number, c: any) => s + c.amount, 0)
 
-  // Active rental assets from CompanyAsset (this month)
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1)
-  const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59, 999)
-
-  const rentalResult = await safeDbOp(
-    () => db.companyAsset.findMany({
-      where: {
-        ownership: 'rented',
-        rentalCost: { gt: 0 },
-        status: { notIn: ['returned', 'damaged'] },
-        OR: [
-          { rentalStart: null, rentalEnd: null },
-          { rentalStart: null, rentalEnd: { gte: monthStart } },
-          { rentalStart: { lte: monthEnd }, rentalEnd: null },
-          { rentalStart: { lte: monthEnd }, rentalEnd: { gte: monthStart } },
-        ],
-        ...(projectId ? { projectId: projectId } : {}),
-      },
-      select: { id: true, name: true, supplier: true, rentalCost: true, project: { select: { name: true } } },
-    }),
-    'جلب الإيجارات'
-  )
-
-  const rentalAssets = rentalResult.success ? rentalResult.data : []
-  const totalRentalCost = rentalAssets.reduce((s: number, a: any) => s + (a.rentalCost || 0), 0)
-
-  // Merge rental into byCategory
-  const allByCategory = byCategory.slice()
-  if (totalRentalCost > 0) {
-    const existingRental = allByCategory.find((c: any) => c.category === 'rental')
-    if (existingRental) {
-      existingRental.amount += totalRentalCost
-    } else {
-      allByCategory.push({ category: 'rental', amount: totalRentalCost })
-    }
-  }
-
-  const grandTotal = total + totalRentalCost
-
-  return NextResponse.json({
-    costs,
-    byCategory: allByCategory,
-    total,
-    totalRentalCost,
-    grandTotal,
-    rentalAssets: rentalAssets.map((a: any) => ({
-      id: a.id,
-      name: a.name,
-      supplier: a.supplier || '-',
-      rentalCost: a.rentalCost || 0,
-      projectName: a.project ? a.project.name : '-',
-    })),
-  })
+  return NextResponse.json({ costs, byCategory, total })
 }
 
 export async function POST(req: NextRequest) {
@@ -133,6 +80,7 @@ export async function POST(req: NextRequest) {
     )
     if (!createResult.success) return createResult.response
 
+    // Audit log + notification (non-critical, fire-and-forget)
     Promise.all([
       safeDbOp(
         () => db.auditLog.create({
@@ -153,7 +101,7 @@ export async function POST(req: NextRequest) {
             projectId: String(body.projectId),
             type: 'cost_overrun',
             title: 'تكلفة جديدة',
-            message: `تم إضافة تكلفة: ${body.category} - ${body.description} بمبلغ ${body.amount} ر.ع`,
+            message: `تم إضافة تكلفة: ${body.category} - ${body.description} بمبلغ ${body.amount} ريال عماني`,
             severity: 'info',
           },
         }),
