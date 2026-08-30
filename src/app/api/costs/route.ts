@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
           dailyReport: { select: { id: true, reportDate: true } },
           recordedBy: { select: { name: true, nameEn: true } },
         },
-        take: 500,
+        take: 200,
       }),
       'جلب التكاليف'
     ),
