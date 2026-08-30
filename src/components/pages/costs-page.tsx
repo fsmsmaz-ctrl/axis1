@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -11,673 +11,649 @@ import { Textarea } from '@/components/ui/textarea'
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle
 } from '@/components/ui/dialog'
-import { Plus, DollarSign, TrendingDown, Search, Trash2, Building2, Fuel, Wrench, Users, Home, Truck, Droplets, Package, MoreHorizontal, BarChart3, PieChartIcon } from 'lucide-react'
-import { useAppStore } from '@/lib/store'
-import { authedFetch, getErrorMessage } from '@/lib/api-client'
-import { toast } from 'sonner'
 import {
-  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  Tooltip, PieChart, Pie, Cell, Legend
+  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+  PieChart, Pie, Cell, Legend
 } from 'recharts'
+import { Plus, DollarSign, TrendingUp, TrendingDown, Wallet, BarChart3, Pencil, Trash2, ChevronDown, ChevronUp } from 'lucide-react'
+import { useAppStore } from '@/lib/store'
+import { authedFetch } from '@/lib/api-client'
+import { toast } from 'sonner'
 
-var categoryIcons: Record<string, any> = {
-  labor: Users,
-  housing: Home,
-  transport: Truck,
-  fuel: Fuel,
-  maintenance: Wrench,
-  parts: Package,
-  oil: Droplets,
-  rental: Building2,
-  other: MoreHorizontal,
-}
-
-var categoryLabels: Record<string, { ar: string; en: string }> = {
+const categoryLabels: Record<string, { ar: string; en: string }> = {
   labor: { ar: 'أجور العمال', en: 'Labor' },
-  housing: { ar: 'السكن', en: 'Housing' },
-  transport: { ar: 'النقل', en: 'Transport' },
-  fuel: { ar: 'الديزل', en: 'Fuel' },
-  maintenance: { ar: 'صيانة المعدات', en: 'Maintenance' },
-  parts: { ar: 'قطع الغيار', en: 'Parts' },
-  oil: { ar: 'استهلاك الزيوت', en: 'Oil' },
-  rental: { ar: 'إيجار المعدات', en: 'Rental' },
-  other: { ar: 'مصاريف أخرى', en: 'Other' },
+  housing: { ar: 'سكن', en: 'Housing' },
+  transport: { ar: 'نقل', en: 'Transport' },
+  fuel: { ar: 'ديزل', en: 'Fuel' },
+  maintenance: { ar: 'صيانة', en: 'Maintenance' },
+  parts: { ar: 'قطع غيار', en: 'Parts' },
+  oil: { ar: 'زيوت', en: 'Oil' },
+  safety: { ar: 'سلامة', en: 'Safety' },
+  rental: { ar: 'إيجار', en: 'Rental' },
+  other: { ar: 'أخرى', en: 'Other' },
 }
 
-var categoryColors: Record<string, string> = {
-  labor: 'bg-blue-100 text-blue-700',
-  housing: 'bg-purple-100 text-purple-700',
-  transport: 'bg-orange-100 text-orange-700',
-  fuel: 'bg-red-100 text-red-700',
-  maintenance: 'bg-yellow-100 text-yellow-700',
-  parts: 'bg-teal-100 text-teal-700',
-  oil: 'bg-indigo-100 text-indigo-700',
-  rental: 'bg-cyan-100 text-cyan-700',
-  other: 'bg-gray-100 text-gray-700',
-}
-
-var chartColors: Record<string, string> = {
-  labor: '#3b82f6',
-  housing: '#a855f7',
-  transport: '#f97316',
-  fuel: '#ef4444',
-  maintenance: '#eab308',
-  parts: '#14b8a6',
+const categoryColors: Record<string, string> = {
+  labor: '#f97316',
+  fuel: '#06b6d4',
+  maintenance: '#8b5cf6',
+  transport: '#10b981',
+  housing: '#f59e0b',
+  parts: '#ec4899',
   oil: '#6366f1',
-  rental: '#06b6d4',
-  other: '#6b7280',
+  safety: '#ef4444',
+  rental: '#14b8a6',
+  other: '#64748b',
 }
-
-var allChartColors = ['#3b82f6', '#f97316', '#a855f7', '#14b8a6', '#ef4444', '#eab308', '#06b6d4', '#6366f1', '#ec4899', '#22c55e']
-
-var monthsAr = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر']
-var monthsEn = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 export default function CostsPage() {
-  var [costs, setCosts] = useState<any[]>([])
-  var [projects, setProjects] = useState<any[]>([])
-  var [byCategory, setByCategory] = useState<any[]>([])
-  var [rentalAssets, setRentalAssets] = useState<any[]>([])
-  var [totalCost, setTotalCost] = useState(0)
-  var [totalRentalCost, setTotalRentalCost] = useState(0)
-  var [grandTotal, setGrandTotal] = useState(0)
-  var [loading, setLoading] = useState(true)
-  var [selectedProject, setSelectedProject] = useState<string>('all')
-  var [dialogOpen, setDialogOpen] = useState(false)
-  var [saving, setSaving] = useState(false)
-  var [search, setSearch] = useState('')
-  var language = useAppStore((s) => s.language)
-  var user = useAppStore((s) => s.user)
-  var isRtl = language === 'ar'
+  const [costs, setCosts] = useState<any[]>([])
+  const [byCategory, setByCategory] = useState<any[]>([])
+  const [total, setTotal] = useState(0)
+  const [totalRentalCost, setTotalRentalCost] = useState(0)
+  const [grandTotal, setGrandTotal] = useState(0)
+  const [rentalAssets, setRentalAssets] = useState<any[]>([])
+  const [projects, setProjects] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [selectedProject, setSelectedProject] = useState<string>('all')
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [editingCostId, setEditingCostId] = useState<string | null>(null)
+  const language = useAppStore((s) => s.language)
+  const token = useAppStore((s) => s.token)
+  const isRtl = language === 'ar'
 
-  var emptyForm = { projectId: '', date: new Date().toISOString().split('T')[0], category: 'labor', description: '', amount: '', notes: '' }
-  var [formData, setFormData] = useState({ ...emptyForm })
+  const [revenue, setRevenue] = useState(0)
+  const [approvedReports, setApprovedReports] = useState<any[]>([])
+  const [showRevenueTable, setShowRevenueTable] = useState(true)
 
-  async function fetchData() {
+  const [formData, setFormData] = useState({
+    projectId: '', date: new Date().toISOString().split('T')[0],
+    category: 'labor', description: '', amount: '', notes: '',
+  })
+
+  async function fetchCosts() {
     setLoading(true)
     try {
-      var res = await authedFetch('/api/costs' + (selectedProject !== 'all' ? '?projectId=' + selectedProject : ''))
-      var data = await res.json()
+      const costUrl = '/api/costs' + (selectedProject !== 'all' ? `?projectId=${selectedProject}` : '')
+      const res = await authedFetch(costUrl)
+      const data = await res.json()
       setCosts(data.costs || [])
       setByCategory(data.byCategory || [])
-      setTotalCost(data.total || 0)
+      setTotal(data.total || 0)
       setTotalRentalCost(data.totalRentalCost || 0)
       setGrandTotal(data.grandTotal || 0)
       setRentalAssets(data.rentalAssets || [])
-    } catch {
-      setCosts([])
+
+      const repParams = new URLSearchParams()
+      if (selectedProject !== 'all') repParams.set('projectId', selectedProject)
+      repParams.set('limit', '500')
+      const repRes = await authedFetch('/api/daily-reports?' + repParams.toString())
+      const repData = await repRes.json()
+      const reports = (repData.reports || []).filter((r: any) => r.status === 'approved')
+      const totalRev = reports.reduce((s: number, r: any) => s + (r.dailyRevenue || 0), 0)
+      setRevenue(totalRev)
+      setApprovedReports(reports)
+    } catch (e) {
+      console.error('fetchCosts error:', e)
     }
     setLoading(false)
   }
 
   async function fetchProjects() {
     try {
-      var res = await authedFetch('/api/projects/list?_t=' + Date.now())
+      const res = await authedFetch('/api/projects/list?_t=' + Date.now(), { cache: 'no-store' })
       if (!res.ok) { setProjects([]); return }
-      var data = await res.json()
-      setProjects(data.projects || [])
+      const data = await res.json()
+      setProjects((data.projects || []).filter((p: any) => p.showInCosts !== false))
     } catch {
       setProjects([])
     }
   }
 
-  useEffect(function() {
-    if (!user) return
+  useEffect(() => {
+    if (!token) return
+    fetchCosts()
     fetchProjects()
-  }, [user])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token])
 
-  useEffect(function() {
-    if (!user) return
-    fetchData()
-  }, [user, selectedProject])
+  useEffect(() => {
+    if (!token) return
+    fetchCosts()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedProject])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    setSaving(true)
     try {
-      var res = await authedFetch('/api/costs', {
-        method: 'POST',
+      const url = editingCostId ? `/api/costs/${editingCostId}` : '/api/costs'
+      const method = editingCostId ? 'PUT' : 'POST'
+      const res = await authedFetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),
       })
       if (res.ok) {
-        toast.success(isRtl ? 'تم إضافة التكلفة' : 'Cost added')
+        toast.success(editingCostId ? (isRtl ? 'تم تحديث التكلفة' : 'Cost updated') : (isRtl ? 'تم إضافة التكلفة' : 'Cost added'))
         setDialogOpen(false)
-        setFormData({ ...emptyForm })
-        fetchData()
-      } else {
-        var data = await res.json().catch(function() { return {} })
-        toast.error(getErrorMessage(data.error || '', isRtl, data.message))
+        setEditingCostId(null)
+        setFormData({
+          projectId: projects[0]?.id || '', date: new Date().toISOString().split('T')[0],
+          category: 'labor', description: '', amount: '', notes: '',
+        })
+        fetchCosts()
       }
     } catch {
       toast.error(isRtl ? 'حدث خطأ' : 'Error')
-    } finally {
-      setSaving(false)
     }
   }
 
-  async function handleDelete(cost: any) {
-    var msg = isRtl ? 'هل أنت متأكد من حذف هذه التكلفة؟' : 'Delete this cost?'
-    if (!confirm(msg)) return
+  async function deleteCost(id: string) {
+    if (!confirm(isRtl ? 'هل أنت متأكد من حذف هذه التكلفة؟' : 'Are you sure you want to delete this cost?')) return
     try {
-      var res = await authedFetch('/api/costs/' + cost.id, { method: 'DELETE' })
+      const res = await authedFetch(`/api/costs/${id}`, { method: 'DELETE' })
       if (res.ok) {
-        toast.success(isRtl ? 'تم الحذف' : 'Deleted')
-        fetchData()
+        toast.success(isRtl ? 'تم حذف التكلفة' : 'Cost deleted')
+        fetchCosts()
       }
     } catch {
       toast.error(isRtl ? 'حدث خطأ' : 'Error')
     }
   }
+
+  function openEdit(c: any) {
+    setEditingCostId(c.id)
+    setFormData({
+      projectId: c.projectId || '',
+      date: new Date(c.date).toISOString().split('T')[0],
+      category: c.category,
+      description: c.description,
+      amount: String(c.amount),
+      notes: c.notes || '',
+    })
+    setDialogOpen(true)
+  }
+
+  const netProfit = revenue - grandTotal
+  const profitMargin = revenue > 0 ? (netProfit / revenue) * 100 : 0
+  const totalMeters = approvedReports.reduce((s, r) => s + (r.dailyMeters || 0), 0)
+  const costPerMeter = totalMeters > 0 ? total / totalMeters : 0
+
+  const pieData = byCategory.map((c) => ({
+    name: isRtl ? (categoryLabels[c.category]?.ar || c.category) : (categoryLabels[c.category]?.en || c.category),
+    value: c.amount,
+    color: categoryColors[c.category] || '#94a3b8',
+  }))
+
+  const revenueByProject: Record<string, { name: string; meters: number; revenue: number; count: number }> = {}
+  approvedReports.forEach((r) => {
+    const pName = r.project ? r.project.name : (isRtl ? 'غير معروف' : 'Unknown')
+    if (!revenueByProject[r.projectId]) {
+      revenueByProject[r.projectId] = { name: pName, meters: 0, revenue: 0, count: 0 }
+    }
+    revenueByProject[r.projectId].meters += (r.dailyMeters || 0)
+    revenueByProject[r.projectId].revenue += (r.dailyRevenue || 0)
+    revenueByProject[r.projectId].count += 1
+  })
+  const projectRevenueList = Object.values(revenueByProject)
 
   function getCatLabel(cat: string) {
-    var c = categoryLabels[cat]
-    return c ? (isRtl ? c.ar : c.en) : cat
+    return isRtl ? (categoryLabels[cat]?.ar || cat) : (categoryLabels[cat]?.en || cat)
   }
-
-  function getCatColor(cat: string) {
-    return categoryColors[cat] || 'bg-gray-100 text-gray-700'
-  }
-
-  function getCatIcon(cat: string) {
-    return categoryIcons[cat] || MoreHorizontal
-  }
-
-  var filtered = costs.filter(function(c: any) {
-    if (!search) return true
-    var s = search.toLowerCase()
-    return (c.description || '').toLowerCase().includes(s) ||
-      (c.category || '').toLowerCase().includes(s) ||
-      (c.project?.name || '').toLowerCase().includes(s) ||
-      String(c.amount).includes(s)
-  })
-
-  /* ---- Chart Data ---- */
-  var pieData = useMemo(function() {
-    return byCategory.map(function(c: any) {
-      return { name: getCatLabel(c.category), value: c.amount || 0, color: chartColors[c.category] || '#6b7280' }
-    })
-  }, [byCategory])
-
-  var monthlyData = useMemo(function() {
-    var map: Record<string, number> = {}
-    costs.forEach(function(c: any) {
-      if (!c.date) return
-      var key = c.date.substring(0, 7)
-      map[key] = (map[key] || 0) + c.amount
-    })
-    return Object.keys(map).sort().map(function(k) {
-      var parts = k.split('-')
-      var label = isRtl
-        ? monthsAr[parseInt(parts[1]) - 1] + ' ' + parts[0]
-        : monthsEn[parseInt(parts[1]) - 1] + ' ' + parts[0]
-      return { month: label, amount: map[k] }
-    })
-  }, [costs, isRtl])
-
-  var projectData = useMemo(function() {
-    var map: Record<string, { name: string; amount: number }> = {}
-    costs.forEach(function(c: any) {
-      var pName = c.project?.name || (isRtl ? 'غير محدد' : 'Unassigned')
-      if (!map[pName]) map[pName] = { name: pName, amount: 0 }
-      map[pName].amount += c.amount
-    })
-    return Object.values(map).sort(function(a, b) { return b.amount - a.amount })
-  }, [costs, isRtl])
-
-  var catProjectData = useMemo(function() {
-    var catSet = new Set<string>()
-    costs.forEach(function(c: any) { if (c.category) catSet.add(c.category) })
-    var categories = Array.from(catSet)
-    var projectSet = new Set<string>()
-    costs.forEach(function(c: any) { projectSet.add(c.project?.name || (isRtl ? 'غير محدد' : 'Unassigned')) })
-    var projectNames = Array.from(projectSet)
-    return projectNames.map(function(pName) {
-      var row: any = { project: pName }
-      costs.forEach(function(c: any) {
-        if ((c.project?.name || (isRtl ? 'غير محدد' : 'Unassigned')) !== pName) return
-        row[c.category] = (row[c.category] || 0) + c.amount
-      })
-      return row
-    })
-  }, [costs, isRtl])
-
-  var hasChartData = pieData.length > 0 || monthlyData.length > 0
 
   return (
     <div className="space-y-4">
-      {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold">{isRtl ? 'التكاليف والإيرادات' : 'Costs & Revenue'}</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            {isRtl ? costs.length + ' بند تكلفة' : costs.length + ' cost items'}
+            {isRtl ? 'متابعة التكاليف والإيرادات وحساب الأرباح' : 'Track costs, revenue, and profit'}
           </p>
         </div>
-        {user && (
-          <Button onClick={function() { setFormData({ ...emptyForm, projectId: projects[0]?.id || '' }); setDialogOpen(true) }}>
-            <Plus className="h-4 w-4 ml-2" />
-            {isRtl ? 'إضافة تكلفة' : 'Add Cost'}
-          </Button>
+        <Button onClick={() => {
+          setEditingCostId(null)
+          setFormData({
+            projectId: projects[0]?.id || '', date: new Date().toISOString().split('T')[0],
+            category: 'labor', description: '', amount: '', notes: '',
+          })
+          setDialogOpen(true)
+        }}>
+          <Plus className="h-4 w-4 ml-2" />
+          {isRtl ? 'إضافة تكلفة' : 'Add Cost'}
+        </Button>
+      </div>
+
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <Card className="bg-gradient-to-br from-emerald-50 to-emerald-50/30 border-emerald-200">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 mb-1">
+              <TrendingUp className="h-4 w-4 text-emerald-600" />
+              <span className="text-xs text-muted-foreground">{isRtl ? 'الإيرادات' : 'Revenue'}</span>
+            </div>
+            <p className="text-xl font-bold text-emerald-700">
+              {revenue.toLocaleString(isRtl ? 'ar-EG' : 'en-US', { maximumFractionDigits: 0 })}
+              <span className="text-sm font-normal mr-1">{isRtl ? 'ر.ع' : 'OMR'}</span>
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {approvedReports.length} {isRtl ? 'تقرير معتمد' : 'approved reports'}
+            </p>
+          </CardContent>
+        </Card>
+        <Card className="bg-gradient-to-br from-red-50 to-red-50/30 border-red-200">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 mb-1">
+              <TrendingDown className="h-4 w-4 text-red-600" />
+              <span className="text-xs text-muted-foreground">{isRtl ? 'التكاليف الكلية' : 'Total Costs'}</span>
+            </div>
+            <p className="text-xl font-bold text-red-700">
+              {grandTotal.toLocaleString(isRtl ? 'ar-EG' : 'en-US', { maximumFractionDigits: 0 })}
+              <span className="text-sm font-normal mr-1">{isRtl ? 'ر.ع' : 'OMR'}</span>
+            </p>
+            {totalRentalCost > 0 && (
+              <p className="text-xs text-teal-600 mt-1">
+                {isRtl ? `شامل ${totalRentalCost.toLocaleString(isRtl ? 'ar-EG' : 'en-US', { maximumFractionDigits: 0 })} ر.ع إيجارات شهرية` : `incl. ${totalRentalCost.toLocaleString('en-US', { maximumFractionDigits: 0 })} OMR monthly rentals`}
+              </p>
+            )}
+          </CardContent>
+        </Card>
+        <Card className={netProfit >= 0 ? 'bg-gradient-to-br from-blue-50 to-blue-50/30 border-blue-200' : 'bg-gradient-to-br from-red-50 to-red-50/30 border-red-200'}>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 mb-1">
+              <Wallet className="h-4 w-4 text-blue-600" />
+              <span className="text-xs text-muted-foreground">{isRtl ? 'صافي الربح' : 'Net Profit'}</span>
+            </div>
+            <p className={`text-xl font-bold ${netProfit >= 0 ? 'text-blue-700' : 'text-red-700'}`}>
+              {netProfit.toLocaleString(isRtl ? 'ar-EG' : 'en-US', { maximumFractionDigits: 0 })}
+              <span className="text-sm font-normal mr-1">{isRtl ? 'ر.ع' : 'OMR'}</span>
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 mb-1">
+              <DollarSign className="h-4 w-4 text-purple-600" />
+              <span className="text-xs text-muted-foreground">{isRtl ? 'هامش الربح' : 'Profit Margin'}</span>
+            </div>
+            <p className={`text-xl font-bold ${profitMargin >= 0 ? 'text-purple-700' : 'text-red-700'}`}>
+              {profitMargin.toFixed(1)}%
+            </p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {isRtl ? 'تكلفة المتر' : 'Cost/m'}: {costPerMeter.toFixed(1)} {isRtl ? 'ر.ع' : 'OMR'}
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Select value={selectedProject} onValueChange={setSelectedProject}>
+        <SelectTrigger className="w-full sm:w-[300px]">
+          <SelectValue placeholder={isRtl ? 'اختر المشروع' : 'Select project'} />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">{isRtl ? 'كل المشاريع' : 'All Projects'}</SelectItem>
+          {projects.map((p) => (
+            <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
+      {/* Revenue Details */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center justify-between cursor-pointer select-none" onClick={() => setShowRevenueTable(!showRevenueTable)}>
+            <span className="flex items-center gap-2">
+              <TrendingUp className="h-5 w-5 text-emerald-600" />
+              {isRtl ? 'تفاصيل الإيرادات (من التقارير المعتمدة)' : 'Revenue Details (from approved reports)'}
+            </span>
+            {showRevenueTable ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+          </CardTitle>
+        </CardHeader>
+        {showRevenueTable && (
+          <CardContent className="space-y-4">
+            {projectRevenueList.length > 0 && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {projectRevenueList.map((p, idx) => (
+                  <div key={idx} className="p-3 rounded-lg border bg-emerald-50/50">
+                    <p className="font-medium text-sm truncate">{p.name}</p>
+                    <div className="flex items-baseline gap-2 mt-1">
+                      <span className="text-lg font-bold text-emerald-700">{p.revenue.toLocaleString(isRtl ? 'ar-EG' : 'en-US', { maximumFractionDigits: 0 })}</span>
+                      <span className="text-xs text-muted-foreground">{isRtl ? 'ر.ع' : 'OMR'}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {p.meters.toFixed(1)} {isRtl ? 'م' : 'm'} / {p.count} {isRtl ? 'تقرير' : 'reports'}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {approvedReports.length === 0 ? (
+              <div className="py-8 text-center text-muted-foreground text-sm">
+                {isRtl ? 'لا توجد تقارير معتمدة بعد' : 'No approved reports yet'}
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="p-2 text-right">{isRtl ? 'التاريخ' : 'Date'}</th>
+                      <th className="p-2 text-right">{isRtl ? 'المشروع' : 'Project'}</th>
+                      <th className="p-2 text-right">{isRtl ? 'خط الحفر' : 'Drive Line'}</th>
+                      <th className="p-2 text-right">{isRtl ? 'الأمتار' : 'Meters'}</th>
+                      <th className="p-2 text-right">{isRtl ? 'سعر المتر' : 'Price/m'}</th>
+                      <th className="p-2 text-right">{isRtl ? 'الإيراد' : 'Revenue'}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {approvedReports.map((r) => (
+                      <tr key={r.id} className="border-b hover:bg-muted/30">
+                        <td className="p-2">{r.reportDate ? new Date(r.reportDate).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US') : '-'}</td>
+                        <td className="p-2">{r.project ? r.project.name : '-'}</td>
+                        <td className="p-2">{r.driveLine ? r.driveLine.lineNumber : '-'}</td>
+                        <td className="p-2">{r.dailyMeters || 0} {isRtl ? 'م' : 'm'}</td>
+                        <td className="p-2">{r.project ? (r.project.pricePerMeter || 0) : 0} {isRtl ? 'ر.ع' : 'OMR'}</td>
+                        <td className="p-2 font-semibold text-emerald-700">{(r.dailyRevenue || 0).toLocaleString()} {isRtl ? 'ر.ع' : 'OMR'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t-2 font-bold">
+                      <td className="p-2" colSpan={3}>{isRtl ? 'الإجمالي' : 'Total'}</td>
+                      <td className="p-2">{totalMeters.toFixed(1)} {isRtl ? 'م' : 'm'}</td>
+                      <td className="p-2">-</td>
+                      <td className="p-2 text-emerald-700">{revenue.toLocaleString(isRtl ? 'ar-EG' : 'en-US', { maximumFractionDigits: 0 })} {isRtl ? 'ر.ع' : 'OMR'}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+          </CardContent>
         )}
-      </div>
-
-      {/* Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Card>
-          <CardContent className="p-4 text-center">
-            <DollarSign className="h-5 w-5 mx-auto text-muted-foreground mb-1" />
-            <p className="text-xs text-muted-foreground">{isRtl ? 'إجمالي التكاليف' : 'Total Costs'}</p>
-            <p className="font-bold text-lg">{totalCost.toLocaleString()} <span className="text-xs font-normal">{isRtl ? 'ر.ع' : 'OMR'}</span></p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 text-center">
-            <Building2 className="h-5 w-5 mx-auto text-cyan-600 mb-1" />
-            <p className="text-xs text-muted-foreground">{isRtl ? 'إيجارات المعدات' : 'Rental Costs'}</p>
-            <p className="font-bold text-lg text-cyan-700">{totalRentalCost.toLocaleString()} <span className="text-xs font-normal">{isRtl ? 'ر.ع' : 'OMR'}</span></p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 text-center">
-            <TrendingDown className="h-5 w-5 mx-auto text-orange-600 mb-1" />
-            <p className="text-xs text-muted-foreground">{isRtl ? 'الإجمالي الكلي' : 'Grand Total'}</p>
-            <p className="font-bold text-lg text-orange-700">{grandTotal.toLocaleString()} <span className="text-xs font-normal">{isRtl ? 'ر.ع' : 'OMR'}</span></p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 text-center">
-            <Package className="h-5 w-5 mx-auto text-primary mb-1" />
-            <p className="text-xs text-muted-foreground">{isRtl ? 'عدد البنود' : 'Items'}</p>
-            <p className="font-bold text-lg">{costs.length}</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Category Breakdown + Filter */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* Filter + Search */}
-        <div className="space-y-3">
-          <Select value={selectedProject} onValueChange={setSelectedProject}>
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder={isRtl ? 'اختر المشروع' : 'Select project'} />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">{isRtl ? 'كل المشاريع' : 'All Projects'}</SelectItem>
-              {projects.map(function(p: any) {
-                return <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-              })}
-            </SelectContent>
-          </Select>
-          <div className="relative">
-            <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder={isRtl ? 'بحث...' : 'Search...'}
-              value={search}
-              onChange={function(e) { setSearch(e.target.value) }}
-              className="pr-10"
-            />
-          </div>
-        </div>
-
-        {/* Categories */}
-        <div className="md:col-span-2">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">{isRtl ? 'التكاليف حسب الفئة' : 'Costs by Category'}</CardTitle>
-            </CardHeader>
-            <CardContent className="pt-0">
-              {byCategory.length === 0 ? (
-                <p className="text-sm text-muted-foreground py-4 text-center">{isRtl ? 'لا توجد بيانات' : 'No data'}</p>
-              ) : (
-                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
-                  {byCategory.map(function(cat: any) {
-                    var CatIcon = getCatIcon(cat.category)
-                    var pct = grandTotal > 0 ? ((cat.amount / grandTotal) * 100).toFixed(1) : '0.0'
-                    return (
-                      <div key={cat.category} className="flex flex-col items-center p-2 rounded-lg bg-muted/50">
-                        <CatIcon className="h-4 w-4 mb-1 text-muted-foreground" />
-                        <span className="text-[10px] text-muted-foreground text-center leading-tight">{getCatLabel(cat.category)}</span>
-                        <span className="font-bold text-sm mt-0.5">{(cat.amount || 0).toLocaleString()}</span>
-                        <span className="text-[10px] text-muted-foreground">{pct}%</span>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-
-      {/* Charts Section */}
-      {hasChartData && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {/* Pie Chart - Category Distribution */}
-          {pieData.length > 0 && (
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <PieChartIcon className="h-4 w-4 text-primary" />
-                  {isRtl ? 'توزيع التكاليف حسب الفئة' : 'Cost Distribution by Category'}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={260}>
-                  <PieChart>
-                    <Pie
-                      data={pieData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={50}
-                      outerRadius={90}
-                      paddingAngle={3}
-                      dataKey="value"
-                      stroke="none"
-                    >
-                      {pieData.map(function(entry: any, index: number) {
-                        return <Cell key={index} fill={entry.color} />
-                      })}
-                    </Pie>
-                    <Tooltip
-                      formatter={function(value: number) {
-                        return [value.toLocaleString() + ' ' + (isRtl ? 'ر.ع' : 'OMR'), isRtl ? 'المبلغ' : 'Amount']
-                      }}
-                      contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e5e7eb' }}
-                    />
-                    <Legend
-                      wrapperStyle={{ fontSize: 11 }}
-                      formatter={function(value: string) {
-                        return <span className="text-xs">{value}</span>
-                      }}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Bar Chart - Monthly Trend */}
-          {monthlyData.length > 0 && (
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <BarChart3 className="h-4 w-4 text-primary" />
-                  {isRtl ? 'التكاليف الشهرية' : 'Monthly Costs'}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={260}>
-                  <BarChart data={monthlyData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                    <XAxis
-                      dataKey="month"
-                      tick={{ fontSize: 10 }}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <YAxis
-                      tick={{ fontSize: 10 }}
-                      axisLine={false}
-                      tickLine={false}
-                      tickFormatter={function(v) { return v >= 1000 ? (v / 1000).toFixed(0) + 'k' : String(v) }}
-                    />
-                    <Tooltip
-                      formatter={function(value: number) {
-                        return [value.toLocaleString() + ' ' + (isRtl ? 'ر.ع' : 'OMR'), isRtl ? 'المبلغ' : 'Amount']
-                      }}
-                      contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e5e7eb' }}
-                      labelStyle={{ fontWeight: 600 }}
-                    />
-                    <Bar dataKey="amount" fill="#f97316" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Horizontal Bar - Cost per Project */}
-          {projectData.length > 0 && (
-            <Card className={pieData.length === 0 && monthlyData.length === 0 ? '' : 'md:col-span-2 lg:col-span-1'}>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <BarChart3 className="h-4 w-4 text-primary" />
-                  {isRtl ? 'التكاليف حسب المشروع' : 'Costs by Project'}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={260}>
-                  <BarChart data={projectData} layout="vertical" margin={{ left: 10, right: 20 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" horizontal={false} />
-                    <XAxis
-                      type="number"
-                      tick={{ fontSize: 10 }}
-                      axisLine={false}
-                      tickLine={false}
-                      tickFormatter={function(v) { return v >= 1000 ? (v / 1000).toFixed(0) + 'k' : String(v) }}
-                    />
-                    <YAxis
-                      type="category"
-                      dataKey="name"
-                      tick={{ fontSize: 10 }}
-                      axisLine={false}
-                      tickLine={false}
-                      width={100}
-                    />
-                    <Tooltip
-                      formatter={function(value: number) {
-                        return [value.toLocaleString() + ' ' + (isRtl ? 'ر.ع' : 'OMR'), isRtl ? 'المبلغ' : 'Amount']
-                      }}
-                      contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e5e7eb' }}
-                      labelStyle={{ fontWeight: 600 }}
-                    />
-                    <Bar dataKey="amount" fill="#3b82f6" radius={[0, 4, 4, 0]}>
-                      {projectData.map(function(_: any, index: number) {
-                        return <Cell key={index} fill={allChartColors[index % allChartColors.length]} />
-                      })}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-          )}
-        </div>
-      )}
-
-      {/* Stacked Bar - Categories per Project (only if multiple projects) */}
-      {catProjectData.length > 1 && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm flex items-center gap-2">
-              <BarChart3 className="h-4 w-4 text-primary" />
-              {isRtl ? 'مقارنة الفئات بين المشاريع' : 'Category Comparison Across Projects'}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={catProjectData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis
-                  dataKey="project"
-                  tick={{ fontSize: 10 }}
-                  axisLine={false}
-                  tickLine={false}
-                />
-                <YAxis
-                  tick={{ fontSize: 10 }}
-                  axisLine={false}
-                  tickLine={false}
-                  tickFormatter={function(v) { return v >= 1000 ? (v / 1000).toFixed(0) + 'k' : String(v) }}
-                />
-                <Tooltip
-                  formatter={function(value: number) {
-                    return [value.toLocaleString() + ' ' + (isRtl ? 'ر.ع' : 'OMR')]
-                  }}
-                  contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e5e7eb' }}
-                />
-                <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} formatter={function(value: string) {
-                  return <span className="text-xs">{getCatLabel(value)}</span>
-                }} />
-                {Object.keys(categoryLabels).map(function(cat) {
-                  return <Bar key={cat} dataKey={cat} stackId="a" fill={chartColors[cat] || '#6b7280'} />
-                })}
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-      )}
+      </Card>
 
       {/* Rental Assets */}
       {rentalAssets.length > 0 && (
         <Card>
-          <CardHeader className="pb-2">
-          <CardTitle className="text-sm">{isRtl ? 'الأصول المستأجرة' : 'Rental Assets'}</CardTitle>
-        </CardHeader>
-          <CardContent className="pt-0">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b text-muted-foreground">
-                    <th className="p-2 text-right">{isRtl ? 'المعدة' : 'Asset'}</th>
-                    <th className="p-2 text-right">{isRtl ? 'المورّد' : 'Supplier'}</th>
-                    <th className="p-2 text-right">{isRtl ? 'المشروع' : 'Project'}</th>
-                    <th className="p-2 text-right">{isRtl ? 'التكلفة الشهرية' : 'Monthly Cost'}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rentalAssets.map(function(a: any) {
-                    return (
-                      <tr key={a.id} className="border-b last:border-0">
-                        <td className="p-2 font-medium">{a.name}</td>
-                        <td className="p-2 text-muted-foreground">{a.supplier}</td>
-                        <td className="p-2 text-muted-foreground">{a.projectName}</td>
-                        <td className="p-2 font-semibold text-cyan-700">{a.rentalCost.toLocaleString()} {isRtl ? 'ر.ع' : 'OMR'}</td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Wallet className="h-5 w-5 text-teal-600" />
+              {isRtl ? 'تفاصيل الإيجارات الشهرية' : 'Monthly Rental Details'}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {rentalAssets.map((ra, idx) => (
+                <div key={ra.id || idx} className="flex items-center justify-between p-2.5 rounded-lg bg-teal-50/50 hover:bg-teal-50 transition">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm truncate">{ra.name}</p>
+                    <p className="text-xs text-muted-foreground">{ra.supplier}{ra.projectName !== '-' ? ` • ${ra.projectName}` : ''}</p>
+                  </div>
+                  <span className="font-semibold text-sm text-teal-700 shrink-0 mr-3">{ra.rentalCost.toLocaleString(isRtl ? 'ar-EG' : 'en-US', { maximumFractionDigits: 0 })} {isRtl ? 'ر.ع/شهر' : 'OMR/mo'}</span>
+                </div>
+              ))}
+              <div className="flex items-center justify-between pt-2 mt-2 border-t font-semibold">
+                <span className="text-sm">{isRtl ? 'الإجمالي' : 'Total'}</span>
+                <span className="text-teal-700">{totalRentalCost.toLocaleString(isRtl ? 'ar-EG' : 'en-US', { maximumFractionDigits: 0 })} {isRtl ? 'ر.ع/شهر' : 'OMR/mo'}</span>
+              </div>
             </div>
           </CardContent>
         </Card>
       )}
 
-      {/* Costs Table */}
-      {loading ? (
-        <div className="h-32 bg-muted animate-pulse rounded" />
-      ) : filtered.length === 0 ? (
+      {/* Charts */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card>
-          <CardContent className="py-12 text-center">
-            <DollarSign className="h-12 w-12 mx-auto text-muted-foreground/50" />
-            <p className="mt-3 text-muted-foreground">{isRtl ? 'لا توجد تكاليف' : 'No costs'}</p>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <BarChart3 className="h-5 w-5 text-primary" />
+              {isRtl ? 'التكاليف حسب الفئة' : 'Costs by Category'}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {pieData.length === 0 ? (
+              <div className="h-64 flex items-center justify-center text-muted-foreground text-sm">
+                {isRtl ? 'لا توجد بيانات' : 'No data'}
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height={300}>
+                <PieChart>
+                  <Pie
+                    data={pieData}
+                    dataKey="value"
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={90}
+                    label={(entry: any) => `${entry.value.toFixed(0)}`}
+                  >
+                    {pieData.map((entry, idx) => (
+                      <Cell key={idx} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    contentStyle={{ direction: isRtl ? 'rtl' : 'ltr', borderRadius: 8, fontSize: 12 }}
+                    formatter={(value: any) => [`${value.toLocaleString()} ر.ع`, '']}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
           </CardContent>
         </Card>
-      ) : (
+
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">{isRtl ? 'تفاصيل التكاليف' : 'Cost Details'}</CardTitle>
+          <CardHeader>
+            <CardTitle>{isRtl ? 'أعلى التكاليف' : 'Top Categories'}</CardTitle>
           </CardHeader>
-          <CardContent className="pt-0">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+          <CardContent>
+            {pieData.length === 0 ? (
+              <div className="h-64 flex items-center justify-center text-muted-foreground text-sm">
+                {isRtl ? 'لا توجد بيانات' : 'No data'}
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart data={pieData} layout="vertical" margin={{ left: 20, right: 20 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                  <XAxis type="number" tick={{ fontSize: 11 }} reversed={isRtl} />
+                  <YAxis dataKey="name" type="category" tick={{ fontSize: 11 }} width={80} orientation={isRtl ? 'right' : 'left'} />
+                  <Tooltip
+                    contentStyle={{ direction: isRtl ? 'rtl' : 'ltr', borderRadius: 8, fontSize: 12 }}
+                    formatter={(value: any) => [`${value.toLocaleString()} ر.ع`, isRtl ? 'المبلغ' : 'Amount']}
+                  />
+                  <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+                    {pieData.map((entry, idx) => (
+                      <Cell key={idx} fill={entry.color} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Costs Table - ALL costs, no limit */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center justify-between">
+            <span>{isRtl ? 'جميع التكاليف المسجلة' : 'All Recorded Costs'}</span>
+            <Badge variant="secondary" className="text-xs font-normal">
+              {costs.length} {isRtl ? 'سجل' : 'records'}
+            </Badge>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="h-32 bg-muted animate-pulse rounded" />
+          ) : costs.length === 0 ? (
+            <div className="py-8 text-center text-muted-foreground text-sm">
+              {isRtl ? 'لا توجد تكاليف' : 'No costs'}
+            </div>
+          ) : (
+            <div className="overflow-x-auto -mx-4 sm:mx-0">
+              <table className="w-full text-sm min-w-[600px]">
                 <thead>
-                  <tr className="border-b text-muted-foreground">
-                    <th className="p-2 text-right">{isRtl ? 'التاريخ' : 'Date'}</th>
-                    <th className="p-2 text-right">{isRtl ? 'المشروع' : 'Project'}</th>
-                    <th className="p-2 text-right">{isRtl ? 'الفئة' : 'Category'}</th>
-                    <th className="p-2 text-right">{isRtl ? 'الوصف' : 'Description'}</th>
-                    <th className="p-2 text-right">{isRtl ? 'المبلغ' : 'Amount'}</th>
-                    <th className="p-2 text-right">{isRtl ? 'بواسطة' : 'By'}</th>
-                    {user && <th className="p-2 text-right">{isRtl ? 'إجراءات' : 'Actions'}</th>}
+                  <tr className="border-b-2 bg-muted/30">
+                    <th className={`p-2.5 text-xs font-semibold ${isRtl ? 'text-right' : 'text-left'}`}>
+                      {isRtl ? 'الإجراءات' : 'Actions'}
+                    </th>
+                    <th className={`p-2.5 text-xs font-semibold ${isRtl ? 'text-right' : 'text-left'}`}>
+                      {isRtl ? 'الحالة' : 'Status'}
+                    </th>
+                    <th className={`p-2.5 text-xs font-semibold ${isRtl ? 'text-right' : 'text-left'}`}>
+                      {isRtl ? 'المبلغ' : 'Amount'}
+                    </th>
+                    <th className={`p-2.5 text-xs font-semibold ${isRtl ? 'text-right' : 'text-left'}`}>
+                      {isRtl ? 'الوصف' : 'Description'}
+                    </th>
+                    <th className={`p-2.5 text-xs font-semibold ${isRtl ? 'text-right' : 'text-left'}`}>
+                      {isRtl ? 'الفئة' : 'Category'}
+                    </th>
+                    <th className={`p-2.5 text-xs font-semibold ${isRtl ? 'text-right' : 'text-left'}`}>
+                      {isRtl ? 'المشروع' : 'Project'}
+                    </th>
+                    <th className={`p-2.5 text-xs font-semibold ${isRtl ? 'text-right' : 'text-left'}`}>
+                      {isRtl ? 'التاريخ' : 'Date'}
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map(function(c: any) {
-                    var CatIcon = getCatIcon(c.category)
+                  {costs.map((c) => {
+                    const isFromReport = !!c.dailyReportId
                     return (
-                      <tr key={c.id} className="border-b last:border-0 hover:bg-muted/30">
-                        <td className="p-2 text-xs text-muted-foreground whitespace-nowrap">{new Date(c.date).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')}</td>
-                        <td className="p-2">
-                          <span className="text-xs font-mono text-primary">{c.project?.code || ''}</span>
-                          <span className="text-xs mr-1">{c.project?.name || ''}</span>
+                      <tr key={c.id} className="border-b hover:bg-muted/30 transition-colors">
+                        {/* Actions - ALWAYS VISIBLE */}
+                        <td className="p-2.5">
+                          <div className="flex items-center gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 p-0 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                              onClick={() => openEdit(c)}
+                              title={isRtl ? 'تعديل' : 'Edit'}
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 p-0 text-red-500 hover:text-red-600 hover:bg-red-50"
+                              onClick={() => deleteCost(c.id)}
+                              title={isRtl ? 'حذف' : 'Delete'}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
                         </td>
-                        <td className="p-2">
-                          <span className={"inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium " + getCatColor(c.category)}>
-                            <CatIcon className="h-3 w-3" />
+                        {/* Status */}
+                        <td className="p-2.5">
+                          {isFromReport ? (
+                            <Badge variant="outline" className="text-emerald-700 border-emerald-300 bg-emerald-50 text-xs">
+                              {isRtl ? 'فقط للعرض' : 'View Only'}
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-xs">
+                              {isRtl ? 'مقبول' : 'Approved'}
+                            </Badge>
+                          )}
+                        </td>
+                        {/* Amount */}
+                        <td className="p-2.5">
+                          <span className="font-semibold text-red-600">
+                            {c.amount.toLocaleString()} {isRtl ? 'ر.ع' : 'OMR'}
+                          </span>
+                        </td>
+                        {/* Description */}
+                        <td className="p-2.5 max-w-[200px]">
+                          <p className="truncate font-medium" title={c.description}>{c.description}</p>
+                        </td>
+                        {/* Category */}
+                        <td className="p-2.5">
+                          <span
+                            className="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full"
+                            style={{ backgroundColor: (categoryColors[c.category] || '#94a3b8') + '15', color: categoryColors[c.category] || '#94a3b8' }}
+                          >
+                            <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: categoryColors[c.category] || '#94a3b8' }} />
                             {getCatLabel(c.category)}
                           </span>
                         </td>
-                        <td className="p-2 max-w-[200px] truncate" title={c.description}>{c.description}</td>
-                        <td className="p-2 font-semibold">{c.amount.toLocaleString()} <span className="text-xs font-normal text-muted-foreground">{isRtl ? 'ر.ع' : 'OMR'}</span></td>
-                        <td className="p-2 text-xs text-muted-foreground">{c.recordedBy?.name || '-'}</td>
-                        {user && (
-                          <td className="p-2">
-                            <Button variant="ghost" size="sm" className="h-7 text-xs text-destructive hover:text-destructive" onClick={function() { handleDelete(c) }}>
-                              <Trash2 className="h-3 w-3" />
-                            </Button>
-                          </td>
-                        )}
+                        {/* Project */}
+                        <td className="p-2.5">
+                          {c.project ? (
+                            <span className="text-orange-600 font-medium text-xs" title={c.project.code ? `${c.project.code} - ${c.project.name}` : c.project.name}>
+                              {c.project.code && <span className="opacity-70">{c.project.code} </span>}
+                              {c.project.name}
+                            </span>
+                          ) : '-'}
+                        </td>
+                        {/* Date */}
+                        <td className="p-2.5 text-muted-foreground text-xs whitespace-nowrap">
+                          {new Date(c.date).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')}
+                        </td>
                       </tr>
                     )
                   })}
                 </tbody>
               </table>
             </div>
-          </CardContent>
-        </Card>
-      )}
+          )}
+        </CardContent>
+      </Card>
 
-      {/* Add Cost Dialog */}
+      {/* Add/Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>{isRtl ? 'إضافة تكلفة' : 'Add Cost'}</DialogTitle>
-            <DialogDescription>{isRtl ? 'أدخل بيانات التكلفة الجديدة' : 'Enter new cost details'}</DialogDescription>
+            <DialogTitle>{editingCostId ? (isRtl ? 'تعديل التكلفة' : 'Edit Cost') : (isRtl ? 'إضافة تكلفة' : 'Add Cost')}</DialogTitle>
+            <DialogDescription>
+              {editingCostId ? (isRtl ? 'عدّل بيانات التكلفة' : 'Edit cost details') : (isRtl ? 'سجّل تكلفة جديدة' : 'Record a new cost')}
+            </DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-1.5">
-              <Label>{isRtl ? 'المشروع' : 'Project'} *</Label>
-              <Select value={formData.projectId} onValueChange={function(v) { setFormData({ ...formData, projectId: v }) }} required>
-                <SelectTrigger><SelectValue placeholder={isRtl ? 'اختر المشروع' : 'Select project'} /></SelectTrigger>
-                <SelectContent>
-                  {projects.map(function(p: any) {
-                    return <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                  })}
-                </SelectContent>
-              </Select>
-            </div>
+          <form onSubmit={handleSubmit} className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
+                <Label>{isRtl ? 'المشروع' : 'Project'} *</Label>
+                <Select value={formData.projectId} onValueChange={(v) => setFormData({ ...formData, projectId: v })} required>
+                  <SelectTrigger><SelectValue placeholder={isRtl ? 'اختر' : 'Select'} /></SelectTrigger>
+                  <SelectContent>
+                    {projects.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
                 <Label>{isRtl ? 'التاريخ' : 'Date'} *</Label>
-                <Input type="date" value={formData.date} onChange={function(e) { setFormData({ ...formData, date: e.target.value }) }} required />
+                <Input type="date" value={formData.date} onChange={(e) => setFormData({ ...formData, date: e.target.value })} required />
               </div>
               <div className="space-y-1.5">
                 <Label>{isRtl ? 'الفئة' : 'Category'} *</Label>
-                <Select value={formData.category} onValueChange={function(v) { setFormData({ ...formData, category: v }) }}>
+                <Select value={formData.category} onValueChange={(v) => setFormData({ ...formData, category: v })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {Object.keys(categoryLabels).map(function(key) {
-                      return <SelectItem key={key} value={key}>{isRtl ? categoryLabels[key].ar : categoryLabels[key].en}</SelectItem>
-                    })}
+                    {Object.entries(categoryLabels).map(([key, val]) => (
+                      <SelectItem key={key} value={key}>{isRtl ? val.ar : val.en}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>{isRtl ? 'المبلغ (ر.ع)' : 'Amount (OMR)'} *</Label>
+                <Input type="number" step="0.01" value={formData.amount} onChange={(e) => setFormData({ ...formData, amount: e.target.value })} required />
               </div>
             </div>
             <div className="space-y-1.5">
               <Label>{isRtl ? 'الوصف' : 'Description'} *</Label>
-              <Input value={formData.description} onChange={function(e) { setFormData({ ...formData, description: e.target.value }) }} placeholder={isRtl ? 'وصف التكلفة...' : 'Cost description...'} required />
-            </div>
-            <div className="space-y-1.5">
-              <Label>{isRtl ? 'المبلغ (ر.ع)' : 'Amount (OMR)'} *</Label>
-              <Input type="number" step="0.01" value={formData.amount} onChange={function(e) { setFormData({ ...formData, amount: e.target.value }) }} placeholder="0.00" required />
+              <Input value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} required />
             </div>
             <div className="space-y-1.5">
               <Label>{isRtl ? 'ملاحظات' : 'Notes'}</Label>
-              <Textarea value={formData.notes} onChange={function(e) { setFormData({ ...formData, notes: e.target.value }) }} rows={2} />
+              <Textarea value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} rows={2} />
             </div>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={function() { setDialogOpen(false) }}>{isRtl ? 'إلغاء' : 'Cancel'}</Button>
-              <Button type="submit" disabled={saving}>{saving ? (isRtl ? 'جارٍ الحفظ...' : 'Saving...') : (isRtl ? 'حفظ' : 'Save')}</Button>
+              <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
+                {isRtl ? 'إلغاء' : 'Cancel'}
+              </Button>
+              <Button type="submit">{isRtl ? 'حفظ' : 'Save'}</Button>
             </DialogFooter>
           </form>
         </DialogContent>
