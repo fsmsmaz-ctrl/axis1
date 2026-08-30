@@ -17,7 +17,6 @@ export async function GET(req: NextRequest) {
   var where: any = {}
   if (projectId) where.projectId = projectId
 
-  // Run both queries in parallel
   var costsResult = await safeDbOp(
     () => db.cost.findMany({
       where,
@@ -48,7 +47,6 @@ export async function GET(req: NextRequest) {
     : []
   var total = costs.reduce(function(s: number, c: any) { return s + c.amount }, 0)
 
-  // Active rental assets from CompanyAsset (this month)
   var today = new Date()
   today.setHours(0, 0, 0, 0)
   var monthStart = new Date(today.getFullYear(), today.getMonth(), 1)
@@ -76,7 +74,6 @@ export async function GET(req: NextRequest) {
   var rentalAssets = rentalResult.success ? rentalResult.data : []
   var totalRentalCost = rentalAssets.reduce(function(s: number, a: any) { return s + (a.rentalCost || 0) }, 0)
 
-  // Add rental to byCategory
   var allByCategory = byCategory.slice()
   if (totalRentalCost > 0) {
     var existingRental = allByCategory.find(function(c: any) { return c.category === 'rental' })
@@ -114,7 +111,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
   }
 
-  // Rate limit write operations
   var rl = checkRateLimit(req, RateLimitPresets.write)
   if (rl.limited) {
     return NextResponse.json(
@@ -148,7 +144,6 @@ export async function POST(req: NextRequest) {
     )
     if (!createResult.success) return createResult.response
 
-    // Audit log + notification (non-critical, fire-and-forget)
     Promise.all([
       safeDbOp(
         () => db.auditLog.create({
