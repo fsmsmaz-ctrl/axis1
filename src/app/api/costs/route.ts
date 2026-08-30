@@ -175,5 +175,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ cost: createResult.data, success: true })
   } catch (error: any) {
     return handleDbError(error, 'إنشاء التكلفة')
+
+    // v2
   }
 }
