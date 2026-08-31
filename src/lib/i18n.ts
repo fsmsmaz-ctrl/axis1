@@ -141,9 +141,11 @@ export const translations = {
     safetyCheckRequired: 'يجب إكمال فحص السلامة أولاً',
     submitReport: 'إرسال التقرير',
     approveReport: 'اعتماد التقرير',
+    rejectReport: 'رفض التقرير',
     draft: 'مسودة',
     submitted: 'مرسل',
     approved: 'معتمد',
+    rejected: 'مرفوض',
 
     // Safety
     safetyChecklist: 'قائمة فحص السلامة',
@@ -213,7 +215,7 @@ export const translations = {
     parts: 'قطع الغيار',
     oil: 'استهلاك الزيوت',
     rental: 'إيجار المعدات',
-    otherCosts: 'مصاريف أخرى',
+    otherCost: 'مصاريف أخرى',
     totalCost: 'إجمالي التكلفة',
     netProfitToday: 'صافي ربح اليوم',
     costPerMeter: 'تكلفة المتر',
@@ -235,8 +237,8 @@ export const translations = {
     handoverStatus: 'حالة التسليم',
     accepted: 'مقبول',
     needs_revision: 'يحتاج تعديل',
-    rejected: 'مرفوض',
-    pending: 'قيد الانتظار',
+    handoverRejected: 'مرفوض',
+    handoverPending: 'قيد الانتظار',
     newFinishing: 'تشطيب جديد',
 
     // Performance
@@ -442,9 +444,11 @@ export const translations = {
     safetyCheckRequired: 'Safety checklist must be completed first',
     submitReport: 'Submit Report',
     approveReport: 'Approve Report',
+    rejectReport: 'Reject Report',
     draft: 'Draft',
     submitted: 'Submitted',
     approved: 'Approved',
+    rejected: 'Rejected',
 
     safetyChecklist: 'Safety Checklist',
     ppeAvailable: 'PPE available for all workers',
@@ -511,7 +515,7 @@ export const translations = {
     parts: 'Parts',
     oil: 'Oil',
     rental: 'Rental',
-    otherCosts: 'Other',
+    otherCost: 'Other',
     totalCost: 'Total Cost',
     netProfitToday: 'Net Profit Today',
     costPerMeter: 'Cost per Meter',
@@ -532,8 +536,8 @@ export const translations = {
     handoverStatus: 'Handover Status',
     accepted: 'Accepted',
     needs_revision: 'Needs Revision',
-    rejected: 'Rejected',
-    pending: 'Pending',
+    handoverRejected: 'Rejected',
+    handoverPending: 'Pending',
     newFinishing: 'New Finishing',
 
     avgDailyMeters: 'Avg Daily Meters',
