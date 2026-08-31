@@ -15,55 +15,6 @@ import { authedFetch } from '@/lib/api-client'
 import { hasReportPermission } from '@/lib/auth'
 import { toast } from 'sonner'
 
-const checklistLabels: Record<string, { ar: string; en: string }> = {
-  ppeAvailable: { ar: 'معدات الحماية', en: 'PPE' },
-  helmetCheck: { ar: 'الخوذات', en: 'Helmets' },
-  bootsCheck: { ar: 'الأحذية', en: 'Boots' },
-  glovesCheck: { ar: 'القفازات', en: 'Gloves' },
-  glassesCheck: { ar: 'النظارات', en: 'Glasses' },
-  workAreaCheck: { ar: 'منطقة العمل', en: 'Work Area' },
-  barriersCheck: { ar: 'الحواجز', en: 'Barriers' },
-  shaftCheck: { ar: 'البئر', en: 'Shaft' },
-  ventilationCheck: { ar: 'التهوية', en: 'Ventilation' },
-  electricalCheck: { ar: 'الكهرباء', en: 'Electrical' },
-  craneCheck: { ar: 'الرافعة', en: 'Crane' },
-  hydraulicCheck: { ar: 'الهيدروليك', en: 'Hydraulic' },
-  fireExtinguishers: { ar: 'الطفايات', en: 'Fire Ext.' },
-  workPermit: { ar: 'تصريح العمل', en: 'Work Permit' },
-  toolboxTalk: { ar: 'Toolbox Talk', en: 'Toolbox Talk' },
-}
-
-function statusLabel(status: string, isRtl: boolean): string {
-  var map: Record<string, { ar: string; en: string }> = {
-    draft: { ar: 'مسودة', en: 'Draft' },
-    submitted: { ar: 'مرسل', en: 'Submitted' },
-    approved: { ar: 'معتمد', en: 'Approved' },
-    rejected: { ar: 'مرفوض', en: 'Rejected' },
-    not_started: { ar: 'لم يبدأ', en: 'Not Started' },
-    in_progress: { ar: 'قيد التنفيذ', en: 'In Progress' },
-    completed: { ar: 'مكتمل', en: 'Completed' },
-    operational: { ar: 'تعمل', en: 'Operational' },
-    stopped: { ar: 'متوقفة', en: 'Stopped' },
-    maintenance: { ar: 'تحتاج صيانة', en: 'Maintenance' },
-    pending: { ar: 'معلق', en: 'Pending' },
-    approved_client: { ar: 'معتمد من العميل', en: 'Client Approved' },
-    partial: { ar: 'جزئي', en: 'Partial' },
-  }
-  var entry = map[status]
-  return entry ? (isRtl ? entry.ar : entry.en) : status
-}
-
-function incidentLabel(type: string, isRtl: boolean): string {
-  var map: Record<string, { ar: string; en: string }> = {
-    none: { ar: 'لا يوجد', en: 'None' },
-    near_miss: { ar: 'أوشك على الحادث', en: 'Near Miss' },
-    incident: { ar: 'حادث', en: 'Incident' },
-    accident: { ar: 'إصابة', en: 'Accident' },
-  }
-  var entry = map[type]
-  return entry ? (isRtl ? entry.ar : entry.en) : type
-}
-
 interface ReportType {
   id: string
   labelAr: string
@@ -97,6 +48,7 @@ export default function ReportsPage() {
   const [reportData, setReportData] = useState<any>(null)
   const [generating, setGenerating] = useState(false)
   const language = useAppStore((s) => s.language)
+  const token = useAppStore((s) => s.token)
   const isRtl = language === 'ar'
 
   async function fetchProjectList() {
@@ -111,14 +63,14 @@ export default function ReportsPage() {
   }
 
   useEffect(function() {
-    if (!user) return
+    if (!token) return
     fetchProjectList()
     var today = new Date()
     var thirtyAgo = new Date()
     thirtyAgo.setDate(thirtyAgo.getDate() - 30)
     setToDate(today.toISOString().split('T')[0])
     setFromDate(thirtyAgo.toISOString().split('T')[0])
-  }, [user])
+  }, [token])
 
   async function generateReport() {
     if (!selectedReport) {
@@ -136,19 +88,8 @@ export default function ReportsPage() {
       var endpoint = '/api/dashboard'
       if (selectedReport === 'rpt_production' || selectedReport === 'rpt_daily_site' || selectedReport === 'rpt_attendance') {
         endpoint = '/api/daily-reports?' + params.toString()
-      // FIX-PDF: Safety report fetches from its own API for complete data
       } else if (selectedReport === 'rpt_safety') {
-        var safetyRes = await authedFetch('/api/safety-inspection?limit=200&' + params.toString())
-        var safetyData = await safetyRes.json()
-        setReportData({
-          type: selectedReport,
-          data: { safetyReports: safetyData.safetyReports || [] },
-          project: projects.find(function(p) { return p.id === selectedProject }),
-          fromDate, toDate
-        })
-        toast.success(isRtl ? 'تم توليد التقرير' : 'Report generated')
-        setGenerating(false)
-        return
+        endpoint = '/api/daily-reports?' + params.toString()
       } else if (selectedReport === 'rpt_costs' || selectedReport === 'rpt_profit' || selectedReport === 'rpt_revenue') {
         // Fetch both costs and daily reports for complete financial picture
         var costsRes = await authedFetch('/api/costs?' + params.toString())
@@ -239,7 +180,7 @@ export default function ReportsPage() {
       </div>
 
       {/* Filters */}
-      <Card className="no-print">
+      <Card>
         <CardHeader>
           <CardTitle className="text-base">{isRtl ? 'خيارات التقرير' : 'Report Options'}</CardTitle>
         </CardHeader>
@@ -313,17 +254,14 @@ function ReportPreview({ data }: { data: any }) {
   var fmt = function(n: number) { return (n || 0).toLocaleString(isRtl ? 'ar-EG' : 'en-US', { maximumFractionDigits: 0 }) }
 
   return (
-    <div className="space-y-4 print-report">
-      <div className="text-center pb-4 border-b print-header">
+    <div className="space-y-4">
+      <div className="text-center pb-4 border-b">
         <h2 className="text-xl font-bold">AXIS - {isRtl ? reportType.labelAr : reportType.labelEn}</h2>
         <p className="text-sm text-muted-foreground mt-1">
           {data.project ? data.project.name : (isRtl ? 'كل المشاريع' : 'All Projects')}
         </p>
         <p className="text-xs text-muted-foreground mt-1">
           {isRtl ? 'الفترة' : 'Period'}: {data.fromDate} → {data.toDate}
-        </p>
-        <p className="text-xs text-muted-foreground mt-1">
-          {isRtl ? 'تاريخ التوليد' : 'Generated'}: {new Date().toLocaleDateString(isRtl ? 'ar-EG' : 'en-US', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
         </p>
       </div>
 
@@ -353,7 +291,7 @@ function ReportPreview({ data }: { data: any }) {
           {/* Revenue Table */}
           <h3 className="font-semibold text-sm">{isRtl ? 'تفاصيل الإيرادات من التقارير المعتمدة' : 'Revenue Details from Approved Reports'}</h3>
           <div className="overflow-x-auto">
-            <table className="w-full text-xs print-table">
+            <table className="w-full text-xs">
               <thead>
                 <tr className="border-b bg-muted/50">
                   <th className="p-2 text-right">{isRtl ? 'التاريخ' : 'Date'}</th>
@@ -375,7 +313,7 @@ function ReportPreview({ data }: { data: any }) {
                       <td className="p-2">{r.dailyMeters || 0} م</td>
                       <td className="p-2">{r.project ? (r.project.pricePerMeter || 0) : 0} ر.ع</td>
                       <td className="p-2 font-semibold text-emerald-700">{(r.dailyRevenue || 0).toLocaleString()} ر.ع</td>
-                      <td className="p-2"><span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 text-xs">{statusLabel(r.status, isRtl)}</span></td>
+                      <td className="p-2"><span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 text-xs">{isRtl ? 'معتمد' : 'Approved'}</span></td>
                     </tr>
                   )
                 })}
@@ -409,7 +347,7 @@ function ReportPreview({ data }: { data: any }) {
                 transport: { ar: 'نقل', en: 'Transport' }, fuel: { ar: 'ديزل', en: 'Fuel' },
                 maintenance: { ar: 'صيانة', en: 'Maintenance' }, parts: { ar: 'قطع غيار', en: 'Parts' },
                 oil: { ar: 'زيوت', en: 'Oil' }, safety: { ar: 'سلامة', en: 'Safety' },
-                rental: { ar: 'إيجار', en: 'Rental' }, food: { ar: 'طعام', en: 'Food' }, other: { ar: 'أخرى', en: 'Other' },
+                rental: { ar: 'إيجار', en: 'Rental' }, other: { ar: 'أخرى', en: 'Other' },
               }
               var label = catNames[c.category] ? (isRtl ? catNames[c.category].ar : catNames[c.category].en) : c.category
               return (
@@ -422,7 +360,7 @@ function ReportPreview({ data }: { data: any }) {
           </div>
           <h3 className="font-semibold text-sm">{isRtl ? 'تفاصيل المصروفات' : 'Expenses Details'}</h3>
           <div className="overflow-x-auto">
-            <table className="w-full text-xs print-table">
+            <table className="w-full text-xs">
               <thead>
                 <tr className="border-b bg-muted/50">
                   <th className="p-2 text-right">{isRtl ? 'التاريخ' : 'Date'}</th>
@@ -432,7 +370,7 @@ function ReportPreview({ data }: { data: any }) {
                 </tr>
               </thead>
               <tbody>
-                {(data.data.costs || []).map(function(c: any) {
+                {(data.data.costs || []).slice(0, 50).map(function(c: any) {
                   return (
                     <tr key={c.id} className="border-b">
                       <td className="p-2">{new Date(c.date).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')}</td>
@@ -449,7 +387,7 @@ function ReportPreview({ data }: { data: any }) {
             <div>
               <h3 className="font-semibold text-sm">{isRtl ? 'تفاصيل الأصول المستأجرة (شهري)' : 'Rented Assets Details (Monthly)'}</h3>
               <div className="overflow-x-auto">
-                <table className="w-full text-xs print-table">
+                <table className="w-full text-xs">
                   <thead>
                     <tr className="border-b bg-teal-50">
                       <th className="p-2 text-right">{isRtl ? 'الأصل' : 'Asset'}</th>
@@ -516,7 +454,7 @@ function ReportPreview({ data }: { data: any }) {
           {/* Revenue breakdown */}
           <h3 className="font-semibold text-sm">{isRtl ? 'تفاصيل الإيرادات (التقارير المعتمدة)' : 'Revenue Details (Approved Reports)'}</h3>
           <div className="overflow-x-auto">
-            <table className="w-full text-xs print-table">
+            <table className="w-full text-xs">
               <thead>
                 <tr className="border-b bg-muted/50">
                   <th className="p-2 text-right">{isRtl ? 'التاريخ' : 'Date'}</th>
@@ -543,7 +481,7 @@ function ReportPreview({ data }: { data: any }) {
           {/* Costs breakdown */}
           <h3 className="font-semibold text-sm">{isRtl ? 'تفاصيل التكاليف' : 'Costs Details'}</h3>
           <div className="overflow-x-auto">
-            <table className="w-full text-xs print-table">
+            <table className="w-full text-xs">
               <thead>
                 <tr className="border-b bg-muted/50">
                   <th className="p-2 text-right">{isRtl ? 'الفئة' : 'Category'}</th>
@@ -567,31 +505,27 @@ function ReportPreview({ data }: { data: any }) {
         <div className="space-y-3">
           <h3 className="font-semibold text-sm">{isRtl ? 'سجل التقارير' : 'Reports Log'}</h3>
           <div className="overflow-x-auto">
-            <table className="w-full text-xs print-table">
+            <table className="w-full text-xs">
               <thead>
                 <tr className="border-b text-right">
                   <th className="p-2">{isRtl ? 'التاريخ' : 'Date'}</th>
                   <th className="p-2">{isRtl ? 'المشروع' : 'Project'}</th>
                   <th className="p-2">{isRtl ? 'الخط' : 'Line'}</th>
                   <th className="p-2">{isRtl ? 'أمتار' : 'Meters'}</th>
-                  <th className="p-2">{isRtl ? 'إيراد' : 'Revenue'}</th>
                   <th className="p-2">{isRtl ? 'العمال' : 'Workers'}</th>
-                  <th className="p-2">{isRtl ? 'ساعات التشغيل' : 'Op. Hours'}</th>
                   <th className="p-2">{isRtl ? 'الحالة' : 'Status'}</th>
                 </tr>
               </thead>
               <tbody>
-                {(data.data.reports || []).map(function(r: any) {
+                {(data.data.reports || []).slice(0, 30).map(function(r: any) {
                   return (
                     <tr key={r.id} className="border-b">
                       <td className="p-2">{new Date(r.reportDate).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')}</td>
                       <td className="p-2">{r.project?.name}</td>
                       <td className="p-2">{r.driveLine?.lineNumber || '-'}</td>
-                      <td className="p-2">{r.dailyMeters || 0} م</td>
-                      <td className="p-2">{(r.dailyRevenue || 0).toLocaleString()} ر.ع</td>
-                      <td className="p-2">{r.workersCount || 0}</td>
-                      <td className="p-2">{r.operatingHours || 0}</td>
-                      <td className="p-2">{statusLabel(r.status, isRtl)}</td>
+                      <td className="p-2">{r.dailyMeters} م</td>
+                      <td className="p-2">{r.workersCount}</td>
+                      <td className="p-2">{r.status}</td>
                     </tr>
                   )
                 })}
@@ -603,37 +537,25 @@ function ReportPreview({ data }: { data: any }) {
         <div className="space-y-3">
           <h3 className="font-semibold text-sm">{isRtl ? 'تقارير السلامة' : 'Safety Reports'}</h3>
           <div className="overflow-x-auto">
-            <table className="w-full text-xs print-table">
+            <table className="w-full text-xs">
               <thead>
                 <tr className="border-b text-right">
                   <th className="p-2">{isRtl ? 'التاريخ' : 'Date'}</th>
                   <th className="p-2">{isRtl ? 'المشروع' : 'Project'}</th>
-                  <th className="p-2">{isRtl ? 'موقع الحفر' : 'Drilling Site'}</th>
-                  <th className="p-2">{isRtl ? 'الالتزام' : 'Compliance'}</th>
                   <th className="p-2">{isRtl ? 'المخالفات' : 'Violations'}</th>
                   <th className="p-2">{isRtl ? 'الحوادث' : 'Incidents'}</th>
                   <th className="p-2">{isRtl ? 'موقّع من' : 'Signed by'}</th>
                 </tr>
               </thead>
               <tbody>
-                {(data.data.safetyReports || []).map(function(r: any) {
-                  var passed = Object.keys(checklistLabels).filter(function(k: string) { return r[k] }).length
-                  var compliance = Math.round((passed / 15) * 100)
+                {(data.data.reports || []).filter(function(r: any) { return r.safety }).slice(0, 30).map(function(r: any) {
                   return (
                     <tr key={r.id} className="border-b">
                       <td className="p-2">{new Date(r.reportDate).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')}</td>
-                      <td className="p-2">{r.project ? r.project.name : '-'}</td>
-                      <td className="p-2">{r.drillingSiteName || '-'}</td>
-                      <td className="p-2">
-                        <span className={"inline-block px-1.5 py-0.5 rounded text-xs font-semibold " + (
-                          compliance === 100 ? 'bg-emerald-50 text-emerald-700' :
-                          compliance >= 70 ? 'bg-orange-50 text-orange-700' :
-                          'bg-red-50 text-red-700'
-                        )}>{compliance}%</span>
-                      </td>
-                      <td className="p-2">{r.violations || '-'}</td>
-                      <td className="p-2">{r.incidentType ? incidentLabel(r.incidentType, isRtl) : '-'}</td>
-                      <td className="p-2">{r.signedBy || '-'}</td>
+                      <td className="p-2">{r.project?.name}</td>
+                      <td className="p-2">{r.safety.violations || '-'}</td>
+                      <td className="p-2">{r.safety.incidentType}</td>
+                      <td className="p-2">{r.safety.signedBy}</td>
                     </tr>
                   )
                 })}
@@ -645,7 +567,7 @@ function ReportPreview({ data }: { data: any }) {
         <div className="space-y-3">
           <h3 className="font-semibold text-sm">{isRtl ? 'سجل الحضور' : 'Attendance Log'}</h3>
           <div className="overflow-x-auto">
-            <table className="w-full text-xs print-table">
+            <table className="w-full text-xs">
               <thead>
                 <tr className="border-b text-right">
                   <th className="p-2">{isRtl ? 'التاريخ' : 'Date'}</th>
@@ -653,11 +575,10 @@ function ReportPreview({ data }: { data: any }) {
                   <th className="p-2">{isRtl ? 'عدد العمال' : 'Workers'}</th>
                   <th className="p-2">{isRtl ? 'ساعات التشغيل' : 'Op. Hours'}</th>
                   <th className="p-2">{isRtl ? 'ساعات التوقف' : 'Stop. Hours'}</th>
-                  <th className="p-2">{isRtl ? 'الحالة' : 'Status'}</th>
                 </tr>
               </thead>
               <tbody>
-                {(data.data.reports || []).map(function(r: any) {
+                {(data.data.reports || []).slice(0, 30).map(function(r: any) {
                   return (
                     <tr key={r.id} className="border-b">
                       <td className="p-2">{new Date(r.reportDate).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')}</td>
@@ -675,38 +596,28 @@ function ReportPreview({ data }: { data: any }) {
       ) : data.type === 'rpt_equipment' ? (
         <div className="space-y-3">
           <h3 className="font-semibold text-sm">{isRtl ? 'قائمة المعدات' : 'Equipment List'}</h3>
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs print-table">
-              <thead>
-                <tr className="border-b text-right">
-                  <th className="p-2">{isRtl ? 'المعدة' : 'Equipment'}</th>
-                  <th className="p-2">{isRtl ? 'الرقم' : 'Number'}</th>
-                  <th className="p-2">{isRtl ? 'النوع' : 'Type'}</th>
-                  <th className="p-2">{isRtl ? 'الحالة' : 'Status'}</th>
-                  <th className="p-2">{isRtl ? 'ساعات العمل' : 'Daily Hours'}</th>
-                  <th className="p-2">{isRtl ? 'آخر صيانة' : 'Last Maint.'}</th>
-                  <th className="p-2">{isRtl ? 'الصيانة القادمة' : 'Next Maint.'}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(data.data.equipment || []).map(function(eq: any) {
-                  return (
-                    <tr key={eq.id} className="border-b">
-                      <td className="p-2 font-medium">{eq.name}</td>
-                      <td className="p-2 font-mono">{eq.number}</td>
-                      <td className="p-2">{eq.type}</td>
-                      <td className="p-2">{statusLabel(eq.status, isRtl)}</td>
-                      <td className="p-2">{eq.dailyHours || 0}</td>
-                      <td className="p-2">{eq.lastMaintenance ? new Date(eq.lastMaintenance).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US') : '-'}</td>
-                      <td className="p-2">{eq.nextMaintenance ? new Date(eq.nextMaintenance).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US') : '-'}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            {(data.data.equipment || []).map(function(eq: any) {
+              return (
+                <div key={eq.id} className="p-3 rounded-lg border">
+                  <p className="font-medium text-sm">{eq.name}</p>
+                  <p className="text-xs text-muted-foreground font-mono">{eq.number}</p>
+                  <p className="text-xs mt-1">
+                    <span className={"inline-block px-1.5 py-0.5 rounded text-xs " + (
+                      eq.status === 'operational' ? 'bg-emerald-50 text-emerald-700' :
+                      eq.status === 'stopped' ? 'bg-red-50 text-red-700' : 'bg-orange-50 text-orange-700'
+                    )}>
+                      {eq.status === 'operational' ? (isRtl ? 'تعمل' : 'Operational') :
+                       eq.status === 'stopped' ? (isRtl ? 'متوقفة' : 'Stopped') :
+                       (isRtl ? 'تحتاج صيانة' : 'Maintenance')}
+                    </span>
+                  </p>
+                </div>
+              )
+            })}
           </div>
         </div>
-      ) : data.type === 'rpt_monthly' || data.type === 'rpt_weekly' ? (
+      ) : data.type === 'rpt_monthly' ? (
         <div className="space-y-3">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="p-3 rounded-lg border">
@@ -738,38 +649,51 @@ function ReportPreview({ data }: { data: any }) {
             })}
           </div>
         </div>
+      ) : data.type === 'rpt_weekly' ? (
+        <div className="space-y-3">
+          <div className="grid grid-cols-3 gap-3">
+            <div className="p-3 rounded-lg border">
+              <p className="text-xs text-muted-foreground">{isRtl ? 'مشاريع نشطة' : 'Active Projects'}</p>
+              <p className="font-bold text-lg">{data.data.stats?.activeProjects || 0}</p>
+            </div>
+            <div className="p-3 rounded-lg border">
+              <p className="text-xs text-muted-foreground">{isRtl ? 'أمتار' : 'Meters'}</p>
+              <p className="font-bold text-lg">{data.data.stats?.metersThisMonth || 0} م</p>
+            </div>
+            <div className="p-3 rounded-lg border">
+              <p className="text-xs text-muted-foreground">{isRtl ? 'تكاليف' : 'Costs'}</p>
+              <p className="font-bold text-lg text-red-600">{fmt(data.data.stats?.totalCosts)} ر.ع</p>
+            </div>
+          </div>
+          <h3 className="font-semibold text-sm pt-3">{isRtl ? 'تقدم المشاريع' : 'Projects Progress'}</h3>
+          <div className="space-y-2">
+            {(data.data.projects || []).map(function(p: any) {
+              return (
+                <div key={p.id} className="flex items-center justify-between p-2 rounded border">
+                  <span className="text-sm">{p.name}</span>
+                  <span className="font-semibold text-sm">{p.progress.toFixed(1)}%</span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
       ) : data.type === 'rpt_handover' ? (
         <div className="space-y-3">
           <h3 className="font-semibold text-sm">{isRtl ? 'سجلات التسليم' : 'Handover Records'}</h3>
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs print-table">
-              <thead>
-                <tr className="border-b text-right">
-                  <th className="p-2">{isRtl ? 'التاريخ' : 'Date'}</th>
-                  <th className="p-2">{isRtl ? 'المشروع' : 'Project'}</th>
-                  <th className="p-2">{isRtl ? 'تنظيف الموقع' : 'Site Cleaned'}</th>
-                  <th className="p-2">{isRtl ? 'إزالة النفايات' : 'Waste Removed'}</th>
-                  <th className="p-2">{isRtl ? 'إغلاق البئر' : 'Shaft Closed'}</th>
-                  <th className="p-2">{isRtl ? 'الحالة' : 'Status'}</th>
-                  <th className="p-2">{isRtl ? 'ملاحظات' : 'Notes'}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(data.data.finishings || []).map(function(f: any) {
-                  return (
-                    <tr key={f.id} className="border-b">
-                      <td className="p-2">{new Date(f.date).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')}</td>
-                      <td className="p-2">{f.project?.name}</td>
-                      <td className="p-2">{f.siteCleaned ? (isRtl ? 'نعم' : 'Yes') : (isRtl ? 'لا' : 'No')}</td>
-                      <td className="p-2">{f.wasteRemoved ? (isRtl ? 'نعم' : 'Yes') : (isRtl ? 'لا' : 'No')}</td>
-                      <td className="p-2">{f.shaftClosed ? (isRtl ? 'نعم' : 'Yes') : (isRtl ? 'لا' : 'No')}</td>
-                      <td className="p-2">{statusLabel(f.handoverStatus, isRtl)}</td>
-                      <td className="p-2">{f.clientNotes || '-'}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+          <div className="space-y-2">
+            {(data.data.finishings || []).map(function(f: any) {
+              return (
+                <div key={f.id} className="p-3 rounded-lg border">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium text-sm">{f.project?.name}</span>
+                    <span className="text-xs px-2 py-0.5 rounded bg-muted">{f.handoverStatus}</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {new Date(f.date).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')}
+                  </p>
+                </div>
+              )
+            })}
           </div>
         </div>
       ) : (
