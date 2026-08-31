@@ -23,13 +23,9 @@ interface DashboardData {
     totalProjects: number
     metersToday: number
     metersThisMonth: number
-    revenueToday: number
-    revenueThisMonth: number
-    totalRevenue: number
     totalCosts: number
     monthCosts: number
     monthlyRentalCost: number
-    netProfit: number
     stoppedEquipment: number
     presentWorkers: number
     unreadNotifications: number
@@ -74,11 +70,9 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const language = useAppStore((s) => s.language)
-  const token = useAppStore((s) => s.token)
   const isRtl = language === 'ar'
 
   async function fetchDashboard() {
-    if (!token) return
     setLoading(true)
     setError(null)
     try {
@@ -102,7 +96,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
 
   useEffect(() => {
     fetchDashboard()
-  }, [token])
+  }, [])
 
   if (loading) {
     return (
