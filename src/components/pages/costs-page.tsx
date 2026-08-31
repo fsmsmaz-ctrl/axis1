@@ -61,7 +61,6 @@ export default function CostsPage() {
   const language = useAppStore((s) => s.language)
   const isRtl = language === 'ar'
 
-  const [revenue, setRevenue] = useState(0)
   const [approvedReports, setApprovedReports] = useState<any[]>([])
   // Search & filter
   const [searchQuery, setSearchQuery] = useState('')
@@ -92,8 +91,6 @@ export default function CostsPage() {
       const repRes = await authedFetch('/api/daily-reports?' + repParams.toString())
       const repData = await repRes.json()
       var reports = (repData.reports || []).filter(function(r: any) { return r.status === 'approved' })
-      var totalRev = reports.reduce(function(s: number, r: any) { return s + (r.dailyRevenue || 0) }, 0)
-      setRevenue(totalRev)
       setApprovedReports(reports)
     } catch (e) {
       console.error('fetchCosts error:', e)
@@ -177,10 +174,8 @@ export default function CostsPage() {
     }
   }
 
-  var netProfit = revenue - grandTotal
-  var profitMargin = revenue > 0 ? (netProfit / revenue) * 100 : 0
+  var netProfit = -grandTotal
   var totalMeters = approvedReports.reduce(function(s, r) { return s + (r.dailyMeters || 0) }, 0)
-  var costPerMeter = totalMeters > 0 ? total / totalMeters : 0
 
   var pieData = byCategory.map(function(c) {
     return {
@@ -195,9 +190,9 @@ export default function CostsPage() {
       {/* Page Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">{isRtl ? 'التكاليف والإيرادات' : 'Costs & Revenue'}</h1>
+          <h1 className="text-2xl font-bold tracking-tight">{isRtl ? 'التكاليف المسجلة' : 'Costs'}</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            {isRtl ? 'متابعة التكاليف والإيرادات وحساب الأرباح' : 'Track costs, revenue, and profit'}
+            {isRtl ? 'متابعة التكاليف المسجلة' : 'Track costs'}
           </p>
         </div>
         <Button onClick={function() {
@@ -214,24 +209,8 @@ export default function CostsPage() {
       </div>
 
       {/* Summary Cards - Modern Design */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <Card className="border-0 shadow-sm bg-gradient-to-br from-emerald-500 to-emerald-600 text-white">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center">
-                <TrendingUp className="h-4 w-4" />
-              </div>
-              <span className="text-xs text-white/80">{isRtl ? 'الإيرادات' : 'Revenue'}</span>
-            </div>
-            <p className="text-xl font-bold">
-              {revenue.toLocaleString(isRtl ? 'ar-EG' : 'en-US', { maximumFractionDigits: 0 })}
-              <span className="text-sm font-normal ml-1 text-white/80">{isRtl ? 'ر.ع' : 'OMR'}</span>
-            </p>
-            <p className="text-xs text-white/60 mt-1">
-              {approvedReports.length} {isRtl ? 'تقرير معتمد' : 'approved reports'}
-            </p>
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-2 gap-3">
+
         <Card className="border-0 shadow-sm bg-gradient-to-br from-rose-500 to-rose-600 text-white">
           <CardContent className="p-4">
             <div className="flex items-center gap-2 mb-2">
@@ -251,32 +230,10 @@ export default function CostsPage() {
             )}
           </CardContent>
         </Card>
-        <Card className={"border-0 shadow-sm bg-gradient-to-br text-white " + (netProfit >= 0 ? 'from-blue-500 to-blue-600' : 'from-red-500 to-red-600')}>
+        <Card className="border-0 shadow-sm bg-gradient-to-br from-purple-500 to-purple-600 text-white">
           <CardContent className="p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center">
-                <Wallet className="h-4 w-4" />
-              </div>
-              <span className="text-xs text-white/80">{isRtl ? 'صافي الربح' : 'Net Profit'}</span>
-            </div>
-            <p className="text-xl font-bold">
-              {netProfit.toLocaleString(isRtl ? 'ar-EG' : 'en-US', { maximumFractionDigits: 0 })}
-              <span className="text-sm font-normal ml-1 text-white/80">{isRtl ? 'ر.ع' : 'OMR'}</span>
-            </p>
-          </CardContent>
-        </Card>
-        <Card className="border-0 shadow-sm bg-gradient-to-br from-violet-500 to-violet-600 text-white">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center">
-                <DollarSign className="h-4 w-4" />
-              </div>
-              <span className="text-xs text-white/80">{isRtl ? 'هامش الربح' : 'Profit Margin'}</span>
-            </div>
-            <p className="text-xl font-bold">{profitMargin.toFixed(1)}%</p>
-            <p className="text-xs text-white/60 mt-1">
-              {isRtl ? 'تكلفة المتر' : 'Cost/m'}: {costPerMeter.toFixed(1)} {isRtl ? 'ر.ع' : 'OMR'}
-            </p>
+            <span className="text-xs text-white/80">{isRtl ? 'تكلفة المتر' : 'Cost per Meter'}</span>
+            <p className="text-2xl font-bold mt-1">{totalMeters > 0 ? (grandTotal / totalMeters).toFixed(1) : '0'} {isRtl ? 'ر.ع' : 'OMR'}</p>
           </CardContent>
         </Card>
       </div>
