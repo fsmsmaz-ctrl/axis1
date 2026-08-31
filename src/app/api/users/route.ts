@@ -98,3 +98,4 @@ export async function POST(req: NextRequest) {
     return handleDbError(error, 'إنشاء المستخدم')
   }
 }
+
