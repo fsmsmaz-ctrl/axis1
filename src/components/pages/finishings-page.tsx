@@ -31,7 +31,6 @@ export default function FinishingsPage() {
   const [loading, setLoading] = useState(true)
   const [dialogOpen, setDialogOpen] = useState(false)
   const language = useAppStore((s) => s.language)
-  const user = useAppStore((s) => s.user)
   const isRtl = language === 'ar'
 
   const [formData, setFormData] = useState({
@@ -43,33 +42,16 @@ export default function FinishingsPage() {
 
   async function fetchFinishings() {
     setLoading(true)
-    try {
-      var res = await authedFetch('/api/finishings')
-      var data = await res.json()
-      setFinishings(data.finishings || [])
-    } catch {
-      setFinishings([])
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  async function fetchProjectList() {
-    try {
-      var res = await authedFetch('/api/projects/list?_t=' + Date.now(), { cache: 'no-store' })
-      if (!res.ok) { setProjects([]); return }
-      var data = await res.json()
-      setProjects(data.projects || [])
-    } catch {
-      setProjects([])
-    }
+    const res = await authedFetch('/api/finishings')
+    const data = await res.json()
+    setFinishings(data.finishings || [])
+    setLoading(false)
   }
 
   useEffect(() => {
-    if (!user) return
     fetchFinishings()
-    fetchProjectList()
-  }, [user])
+    authedFetch('/api/projects/list').then(r => r.json()).then(d => setProjects(d.projects || []))
+  }, [])
 
   useEffect(() => {
     if (formData.projectId) {
@@ -140,7 +122,7 @@ export default function FinishingsPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {finishings.map((f) => {
-            const status = statusLabels[f.handoverStatus] || { ar: f.handoverStatus || '-', en: f.handoverStatus || '-', color: 'secondary' }
+            const status = statusLabels[f.handoverStatus]
             const checks = [
               f.siteCleaned, f.wasteRemoved, f.shaftClosed, f.siteRestored, f.lineHandover,
             ]
