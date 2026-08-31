@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState, useRef } from 'react'
+import { useEffect, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -15,28 +15,25 @@ import {
 } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
-  FileText, Calendar,
-  ShieldCheck, CheckCircle2, Eye, Check, X, Pencil, AlertTriangle
+  Plus, FileText, Calendar, Users, Ruler, AlertTriangle,
+  ShieldCheck, CheckCircle2, Clock, DollarSign, Eye, Check, X, Pencil, Trash2
 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
 import { toast } from 'sonner'
 
-var statusLabels: Record<string, { ar: string; en: string; color: string }> = {
+const statusLabels: Record<string, { ar: string; en: string; color: string }> = {
   draft: { ar: 'مسودة', en: 'Draft', color: 'secondary' },
   submitted: { ar: 'مرسل', en: 'Submitted', color: 'default' },
   approved: { ar: 'معتمد', en: 'Approved', color: 'default' },
+  rejected: { ar: 'مرفوض', en: 'Rejected', color: 'destructive' },
 }
 
-var weatherLabels: Record<string, { ar: string; en: string }> = {
+const weatherLabels: Record<string, { ar: string; en: string }> = {
   sunny: { ar: 'مشمس', en: 'Sunny' },
   cloudy: { ar: 'غائم', en: 'Cloudy' },
   rainy: { ar: 'ممطر', en: 'Rainy' },
   windy: { ar: 'عاصف', en: 'Windy' },
-}
-
-function getStatusInfo(status: string) {
-  return statusLabels[status] || { ar: status || '-', en: status || '-', color: 'secondary' }
 }
 
 export default function DailyReportsPage() {
@@ -49,11 +46,6 @@ export default function DailyReportsPage() {
   const [editingReportId, setEditingReportId] = useState<string | null>(null)
   const [viewReport, setViewReport] = useState<any | null>(null)
   const [viewDialogOpen, setViewDialogOpen] = useState(false)
-  const [existingSafetyLoaded, setExistingSafetyLoaded] = useState(false)
-  const [safetyLocked, setSafetyLocked] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const driveLinesLoaded = useRef<string | null>(null)
-  const [lockedDriveLine, setLockedDriveLine] = useState<any>(null)
   const language = useAppStore((s) => s.language)
   const user = useAppStore((s) => s.user)
   const isRtl = language === 'ar'
@@ -67,6 +59,7 @@ export default function DailyReportsPage() {
     problems: '',
   })
 
+  // Safety checklist state
   const [safety, setSafety] = useState({
     ppeAvailable: false, helmetCheck: false, bootsCheck: false, glovesCheck: false,
     glassesCheck: false, workAreaCheck: false, barriersCheck: false, shaftCheck: false,
@@ -75,61 +68,61 @@ export default function DailyReportsPage() {
     hazards: '', observations: '', violations: '', incidentType: 'none', incidentDescription: '',
   })
 
+  const [safetyCompleted, setSafetyCompleted] = useState(false)
+
   async function fetchReports() {
     setLoading(true)
-    try {
-      var params = new URLSearchParams()
-      if (selectedProject !== 'all') params.set('projectId', selectedProject)
-      params.set('limit', '100')
-      var res = await authedFetch('/api/daily-reports?' + params.toString())
-      var data = await res.json()
-      setReports(data.reports || [])
-    } catch {
-      setReports([])
-    }
+    const params = new URLSearchParams()
+    if (selectedProject !== 'all') params.set('projectId', selectedProject)
+    params.set('limit', '100')
+    const res = await authedFetch('/api/daily-reports?' + params.toString())
+    const data = await res.json()
+    setReports(data.reports || [])
     setLoading(false)
   }
 
   async function fetchProjects() {
-    try {
-      var res = await authedFetch('/api/projects/list?_t=' + Date.now(), { cache: 'no-store' })
-      var data = await res.json()
-      setProjects(data.projects || [])
-    } catch {
-      setProjects([])
-    }
+    const res = await authedFetch('/api/projects/list')
+    const data = await res.json()
+    setProjects(data.projects || [])
   }
 
-  useEffect(function() {
-    if (!user) return
+  useEffect(() => {
     fetchReports()
     fetchProjects()
-  }, [selectedProject, user])
+  }, [selectedProject])
 
-  useEffect(function() {
-    if (!formData.projectId) {
-      setDriveLines([])
-      driveLinesLoaded.current = null
-      return
+  useEffect(() => {
+    if (formData.projectId) {
+      fetch(`/api/drive-lines?projectId=${formData.projectId}`)
+        .then(r => r.json())
+        .then(d => setDriveLines(d.driveLines || []))
     }
-    // Skip if we already loaded drive lines for this project (e.g. from openEditReport)
-    if (driveLinesLoaded.current === formData.projectId) return
-    driveLinesLoaded.current = formData.projectId
-    authedFetch('/api/drive-lines?projectId=' + formData.projectId)
-      .then(function(r) { return r.json() })
-      .then(function(d) { setDriveLines(d.driveLines || []) })
-      .catch(function() { setDriveLines([]) })
   }, [formData.projectId])
+
+  function openCreate() {
+    setEditingReportId(null)
+    setFormData({
+      projectId: projects[0]?.id || '', driveLineId: '', reportDate: new Date().toISOString().split('T')[0],
+      weather: 'sunny', workStartTime: '06:30', workEndTime: '17:00',
+      operatingHours: '8.5', stoppageHours: '0', stoppageReason: '',
+      workersCount: '12', attendees: '', startReading: '', endReading: '',
+      soilExcavated: 'mixed', pipesInstalled: '0', productionNotes: '',
+      problems: '',
+    })
+    setSafety({
+      ppeAvailable: false, helmetCheck: false, bootsCheck: false, glovesCheck: false,
+      glassesCheck: false, workAreaCheck: false, barriersCheck: false, shaftCheck: false,
+      ventilationCheck: false, electricalCheck: false, craneCheck: false, hydraulicCheck: false,
+      fireExtinguishers: false, workPermit: false, toolboxTalk: false,
+      hazards: '', observations: '', violations: '', incidentType: 'none', incidentDescription: '',
+    })
+    setSafetyCompleted(false)
+    setDialogOpen(true)
+  }
 
   async function openEditReport(report: any) {
     setEditingReportId(report.id)
-    var isLocked = !!report.safetyLocked
-    setSafetyLocked(isLocked)
-    if (isLocked && report.driveLine) {
-      setLockedDriveLine(report.driveLine)
-    } else {
-      setLockedDriveLine(null)
-    }
     setFormData({
       projectId: report.projectId || '',
       driveLineId: report.driveLineId || '',
@@ -149,170 +142,110 @@ export default function DailyReportsPage() {
       productionNotes: report.productionNotes || '',
       problems: report.problems || '',
     })
-
-    // Load existing safety data if present
-    if (report.safety) {
-      setSafety({
-        ppeAvailable: !!report.safety.ppeAvailable,
-        helmetCheck: !!report.safety.helmetCheck,
-        bootsCheck: !!report.safety.bootsCheck,
-        glovesCheck: !!report.safety.glovesCheck,
-        glassesCheck: !!report.safety.glassesCheck,
-        workAreaCheck: !!report.safety.workAreaCheck,
-        barriersCheck: !!report.safety.barriersCheck,
-        shaftCheck: !!report.safety.shaftCheck,
-        ventilationCheck: !!report.safety.ventilationCheck,
-        electricalCheck: !!report.safety.electricalCheck,
-        craneCheck: !!report.safety.craneCheck,
-        hydraulicCheck: !!report.safety.hydraulicCheck,
-        fireExtinguishers: !!report.safety.fireExtinguishers,
-        workPermit: !!report.safety.workPermit,
-        toolboxTalk: !!report.safety.toolboxTalk,
-        hazards: report.safety.hazards || '',
-        observations: report.safety.observations || '',
-        violations: report.safety.violations || '',
-        incidentType: report.safety.incidentType || 'none',
-        incidentDescription: report.safety.incidentDescription || '',
-      })
-      setExistingSafetyLoaded(true)
-    } else {
-      setSafety({
-        ppeAvailable: false, helmetCheck: false, bootsCheck: false, glovesCheck: false,
-        glassesCheck: false, workAreaCheck: false, barriersCheck: false, shaftCheck: false,
-        ventilationCheck: false, electricalCheck: false, craneCheck: false, hydraulicCheck: false,
-        fireExtinguishers: false, workPermit: false, toolboxTalk: false,
-        hazards: '', observations: '', violations: '', incidentType: 'none', incidentDescription: '',
-      })
-      setExistingSafetyLoaded(false)
-    }
-
-    // Load drive lines for the project (mark as loaded so useEffect skips)
-    if (report.projectId) {
-      driveLinesLoaded.current = report.projectId
-      try {
-        var dlRes = await authedFetch('/api/drive-lines?projectId=' + report.projectId)
-        var dlData = await dlRes.json()
-        setDriveLines(dlData.driveLines || [])
-      } catch { setDriveLines([]) }
-    }
-
     setDialogOpen(true)
   }
 
-  var safetyChecklistItems = useMemo(function() {
-    return [
-      { key: 'ppeAvailable', label: isRtl ? 'توفر PPE لجميع العمال' : 'PPE available for all workers' },
-      { key: 'helmetCheck', label: isRtl ? 'فحص الخوذة' : 'Helmet check' },
-      { key: 'bootsCheck', label: isRtl ? 'فحص الحذاء' : 'Boots check' },
-      { key: 'glovesCheck', label: isRtl ? 'فحص القفازات' : 'Gloves check' },
-      { key: 'glassesCheck', label: isRtl ? 'فحص النظارات' : 'Glasses check' },
-      { key: 'workAreaCheck', label: isRtl ? 'فحص منطقة العمل' : 'Work area check' },
-      { key: 'barriersCheck', label: isRtl ? 'وجود حواجز وتحذيرات' : 'Barriers & warnings' },
-      { key: 'shaftCheck', label: isRtl ? 'فحص الحفرة / shaft' : 'Shaft check' },
-      { key: 'ventilationCheck', label: isRtl ? 'فحص التهوية' : 'Ventilation check' },
-      { key: 'electricalCheck', label: isRtl ? 'فحص الكهرباء والكابلات' : 'Electrical check' },
-      { key: 'craneCheck', label: isRtl ? 'فحص الرافعة' : 'Crane check' },
-      { key: 'hydraulicCheck', label: isRtl ? 'فحص نظام الهيدرولك' : 'Hydraulic system check' },
-      { key: 'fireExtinguishers', label: isRtl ? 'توفر طفايات الحريق' : 'Fire extinguishers' },
-      { key: 'workPermit', label: isRtl ? 'وجود تصريح العمل' : 'Work permit' },
-      { key: 'toolboxTalk', label: isRtl ? 'اجتماع toolbox talk' : 'Toolbox talk' },
-    ]
-  }, [isRtl])
+  async function deleteReport(id: string) {
+    const res = await authedFetch(`/api/daily-reports/${id}`, { method: 'DELETE' })
+    if (res.ok) {
+      toast.success(isRtl ? 'تم حذف التقرير' : 'Report deleted')
+        fetchReports()
+    } else {
+      const data = await res.json().catch(() => ({}))
+      toast.error(data.error || (isRtl ? 'فشل الحذف' : 'Delete failed'))
+    }
+  }
 
-  var safetyPassedCount = safetyChecklistItems.filter(function(item) { return safety[item.key as keyof typeof safety] }).length
-  var allSafetyPassed = safetyPassedCount === safetyChecklistItems.length
+  const safetyChecklistItems = [
+    { key: 'ppeAvailable', label: isRtl ? 'توفر PPE لجميع العمال' : 'PPE available for all workers' },
+    { key: 'helmetCheck', label: isRtl ? 'فحص الخوذة' : 'Helmet check' },
+    { key: 'bootsCheck', label: isRtl ? 'فحص الحذاء' : 'Boots check' },
+    { key: 'glovesCheck', label: isRtl ? 'فحص القفازات' : 'Gloves check' },
+    { key: 'glassesCheck', label: isRtl ? 'فحص النظارات' : 'Glasses check' },
+    { key: 'workAreaCheck', label: isRtl ? 'فحص منطقة العمل' : 'Work area check' },
+    { key: 'barriersCheck', label: isRtl ? 'وجود حواجز وتحذيرات' : 'Barriers & warnings' },
+    { key: 'shaftCheck', label: isRtl ? 'فحص الحفرة / shaft' : 'Shaft check' },
+    { key: 'ventilationCheck', label: isRtl ? 'فحص التهوية' : 'Ventilation check' },
+    { key: 'electricalCheck', label: isRtl ? 'فحص الكهرباء والكابلات' : 'Electrical check' },
+    { key: 'craneCheck', label: isRtl ? 'فحص الرافعة' : 'Crane check' },
+    { key: 'hydraulicCheck', label: isRtl ? 'فحص نظام الهيدروليك' : 'Hydraulic system check' },
+    { key: 'fireExtinguishers', label: isRtl ? 'توفر طفايات الحريق' : 'Fire extinguishers' },
+    { key: 'workPermit', label: isRtl ? 'وجود تصريح العمل' : 'Work permit' },
+    { key: 'toolboxTalk', label: isRtl ? 'اجتماع toolbox talk' : 'Toolbox talk' },
+  ]
 
-  async function handleSaveDraft() {
-    if (!editingReportId || saving) return
-    setSaving(true)
+  const safetyPassedCount = safetyChecklistItems.filter(item => safety[item.key as keyof typeof safety]).length
+  const allSafetyPassed = safetyPassedCount === safetyChecklistItems.length
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+
+    if (!editingReportId && !allSafetyPassed) {
+      toast.error(isRtl ? 'يجب إكمال جميع فحوصات السلامة أولاً' : 'Complete all safety checks first')
+      return
+    }
+
     try {
-      var res = await authedFetch('/api/daily-reports/' + editingReportId, {
-        method: 'PUT',
+      const url = editingReportId ? `/api/daily-reports/${editingReportId}` : '/api/daily-reports'
+      const method = editingReportId ? 'PUT' : 'POST'
+      const body = { ...formData, status: 'submitted' }
+
+      const res = await authedFetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(Object.assign({}, formData, { status: 'draft' })),
+        body: JSON.stringify(body),
       })
-      if (res.ok) {
-        setDialogOpen(false)
-        setEditingReportId(null)
-        setExistingSafetyLoaded(false)
-        setTimeout(function() {
-          toast.success(isRtl ? 'تم حفظ التقرير' : 'Report saved')
-        }, 100)
-        setTimeout(function() { fetchReports() }, 500)
-      } else {
-        var errData = await res.json().catch(function() { return {} })
-        toast.error(errData.message || (isRtl ? 'فشل حفظ التقرير' : 'Failed to save report'))
+      const data = await res.json()
+
+      if (!res.ok) {
+        toast.error(editingReportId
+          ? (isRtl ? 'فشل تحديث التقرير' : 'Failed to update report')
+          : (isRtl ? 'فشل إنشاء التقرير' : 'Failed to create report'))
+        return
       }
+
+      // Only save safety checklist for new reports
+      if (!editingReportId) {
+        await fetch(`/api/daily-reports/${data.report.id}/safety`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(safety),
+        })
+        toast.success(isRtl ? 'تم إنشاء التقرير بنجاح' : 'Report created successfully')
+      } else {
+        toast.success(isRtl ? 'تم تحديث التقرير' : 'Report updated successfully')
+      }
+
+      setDialogOpen(false)
+      setEditingReportId(null)
+        fetchReports()
     } catch {
       toast.error(isRtl ? 'حدث خطأ' : 'Error')
-    } finally {
-      setSaving(false)
     }
   }
 
-  function askSubmitReport() {
-    if (confirm(isRtl ? 'هل أنت متأكد من تسليم التقرير؟ لا يمكنك تعديله بعد التسليم.' : 'Are you sure you want to submit? You cannot edit after submission.')) {
-      confirmSubmitReport()
-    }
-  }
-
-  async function confirmSubmitReport() {
-    if (!editingReportId || saving) return
-    setSaving(true)
-    try {
-      var res = await authedFetch('/api/daily-reports/' + editingReportId, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(Object.assign({}, formData, { status: 'submitted' })),
-      })
-      if (res.ok) {
-        setDialogOpen(false)
-        setEditingReportId(null)
-        setExistingSafetyLoaded(false)
-        setTimeout(function() {
-          toast.success(isRtl ? 'تم رفع التقرير بنجاح' : 'Report submitted successfully')
-        }, 100)
-        setTimeout(function() { fetchReports() }, 500)
-      } else {
-        var errData = await res.json().catch(function() { return {} })
-        toast.error(errData.message || (isRtl ? 'فشل رفع التقرير' : 'Failed to submit report'))
-      }
-    } catch {
-      toast.error(isRtl ? 'حدث خطأ' : 'Error')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function approveReport(id: string) {
-    var res = await authedFetch('/api/daily-reports/' + id + '/approve', {
+  async function approveReport(id: string, action: 'approve' | 'reject') {
+    const res = await fetch(`/api/daily-reports/${id}/approve`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'approve' }),
+      body: JSON.stringify({ action }),
     })
     if (res.ok) {
-      toast.success(isRtl ? 'تم الاعتماد' : 'Approved')
-      setTimeout(function() { fetchReports() }, 500)
+      toast.success(action === 'approve' ? (isRtl ? 'تم الاعتماد' : 'Approved') : (isRtl ? 'تم الرفض' : 'Rejected'))
+        fetchReports()
     }
   }
 
   async function viewReportDetails(report: any) {
     setViewReport(report)
     setViewDialogOpen(true)
-    try {
-      var res = await authedFetch('/api/daily-reports/' + report.id)
-      var data = await res.json()
-      if (data.report) setViewReport(data.report)
-    } catch {}
+    // Fetch full details including safety
+    const res = await fetch(`/api/daily-reports/${report.id}`)
+    const data = await res.json()
+    setViewReport(data.report)
   }
 
-  var canApprove = user?.role === 'project_manager' || user?.role === 'top_management'
-  var canEditOthers = user?.role === 'top_management' || user?.role === 'project_manager' || user?.role === 'site_engineer'
-
-  // Check if a report came from safety section (has safety but minimal production data)
-  function isFromSafetySection(r: any) {
-    return r.safety && r.status === 'draft' && r.dailyMeters === 0 && r.workersCount === 0
-  }
+  const canApprove = user?.role === 'project_manager' || user?.role === 'top_management'
 
   return (
     <div className="space-y-4">
@@ -320,9 +253,13 @@ export default function DailyReportsPage() {
         <div>
           <h1 className="text-2xl font-bold">{isRtl ? 'التقارير اليومية' : 'Daily Reports'}</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            {isRtl ? (reports.length + ' تقرير') : (reports.length + ' reports')}
+            {isRtl ? `${reports.length} تقرير` : `${reports.length} reports`}
           </p>
         </div>
+        <Button onClick={openCreate}>
+          <Plus className="h-4 w-4 ml-2" />
+          {isRtl ? 'تقرير جديد' : 'New Report'}
+        </Button>
       </div>
 
       <Select value={selectedProject} onValueChange={setSelectedProject}>
@@ -331,9 +268,9 @@ export default function DailyReportsPage() {
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="all">{isRtl ? 'كل المشاريع' : 'All Projects'}</SelectItem>
-          {projects.map(function(p) {
-            return <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-          })}
+          {projects.map((p) => (
+            <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+          ))}
         </SelectContent>
       </Select>
 
@@ -348,14 +285,8 @@ export default function DailyReportsPage() {
         </Card>
       ) : (
         <div className="space-y-2">
-          {reports.map(function(r) {
-            var status = getStatusInfo(r.status)
-            var fromSafety = isFromSafetySection(r)
-            var safetyCompliance = 0
-            if (r.safety) {
-              var sPassed = safetyChecklistItems.filter(function(item) { return r.safety[item.key as keyof any] }).length
-              safetyCompliance = (sPassed / 15) * 100
-            }
+          {reports.map((r) => {
+            const status = statusLabels[r.status]
             return (
               <Card key={r.id} className="hover:shadow-sm transition">
                 <CardContent className="p-4">
@@ -365,45 +296,55 @@ export default function DailyReportsPage() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <p className="font-semibold text-sm truncate">{(r.project && r.project.name) || '-'}</p>
-                        <Badge variant="outline" className="text-xs">{(r.driveLine && r.driveLine.lineNumber) || '-'}</Badge>
+                        <p className="font-semibold text-sm truncate">{r.project?.name}</p>
+                        <Badge variant="outline" className="text-xs">{r.driveLine?.lineNumber || '-'}</Badge>
                         <Badge variant={status.color as any} className="text-xs">
                           {isRtl ? status.ar : status.en}
                         </Badge>
-                        {fromSafety && (
-                          <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
-                            {isRtl ? 'بحاجة إكمال' : 'Needs data'}
-                          </Badge>
-                        )}
                       </div>
                       <p className="text-xs text-muted-foreground mt-0.5">
-                        {r.reportDate ? new Date(r.reportDate).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '-'}
-                        {' \u2022 '}
-                        {r.workStartTime || '-'} - {r.workEndTime || '-'}
-                        {' \u2022 '}
-                        {r.workersCount || '0'} {isRtl ? 'عامل' : 'workers'}
+                        {new Date(r.reportDate).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
+                        {' • '}
+                        {r.workStartTime} - {r.workEndTime}
+                        {' • '}
+                        {r.workersCount} {isRtl ? 'عامل' : 'workers'}
                       </p>
+                    </div>
+                    <div className="flex items-center gap-4 text-sm">
+                      <div className="text-center">
+                        <p className="text-xs text-muted-foreground">{isRtl ? 'الإنتاج' : 'Production'}</p>
+                        <p className="font-semibold">{r.dailyMeters} {isRtl ? 'م' : 'm'}</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-xs text-muted-foreground">{isRtl ? 'الإيراد' : 'Revenue'}</p>
+                        <p className="font-semibold text-emerald-600">{r.dailyRevenue} {isRtl ? 'ر.ع' : 'OMR'}</p>
+                      </div>
                       {r.safety && (
-                        <div className="flex items-center gap-1.5 mt-1">
-                          <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
-                          <Progress value={safetyCompliance} className="h-1 w-16" />
-                          <span className="text-xs text-muted-foreground">{safetyCompliance.toFixed(0)}%</span>
+                        <div className="text-center">
+                          <p className="text-xs text-muted-foreground">{isRtl ? 'السلامة' : 'Safety'}</p>
+                          <ShieldCheck className="h-5 w-5 text-emerald-600 mx-auto" />
                         </div>
                       )}
                     </div>
                     <div className="flex gap-1">
-                      {(r.status === 'draft' || (r.status === 'submitted' && (canEditOthers || r.createdById === user?.id))) && (
-                        <Button variant="ghost" size="sm" onClick={function() { openEditReport(r) }}>
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                      )}
-                      <Button variant="outline" size="sm" onClick={function() { viewReportDetails(r) }}>
+                      <Button variant="ghost" size="sm" onClick={() => openEditReport(r)}>
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => deleteReport(r.id)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={() => viewReportDetails(r)}>
                         <Eye className="h-4 w-4" />
                       </Button>
                       {canApprove && r.status === 'submitted' && (
-                        <Button variant="outline" size="sm" className="text-emerald-600" onClick={function() { approveReport(r.id) }}>
-                          <Check className="h-4 w-4" />
-                        </Button>
+                        <>
+                          <Button variant="outline" size="sm" className="text-emerald-600" onClick={() => approveReport(r.id, 'approve')}>
+                            <Check className="h-4 w-4" />
+                          </Button>
+                          <Button variant="outline" size="sm" className="text-destructive" onClick={() => approveReport(r.id, 'reject')}>
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </>
                       )}
                     </div>
                   </div>
@@ -415,11 +356,11 @@ export default function DailyReportsPage() {
       )}
 
       {/* Create/Edit Dialog with tabs */}
-      <Dialog open={dialogOpen} onOpenChange={function(open) {
+      <Dialog open={dialogOpen} onOpenChange={(open) => {
         setDialogOpen(open)
-        if (!open) { setEditingReportId(null); setExistingSafetyLoaded(false); setSafetyLocked(false); setLockedDriveLine(null) }
+        if (!open) setEditingReportId(null)
       }}>
-        <DialogContent className="max-w-3xl sm:max-h-[85vh] max-h-[88vh] sm:top-[50%] sm:translate-y-[-50%] top-[2vh] translate-y-0 overflow-y-auto p-4 sm:p-6">
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {editingReportId
@@ -428,40 +369,15 @@ export default function DailyReportsPage() {
             </DialogTitle>
             <DialogDescription>
               {editingReportId
-                ? (existingSafetyLoaded
-                  ? (isRtl ? 'بيانات السلامة محملة - أكمل باقي البيانات وارفع' : 'Safety data loaded - complete the rest and submit')
-                  : (isRtl ? 'عدل بيانات التقرير' : 'Edit report details'))
+                ? (isRtl ? 'عدّل بيانات التقرير' : 'Edit report details')
                 : (isRtl ? 'يجب إكمال فحص السلامة قبل حفظ التقرير' : 'Safety checklist must be completed first')}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
-            {/* Safety locked banner */}
-            {safetyLocked && editingReportId && (
-              <div className="p-3 rounded-lg border-2 bg-amber-50 border-amber-200">
-                <div className="flex items-center gap-2">
-                  <AlertTriangle className="h-5 w-5 text-amber-600" />
-                  <p className="font-medium text-sm text-amber-700">
-                    {isRtl ? 'بيانات السلامة مقفلة - لا يمكن تعديل المشروع وخط الحفر والتاريخ' : 'Safety data locked - project, drive line, and date cannot be modified'}
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {/* Safety status banner */}
-            {existingSafetyLoaded && editingReportId && (
-              <div className="p-3 rounded-lg border-2 bg-emerald-50 border-emerald-200">
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="h-5 w-5 text-emerald-600" />
-                  <p className="font-medium text-sm text-emerald-700">
-                    {isRtl ? 'فحص السلامة مكتمل (' + safetyPassedCount + '/15) - أكمل باقي بيانات التقرير' : 'Safety complete (' + safetyPassedCount + '/15) - fill in report data'}
-                  </p>
-                </div>
-              </div>
-            )}
-
+            {/* Safety checklist warning banner - only for new reports */}
             {!editingReportId && (
-              <div className={'p-3 rounded-lg border-2 ' + (allSafetyPassed ? 'bg-emerald-50 border-emerald-200' : 'bg-orange-50 border-orange-200')}>
+              <div className={`p-3 rounded-lg border-2 ${allSafetyPassed ? 'bg-emerald-50 border-emerald-200' : 'bg-orange-50 border-orange-200'}`}>
                 <div className="flex items-center gap-2">
                   {allSafetyPassed ? (
                     <CheckCircle2 className="h-5 w-5 text-emerald-600" />
@@ -469,10 +385,10 @@ export default function DailyReportsPage() {
                     <ShieldCheck className="h-5 w-5 text-orange-600" />
                   )}
                   <div className="flex-1">
-                    <p className={'font-medium text-sm ' + (allSafetyPassed ? 'text-emerald-700' : 'text-orange-700')}>
+                    <p className={`font-medium text-sm ${allSafetyPassed ? 'text-emerald-700' : 'text-orange-700'}`}>
                       {allSafetyPassed
                         ? (isRtl ? 'اكتمل فحص السلامة - يمكنك حفظ التقرير' : 'Safety check complete - you can save the report')
-                        : (isRtl ? ('فحص السلامة: ' + safetyPassedCount + '/' + safetyChecklistItems.length) : ('Safety checklist: ' + safetyPassedCount + '/' + safetyChecklistItems.length))
+                        : (isRtl ? `فحص السلامة: ${safetyPassedCount}/${safetyChecklistItems.length}` : `Safety checklist: ${safetyPassedCount}/${safetyChecklistItems.length}`)
                       }
                     </p>
                   </div>
@@ -495,31 +411,28 @@ export default function DailyReportsPage() {
                 </TabsList>
               )}
 
+              {/* Safety Tab - only for new reports */}
               {!editingReportId && (
                 <TabsContent value="safety" className="space-y-4 mt-4">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {safetyChecklistItems.map(function(item) {
-                      return (
-                        <label
-                          key={item.key}
-                          className={'flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition ' +
-                            (safety[item.key as keyof typeof safety]
-                              ? 'bg-emerald-50 border-emerald-200'
-                              : 'bg-card border-border hover:bg-muted/50')
-                          }
-                        >
-                          <Checkbox
-                            checked={safety[item.key as keyof typeof safety] as any}
-                            onCheckedChange={function(checked) {
-                              var updated = Object.assign({}, safety)
-                              updated[item.key] = !!checked
-                              setSafety(updated)
-                            }}
-                          />
-                          <span className="text-sm">{item.label}</span>
-                        </label>
-                      )
-                    })}
+                    {safetyChecklistItems.map((item) => (
+                      <label
+                        key={item.key}
+                        className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition ${
+                          safety[item.key as keyof typeof safety]
+                            ? 'bg-emerald-50 border-emerald-200'
+                            : 'bg-card border-border hover:bg-muted/50'
+                        }`}
+                      >
+                        <Checkbox
+                          checked={safety[item.key as keyof typeof safety]}
+                          onCheckedChange={(checked) => {
+                            setSafety({ ...safety, [item.key]: !!checked })
+                          }}
+                        />
+                        <span className="text-sm">{item.label}</span>
+                      </label>
+                    ))}
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -527,7 +440,7 @@ export default function DailyReportsPage() {
                       <Label>{isRtl ? 'المخاطر' : 'Hazards'}</Label>
                       <Textarea
                         value={safety.hazards}
-                        onChange={function(e) { setSafety({ ...safety, hazards: e.target.value }) }}
+                        onChange={(e) => setSafety({ ...safety, hazards: e.target.value })}
                         rows={2}
                         placeholder={isRtl ? 'اذكر أي مخاطر ملاحظة' : 'Any hazards observed'}
                       />
@@ -536,7 +449,7 @@ export default function DailyReportsPage() {
                       <Label>{isRtl ? 'الملاحظات' : 'Observations'}</Label>
                       <Textarea
                         value={safety.observations}
-                        onChange={function(e) { setSafety({ ...safety, observations: e.target.value }) }}
+                        onChange={(e) => setSafety({ ...safety, observations: e.target.value })}
                         rows={2}
                       />
                     </div>
@@ -544,13 +457,13 @@ export default function DailyReportsPage() {
                       <Label>{isRtl ? 'المخالفات' : 'Violations'}</Label>
                       <Textarea
                         value={safety.violations}
-                        onChange={function(e) { setSafety({ ...safety, violations: e.target.value }) }}
+                        onChange={(e) => setSafety({ ...safety, violations: e.target.value })}
                         rows={2}
                       />
                     </div>
                     <div className="space-y-1.5">
                       <Label>{isRtl ? 'نوع الحادث' : 'Incident Type'}</Label>
-                      <Select value={safety.incidentType} onValueChange={function(v) { setSafety({ ...safety, incidentType: v }) }}>
+                      <Select value={safety.incidentType} onValueChange={(v) => setSafety({ ...safety, incidentType: v })}>
                         <SelectTrigger><SelectValue /></SelectTrigger>
                         <SelectContent>
                           <SelectItem value="none">{isRtl ? 'لا يوجد' : 'None'}</SelectItem>
@@ -564,61 +477,40 @@ export default function DailyReportsPage() {
                 </TabsContent>
               )}
 
-              {/* Report Tab / Edit mode */}
-              <TabsContent value="report" className={'space-y-4 ' + (editingReportId ? 'mt-0' : 'mt-4')}>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* Report Tab */}
+              <div className={editingReportId ? '' : ''}>
+                <div className={!editingReportId ? '' : ''}>
+                  <TabsContent value="report" className={`space-y-4 ${editingReportId ? 'mt-0' : 'mt-4'}`}>
+                    <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1.5">
-                        <Label className="flex items-center gap-1.5">
-                          {isRtl ? 'المشروع' : 'Project'} *
-                          {safetyLocked && <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-amber-50 text-amber-700 border-amber-200">{isRtl ? 'مقفل' : 'Locked'}</Badge>}
-                        </Label>
-                        {safetyLocked ? (
-                          <div className="h-9 flex items-center px-3 rounded-md border border-input bg-muted/50 text-sm">
-                            {projects.find(function(p) { return p.id === formData.projectId })?.name || '-'}
-                          </div>
-                        ) : (
-                          <Select value={formData.projectId} onValueChange={function(v) { setFormData({ ...formData, projectId: v, driveLineId: '' }) }}>
-                            <SelectTrigger><SelectValue placeholder={isRtl ? 'اختر' : 'Select'} /></SelectTrigger>
-                            <SelectContent>
-                              {projects.map(function(p) {
-                                return <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                              })}
-                            </SelectContent>
-                          </Select>
-                        )}
+                        <Label>{isRtl ? 'المشروع' : 'Project'} *</Label>
+                        <Select value={formData.projectId} onValueChange={(v) => setFormData({ ...formData, projectId: v, driveLineId: '' })}>
+                          <SelectTrigger><SelectValue placeholder={isRtl ? 'اختر' : 'Select'} /></SelectTrigger>
+                          <SelectContent>
+                            {projects.map((p) => (
+                              <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </div>
-                      {safetyLocked && lockedDriveLine ? (
-                        <div className="space-y-1.5">
-                          <Label className="flex items-center gap-1.5">
-                            {isRtl ? 'خط الحفر' : 'Drive Line'}
-                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-amber-50 text-amber-700 border-amber-200">{isRtl ? 'مقفل' : 'Locked'}</Badge>
-                          </Label>
-                          <div className="h-9 flex items-center px-3 rounded-md border border-input bg-muted/50 text-sm">
-                            {(lockedDriveLine.lineNumber || '-') + ' - ' + (lockedDriveLine.startPoint || '-') + ' → ' + (lockedDriveLine.endPoint || '-')}
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="space-y-1.5">
-                          <Label>{isRtl ? 'خط الحفر' : 'Drive Line'}</Label>
-                          <select
-                            value={formData.driveLineId}
-                            onChange={function(e) { setFormData({ ...formData, driveLineId: e.target.value }) }}
-                            className={"w-full h-9 rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:border-ring transition-[color,box-shadow] " + (isRtl ? 'dir-rtl' : '')}
-                          >
-                            <option value="">{isRtl ? 'اختر' : 'Select'}</option>
-                            {driveLines.map(function(l) {
-                              return <option key={l.id} value={l.id}>{(l.lineNumber || '-') + ' - ' + (l.startPoint || '-') + ' → ' + (l.endPoint || '-')}</option>
-                            })}
-                          </select>
-                        </div>
-                      )}
+                      <div className="space-y-1.5">
+                        <Label>{isRtl ? 'خط الحفر' : 'Drive Line'}</Label>
+                        <Select value={formData.driveLineId} onValueChange={(v) => setFormData({ ...formData, driveLineId: v })}>
+                          <SelectTrigger><SelectValue placeholder={isRtl ? 'اختر' : 'Select'} /></SelectTrigger>
+                          <SelectContent>
+                            {driveLines.map((l) => (
+                              <SelectItem key={l.id} value={l.id}>{l.lineNumber} - {l.startPoint} → {l.endPoint}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
                       <div className="space-y-1.5">
                         <Label>{isRtl ? 'التاريخ' : 'Date'} *</Label>
-                        <Input type="date" value={formData.reportDate} onChange={function(e) { setFormData({ ...formData, reportDate: e.target.value }) }} disabled={safetyLocked} className={safetyLocked ? 'opacity-60 cursor-not-allowed bg-muted/50' : ''} />
+                        <Input type="date" value={formData.reportDate} onChange={(e) => setFormData({ ...formData, reportDate: e.target.value })} />
                       </div>
                       <div className="space-y-1.5">
                         <Label>{isRtl ? 'الطقس' : 'Weather'}</Label>
-                        <Select value={formData.weather} onValueChange={function(v) { setFormData({ ...formData, weather: v }) }}>
+                        <Select value={formData.weather} onValueChange={(v) => setFormData({ ...formData, weather: v })}>
                           <SelectTrigger><SelectValue /></SelectTrigger>
                           <SelectContent>
                             <SelectItem value="sunny">{isRtl ? 'مشمس' : 'Sunny'}</SelectItem>
@@ -630,39 +522,39 @@ export default function DailyReportsPage() {
                       </div>
                       <div className="space-y-1.5">
                         <Label>{isRtl ? 'بداية العمل' : 'Work Start'}</Label>
-                        <Input type="time" value={formData.workStartTime} onChange={function(e) { setFormData({ ...formData, workStartTime: e.target.value }) }} />
+                        <Input type="time" value={formData.workStartTime} onChange={(e) => setFormData({ ...formData, workStartTime: e.target.value })} />
                       </div>
                       <div className="space-y-1.5">
                         <Label>{isRtl ? 'نهاية العمل' : 'Work End'}</Label>
-                        <Input type="time" value={formData.workEndTime} onChange={function(e) { setFormData({ ...formData, workEndTime: e.target.value }) }} />
+                        <Input type="time" value={formData.workEndTime} onChange={(e) => setFormData({ ...formData, workEndTime: e.target.value })} />
                       </div>
                       <div className="space-y-1.5">
                         <Label>{isRtl ? 'ساعات التشغيل' : 'Operating Hours'}</Label>
-                        <Input type="number" step="0.1" value={formData.operatingHours} onChange={function(e) { setFormData({ ...formData, operatingHours: e.target.value }) }} />
+                        <Input type="number" step="0.1" value={formData.operatingHours} onChange={(e) => setFormData({ ...formData, operatingHours: e.target.value })} />
                       </div>
                       <div className="space-y-1.5">
                         <Label>{isRtl ? 'ساعات التوقف' : 'Stoppage Hours'}</Label>
-                        <Input type="number" step="0.1" value={formData.stoppageHours} onChange={function(e) { setFormData({ ...formData, stoppageHours: e.target.value }) }} />
+                        <Input type="number" step="0.1" value={formData.stoppageHours} onChange={(e) => setFormData({ ...formData, stoppageHours: e.target.value })} />
                       </div>
                       <div className="space-y-1.5">
                         <Label>{isRtl ? 'عدد العمال' : 'Workers Count'}</Label>
-                        <Input type="number" value={formData.workersCount} onChange={function(e) { setFormData({ ...formData, workersCount: e.target.value }) }} />
+                        <Input type="number" value={formData.workersCount} onChange={(e) => setFormData({ ...formData, workersCount: e.target.value })} />
                       </div>
                       <div className="space-y-1.5">
                         <Label>{isRtl ? 'سبب التوقف' : 'Stoppage Reason'}</Label>
-                        <Input value={formData.stoppageReason} onChange={function(e) { setFormData({ ...formData, stoppageReason: e.target.value }) }} />
+                        <Input value={formData.stoppageReason} onChange={(e) => setFormData({ ...formData, stoppageReason: e.target.value })} />
                       </div>
                       <div className="space-y-1.5">
                         <Label>{isRtl ? 'قراءة البداية (م)' : 'Start Reading (m)'}</Label>
-                        <Input type="number" step="0.01" value={formData.startReading} onChange={function(e) { setFormData({ ...formData, startReading: e.target.value }) }} />
+                        <Input type="number" step="0.01" value={formData.startReading} onChange={(e) => setFormData({ ...formData, startReading: e.target.value })} />
                       </div>
                       <div className="space-y-1.5">
                         <Label>{isRtl ? 'قراءة النهاية (م)' : 'End Reading (m)'}</Label>
-                        <Input type="number" step="0.01" value={formData.endReading} onChange={function(e) { setFormData({ ...formData, endReading: e.target.value }) }} />
+                        <Input type="number" step="0.01" value={formData.endReading} onChange={(e) => setFormData({ ...formData, endReading: e.target.value })} />
                       </div>
                       <div className="space-y-1.5">
                         <Label>{isRtl ? 'التربة المحفورة' : 'Soil Excavated'}</Label>
-                        <Select value={formData.soilExcavated} onValueChange={function(v) { setFormData({ ...formData, soilExcavated: v }) }}>
+                        <Select value={formData.soilExcavated} onValueChange={(v) => setFormData({ ...formData, soilExcavated: v })}>
                           <SelectTrigger><SelectValue /></SelectTrigger>
                           <SelectContent>
                             <SelectItem value="soft">{isRtl ? 'طرية' : 'Soft'}</SelectItem>
@@ -674,34 +566,29 @@ export default function DailyReportsPage() {
                       </div>
                       <div className="space-y-1.5">
                         <Label>{isRtl ? 'الأنابيب المركبة' : 'Pipes Installed'}</Label>
-                        <Input type="number" value={formData.pipesInstalled} onChange={function(e) { setFormData({ ...formData, pipesInstalled: e.target.value }) }} />
+                        <Input type="number" value={formData.pipesInstalled} onChange={(e) => setFormData({ ...formData, pipesInstalled: e.target.value })} />
                       </div>
                     </div>
                     <div className="space-y-1.5">
                       <Label>{isRtl ? 'ملاحظات الإنتاج' : 'Production Notes'}</Label>
-                      <Textarea value={formData.productionNotes} onChange={function(e) { setFormData({ ...formData, productionNotes: e.target.value }) }} rows={2} />
+                      <Textarea value={formData.productionNotes} onChange={(e) => setFormData({ ...formData, productionNotes: e.target.value })} rows={2} />
                     </div>
                     <div className="space-y-1.5">
                       <Label>{isRtl ? 'المشاكل' : 'Problems'}</Label>
-                      <Textarea value={formData.problems} onChange={function(e) { setFormData({ ...formData, problems: e.target.value }) }} rows={2} />
+                      <Textarea value={formData.problems} onChange={(e) => setFormData({ ...formData, problems: e.target.value })} rows={2} />
                     </div>
-              </TabsContent>
+                  </TabsContent>
+                </div>
+              </div>
             </Tabs>
           </div>
 
-          <DialogFooter className="gap-2">
-            <Button type="button" variant="outline" onClick={function() { setDialogOpen(false); setEditingReportId(null); setExistingSafetyLoaded(false) }}>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => { setDialogOpen(false); setEditingReportId(null) }}>
               {isRtl ? 'إلغاء' : 'Cancel'}
             </Button>
-            <Button type="button" variant="outline" onClick={handleSaveDraft} disabled={!editingReportId || saving}>
-              {saving
-                ? <span className="h-4 w-4 ml-2 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                : <Pencil className="h-4 w-4 ml-2" />}
-              {saving ? (isRtl ? 'جارٍ الحفظ...' : 'Saving...') : (isRtl ? 'حفظ (تعديل)' : 'Save (Edit)')}
-            </Button>
-            <Button type="button" onClick={askSubmitReport} disabled={!editingReportId || saving}>
-              <Check className="h-4 w-4 ml-2" />
-              {isRtl ? 'تسليم التقرير' : 'Submit Report'}
+            <Button type="button" onClick={handleSubmit} disabled={!editingReportId && !allSafetyPassed}>
+              {editingReportId ? (isRtl ? 'تحديث التقرير' : 'Update Report') : (isRtl ? 'حفظ التقرير' : 'Save Report')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -709,7 +596,7 @@ export default function DailyReportsPage() {
 
       {/* View Dialog */}
       <Dialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-        <DialogContent className="max-w-3xl sm:max-h-[85vh] max-h-[88vh] sm:top-[50%] sm:translate-y-[-50%] top-[2vh] translate-y-0 overflow-y-auto p-4 sm:p-6">
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{isRtl ? 'تفاصيل التقرير' : 'Report Details'}</DialogTitle>
           </DialogHeader>
@@ -724,7 +611,7 @@ function ReportDetails({ report }: { report: any }) {
   const language = useAppStore((s) => s.language)
   const isRtl = language === 'ar'
 
-  var safetyChecks = report.safety ? [
+  const safetyChecks = report.safety ? [
     { label: isRtl ? 'PPE' : 'PPE', ok: report.safety.ppeAvailable },
     { label: isRtl ? 'الخوذة' : 'Helmet', ok: report.safety.helmetCheck },
     { label: isRtl ? 'الحذاء' : 'Boots', ok: report.safety.bootsCheck },
@@ -736,7 +623,7 @@ function ReportDetails({ report }: { report: any }) {
     { label: isRtl ? 'التهوية' : 'Ventilation', ok: report.safety.ventilationCheck },
     { label: isRtl ? 'الكهرباء' : 'Electrical', ok: report.safety.electricalCheck },
     { label: isRtl ? 'الرافعة' : 'Crane', ok: report.safety.craneCheck },
-    { label: isRtl ? 'الهيدرولك' : 'Hydraulic', ok: report.safety.hydraulicCheck },
+    { label: isRtl ? 'الهيدروليك' : 'Hydraulic', ok: report.safety.hydraulicCheck },
     { label: isRtl ? 'طفايات الحريق' : 'Fire Ext.', ok: report.safety.fireExtinguishers },
     { label: isRtl ? 'تصريح العمل' : 'Work Permit', ok: report.safety.workPermit },
     { label: isRtl ? 'Toolbox Talk' : 'Toolbox Talk', ok: report.safety.toolboxTalk },
@@ -745,18 +632,24 @@ function ReportDetails({ report }: { report: any }) {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3 text-sm">
-        <Detail label={isRtl ? 'المشروع' : 'Project'} value={(report.project && report.project.name) || '-'} />
-        <Detail label={isRtl ? 'خط الحفر' : 'Drive Line'} value={(report.driveLine && report.driveLine.lineNumber) || '-'} />
-        <Detail label={isRtl ? 'التاريخ' : 'Date'} value={report.reportDate ? new Date(report.reportDate).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US') : '-'} />
+        <Detail label={isRtl ? 'المشروع' : 'Project'} value={report.project?.name || '-'} />
+        <Detail label={isRtl ? 'خط الحفر' : 'Drive Line'} value={report.driveLine?.lineNumber || '-'} />
+        <Detail label={isRtl ? 'التاريخ' : 'Date'} value={new Date(report.reportDate).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')} />
         <Detail label={isRtl ? 'الطقس' : 'Weather'} value={report.weather || '-'} />
         <Detail label={isRtl ? 'بداية العمل' : 'Start'} value={report.workStartTime || '-'} />
         <Detail label={isRtl ? 'نهاية العمل' : 'End'} value={report.workEndTime || '-'} />
-        <Detail label={isRtl ? 'ساعات التشغيل' : 'Operating'} value={String(report.operatingHours || '0') + 'h'} />
-        <Detail label={isRtl ? 'ساعات التوقف' : 'Stoppage'} value={String(report.stoppageHours || '0') + 'h'} />
-        <Detail label={isRtl ? 'عدد العمال' : 'Workers'} value={String(report.workersCount || '0')} />
-        <Detail label={isRtl ? 'الأنابيب' : 'Pipes'} value={String(report.pipesInstalled || '0')} />
-        <Detail label={isRtl ? 'قراءة البداية' : 'Start Reading'} value={String(report.startReading || '0') + ' م'} />
-        <Detail label={isRtl ? 'قراءة النهاية' : 'End Reading'} value={String(report.endReading || '0') + ' م'} />
+        <Detail label={isRtl ? 'ساعات التشغيل' : 'Operating'} value={`${report.operatingHours}h`} />
+        <Detail label={isRtl ? 'ساعات التوقف' : 'Stoppage'} value={`${report.stoppageHours}h`} />
+        <Detail label={isRtl ? 'عدد العمال' : 'Workers'} value={String(report.workersCount)} />
+        <Detail label={isRtl ? 'الأنابيب' : 'Pipes'} value={String(report.pipesInstalled)} />
+        <Detail label={isRtl ? 'قراءة البداية' : 'Start Reading'} value={`${report.startReading} م`} />
+        <Detail label={isRtl ? 'قراءة النهاية' : 'End Reading'} value={`${report.endReading} م`} />
+      </div>
+
+      <div className="grid grid-cols-3 gap-2">
+        <Stat label={isRtl ? 'إنتاج اليوم' : 'Daily Meters'} value={`${report.dailyMeters} م`} color="text-blue-600" />
+        <Stat label={isRtl ? 'إجمالي الأمتار' : 'Total Meters'} value={`${report.totalMeters.toFixed(1)} م`} color="text-purple-600" />
+        <Stat label={isRtl ? 'الإيراد اليومي' : 'Daily Revenue'} value={`${report.dailyRevenue} ر.ع`} color="text-emerald-600" />
       </div>
 
       {report.stoppageReason && (
@@ -787,40 +680,33 @@ function ReportDetails({ report }: { report: any }) {
             {isRtl ? 'قائمة السلامة' : 'Safety Checklist'}
           </h4>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-            {safetyChecks.map(function(c, i) {
-              return (
-                <div key={i} className="flex items-center gap-1.5 text-xs p-1.5 rounded bg-muted/30">
-                  {c.ok ? (
-                    <Check className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
-                  ) : (
-                    <X className="h-3.5 w-3.5 text-red-500 shrink-0" />
-                  )}
-                  <span className={c.ok ? '' : 'text-red-500 line-through'}>{c.label}</span>
-                </div>
-              )
-            })}
+            {safetyChecks.map((c, i) => (
+              <div key={i} className="flex items-center gap-1.5 text-xs p-1.5 rounded bg-muted/30">
+                {c.ok ? (
+                  <Check className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                ) : (
+                  <X className="h-3.5 w-3.5 text-red-500 shrink-0" />
+                )}
+                <span className={c.ok ? '' : 'text-red-500 line-through'}>{c.label}</span>
+              </div>
+            ))}
           </div>
           {report.safety.observations && (
             <p className="text-xs text-muted-foreground mt-2">{report.safety.observations}</p>
           )}
-          {report.safety.violations && (
-            <p className="text-xs text-orange-600 mt-1">{'\u26A0 '}{report.safety.violations}</p>
-          )}
         </div>
       )}
 
-      {report.costs && report.costs.length > 0 && (
+      {report.costs?.length > 0 && (
         <div>
           <h4 className="font-semibold text-sm mb-2">{isRtl ? 'التكاليف' : 'Costs'}</h4>
           <div className="space-y-1">
-            {report.costs.map(function(c: any) {
-              return (
-                <div key={c.id} className="flex justify-between text-sm p-2 rounded bg-muted/30">
-                  <span>{c.description}</span>
-                  <span className="font-medium">{c.amount} ر.ع</span>
-                </div>
-              )
-            })}
+            {report.costs.map((c: any) => (
+              <div key={c.id} className="flex justify-between text-sm p-2 rounded bg-muted/30">
+                <span>{c.description}</span>
+                <span className="font-medium">{c.amount} ر.ع</span>
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -833,6 +719,15 @@ function Detail({ label, value }: { label: string; value: string }) {
     <div>
       <p className="text-xs text-muted-foreground">{label}</p>
       <p className="font-medium">{value}</p>
+    </div>
+  )
+}
+
+function Stat({ label, value, color }: { label: string; value: string; color: string }) {
+  return (
+    <div className="p-3 rounded-lg bg-muted/50 text-center">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className={`font-bold text-sm mt-0.5 ${color}`}>{value}</p>
     </div>
   )
 }
