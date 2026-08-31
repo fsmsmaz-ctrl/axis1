@@ -9,7 +9,6 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
-import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger
 } from '@/components/ui/dialog'
@@ -17,10 +16,16 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle
 } from '@/components/ui/alert-dialog'
-import { Plus, Search, FolderKanban, MapPin, Calendar, DollarSign, Edit, Trash2, Eye, Users, EyeOff } from 'lucide-react'
+import { Plus, Search, FolderKanban, MapPin, Calendar, DollarSign, Edit, Trash2, Eye, Users } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch, apiRequest, getErrorMessage } from '@/lib/api-client'
 import { toast } from 'sonner'
+
+function canCreateProject(user: any): boolean {
+  if (!user) return false
+  if (user.email && user.email.toLowerCase().trim() === 'admin@axis.om') return true
+  return user.role === 'top_management' || user.role === 'project_manager'
+}
 
 const workTypeLabels: Record<string, { ar: string; en: string }> = {
   pipe_jacking: { ar: 'Pipe Jacking', en: 'Pipe Jacking' },
@@ -53,6 +58,7 @@ export default function ProjectsPage() {
   const [viewProject, setViewProject] = useState<any | null>(null)
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const language = useAppStore((s) => s.language)
+  const token = useAppStore((s) => s.token)
   const user = useAppStore((s) => s.user)
   const isRtl = language === 'ar'
 
@@ -60,21 +66,26 @@ export default function ProjectsPage() {
     code: '', name: '', client: '', location: '', contractNumber: '',
     workType: 'pipe_jacking', pipeDiameter: '1200mm', totalLength: '',
     pricePerMeter: '', soilType: 'mixed', startDate: '', expectedEnd: '',
-    status: 'not_started', showInCosts: true, notes: '',
+    status: 'not_started', notes: '',
   })
 
   async function fetchProjects() {
     setLoading(true)
-    const res = await authedFetch('/api/projects/list' + (statusFilter !== 'all' ? `?status=${statusFilter}` : ''))
-    const data = await res.json()
-    setProjects(data.projects || [])
-    setLoading(false)
+    try {
+      const res = await authedFetch('/api/projects/list' + (statusFilter !== 'all' ? '?status=' + statusFilter : ''))
+      const data = await res.json()
+      setProjects(data.projects || [])
+    } catch {
+      setProjects([])
+    } finally {
+      setLoading(false)
+    }
   }
 
   useEffect(() => {
-    if (!user) return
+    if (!token) return
     fetchProjects()
-  }, [statusFilter, user])
+  }, [statusFilter, token])
 
   function openCreate() {
     const today = new Date()
@@ -88,7 +99,7 @@ export default function ProjectsPage() {
       pricePerMeter: '', soilType: 'mixed',
       startDate: today.toISOString().split('T')[0],
       expectedEnd: defaultEnd.toISOString().split('T')[0],
-      status: 'not_started', showInCosts: true, notes: '',
+      status: 'not_started', notes: '',
     })
     setDialogOpen(true)
   }
@@ -100,8 +111,9 @@ export default function ProjectsPage() {
       contractNumber: p.contractNumber || '', workType: p.workType,
       pipeDiameter: p.pipeDiameter, totalLength: String(p.totalLength),
       pricePerMeter: String(p.pricePerMeter), soilType: p.soilType,
-      startDate: p.startDate.split('T')[0], expectedEnd: p.expectedEnd.split('T')[0],
-      status: p.status, showInCosts: p.showInCosts !== false, notes: p.notes || '',
+      startDate: p.startDate ? p.startDate.split('T')[0] : '',
+      expectedEnd: p.expectedEnd ? p.expectedEnd.split('T')[0] : '',
+      status: p.status, notes: p.notes || '',
     })
     setDialogOpen(true)
   }
@@ -152,11 +164,18 @@ export default function ProjectsPage() {
 
   async function handleDelete() {
     if (!deleteId) return
-    const res = await authedFetch(`/api/projects/${deleteId}`, { method: 'DELETE' })
-    if (res.ok) {
-      toast.success(isRtl ? 'تم الحذف' : 'Deleted')
-      setDeleteId(null)
-      fetchProjects()
+    try {
+      const res = await authedFetch('/api/projects/' + deleteId, { method: 'DELETE' })
+      if (res.ok) {
+        toast.success(isRtl ? 'تم الحذف' : 'Deleted')
+        setDeleteId(null)
+        fetchProjects()
+      } else {
+        var errData = await res.json().catch(function() { return {} })
+        toast.error(errData.message || (isRtl ? 'فشل الحذف' : 'Delete failed'))
+      }
+    } catch {
+      toast.error(isRtl ? 'حدث خطأ' : 'Error')
     }
   }
 
@@ -174,10 +193,12 @@ export default function ProjectsPage() {
             {isRtl ? `${projects.length} مشروع` : `${projects.length} projects`}
           </p>
         </div>
-        <Button onClick={openCreate}>
-          <Plus className="h-4 w-4 ml-2" />
-          {isRtl ? 'مشروع جديد' : 'New Project'}
-        </Button>
+        {canCreateProject(user) && (
+          <Button onClick={openCreate}>
+            <Plus className="h-4 w-4 ml-2" />
+            {isRtl ? 'مشروع جديد' : 'New Project'}
+          </Button>
+        )}
       </div>
 
       {/* Filters */}
@@ -226,9 +247,9 @@ export default function ProjectsPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filtered.map((p) => {
-            const status = statusLabels[p.status]
-            const workType = workTypeLabels[p.workType]
-            const soilType = soilTypeLabels[p.soilType]
+            const status = statusLabels[p.status] || { ar: p.status || '-', en: p.status || '-', color: 'secondary' }
+            const workType = workTypeLabels[p.workType] || { ar: p.workType || '-', en: p.workType || '-' }
+            const soilType = soilTypeLabels[p.soilType] || { ar: p.soilType || '-', en: p.soilType || '-' }
             return (
               <Card key={p.id} className="hover:shadow-md transition">
                 <CardContent className="p-5">
@@ -264,18 +285,12 @@ export default function ProjectsPage() {
                       <Users className="h-4 w-4 shrink-0" />
                       <span className="text-xs">{isRtl ? workType.ar : workType.en} • {p.pipeDiameter} • {isRtl ? soilType.ar : soilType.en}</span>
                     </div>
-                    {p.showInCosts === false && (
-                      <div className="flex items-center gap-1 text-xs text-orange-600">
-                        <EyeOff className="h-3 w-3" />
-                        <span>{isRtl ? 'مخفي من التكاليف' : 'Hidden from costs'}</span>
-                      </div>
-                    )}
                   </div>
 
                   <div className="mt-4">
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-xs text-muted-foreground">{isRtl ? 'نسبة الإنجاز' : 'Progress'}</span>
-                      <span className="text-xs font-semibold">{p.progress.toFixed(1)}%</span>
+                      <span className="text-xs font-semibold">{(p.progress || 0).toFixed(1)}%</span>
                     </div>
                     <Progress value={p.progress} className="h-2" />
                   </div>
@@ -398,26 +413,6 @@ export default function ProjectsPage() {
                 </Select>
               </div>
             </div>
-            {user?.role === 'top_management' && (
-              <div className="flex items-center gap-3 p-3 rounded-lg border bg-muted/30">
-                <Checkbox
-                  id="showInCosts"
-                  checked={formData.showInCosts !== false}
-                  onCheckedChange={(checked) => setFormData({ ...formData, showInCosts: !!checked })}
-                />
-                <div>
-                  <Label htmlFor="showInCosts" className="cursor-pointer font-medium">
-                    {isRtl ? 'إظهار في قسم التكاليف والإيرادات' : 'Show in Costs & Revenue'}
-                  </Label>
-                  <p className="text-xs text-muted-foreground">
-                    {formData.showInCosts === false
-                      ? (isRtl ? 'المشروع وتكاليفه وإيراداته لن تظهر في قسم التكاليف' : 'Project and its costs/revenue will be hidden from costs section')
-                      : (isRtl ? 'المشروع يظهر في قسم التكاليف والإيرادات' : 'Project is visible in costs & revenue section')
-                    }
-                  </p>
-                </div>
-              </div>
-            )}
             <div className="space-y-1.5">
               <Label>{isRtl ? 'ملاحظات' : 'Notes'}</Label>
               <Textarea value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} rows={2} />
@@ -469,6 +464,7 @@ function ProjectDetails({ id }: { id: string | null }) {
   const [project, setProject] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const language = useAppStore((s) => s.language)
+  const token = useAppStore((s) => s.token)
   const isRtl = language === 'ar'
 
   useEffect(() => {
@@ -499,9 +495,7 @@ function ProjectDetails({ id }: { id: string | null }) {
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
         <Stat label={isRtl ? 'الأمتار المنجزة' : 'Meters Drilled'} value={`${project.totalMetersDrilled?.toFixed(1) || 0} م`} />
-        <Stat label={isRtl ? 'الإيرادات' : 'Revenue'} value={`${project.totalRevenue?.toFixed(0) || 0} ر.ع`} />
         <Stat label={isRtl ? 'التكاليف' : 'Costs'} value={`${project.totalCost?.toFixed(0) || 0} ر.ع`} />
-        <Stat label={isRtl ? 'صافي الربح' : 'Net Profit'} value={`${project.netProfit?.toFixed(0) || 0} ر.ع`} />
       </div>
 
       {project.driveLines?.length > 0 && (
@@ -513,7 +507,7 @@ function ProjectDetails({ id }: { id: string | null }) {
                 <Badge variant="outline">{l.lineNumber}</Badge>
                 <span className="flex-1">{l.startPoint} ← {l.endPoint}</span>
                 <span className="text-muted-foreground">{l.completedLength}/{l.totalLength} م</span>
-                <span className="font-medium">{l.progress.toFixed(1)}%</span>
+                <span className="font-medium">{(l.progress || 0).toFixed(1)}%</span>
               </div>
             ))}
           </div>
