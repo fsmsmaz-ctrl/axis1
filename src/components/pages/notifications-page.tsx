@@ -31,6 +31,7 @@ export default function NotificationsPage() {
   const [notifications, setNotifications] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const language = useAppStore((s) => s.language)
+  const token = useAppStore((s) => s.token)
   const isRtl = language === 'ar'
 
   const fetchNotifications = useCallback(async () => {
