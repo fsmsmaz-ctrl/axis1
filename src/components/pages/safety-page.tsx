@@ -11,7 +11,8 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet'
-import { ShieldCheck, ShieldAlert, AlertTriangle, CheckCircle2, XCircle, Calendar, Plus, Loader2, Trash2, GitBranch } from 'lucide-react'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { ShieldCheck, ShieldAlert, AlertTriangle, CheckCircle2, XCircle, Calendar, Plus, Loader2, Trash2, GitBranch, Users, Phone, Building2, Pencil } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
 import { toast } from 'sonner'
@@ -45,7 +46,7 @@ const emptyForm = {
   projectId: '',
   driveLineId: '',
   reportDate: new Date().toISOString().split('T')[0],
-  signedBy: '',
+  signedBy': '',
   ppeAvailable: false,
   helmetCheck: false,
   bootsCheck: false,
@@ -76,9 +77,15 @@ export default function SafetyPage() {
   const [sheetOpen, setSheetOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState({ ...emptyForm })
+
+  // Workers state
+  const [workers, setWorkers] = useState<any[]>([])
+  const [workersLoading, setWorkersLoading] = useState(false)
+  const [workerDialogOpen, setWorkerDialogOpen] = useState(false)
+  const [editingWorker, setEditingWorker] = useState<any>(null)
+  const [workerForm, setWorkerForm] = useState({ name: '', phone: '', contractorName: '', projectId: '', notes: '' })
   const driveLinesLoaded = useRef<string | null>(null)
   const language = useAppStore((s) => s.language)
-  const user = useAppStore((s) => s.user)
   const setPage = useAppStore((s) => s.setPage)
   const isRtl = language === 'ar'
   const isAdmin = useAppStore((s) => s.user)?.email?.toLowerCase().trim() === 'admin@axis.om'
@@ -134,16 +141,66 @@ export default function SafetyPage() {
     }
   }
 
-  useEffect(() => {
-    if (!user) return
-    fetchReports()
-    fetchProjects()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user])
+  async function fetchWorkers() {
+    setWorkersLoading(true)
+    try {
+      var params = new URLSearchParams()
+      if (selectedProject !== 'all') params.set('projectId', selectedProject)
+      var res = await authedFetch('/api/workers?' + params.toString())
+      var data = await res.json()
+      setWorkers(data.workers || [])
+    } catch {
+      setWorkers([])
+    }
+    setWorkersLoading(false)
+  }
+
+  async function saveWorker(e: React.FormEvent) {
+    e.preventDefault()
+    try {
+      var url = editingWorker ? '/api/workers/' + editingWorker.id : '/api/workers'
+      var method = editingWorker ? 'PUT' : 'POST'
+      var res = await authedFetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(workerForm),
+      })
+      if (res.ok) {
+        toast.success(editingWorker ? (isRtl ? 'تم تحديث بيانات العامل' : 'Worker updated') : (isRtl ? 'تم إضافة العامل' : 'Worker added'))
+        setWorkerDialogOpen(false)
+        setEditingWorker(null)
+        setWorkerForm({ name: '', phone: '', contractorName: '', projectId: '', notes: '' })
+        fetchWorkers()
+      }
+    } catch {
+      toast.error(isRtl ? 'حدث خطأ' : 'Error')
+    }
+  }
+
+  async function deleteWorker(id: string) {
+    if (!confirm(isRtl ? 'هل أنت متأكد من حذف هذا العامل؟' : 'Delete this worker?')) return
+    try {
+      var res = await authedFetch('/api/workers/' + id, { method: 'DELETE' })
+      if (res.ok) {
+        toast.success(isRtl ? 'تم حذف العامل' : 'Worker deleted')
+        fetchWorkers()
+      }
+    } catch {
+      toast.error(isRtl ? 'حدث خطأ' : 'Error')
+    }
+  }
 
   useEffect(() => {
-    if (!user) return
     fetchReports()
+    fetchProjects()
+    fetchWorkers()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    fetchReports()
+    fetchWorkers()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedProject])
 
   // Load drive lines when project changes in the form
@@ -248,9 +305,9 @@ export default function SafetyPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold">{isRtl ? 'السلامة' : 'Safety'}</h1>
+          <h1 className="text-2xl font-bold">{isRtl ? 'السلامة والعمال' : 'Safety & Workers'}</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            {isRtl ? 'تقارير السلامة اليومية والمخاطر' : 'Daily safety reports and hazards'}
+            {isRtl ? 'تقارير السلامة اليومية وإدارة بيانات العمال' : 'Daily safety reports and worker management'}
           </p>
         </div>
         <Button onClick={function() {
@@ -421,6 +478,144 @@ export default function SafetyPage() {
         </div>
       )}
 
+      {/* Workers Section */}
+      <Card className="shadow-sm">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <div className="w-7 h-7 rounded-md bg-blue-100 text-blue-600 flex items-center justify-center">
+                <Users className="h-4 w-4" />
+              </div>
+              {isRtl ? 'بيانات العمال' : 'Worker Data'}
+              <Badge variant="secondary" className="text-xs font-normal">{workers.length}</Badge>
+            </CardTitle>
+            <Button size="sm" onClick={function() {
+              setEditingWorker(null)
+              setWorkerForm({ name: '', phone: '', contractorName: '', projectId: projects[0]?.id || '', notes: '' })
+              setWorkerDialogOpen(true)
+            }}>
+              <Plus className="h-3.5 w-3.5 ml-1.5" />
+              {isRtl ? 'إضافة عامل' : 'Add Worker'}
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {workersLoading ? (
+            <div className="h-24 bg-muted animate-pulse rounded-lg" />
+          ) : workers.length === 0 ? (
+            <div className="py-10 text-center text-muted-foreground text-sm">
+              <Users className="h-10 w-10 mx-auto mb-2 opacity-30" />
+              {isRtl ? 'لا يوجد عمال مسجلين' : 'No workers registered'}
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/30">
+                    <th className="p-2.5 text-right font-medium text-xs uppercase tracking-wider text-muted-foreground w-8">#</th>
+                    <th className="p-2.5 text-right font-medium text-xs uppercase tracking-wider text-muted-foreground">{isRtl ? 'الاسم' : 'Name'}</th>
+                    <th className="p-2.5 text-right font-medium text-xs uppercase tracking-wider text-muted-foreground">{isRtl ? 'رقم التواصل' : 'Phone'}</th>
+                    <th className="p-2.5 text-right font-medium text-xs uppercase tracking-wider text-muted-foreground">{isRtl ? 'المقاول' : 'Contractor'}</th>
+                    <th className="p-2.5 text-right font-medium text-xs uppercase tracking-wider text-muted-foreground">{isRtl ? 'المشروع' : 'Project'}</th>
+                    <th className="p-2.5 text-right font-medium text-xs uppercase tracking-wider text-muted-foreground w-20">{isRtl ? 'إجراءات' : 'Actions'}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {workers.map(function(w, idx) {
+                    return (
+                      <tr key={w.id} className="border-b hover:bg-muted/20 transition-colors group">
+                        <td className="p-2.5 text-muted-foreground text-xs">{idx + 1}</td>
+                        <td className="p-2.5 font-medium">{w.name}</td>
+                        <td className="p-2.5">
+                          <span className="flex items-center gap-1.5 text-xs">
+                            <Phone className="h-3 w-3 text-muted-foreground" />
+                            {w.phone}
+                          </span>
+                        </td>
+                        <td className="p-2.5">
+                          {w.contractorName ? (
+                            <span className="flex items-center gap-1.5 text-xs">
+                              <Building2 className="h-3 w-3 text-muted-foreground" />
+                              {w.contractorName}
+                            </span>
+                          ) : '-'}
+                        </td>
+                        <td className="p-2.5 text-xs text-muted-foreground">{w.project ? w.project.name : '-'}</td>
+                        <td className="p-2.5">
+                          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={function() {
+                              setEditingWorker(w)
+                              setWorkerForm({
+                                name: w.name,
+                                phone: w.phone,
+                                contractorName: w.contractorName || '',
+                                projectId: w.projectId || '',
+                                notes: w.notes || '',
+                              })
+                              setWorkerDialogOpen(true)
+                            }}>
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-destructive" onClick={function() { deleteWorker(w.id) }}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Worker Dialog */}
+      <Dialog open={workerDialogOpen} onOpenChange={setWorkerDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{editingWorker ? (isRtl ? 'تعديل بيانات العامل' : 'Edit Worker') : (isRtl ? 'إضافة عامل جديد' : 'Add Worker')}</DialogTitle>
+            <DialogDescription>
+              {editingWorker ? (isRtl ? 'عدّل بيانات العامل' : 'Edit worker details') : (isRtl ? 'أدخل بيانات العامل الجديد' : 'Enter new worker details')}
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={saveWorker} className="space-y-3">
+            <div className="space-y-1.5">
+              <Label>{isRtl ? 'اسم العامل' : 'Worker Name'} *</Label>
+              <Input value={workerForm.name} onChange={function(e) { setWorkerForm(Object.assign({}, workerForm, { name: e.target.value })) }} required />
+            </div>
+            <div className="space-y-1.5">
+              <Label>{isRtl ? 'رقم التواصل' : 'Phone Number'} *</Label>
+              <Input value={workerForm.phone} onChange={function(e) { setWorkerForm(Object.assign({}, workerForm, { phone: e.target.value })) }} required />
+            </div>
+            <div className="space-y-1.5">
+              <Label>{isRtl ? 'اسم المقاول' : 'Contractor Name'}</Label>
+              <Input value={workerForm.contractorName} onChange={function(e) { setWorkerForm(Object.assign({}, workerForm, { contractorName: e.target.value })) }} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>{isRtl ? 'المشروع' : 'Project'}</Label>
+              <Select value={workerForm.projectId} onValueChange={function(v) { setWorkerForm(Object.assign({}, workerForm, { projectId: v })) }}>
+                <SelectTrigger><SelectValue placeholder={isRtl ? 'اختر' : 'Select'} /></SelectTrigger>
+                <SelectContent>
+                  {projects.map(function(p) {
+                    return <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                  })}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>{isRtl ? 'ملاحظات' : 'Notes'}</Label>
+              <Textarea value={workerForm.notes} onChange={function(e) { setWorkerForm(Object.assign({}, workerForm, { notes: e.target.value })) }} rows={2} />
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={function() { setWorkerDialogOpen(false) }}>{isRtl ? 'إلغاء' : 'Cancel'}</Button>
+              <Button type="submit">{isRtl ? 'حفظ' : 'Save'}</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
       {/* Add Safety Report Sheet */}
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
         <SheetContent side={isRtl ? 'left' : 'right'} className="overflow-y-auto w-full sm:max-w-lg">
@@ -460,15 +655,11 @@ export default function SafetyPage() {
               <select
                 value={form.driveLineId}
                 onChange={function(e) { setForm({ ...form, driveLineId: e.target.value }) }}
-                dir={isRtl ? 'rtl' : 'ltr'}
-                className="w-full h-9 rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:border-ring transition-[color,box-shadow]"
+                className={"w-full h-9 rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:border-ring transition-[color,box-shadow] " + (isRtl ? 'dir-rtl' : '')}
               >
-                <option value="">{isRtl ? '-- اختر خط الحفر --' : '-- Select Drive Line --'}</option>
-                {driveLines.length === 0 && form.projectId && (
-                  <option disabled>{isRtl ? 'لا توجد خطوط حفر لهذا المشروع' : 'No drive lines for this project'}</option>
-                )}
+                <option value="">{isRtl ? 'اختر' : 'Select'}</option>
                 {driveLines.map(function(l) {
-                  return <option key={l.id} value={l.id}>{(l.lineNumber || '-') + ' - ' + (l.startPoint || '-') + ' \u2192 ' + (l.endPoint || '-')}</option>
+                  return <option key={l.id} value={l.id}>{(l.lineNumber || '-') + ' - ' + (l.startPoint || '-') + ' → ' + (l.endPoint || '-')}</option>
                 })}
               </select>
             </div>
