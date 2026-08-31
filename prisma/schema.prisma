@@ -39,6 +39,7 @@ model User {
   companyAssets      CompanyAsset[]  @relation("AssetResponsible")
   equipmentsCreated  Equipment[]       @relation("EquipmentCreator")
   assetsCreated      CompanyAsset[]   @relation("AssetCreator")
+  workersCreated      Worker[]         @relation("WorkerCreator")
 }
 
 // ==================== Projects ====================
@@ -75,6 +76,7 @@ model Project {
   notifications  Notification[]
   auditLogs      AuditLog[]
   companyAssets  CompanyAsset[]
+  workers        Worker[]
 
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -330,6 +332,23 @@ model AuditLog {
   user        User?    @relation(fields: [userId], references: [id])
   project     Project? @relation(fields: [projectId], references: [id])
   dailyReport DailyReport? @relation(fields: [dailyReportId], references: [id])
+}
+
+// ==================== Workers (Safety & Labor) ====================
+model Worker {
+  id            String   @id @default(cuid())
+  projectId     String?
+  name          String
+  phone         String
+  contractorName String?
+  notes         String?
+  createdById   String?
+
+  project       Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy     User?    @relation("WorkerCreator", fields: [createdById], references: [id])
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }
 
 // ==================== Company Assets & Rentals ====================
