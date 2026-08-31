@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { Button } from '@/components/ui/button'
 import {
-  Activity, TrendingUp, TrendingDown, DollarSign, Wallet,
+  Activity, TrendingDown, Wallet,
   Users, AlertTriangle, Wrench, FolderKanban, ArrowLeft,
   Trophy, AlertCircle, Calendar, Cpu
 } from 'lucide-react'
@@ -27,7 +27,6 @@ interface DashboardData {
     revenueThisMonth: number
     totalRevenue: number
     totalCosts: number
-    costsTotal: number
     monthCosts: number
     monthlyRentalCost: number
     netProfit: number
@@ -35,8 +34,8 @@ interface DashboardData {
     presentWorkers: number
     unreadNotifications: number
   }
-  trend: Array<{ date: string; meters: number; revenue: number; cost: number }>
-  projects: Array<{ id: string; name: string; code: string; status: string; progress: number; totalLength: number; pricePerMeter: number; client: string }>
+  trend: Array<{ date: string; meters: number; cost: number }>
+  projects: Array<{ id: string; name: string; code: string; status: string; progress: number; totalLength: number; client: string }>
   recentReports: any[]
   notifications: any[]
   equipment: any[]
@@ -54,7 +53,6 @@ const categoryColors: Record<string, string> = {
   oil: '#6366f1',
   safety: '#ef4444',
   rental: '#14b8a6',
-  food: '#84cc16',
   other: '#64748b',
 }
 
@@ -68,7 +66,6 @@ const categoryLabelsAr: Record<string, string> = {
   oil: 'زيوت',
   safety: 'سلامة',
   rental: 'إيجار',
-  food: 'طعام',
   other: 'أخرى',
 }
 
@@ -77,11 +74,11 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const language = useAppStore((s) => s.language)
-  const user = useAppStore((s) => s.user)
+  const token = useAppStore((s) => s.token)
   const isRtl = language === 'ar'
 
   async function fetchDashboard() {
-    if (!user) return
+    if (!token) return
     setLoading(true)
     setError(null)
     try {
@@ -105,7 +102,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
 
   useEffect(() => {
     fetchDashboard()
-  }, [user])
+  }, [token])
 
   if (loading) {
     return (
@@ -144,8 +141,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
 
   const stats = data.stats || {
     activeProjects: 0, totalProjects: 0, metersToday: 0, metersThisMonth: 0,
-    revenueToday: 0, revenueThisMonth: 0, totalRevenue: 0, totalCosts: 0,
-    monthCosts: 0, costsTotal: 0, monthlyRentalCost: 0, netProfit: 0, stoppedEquipment: 0, presentWorkers: 0,
+    totalCosts: 0, monthCosts: 0, monthlyRentalCost: 0, stoppedEquipment: 0, presentWorkers: 0,
     unreadNotifications: 0,
   }
   const projects = Array.isArray(data.projects) ? data.projects : []
@@ -168,7 +164,6 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
   const trendData = trend.map(t => ({
     ...t,
     date: new Date(t.date).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US', { month: 'short', day: 'numeric' }),
-    profit: (t.revenue || 0) - (t.cost || 0),
   }))
 
   return (
@@ -188,7 +183,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <StatCard
           icon={FolderKanban}
           label={isRtl ? 'المشاريع النشطة' : 'Active Projects'}
@@ -204,22 +199,6 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
           subtext={`${fmt(stats.metersThisMonth)} ${isRtl ? 'م هذا الشهر' : 'm this month'}`}
           color="text-blue-600"
           bgColor="bg-blue-50"
-        />
-        <StatCard
-          icon={DollarSign}
-          label={isRtl ? 'الإيرادات' : 'Revenue'}
-          value={fmtCurrency(stats.totalRevenue)}
-          subtext={`${fmtCurrency(stats.revenueThisMonth)} ${isRtl ? 'هذا الشهر' : 'this month'}`}
-          color="text-emerald-600"
-          bgColor="bg-emerald-50"
-        />
-        <StatCard
-          icon={Wallet}
-          label={isRtl ? 'صافي الربح' : 'Net Profit'}
-          value={fmtCurrency(stats.netProfit)}
-          subtext={stats.netProfit >= 0 ? `+${((stats.netProfit / Math.max(stats.totalRevenue, 1)) * 100).toFixed(1)}% ${isRtl ? 'هامش' : 'margin'}` : ''}
-          color={stats.netProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}
-          bgColor={stats.netProfit >= 0 ? 'bg-emerald-50' : 'bg-red-50'}
         />
       </div>
 
@@ -244,23 +223,19 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
           color="text-orange-600"
         />
         <MiniStat
-          icon={TrendingUp}
-          label={isRtl ? 'الإيراد اليوم' : "Today's Rev."}
-          value={fmtCurrency(stats.revenueToday)}
-          color="text-emerald-600"
-        />
-        <MiniStat
           icon={TrendingDown}
-          label={isRtl ? 'التكاليف' : 'Costs'}
-          value={fmtCurrency(stats.costsTotal)}
+          label={isRtl ? 'تكاليف الشهر' : 'Month Costs'}
+          value={fmtCurrency(stats.monthCosts)}
           color="text-purple-600"
         />
-        <MiniStat
-          icon={Wallet}
-          label={isRtl ? 'الايجارات الشهريه' : 'Monthly Rentals'}
-          value={fmtCurrency(stats.monthlyRentalCost)}
-          color="text-teal-600"
-        />
+        {stats.monthlyRentalCost > 0 && (
+          <MiniStat
+            icon={Wallet}
+            label={isRtl ? 'إيجارات شهرية' : 'Monthly Rentals'}
+            value={fmtCurrency(stats.monthlyRentalCost)}
+            color="text-teal-600"
+          />
+        )}
         <MiniStat
           icon={Activity}
           label={isRtl ? 'أمتار الشهر' : 'Month Meters'}
@@ -309,7 +284,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
               {isRtl ? 'اتجاه الإنتاج (آخر 14 يوم)' : 'Production Trend (Last 14 days)'}
             </CardTitle>
             <CardDescription>
-              {isRtl ? 'الأمتار المنجزة والإيرادات اليومية' : 'Daily meters drilled and revenue'}
+              {isRtl ? 'الأمتار المنجزة والتكاليف اليومية' : 'Daily meters drilled and costs'}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -320,10 +295,6 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
                     <stop offset="5%" stopColor="#f97316" stopOpacity={0.8} />
                     <stop offset="95%" stopColor="#f97316" stopOpacity={0} />
                   </linearGradient>
-                  <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.6} />
-                    <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
-                  </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                 <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#6b7280' }} reversed={isRtl} />
@@ -332,13 +303,12 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
                   contentStyle={{ direction: isRtl ? 'rtl' : 'ltr', borderRadius: 8, border: '1px solid #e5e7eb', fontSize: 12 }}
                   formatter={(value: any, name: any) => {
                     if (name === 'meters') return [`${fmt(value)} ${isRtl ? 'م' : 'm'}`, isRtl ? 'الأمتار' : 'Meters']
-                    if (name === 'revenue') return [fmtCurrency(value), isRtl ? 'الإيراد' : 'Revenue']
-                    if (name === 'profit') return [fmtCurrency(value), isRtl ? 'الربح' : 'Profit']
+                    if (name === 'cost') return [fmtCurrency(value), isRtl ? 'التكلفة' : 'Cost']
                     return [value, name]
                   }}
                 />
                 <Area type="monotone" dataKey="meters" stroke="#f97316" fillOpacity={1} fill="url(#colorMeters)" strokeWidth={2} />
-                <Area type="monotone" dataKey="revenue" stroke="#10b981" fillOpacity={1} fill="url(#colorRevenue)" strokeWidth={2} />
+                <Area type="monotone" dataKey="cost" stroke="#ef4444" fillOpacity={0.3} fill="transparent" strokeWidth={2} />
               </AreaChart>
             </ResponsiveContainer>
           </CardContent>
