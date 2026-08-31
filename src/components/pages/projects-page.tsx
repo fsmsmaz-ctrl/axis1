@@ -58,7 +58,6 @@ export default function ProjectsPage() {
   const [viewProject, setViewProject] = useState<any | null>(null)
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const language = useAppStore((s) => s.language)
-  const token = useAppStore((s) => s.token)
   const user = useAppStore((s) => s.user)
   const isRtl = language === 'ar'
 
@@ -83,9 +82,8 @@ export default function ProjectsPage() {
   }
 
   useEffect(() => {
-    if (!token) return
     fetchProjects()
-  }, [statusFilter, token])
+  }, [statusFilter])
 
   function openCreate() {
     const today = new Date()
@@ -464,7 +462,6 @@ function ProjectDetails({ id }: { id: string | null }) {
   const [project, setProject] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const language = useAppStore((s) => s.language)
-  const token = useAppStore((s) => s.token)
   const isRtl = language === 'ar'
 
   useEffect(() => {
