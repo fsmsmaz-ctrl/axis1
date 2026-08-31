@@ -9,7 +9,7 @@ import {
   ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip
 } from 'recharts'
-import { TrendingUp, Award, AlertTriangle, Clock, Users, ShieldCheck, Activity } from 'lucide-react'
+import { TrendingUp, Award, AlertTriangle, Clock, Users, ShieldCheck, DollarSign, Activity } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
 
@@ -21,6 +21,7 @@ export default function PerformancePage() {
   const [selectedProject, setSelectedProject] = useState<string>('all')
   const [loading, setLoading] = useState(true)
   const language = useAppStore((s) => s.language)
+  const token = useAppStore((s) => s.token)
   const isRtl = language === 'ar'
 
   const tooltipContentStyle = useMemo(() => ({
@@ -28,51 +29,34 @@ export default function PerformancePage() {
     direction: isRtl ? 'rtl' as const : 'ltr' as const,
   }), [isRtl])
 
-  async function fetchPerformance() {
+  useEffect(() => {
     setLoading(true)
-    try {
-      var res = await authedFetch('/api/performance' + (selectedProject !== 'all' ? '?projectId=' + selectedProject : ''))
-      var data = await res.json()
-      setPerformance(data.performance || [])
-    } catch {
-      setPerformance([])
-    }
-    setLoading(false)
-  }
-
-  async function fetchProjectList() {
-    try {
-      var res = await authedFetch('/api/projects/list?_t=' + Date.now(), { cache: 'no-store' })
-      if (!res.ok) { setProjects([]); return }
-      var data = await res.json()
-      setProjects(data.projects || [])
-    } catch {
-      setProjects([])
-    }
-  }
-
-  useEffect(() => {
-    fetchPerformance()
-    fetchProjectList()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  useEffect(() => {
-    fetchPerformance()
+    Promise.all([
+      authedFetch('/api/performance' + (selectedProject !== 'all' ? `?projectId=${selectedProject}` : '')),
+      authedFetch('/api/projects/list'),
+    ]).then(async ([perfRes, projRes]) => {
+      const perfData = await perfRes.json()
+      const projData = await projRes.json()
+      setPerformance(perfData.performance || [])
+      setProjects(projData.projects || [])
+    }).finally(() => setLoading(false))
   }, [selectedProject])
 
   // Memoize all derived computations
-  const { totals, avgDailyMeters, avgSafety, avgAttendance } = useMemo(() => {
+  const { totals, avgDailyMeters, overallProfitMargin, avgSafety, avgAttendance } = useMemo(() => {
     const t = performance.reduce((acc, p) => ({
       totalMeters: acc.totalMeters + p.totalMeters,
+      totalRevenue: acc.totalRevenue + p.totalRevenue,
       totalCost: acc.totalCost + p.totalCost,
+      totalProfit: acc.totalProfit + (p.totalRevenue - p.totalCost),
       totalDays: acc.totalDays + p.daysCount,
       totalWorkers: acc.totalWorkers + p.totalWorkers,
-    }), { totalMeters: 0, totalCost: 0, totalDays: 0, totalWorkers: 0 })
+    }), { totalMeters: 0, totalRevenue: 0, totalCost: 0, totalProfit: 0, totalDays: 0, totalWorkers: 0 })
 
     return {
       totals: t,
       avgDailyMeters: t.totalDays > 0 ? t.totalMeters / t.totalDays : 0,
+      overallProfitMargin: t.totalRevenue > 0 ? (t.totalProfit / t.totalRevenue) * 100 : 0,
       avgSafety: performance.length > 0 ? performance.reduce((s, p) => s + p.safetyRate, 0) / performance.length : 0,
       avgAttendance: performance.length > 0 ? performance.reduce((s, p) => s + p.attendanceRate, 0) / performance.length : 0,
     }
@@ -81,6 +65,8 @@ export default function PerformancePage() {
   const comparisonData = useMemo(() => performance.map(p => ({
     name: p.projectCode,
     meters: Number(p.totalMeters.toFixed(0)),
+    revenue: Number(p.totalRevenue.toFixed(0)),
+    profit: Number((p.totalRevenue - p.totalCost).toFixed(0)),
     safety: Number(p.safetyRate.toFixed(0)),
   })), [performance])
 
@@ -88,6 +74,7 @@ export default function PerformancePage() {
     { metric: isRtl ? 'الإنتاج' : 'Production', value: Math.min(100, (performance[0].avgDaily / 10) * 100) },
     { metric: isRtl ? 'السلامة' : 'Safety', value: performance[0].safetyRate },
     { metric: isRtl ? 'الحضور' : 'Attendance', value: performance[0].attendanceRate },
+    { metric: isRtl ? 'الربحية' : 'Profitability', value: Math.max(0, performance[0].profitMargin) },
     { metric: isRtl ? 'كفاءة المعدات' : 'Equipment', value: 85 },
     { metric: isRtl ? 'الالتزام' : 'Compliance', value: 90 },
   ] : [], [performance, isRtl])
@@ -142,6 +129,17 @@ export default function PerformancePage() {
             <p className="text-xl font-bold text-purple-700">{avgAttendance.toFixed(1)}%</p>
           </CardContent>
         </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 mb-1">
+              <DollarSign className="h-4 w-4 text-orange-600" />
+              <span className="text-xs text-muted-foreground">{isRtl ? 'هامش الربح' : 'Profit Margin'}</span>
+            </div>
+            <p className={`text-xl font-bold ${overallProfitMargin >= 0 ? 'text-orange-700' : 'text-red-700'}`}>
+              {overallProfitMargin.toFixed(1)}%
+            </p>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Charts */}
@@ -166,6 +164,7 @@ export default function PerformancePage() {
                   <YAxis tick={{ fontSize: 11 }} />
                   <Tooltip contentStyle={tooltipContentStyle} />
                   <Bar dataKey="meters" fill="#f97316" name={isRtl ? 'أمتار' : 'Meters'} radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="profit" fill="#10b981" name={isRtl ? 'ربح' : 'Profit'} radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             )}
@@ -219,6 +218,8 @@ export default function PerformancePage() {
                     <th className="p-2 font-medium text-muted-foreground">{isRtl ? 'أقل يوم' : 'Worst Day'}</th>
                     <th className="p-2 font-medium text-muted-foreground">{isRtl ? 'أيام التوقف' : 'Stop Days'}</th>
                     <th className="p-2 font-medium text-muted-foreground">{isRtl ? 'السلامة' : 'Safety'}</th>
+                    <th className="p-2 font-medium text-muted-foreground">{isRtl ? 'تكلفة/م' : 'Cost/m'}</th>
+                    <th className="p-2 font-medium text-muted-foreground">{isRtl ? 'هامش الربح' : 'Margin'}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -245,6 +246,12 @@ export default function PerformancePage() {
                           <Progress value={p.safetyRate} className="h-1.5 w-12" />
                           <span className="text-xs">{p.safetyRate.toFixed(0)}%</span>
                         </div>
+                      </td>
+                      <td className="p-2 text-xs">{p.costPerMeter.toFixed(1)} ر.ع</td>
+                      <td className="p-2">
+                        <Badge variant={p.profitMargin >= 20 ? 'default' : p.profitMargin >= 0 ? 'secondary' : 'destructive'} className="text-xs">
+                          {p.profitMargin.toFixed(1)}%
+                        </Badge>
                       </td>
                     </tr>
                   ))}
