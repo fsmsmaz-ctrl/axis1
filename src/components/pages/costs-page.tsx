@@ -1,4 +1,4 @@
-     1→'use client'
+     'use client'
      2→
      3→import { useEffect, useState, useMemo } from 'react'
      4→import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
