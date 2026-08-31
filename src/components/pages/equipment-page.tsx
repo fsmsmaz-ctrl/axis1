@@ -41,6 +41,7 @@ export default function EquipmentPage() {
   const [viewDialogOpen, setViewDialogOpen] = useState(false)
   const [maintenanceDialogOpen, setMaintenanceDialogOpen] = useState(false)
   const language = useAppStore((s) => s.language)
+  const token = useAppStore((s) => s.token)
   const isRtl = language === 'ar'
 
   const [formData, setFormData] = useState({
