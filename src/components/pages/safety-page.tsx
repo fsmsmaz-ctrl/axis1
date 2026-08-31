@@ -86,7 +86,6 @@ export default function SafetyPage() {
   const [workerForm, setWorkerForm] = useState({ name: '', phone: '', contractorName: '', projectId: '', notes: '' })
   const driveLinesLoaded = useRef<string | null>(null)
   const language = useAppStore((s) => s.language)
-  const setPage = useAppStore((s) => s.setPage)
   const isRtl = language === 'ar'
   const isAdmin = useAppStore((s) => s.user)?.email?.toLowerCase().trim() === 'admin@axis.om'
 
@@ -266,9 +265,7 @@ export default function SafetyPage() {
     }
   }
 
-  function goToDailyReports() {
-    setPage('dailyReports')
-  }
+
 
   // Calculate stats
   var total = reports.length
@@ -454,11 +451,7 @@ export default function SafetyPage() {
                       {r.incidentDescription && (
                         <p className="text-xs text-destructive mt-1">{'\uD83D\uDEA8 '}{r.incidentDescription}</p>
                       )}
-                      {isDraft && (
-                        <Button variant="link" size="sm" className="text-primary p-0 h-auto mt-2" onClick={goToDailyReports}>
-                          {isRtl ? 'إكمال بيانات التقرير اليومي \u2192' : 'Complete daily report data \u2192'}
-                        </Button>
-                      )}
+
                     </div>
                     {isAdmin && (
                       <Button
