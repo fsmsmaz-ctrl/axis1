@@ -48,7 +48,6 @@ export default function ReportsPage() {
   const [reportData, setReportData] = useState<any>(null)
   const [generating, setGenerating] = useState(false)
   const language = useAppStore((s) => s.language)
-  const token = useAppStore((s) => s.token)
   const isRtl = language === 'ar'
 
   async function fetchProjectList() {
@@ -63,14 +62,13 @@ export default function ReportsPage() {
   }
 
   useEffect(function() {
-    if (!token) return
     fetchProjectList()
     var today = new Date()
     var thirtyAgo = new Date()
     thirtyAgo.setDate(thirtyAgo.getDate() - 30)
     setToDate(today.toISOString().split('T')[0])
     setFromDate(thirtyAgo.toISOString().split('T')[0])
-  }, [token])
+  }, [])
 
   async function generateReport() {
     if (!selectedReport) {
