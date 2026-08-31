@@ -21,7 +21,6 @@ export default function PerformancePage() {
   const [selectedProject, setSelectedProject] = useState<string>('all')
   const [loading, setLoading] = useState(true)
   const language = useAppStore((s) => s.language)
-  const token = useAppStore((s) => s.token)
   const isRtl = language === 'ar'
 
   const tooltipContentStyle = useMemo(() => ({
@@ -53,14 +52,12 @@ export default function PerformancePage() {
   }
 
   useEffect(() => {
-    if (!token) return
     fetchPerformance()
     fetchProjectList()
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token])
+  }, [])
 
   useEffect(() => {
-    if (!token) return
     fetchPerformance()
   }, [selectedProject])
 
