@@ -1,5 +1,5 @@
 // Server-only auth functions
-// This file imports bcrypt, jose - all server-only modules
+// This file imports db, bcrypt, jose - all server-only modules
 // MUST NOT be imported by client components (only used in API routes)
 
 import bcrypt from 'bcryptjs'
@@ -84,19 +84,18 @@ export async function getSessionUser(token: string | undefined): Promise<Session
     const userId = payload.sub
     if (!userId) return null
 
-    // FIXED: Removed redundant DB query on every request.
-    // JWT already contains all needed user data and is verified above.
-    // The middleware already validates the token. This was causing
-    // an extra DB round-trip on EVERY API call.
+    const user = await db.user.findUnique({ where: { id: userId } })
+    if (!user || !user.active) return null
+
     return {
-      id: userId,
-      email: payload.email as string || '',
-      name: payload.name as string || '',
-      nameEn: (payload.nameEn as string) || null,
-      role: payload.role as string || 'site_engineer',
-      phone: (payload.phone as string) || null,
-      language: (payload.language as string) || 'ar',
-      permissions: (payload.permissions as Record<string, boolean>) || null,
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      nameEn: user.nameEn,
+      role: user.role,
+      phone: user.phone,
+      language: user.language,
+      permissions: (Array.isArray(payload.permissions) ? payload.permissions : []) as unknown as Record<string, boolean>,
     }
   } catch (error) {
     return null
