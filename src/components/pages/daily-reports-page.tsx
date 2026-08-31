@@ -47,6 +47,7 @@ export default function DailyReportsPage() {
   const [viewReport, setViewReport] = useState<any | null>(null)
   const [viewDialogOpen, setViewDialogOpen] = useState(false)
   const language = useAppStore((s) => s.language)
+  const token = useAppStore((s) => s.token)
   const user = useAppStore((s) => s.user)
   const isRtl = language === 'ar'
 
@@ -425,7 +426,7 @@ export default function DailyReportsPage() {
                         }`}
                       >
                         <Checkbox
-                          checked={safety[item.key as keyof typeof safety]}
+                          checked={!!safety[item.key as keyof typeof safety]}
                           onCheckedChange={(checked) => {
                             setSafety({ ...safety, [item.key]: !!checked })
                           }}
@@ -609,6 +610,7 @@ export default function DailyReportsPage() {
 
 function ReportDetails({ report }: { report: any }) {
   const language = useAppStore((s) => s.language)
+  const token = useAppStore((s) => s.token)
   const isRtl = language === 'ar'
 
   const safetyChecks = report.safety ? [
