@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
@@ -11,8 +11,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { ShieldCheck, ShieldAlert, AlertTriangle, CheckCircle2, XCircle, Calendar, Plus, Loader2, Trash2, GitBranch, Users, Phone, Building2, Pencil } from 'lucide-react'
+import { ShieldCheck, ShieldAlert, AlertTriangle, CheckCircle2, XCircle, Calendar, Plus, Loader2 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
 import { toast } from 'sonner'
@@ -44,7 +43,6 @@ const checklistItems = [
 
 const emptyForm = {
   projectId: '',
-  driveLineId: '',
   reportDate: new Date().toISOString().split('T')[0],
   signedBy: '',
   ppeAvailable: false,
@@ -71,46 +69,14 @@ const emptyForm = {
 export default function SafetyPage() {
   const [reports, setReports] = useState<any[]>([])
   const [projects, setProjects] = useState<any[]>([])
-  const [driveLines, setDriveLines] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedProject, setSelectedProject] = useState<string>('all')
   const [sheetOpen, setSheetOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState({ ...emptyForm })
-
-  // Workers state
-  const [workers, setWorkers] = useState<any[]>([])
-  const [workersLoading, setWorkersLoading] = useState(false)
-  const [workerDialogOpen, setWorkerDialogOpen] = useState(false)
-  const [editingWorker, setEditingWorker] = useState<any>(null)
-  const [workerForm, setWorkerForm] = useState({ name: '', phone: '', contractorName: '', projectId: '', notes: '' })
-  const driveLinesLoaded = useRef<string | null>(null)
   const language = useAppStore((s) => s.language)
+  const token = useAppStore((s) => s.token)
   const isRtl = language === 'ar'
-  const isAdmin = useAppStore((s) => s.user)?.email?.toLowerCase().trim() === 'admin@axis.om'
-
-  async function deleteReport(reportId: string) {
-    var msg = isRtl
-      ? 'هل أنت متأكد من حذف تقرير السلامة؟ يمكن للموظف إنشاء تقرير جديد بعد الحذف.'
-      : 'Are you sure you want to delete this safety report? The employee can create a new one after deletion.'
-    if (!confirm(msg)) return
-    try {
-      var res = await authedFetch('/api/safety-inspection', {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: reportId }),
-      })
-      if (res.ok) {
-        toast.success(isRtl ? 'تم حذف تقرير السلامة' : 'Safety report deleted')
-        fetchReports()
-      } else {
-        var data = await res.json().catch(function() { return {} })
-        toast.error(data.message || (isRtl ? 'فشل الحذف' : 'Delete failed'))
-      }
-    } catch {
-      toast.error(isRtl ? 'حدث خطأ' : 'Error')
-    }
-  }
 
   async function fetchReports() {
     setLoading(true)
@@ -118,10 +84,11 @@ export default function SafetyPage() {
       const params = new URLSearchParams()
       if (selectedProject !== 'all') params.set('projectId', selectedProject)
       params.set('limit', '100')
-      const res = await authedFetch('/api/safety-inspection?' + params.toString())
+      const res = await authedFetch('/api/daily-reports?' + params.toString())
       if (!res.ok) throw new Error('Failed to fetch')
       const data = await res.json()
-      setReports(data.safetyReports || [])
+      const withSafety = (data.reports || []).filter((r: any) => r.safety)
+      setReports(withSafety)
     } catch {
       toast.error(isRtl ? 'خطأ في تحميل التقارير' : 'Failed to load reports')
     } finally {
@@ -129,132 +96,61 @@ export default function SafetyPage() {
     }
   }
 
-  async function fetchProjects() {
-    try {
-      var res = await authedFetch('/api/projects/list?_t=' + Date.now(), { cache: 'no-store' })
-      if (!res.ok) { setProjects([]); return }
-      var data = await res.json()
-      setProjects(data.projects || [])
-    } catch {
-      setProjects([])
-    }
-  }
-
-  async function fetchWorkers() {
-    setWorkersLoading(true)
-    try {
-      var params = new URLSearchParams()
-      if (selectedProject !== 'all') params.set('projectId', selectedProject)
-      var res = await authedFetch('/api/workers?' + params.toString())
-      var data = await res.json()
-      setWorkers(data.workers || [])
-    } catch {
-      setWorkers([])
-    }
-    setWorkersLoading(false)
-  }
-
-  async function saveWorker(e: React.FormEvent) {
-    e.preventDefault()
-    try {
-      var url = editingWorker ? '/api/workers/' + editingWorker.id : '/api/workers'
-      var method = editingWorker ? 'PUT' : 'POST'
-      var res = await authedFetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(workerForm),
-      })
-      if (res.ok) {
-        toast.success(editingWorker ? (isRtl ? 'تم تحديث بيانات العامل' : 'Worker updated') : (isRtl ? 'تم إضافة العامل' : 'Worker added'))
-        setWorkerDialogOpen(false)
-        setEditingWorker(null)
-        setWorkerForm({ name: '', phone: '', contractorName: '', projectId: '', notes: '' })
-        fetchWorkers()
-      }
-    } catch {
-      toast.error(isRtl ? 'حدث خطأ' : 'Error')
-    }
-  }
-
-  async function deleteWorker(id: string) {
-    if (!confirm(isRtl ? 'هل أنت متأكد من حذف هذا العامل؟' : 'Delete this worker?')) return
-    try {
-      var res = await authedFetch('/api/workers/' + id, { method: 'DELETE' })
-      if (res.ok) {
-        toast.success(isRtl ? 'تم حذف العامل' : 'Worker deleted')
-        fetchWorkers()
-      }
-    } catch {
-      toast.error(isRtl ? 'حدث خطأ' : 'Error')
-    }
-  }
-
   useEffect(() => {
     fetchReports()
-    fetchProjects()
-    fetchWorkers()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  useEffect(() => {
-    fetchReports()
-    fetchWorkers()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    authedFetch('/api/projects/list').then(r => r.json()).then(d => setProjects(d.projects || []))
   }, [selectedProject])
 
-  // Load drive lines when project changes in the form
-  useEffect(() => {
-    if (!form.projectId) {
-      setDriveLines([])
-      driveLinesLoaded.current = null
-      return
-    }
-    if (driveLinesLoaded.current === form.projectId) return
-    driveLinesLoaded.current = form.projectId
-    authedFetch('/api/drive-lines?projectId=' + form.projectId)
-      .then(function(r) { return r.json() })
-      .then(function(d) { setDriveLines(d.driveLines || []) })
-      .catch(function() { setDriveLines([]) })
-  }, [form.projectId])
-
   async function handleSave() {
-    if (!form.projectId || !form.reportDate) {
-      toast.error(isRtl ? 'يرجى اختيار المشروع والتاريخ' : 'Please select project and date')
+    if (!form.projectId || !form.reportDate || !form.signedBy) {
+      toast.error(isRtl ? 'يرجى ملء جميع الحقول المطلوبة' : 'Please fill all required fields')
       return
     }
 
     setSaving(true)
     try {
-      const safetyData: any = {
-        projectId: form.projectId,
-        driveLineId: form.driveLineId || null,
-        reportDate: form.reportDate,
+      // Find or create a daily report for this project+date
+      const reportsRes = await authedFetch(`/api/daily-reports?projectId=${form.projectId}&date=${form.reportDate}&limit=1`)
+      const reportsData = await reportsRes.json()
+      let reportId = reportsData.reports?.[0]?.id
+
+      if (!reportId) {
+        // Create a minimal daily report
+        const createRes = await authedFetch('/api/daily-reports', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            projectId: form.projectId,
+            reportDate: form.reportDate,
+            status: 'draft',
+          }),
+        })
+        if (!createRes.ok) throw new Error('Failed to create report')
+        const createData = await createRes.json()
+        reportId = createData.report?.id
       }
-      for (var i = 0; i < checklistItems.length; i++) {
-        var item = checklistItems[i]
+
+      if (!reportId) throw new Error('No report ID')
+
+      // Create safety report
+      const safetyData: any = { signedBy: form.signedBy }
+      for (const item of checklistItems) {
         safetyData[item.key] = form[item.key as keyof typeof form]
       }
       safetyData.observations = form.observations || null
       safetyData.violations = form.violations || null
       safetyData.incidentType = form.incidentType
-      safetyData.incidentDescription = form.incidentType !== 'none' ? (form.incidentDescription || null) : null
+      safetyData.incidentDescription = form.incidentType !== 'none' ? form.incidentDescription || null : null
 
-      var safetyRes = await authedFetch('/api/safety-inspection', {
+      const safetyRes = await authedFetch(`/api/daily-reports/${reportId}/safety`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(safetyData),
       })
 
-      if (safetyRes.status === 409) {
-        var errData = await safetyRes.json().catch(function() { return {} })
-        toast.error(errData.message || (isRtl ? 'لقد أنشأت تقرير سلامة لهذا المشروع في هذا التاريخ بالفعل' : 'You already created a safety report for this project today'))
-        setSaving(false)
-        return
-      }
-
       if (!safetyRes.ok) throw new Error('Failed to save safety report')
 
-      toast.success(isRtl ? 'تم حفظ تقرير السلامة بنجاح' : 'Safety report saved successfully')
+      toast.success(isRtl ? 'تم حفظ تقرير السلامة' : 'Safety report saved')
       setSheetOpen(false)
       setForm({ ...emptyForm, reportDate: new Date().toISOString().split('T')[0] })
       fetchReports()
@@ -265,64 +161,38 @@ export default function SafetyPage() {
     }
   }
 
-
-
   // Calculate stats
-  var total = reports.length
-  var incidents = reports.filter(function(r) { return r.incidentType && r.incidentType !== 'none' }).length
-
-  // Calculate compliance average from unique dates only (avoid duplicates)
-  var seenDates: Record<string, boolean> = {}
-  var uniqueReports = reports.filter(function(r) {
-    var dateKey = r.projectId + '_' + (r.reportDate ? r.reportDate.split('T')[0] : '')
-    if (seenDates[dateKey]) return false
-    seenDates[dateKey] = true
-    return true
-  })
-
-  var avgCompliance = uniqueReports.length > 0
-    ? uniqueReports.reduce(function(sum, r) {
-        var passed = checklistItems.filter(function(item) { return r[item.key as keyof any] }).length
+  const total = reports.length
+  const incidents = reports.filter(r => r.safety?.incidentType && r.safety.incidentType !== 'none').length
+  const avgCompliance = total > 0
+    ? reports.reduce((sum, r) => {
+        const checks = checklistItems.map(item => r.safety?.[item.key as keyof any])
+        const passed = checks.filter(Boolean).length
         return sum + (passed / 15) * 100
-      }, 0) / uniqueReports.length
+      }, 0) / total
     : 0
 
   // Form compliance
-  var formPassed = checklistItems.filter(function(item) { return form[item.key as keyof typeof form] }).length
-  var formCompliance = (formPassed / 15) * 100
-
-  // Check if user already created a safety report today for the selected project
-  // Only check when a specific project is selected (not 'all')
-  var today = new Date().toISOString().split('T')[0]
-  var todayReportExists = selectedProject !== 'all' && reports.some(function(r) {
-    return r.projectId === selectedProject && r.reportDate && r.reportDate.split('T')[0] === today
-  })
+  const formPassed = checklistItems.filter(item => form[item.key as keyof typeof form]).length
+  const formCompliance = (formPassed / 15) * 100
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold">{isRtl ? 'السلامة والعمال' : 'Safety & Workers'}</h1>
+          <h1 className="text-2xl font-bold">{isRtl ? 'السلامة' : 'Safety'}</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            {isRtl ? 'تقارير السلامة اليومية وإدارة بيانات العمال' : 'Daily safety reports and worker management'}
+            {isRtl ? 'تقارير السلامة اليومية والمخاطر' : 'Daily safety reports and hazards'}
           </p>
         </div>
-        <Button onClick={function() {
+        <Button onClick={() => {
           setForm({ ...emptyForm, reportDate: new Date().toISOString().split('T')[0] })
-          setDriveLines([])
-          driveLinesLoaded.current = null
           setSheetOpen(true)
-        }} disabled={todayReportExists}>
+        }}>
           <Plus className="h-4 w-4 ml-2" />
           {isRtl ? 'إضافة تقرير سلامة' : 'Add Safety Report'}
         </Button>
       </div>
-
-      {todayReportExists && (
-        <div className="p-3 rounded-lg bg-blue-50 border border-blue-200 text-sm">
-          <span className="text-blue-700">{isRtl ? 'لقد أنشأت تقرير سلامة لهذا اليوم بالفعل.' : 'You already created a safety report for today.'}</span>
-        </div>
-      )}
 
       {/* Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -373,9 +243,9 @@ export default function SafetyPage() {
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="all">{isRtl ? 'كل المشاريع' : 'All Projects'}</SelectItem>
-          {projects.map(function(p) {
-            return <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-          })}
+          {projects.map((p) => (
+            <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+          ))}
         </SelectContent>
       </Select>
 
@@ -390,22 +260,20 @@ export default function SafetyPage() {
         </Card>
       ) : (
         <div className="space-y-3">
-          {reports.map(function(r) {
-            var checks = checklistItems.map(function(item) { return r[item.key as keyof any] })
-            var passed = checks.filter(Boolean).length
-            var compliance = (passed / 15) * 100
-            var incident = incidentLabels[r.incidentType || 'none']
-            var hasIncident = r.incidentType && r.incidentType !== 'none'
-            var reportStatus = (r.dailyReport && r.dailyReport.status) || 'draft'
-            var isDraft = reportStatus === 'draft'
+          {reports.map((r) => {
+            const checks = checklistItems.map(item => r.safety?.[item.key as keyof any])
+            const passed = checks.filter(Boolean).length
+            const compliance = (passed / 15) * 100
+            const incident = incidentLabels[r.safety.incidentType || 'none']
+            const hasIncident = r.safety.incidentType && r.safety.incidentType !== 'none'
 
             return (
               <Card key={r.id} className={hasIncident ? 'border-destructive/30' : ''}>
                 <CardContent className="p-4">
                   <div className="flex items-start gap-3">
-                    <div className={'w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ' +
-                      (hasIncident ? 'bg-destructive/10' : compliance === 100 ? 'bg-emerald-50' : 'bg-orange-50')
-                    }>
+                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
+                      hasIncident ? 'bg-destructive/10' : compliance === 100 ? 'bg-emerald-50' : 'bg-orange-50'
+                    }`}>
                       {hasIncident ? (
                         <ShieldAlert className="h-5 w-5 text-destructive" />
                       ) : compliance === 100 ? (
@@ -416,17 +284,8 @@ export default function SafetyPage() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap mb-1">
-                        <p className="font-semibold text-sm">{r.project ? r.project.name : '-'}</p>
-                        {isDraft && (
-                          <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
-                            {isRtl ? 'بانتظار إكمال البيانات' : 'Awaiting data'}
-                          </Badge>
-                        )}
-                        {!isDraft && (
-                          <Badge variant="outline" className="text-xs">
-                            {reportStatus === 'submitted' ? (isRtl ? 'مرسل' : 'Submitted') : reportStatus === 'approved' ? (isRtl ? 'معتمد' : 'Approved') : (isRtl ? 'مرفوض' : 'Rejected')}
-                          </Badge>
-                        )}
+                        <p className="font-semibold text-sm">{r.project?.name}</p>
+                        <Badge variant="outline" className="text-xs">{r.driveLine?.lineNumber || '-'}</Badge>
                         {hasIncident && (
                           <Badge variant={incident.color as any} className="text-xs">
                             {isRtl ? incident.ar : incident.en}
@@ -435,34 +294,23 @@ export default function SafetyPage() {
                       </div>
                       <p className="text-xs text-muted-foreground mb-2">
                         {new Date(r.reportDate).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
-                        {' \u2022 '}
-                        {isRtl ? 'موقّع من' : 'Signed by'}: {r.signedByUser ? (r.signedByUser.name || r.signedByUser.nameEn || '-') : '-'}
+                        {' • '}
+                        {isRtl ? 'موقّع من' : 'Signed by'}: {r.safety.signedBy || '-'}
                       </p>
                       <div className="flex items-center gap-2 mb-2">
                         <Progress value={compliance} className="h-1.5 flex-1" />
                         <span className="text-xs font-medium">{passed}/15</span>
                       </div>
-                      {r.observations && (
-                        <p className="text-xs text-muted-foreground">{r.observations}</p>
+                      {r.safety.observations && (
+                        <p className="text-xs text-muted-foreground">{r.safety.observations}</p>
                       )}
-                      {r.violations && (
-                        <p className="text-xs text-orange-600 mt-1">{'\u26A0 '}{r.violations}</p>
+                      {r.safety.violations && (
+                        <p className="text-xs text-orange-600 mt-1">⚠ {r.safety.violations}</p>
                       )}
-                      {r.incidentDescription && (
-                        <p className="text-xs text-destructive mt-1">{'\uD83D\uDEA8 '}{r.incidentDescription}</p>
+                      {r.safety.incidentDescription && (
+                        <p className="text-xs text-destructive mt-1">🚨 {r.safety.incidentDescription}</p>
                       )}
-
                     </div>
-                    {isAdmin && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 w-8 p-0 text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
-                        onClick={function() { deleteReport(r.id) }}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -471,151 +319,13 @@ export default function SafetyPage() {
         </div>
       )}
 
-      {/* Workers Section */}
-      <Card className="shadow-sm">
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between flex-wrap gap-3">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <div className="w-7 h-7 rounded-md bg-blue-100 text-blue-600 flex items-center justify-center">
-                <Users className="h-4 w-4" />
-              </div>
-              {isRtl ? 'بيانات العمال' : 'Worker Data'}
-              <Badge variant="secondary" className="text-xs font-normal">{workers.length}</Badge>
-            </CardTitle>
-            <Button size="sm" onClick={function() {
-              setEditingWorker(null)
-              setWorkerForm({ name: '', phone: '', contractorName: '', projectId: projects[0]?.id || '', notes: '' })
-              setWorkerDialogOpen(true)
-            }}>
-              <Plus className="h-3.5 w-3.5 ml-1.5" />
-              {isRtl ? 'إضافة عامل' : 'Add Worker'}
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {workersLoading ? (
-            <div className="h-24 bg-muted animate-pulse rounded-lg" />
-          ) : workers.length === 0 ? (
-            <div className="py-10 text-center text-muted-foreground text-sm">
-              <Users className="h-10 w-10 mx-auto mb-2 opacity-30" />
-              {isRtl ? 'لا يوجد عمال مسجلين' : 'No workers registered'}
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-muted/30">
-                    <th className="p-2.5 text-right font-medium text-xs uppercase tracking-wider text-muted-foreground w-8">#</th>
-                    <th className="p-2.5 text-right font-medium text-xs uppercase tracking-wider text-muted-foreground">{isRtl ? 'الاسم' : 'Name'}</th>
-                    <th className="p-2.5 text-right font-medium text-xs uppercase tracking-wider text-muted-foreground">{isRtl ? 'رقم التواصل' : 'Phone'}</th>
-                    <th className="p-2.5 text-right font-medium text-xs uppercase tracking-wider text-muted-foreground">{isRtl ? 'المقاول' : 'Contractor'}</th>
-                    <th className="p-2.5 text-right font-medium text-xs uppercase tracking-wider text-muted-foreground">{isRtl ? 'المشروع' : 'Project'}</th>
-                    <th className="p-2.5 text-right font-medium text-xs uppercase tracking-wider text-muted-foreground w-20">{isRtl ? 'إجراءات' : 'Actions'}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {workers.map(function(w, idx) {
-                    return (
-                      <tr key={w.id} className="border-b hover:bg-muted/20 transition-colors group">
-                        <td className="p-2.5 text-muted-foreground text-xs">{idx + 1}</td>
-                        <td className="p-2.5 font-medium">{w.name}</td>
-                        <td className="p-2.5">
-                          <span className="flex items-center gap-1.5 text-xs">
-                            <Phone className="h-3 w-3 text-muted-foreground" />
-                            {w.phone}
-                          </span>
-                        </td>
-                        <td className="p-2.5">
-                          {w.contractorName ? (
-                            <span className="flex items-center gap-1.5 text-xs">
-                              <Building2 className="h-3 w-3 text-muted-foreground" />
-                              {w.contractorName}
-                            </span>
-                          ) : '-'}
-                        </td>
-                        <td className="p-2.5 text-xs text-muted-foreground">{w.project ? w.project.name : '-'}</td>
-                        <td className="p-2.5">
-                          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={function() {
-                              setEditingWorker(w)
-                              setWorkerForm({
-                                name: w.name,
-                                phone: w.phone,
-                                contractorName: w.contractorName || '',
-                                projectId: w.projectId || '',
-                                notes: w.notes || '',
-                              })
-                              setWorkerDialogOpen(true)
-                            }}>
-                              <Pencil className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-destructive" onClick={function() { deleteWorker(w.id) }}>
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Worker Dialog */}
-      <Dialog open={workerDialogOpen} onOpenChange={setWorkerDialogOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>{editingWorker ? (isRtl ? 'تعديل بيانات العامل' : 'Edit Worker') : (isRtl ? 'إضافة عامل جديد' : 'Add Worker')}</DialogTitle>
-            <DialogDescription>
-              {editingWorker ? (isRtl ? 'عدّل بيانات العامل' : 'Edit worker details') : (isRtl ? 'أدخل بيانات العامل الجديد' : 'Enter new worker details')}
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={saveWorker} className="space-y-3">
-            <div className="space-y-1.5">
-              <Label>{isRtl ? 'اسم العامل' : 'Worker Name'} *</Label>
-              <Input value={workerForm.name} onChange={function(e) { setWorkerForm(Object.assign({}, workerForm, { name: e.target.value })) }} required />
-            </div>
-            <div className="space-y-1.5">
-              <Label>{isRtl ? 'رقم التواصل' : 'Phone Number'} *</Label>
-              <Input value={workerForm.phone} onChange={function(e) { setWorkerForm(Object.assign({}, workerForm, { phone: e.target.value })) }} required />
-            </div>
-            <div className="space-y-1.5">
-              <Label>{isRtl ? 'اسم المقاول' : 'Contractor Name'}</Label>
-              <Input value={workerForm.contractorName} onChange={function(e) { setWorkerForm(Object.assign({}, workerForm, { contractorName: e.target.value })) }} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>{isRtl ? 'المشروع' : 'Project'}</Label>
-              <Select value={workerForm.projectId} onValueChange={function(v) { setWorkerForm(Object.assign({}, workerForm, { projectId: v })) }}>
-                <SelectTrigger><SelectValue placeholder={isRtl ? 'اختر' : 'Select'} /></SelectTrigger>
-                <SelectContent>
-                  {projects.map(function(p) {
-                    return <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                  })}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label>{isRtl ? 'ملاحظات' : 'Notes'}</Label>
-              <Textarea value={workerForm.notes} onChange={function(e) { setWorkerForm(Object.assign({}, workerForm, { notes: e.target.value })) }} rows={2} />
-            </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={function() { setWorkerDialogOpen(false) }}>{isRtl ? 'إلغاء' : 'Cancel'}</Button>
-              <Button type="submit">{isRtl ? 'حفظ' : 'Save'}</Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
       {/* Add Safety Report Sheet */}
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
         <SheetContent side={isRtl ? 'left' : 'right'} className="overflow-y-auto w-full sm:max-w-lg">
           <SheetHeader>
             <SheetTitle>{isRtl ? 'إضافة تقرير سلامة جديد' : 'New Safety Report'}</SheetTitle>
             <SheetDescription>
-              {isRtl ? 'بعد حفظ تقرير السلامة، يمكنك إكمال باقي البيانات من قسم التقارير اليومية' : 'After saving, complete the rest in Daily Reports section'}
+              {isRtl ? 'ملء بيانات تقرير السلامة اليومي' : 'Fill in the daily safety report details'}
             </SheetDescription>
           </SheetHeader>
 
@@ -624,37 +334,29 @@ export default function SafetyPage() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>{isRtl ? 'المشروع' : 'Project'} *</Label>
-                <Select value={form.projectId} onValueChange={function(v) { setForm({ ...form, projectId: v, driveLineId: '' }) }}>
+                <Select value={form.projectId} onValueChange={(v) => setForm({ ...form, projectId: v })}>
                   <SelectTrigger><SelectValue placeholder={isRtl ? 'اختر' : 'Select'} /></SelectTrigger>
                   <SelectContent>
-                    {projects.map(function(p) {
-                      return <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                    })}
+                    {projects.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-1.5">
                 <Label>{isRtl ? 'التاريخ' : 'Date'} *</Label>
-                <Input type="date" value={form.reportDate} onChange={function(e) { setForm({ ...form, reportDate: e.target.value }) }} />
+                <Input type="date" value={form.reportDate} onChange={(e) => setForm({ ...form, reportDate: e.target.value })} />
               </div>
             </div>
 
-            {/* Drive Line */}
+            {/* Signed by */}
             <div className="space-y-1.5">
-              <Label className="flex items-center gap-1.5">
-                <GitBranch className="h-3.5 w-3.5" />
-                {isRtl ? 'خط الحفر' : 'Drive Line'}
-              </Label>
-              <select
-                value={form.driveLineId}
-                onChange={function(e) { setForm({ ...form, driveLineId: e.target.value }) }}
-                className={"w-full h-9 rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:border-ring transition-[color,box-shadow] " + (isRtl ? 'dir-rtl' : '')}
-              >
-                <option value="">{isRtl ? 'اختر' : 'Select'}</option>
-                {driveLines.map(function(l) {
-                  return <option key={l.id} value={l.id}>{(l.lineNumber || '-') + ' - ' + (l.startPoint || '-') + ' → ' + (l.endPoint || '-')}</option>
-                })}
-              </select>
+              <Label>{isRtl ? 'موقّع من' : 'Signed by'} *</Label>
+              <Input
+                value={form.signedBy}
+                onChange={(e) => setForm({ ...form, signedBy: e.target.value })}
+                placeholder={isRtl ? 'اسم المسؤول' : 'Officer name'}
+              />
             </div>
 
             {/* Checklist */}
@@ -667,24 +369,20 @@ export default function SafetyPage() {
                 <span className="text-sm font-medium">{formPassed}/15</span>
               </div>
               <div className="grid grid-cols-1 gap-1.5">
-                {checklistItems.map(function(item) {
-                  return (
-                    <label
-                      key={item.key}
-                      className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 cursor-pointer transition"
-                    >
-                      <Checkbox
-                        checked={form[item.key as keyof typeof form] as boolean}
-                        onCheckedChange={function(checked) {
-                          var updated = Object.assign({}, form)
-                          updated[item.key] = !!checked
-                          setForm(updated)
-                        }}
-                      />
-                      <span className="text-sm">{isRtl ? item.ar : item.en}</span>
-                    </label>
-                  )
-                })}
+                {checklistItems.map((item) => (
+                  <label
+                    key={item.key}
+                    className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 cursor-pointer transition"
+                  >
+                    <Checkbox
+                      checked={form[item.key as keyof typeof form] as boolean}
+                      onCheckedChange={(checked) =>
+                        setForm({ ...form, [item.key]: !!checked })
+                      }
+                    />
+                    <span className="text-sm">{isRtl ? item.ar : item.en}</span>
+                  </label>
+                ))}
               </div>
             </div>
 
@@ -693,7 +391,7 @@ export default function SafetyPage() {
               <Label>{isRtl ? 'الملاحظات' : 'Observations'}</Label>
               <Textarea
                 value={form.observations}
-                onChange={function(e) { setForm({ ...form, observations: e.target.value }) }}
+                onChange={(e) => setForm({ ...form, observations: e.target.value })}
                 rows={3}
                 placeholder={isRtl ? 'ملاحظات عامة...' : 'General observations...'}
               />
@@ -703,7 +401,7 @@ export default function SafetyPage() {
               <Label>{isRtl ? 'المخالفات' : 'Violations'}</Label>
               <Textarea
                 value={form.violations}
-                onChange={function(e) { setForm({ ...form, violations: e.target.value }) }}
+                onChange={(e) => setForm({ ...form, violations: e.target.value })}
                 rows={2}
                 placeholder={isRtl ? 'أي مخالفات مرصودة...' : 'Any violations noted...'}
               />
@@ -712,13 +410,12 @@ export default function SafetyPage() {
             {/* Incident type */}
             <div className="space-y-1.5">
               <Label>{isRtl ? 'نوع الحادث' : 'Incident Type'}</Label>
-              <Select value={form.incidentType} onValueChange={function(v) { setForm({ ...form, incidentType: v }) }}>
+              <Select value={form.incidentType} onValueChange={(v) => setForm({ ...form, incidentType: v })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {Object.keys(incidentLabels).map(function(key) {
-                    var val = incidentLabels[key]
-                    return <SelectItem key={key} value={key}>{isRtl ? val.ar : val.en}</SelectItem>
-                  })}
+                  {Object.entries(incidentLabels).map(([key, val]) => (
+                    <SelectItem key={key} value={key}>{isRtl ? val.ar : val.en}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -728,7 +425,7 @@ export default function SafetyPage() {
                 <Label>{isRtl ? 'وصف الحادث' : 'Incident Description'}</Label>
                 <Textarea
                   value={form.incidentDescription}
-                  onChange={function(e) { setForm({ ...form, incidentDescription: e.target.value }) }}
+                  onChange={(e) => setForm({ ...form, incidentDescription: e.target.value })}
                   rows={3}
                   placeholder={isRtl ? 'وصف تفصيلي للحادث...' : 'Detailed incident description...'}
                 />
