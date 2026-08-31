@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState, useMemo } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useAppStore } from '@/lib/store'
 import { hasPermission, MODULE_PERMISSIONS, MODULE_PERMISSION_LABELS, REPORT_PERMISSIONS, REPORT_LABELS, ROLE_PERMISSIONS, type SessionUser } from '@/lib/auth'
 import { clearStoredToken, authedFetch } from '@/lib/api-client'
@@ -33,7 +33,6 @@ import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import dynamic from 'next/dynamic'
-import { SectionErrorBoundary } from '@/components/section-error-boundary'
 
 type PageId =
   | 'dashboard' | 'projects' | 'driveLines' | 'dailyReports' | 'safety'
@@ -52,7 +51,7 @@ const navItems: NavItem[] = [
   { id: 'projects', labelAr: 'المشاريع', labelEn: 'Projects', icon: FolderKanban, resource: 'projects' },
   { id: 'driveLines', labelAr: 'خطوط الحفر', labelEn: 'Drive Lines', icon: GitBranch, resource: 'drive_lines' },
   { id: 'dailyReports', labelAr: 'التقارير اليومية', labelEn: 'Daily Reports', icon: FileText, resource: 'daily_reports' },
-  { id: 'safety', labelAr: 'السلامة', labelEn: 'Safety', icon: ShieldCheck, resource: 'safety' },
+  { id: 'safety', labelAr: 'السلامة والعمال', labelEn: 'Safety & Workers', icon: ShieldCheck, resource: 'safety' },
   { id: 'equipment', labelAr: 'المعدات', labelEn: 'Equipment', icon: Wrench, resource: 'equipment' },
   { id: 'costs', labelAr: 'التكاليف والإيرادات', labelEn: 'Costs & Revenue', icon: DollarSign, resource: 'costs' },
   { id: 'finishings', labelAr: 'التشطيبات', labelEn: 'Finishings', icon: CheckCircle2, resource: 'finishings' },
@@ -125,6 +124,7 @@ const NotificationsPage = dynamic(() => import('@/components/pages/notifications
 export default function AppShell() {
   const user = useAppStore((s) => s.user)
   const setUser = useAppStore((s) => s.setUser)
+  const token = useAppStore((s) => s.token)
   const language = useAppStore((s) => s.language)
   const setLanguage = useAppStore((s) => s.setLanguage)
   const sidebarOpen = useAppStore((s) => s.sidebarOpen)
@@ -144,12 +144,12 @@ export default function AppShell() {
   const hasNotifPerm = user ? hasPermission(user.role, 'notifications', user.permissions) : false
 
   useEffect(() => {
-    if (!user || !hasNotifPerm) return
+    if (!user || !token || !hasNotifPerm) return
     authedFetch('/api/notifications?unreadOnly=true')
       .then(r => r.json())
       .then(data => setNotifications(data.notifications || []))
       .catch(() => {})
-  }, [user, hasNotifPerm])
+  }, [user, token, hasNotifPerm])
 
   useEffect(() => {
     if (typeof document !== 'undefined') {
@@ -158,17 +158,13 @@ export default function AppShell() {
     }
   }, [language])
 
-  // FIX-6.6: Use role-based check instead of hardcoded admin email
-  const isAdmin = user?.role === 'top_management'
-  const canViewDashboard = !!user && (isAdmin || user.role === 'project_manager')
+  const isAdmin = user ? user.email.toLowerCase().trim() === 'admin@axis.om' : false
+  const canViewDashboard = !!user && (isAdmin || user.role === 'top_management' || user.role === 'project_manager')
 
-  const allowedItems = useMemo(function() {
-    if (!user) return []
-    return navItems.filter(function(item) {
-      if (item.id === 'dashboard') return canViewDashboard
-      return hasPermission(user.role, item.resource, user.permissions)
-    })
-  }, [user, canViewDashboard])
+  const allowedItems = user ? navItems.filter(item => {
+    if (item.id === 'dashboard') return canViewDashboard
+    return hasPermission(user.role, item.resource, user.permissions)
+  }) : []
   const firstAllowedPage = allowedItems.length > 0 ? allowedItems[0].id : 'projects'
 
   const initialRedirectDone = useRef(false)
@@ -216,7 +212,7 @@ export default function AppShell() {
 
   async function loadSlotInfo() {
     try {
-      const res = await authedFetch('/api/users?_t=' + Date.now())
+      const res = await authedFetch('/api/users', { noCache: true })
       const data = await res.json()
       if (res.ok) {
         var users = data.users || []
@@ -229,7 +225,7 @@ export default function AppShell() {
   async function loadUserList() {
     setListLoading(true)
     try {
-      const res = await authedFetch('/api/users?_t=' + Date.now())
+      const res = await authedFetch('/api/users', { noCache: true })
       const data = await res.json()
       if (res.ok) {
         var users = data.users || []
@@ -484,9 +480,7 @@ export default function AppShell() {
         </header>
 
         <main className="p-4 lg:p-6 max-w-[1600px] mx-auto">
-          <SectionErrorBoundary sectionName={isAr ? navItems.find(i => i.id === currentPage)?.labelAr : navItems.find(i => i.id === currentPage)?.labelEn}>
-            {renderPage()}
-          </SectionErrorBoundary>
+          {renderPage()}
         </main>
       </div>
 
@@ -685,7 +679,7 @@ export default function AppShell() {
                           <p className="text-xs text-muted-foreground" dir="ltr">{u.email}</p>
                         </div>
                         <span className="text-xs px-2 py-1 rounded-full bg-primary/10 text-primary font-medium shrink-0">
-                          {roleLabels[u.role] ? (isAr ? roleLabels[u.role].ar : roleLabels[u.role].en) : u.role}
+                          {u.roleLabel ? (isAr ? u.roleLabel.ar : u.roleLabel.en) : u.role}
                         </span>
                         <div className="flex items-center gap-1 shrink-0">
                           {deleteConfirm === u.id ? (
