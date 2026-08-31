@@ -1,14 +1,14 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { Button } from '@/components/ui/button'
 import {
-  Activity, TrendingUp, TrendingDown, Coins, Wallet,
+  Activity, TrendingUp, TrendingDown, DollarSign, Wallet,
   Users, AlertTriangle, Wrench, FolderKanban, ArrowLeft,
-  Trophy, AlertCircle, Calendar, Cpu, BarChart3, PieChart as PieChartIcon, ArrowUpRight, ArrowDownRight
+  Trophy, AlertCircle, Calendar, Cpu
 } from 'lucide-react'
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid,
@@ -28,7 +28,6 @@ interface DashboardData {
     totalRevenue: number
     totalCosts: number
     monthCosts: number
-    monthlyRentalCost: number
     netProfit: number
     stoppedEquipment: number
     presentWorkers: number
@@ -43,15 +42,29 @@ interface DashboardData {
 }
 
 const categoryColors: Record<string, string> = {
-  labor: '#f97316', fuel: '#06b6d4', maintenance: '#8b5cf6', transport: '#10b981',
-  housing: '#f59e0b', parts: '#ec4899', oil: '#6366f1', safety: '#ef4444',
-  rental: '#14b8a6', other: '#64748b',
+  labor: '#f97316',
+  fuel: '#06b6d4',
+  maintenance: '#8b5cf6',
+  transport: '#10b981',
+  housing: '#f59e0b',
+  parts: '#ec4899',
+  oil: '#6366f1',
+  safety: '#ef4444',
+  rental: '#14b8a6',
+  other: '#64748b',
 }
 
 const categoryLabelsAr: Record<string, string> = {
-  labor: 'أجور العمال', fuel: 'ديزل', maintenance: 'صيانة', transport: 'نقل',
-  housing: 'سكن', parts: 'قطع غيار', oil: 'زيوت', safety: 'سلامة',
-  rental: 'إيجار', other: 'أخرى',
+  labor: 'أجور العمال',
+  fuel: 'ديزل',
+  maintenance: 'صيانة',
+  transport: 'نقل',
+  housing: 'سكن',
+  parts: 'قطع غيار',
+  oil: 'زيوت',
+  safety: 'سلامة',
+  rental: 'إيجار',
+  other: 'أخرى',
 }
 
 export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) => void }) {
@@ -59,9 +72,10 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const language = useAppStore((s) => s.language)
+  const token = useAppStore((s) => s.token)
   const isRtl = language === 'ar'
 
-  const fetchDashboard = useCallback(async () => {
+  async function fetchDashboard() {
     setLoading(true)
     setError(null)
     try {
@@ -81,17 +95,19 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
     } finally {
       setLoading(false)
     }
-  }, [isRtl])
+  }
 
-  useEffect(() => { fetchDashboard() }, [fetchDashboard])
+  useEffect(() => {
+    fetchDashboard()
+  }, [])
 
   if (loading) {
     return (
       <div className="space-y-4">
         {[1, 2, 3].map(i => (
-          <Card key={i} className="overflow-hidden">
+          <Card key={i}>
             <CardContent className="p-6">
-              <div className="h-32 bg-muted animate-pulse rounded-lg" />
+              <div className="h-32 bg-muted animate-pulse rounded" />
             </CardContent>
           </Card>
         ))}
@@ -123,7 +139,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
   const stats = data.stats || {
     activeProjects: 0, totalProjects: 0, metersToday: 0, metersThisMonth: 0,
     revenueToday: 0, revenueThisMonth: 0, totalRevenue: 0, totalCosts: 0,
-    monthCosts: 0, monthlyRentalCost: 0, netProfit: 0, stoppedEquipment: 0, presentWorkers: 0,
+    monthCosts: 0, netProfit: 0, stoppedEquipment: 0, presentWorkers: 0,
     unreadNotifications: 0,
   }
   const projects = Array.isArray(data.projects) ? data.projects : []
@@ -136,97 +152,120 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
   const fmt = (n: number) => (n || 0).toLocaleString(isRtl ? 'ar-EG' : 'en-US', { maximumFractionDigits: 1 })
   const fmtCurrency = (n: number) => `${fmt(n || 0)} ${isRtl ? 'ر.ع' : 'OMR'}`
 
+  // Sort projects for best/worst
   const sortedByProgress = [...projects].sort((a, b) => (b.progress || 0) - (a.progress || 0))
   const bestProject = sortedByProgress[0]
   const worstProject = sortedByProgress[sortedByProgress.length - 1]
 
+  // Format trend for chart
   const trendData = trend.map(t => ({
     ...t,
     date: new Date(t.date).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US', { month: 'short', day: 'numeric' }),
     profit: (t.revenue || 0) - (t.cost || 0),
   }))
 
-  const profitMargin = stats.totalRevenue > 0 ? ((stats.netProfit / stats.totalRevenue) * 100).toFixed(1) : '0.0'
-
   return (
     <div className="space-y-6">
       {/* Page title */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">{isRtl ? 'لوحة التحكم' : 'Dashboard'}</h1>
+          <h1 className="text-2xl font-bold">{isRtl ? 'لوحة التحكم' : 'Dashboard'}</h1>
           <p className="text-sm text-muted-foreground mt-1">
             {isRtl ? 'نظرة عامة على جميع المشاريع والعمليات' : 'Overview of all projects and operations'}
           </p>
         </div>
-        <Button variant="outline" className="gap-2" onClick={() => onNavigate('reports')}>
-          <BarChart3 className="h-4 w-4" />
+        <Button variant="outline" onClick={() => onNavigate('reports')}>
+          <Calendar className="h-4 w-4 ml-2" />
           {isRtl ? 'التقارير' : 'Reports'}
         </Button>
       </div>
 
-      {/* KPI Cards - Modern gradient style */}
+      {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <KpiCard
+        <StatCard
           icon={FolderKanban}
           label={isRtl ? 'المشاريع النشطة' : 'Active Projects'}
           value={`${stats.activeProjects}`}
           subtext={`${isRtl ? 'من إجمالي' : 'of'} ${stats.totalProjects}`}
-          gradient="from-orange-500 to-amber-500"
-          bgGlow="bg-orange-500/10"
-          trend={null}
+          color="text-orange-600"
+          bgColor="bg-orange-50"
         />
-        <KpiCard
+        <StatCard
           icon={Activity}
           label={isRtl ? 'الأمتار اليوم' : 'Meters Today'}
           value={`${fmt(stats.metersToday)} ${isRtl ? 'م' : 'm'}`}
-          subtext={`${fmt(stats.metersThisMonth)} ${isRtl ? 'م هذا الشهر' : 'm this month'}`
-          gradient="from-blue-500 to-cyan-500"
-          bgGlow="bg-blue-500/10"
-          trend={null}
+          subtext={`${fmt(stats.metersThisMonth)} ${isRtl ? 'م هذا الشهر' : 'm this month'}`}
+          color="text-blue-600"
+          bgColor="bg-blue-50"
         />
-        <KpiCard
-          icon={Coins}
+        <StatCard
+          icon={DollarSign}
           label={isRtl ? 'الإيرادات' : 'Revenue'}
           value={fmtCurrency(stats.totalRevenue)}
-          subtext={`${fmtCurrency(stats.revenueThisMonth)} ${isRtl ? 'هذا الشهر' : 'this month'}`
-          gradient="from-emerald-500 to-teal-500"
-          bgGlow="bg-emerald-500/10"
-          trend={stats.revenueThisMonth > 0 ? 'up' : null}
-          isRtl={isRtl}
+          subtext={`${fmtCurrency(stats.revenueThisMonth)} ${isRtl ? 'هذا الشهر' : 'this month'}`}
+          color="text-emerald-600"
+          bgColor="bg-emerald-50"
         />
-        <KpiCard
+        <StatCard
           icon={Wallet}
           label={isRtl ? 'صافي الربح' : 'Net Profit'}
           value={fmtCurrency(stats.netProfit)}
-          subtext={`${profitMargin}% ${isRtl ? 'هامش ربح' : 'margin'}`}
-          gradient={stats.netProfit >= 0 ? 'from-violet-500 to-purple-500' : 'from-red-500 to-rose-500'}
-          bgGlow={stats.netProfit >= 0 ? 'bg-violet-500/10' : 'bg-red-500/10'}
-          trend={stats.netProfit > 0 ? 'up' : stats.netProfit < 0 ? 'down' : null}
-          isRtl={isRtl}
+          subtext={stats.netProfit >= 0 ? `+${((stats.netProfit / Math.max(stats.totalRevenue, 1)) * 100).toFixed(1)}% ${isRtl ? 'هامش' : 'margin'}` : ''}
+          color={stats.netProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}
+          bgColor={stats.netProfit >= 0 ? 'bg-emerald-50' : 'bg-red-50'}
         />
       </div>
 
-      {/* Secondary stats - Modern chips */}
+      {/* Secondary stats */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        <MiniStat icon={Users} label={isRtl ? 'العمال اليوم' : 'Workers Today'} value={`${stats.presentWorkers}`} color="text-blue-600" bg="bg-blue-50" />
-        <MiniStat icon={Wrench} label={isRtl ? 'معدات متوقفة' : 'Stopped Eq.'} value={`${stats.stoppedEquipment}`} color="text-red-600" bg="bg-red-50" />
-        <MiniStat icon={AlertTriangle} label={isRtl ? 'تنبيهات' : 'Alerts'} value={`${stats.unreadNotifications}`} color="text-amber-600" bg="bg-amber-50" />
-        <MiniStat icon={TrendingUp} label={isRtl ? 'الإيراد اليوم' : "Today's Rev."} value={fmtCurrency(stats.revenueToday)} color="text-emerald-600" bg="bg-emerald-50" />
-        <MiniStat icon={TrendingDown} label={isRtl ? 'تكاليف الشهر' : 'Month Costs'} value={fmtCurrency(stats.monthCosts)} color="text-purple-600" bg="bg-purple-50" />
-        {stats.monthlyRentalCost > 0 && (
-          <MiniStat icon={Wallet} label={isRtl ? 'إيجارات شهرية' : 'Monthly Rentals'} value={fmtCurrency(stats.monthlyRentalCost)} color="text-teal-600" bg="bg-teal-50" />
-        )}
+        <MiniStat
+          icon={Users}
+          label={isRtl ? 'العمال اليوم' : 'Workers Today'}
+          value={`${stats.presentWorkers}`}
+          color="text-blue-600"
+        />
+        <MiniStat
+          icon={Wrench}
+          label={isRtl ? 'معدات متوقفة' : 'Stopped Eq.'}
+          value={`${stats.stoppedEquipment}`}
+          color="text-red-600"
+        />
+        <MiniStat
+          icon={AlertTriangle}
+          label={isRtl ? 'تنبيهات' : 'Alerts'}
+          value={`${stats.unreadNotifications}`}
+          color="text-orange-600"
+        />
+        <MiniStat
+          icon={TrendingUp}
+          label={isRtl ? 'الإيراد اليوم' : "Today's Rev."}
+          value={fmtCurrency(stats.revenueToday)}
+          color="text-emerald-600"
+        />
+        <MiniStat
+          icon={TrendingDown}
+          label={isRtl ? 'تكاليف الشهر' : 'Month Costs'}
+          value={fmtCurrency(stats.monthCosts)}
+          color="text-purple-600"
+        />
+        <MiniStat
+          icon={Activity}
+          label={isRtl ? 'أمتار الشهر' : 'Month Meters'}
+          value={`${fmt(stats.metersThisMonth)} م`}
+          color="text-cyan-600"
+        />
       </div>
 
       {/* Charts row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* Production trend */}
         <Card className="lg:col-span-2">
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Activity className="h-4 w-4 text-primary" />
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Activity className="h-5 w-5 text-primary" />
               {isRtl ? 'اتجاه الإنتاج (آخر 14 يوم)' : 'Production Trend (Last 14 days)'}
             </CardTitle>
-            <CardDescription className="text-xs">
+            <CardDescription>
               {isRtl ? 'الأمتار المنجزة والإيرادات اليومية' : 'Daily meters drilled and revenue'}
             </CardDescription>
           </CardHeader>
@@ -247,7 +286,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
                 <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#6b7280' }} reversed={isRtl} />
                 <YAxis tick={{ fontSize: 11, fill: '#6b7280' }} orientation={isRtl ? 'right' : 'left'} />
                 <Tooltip
-                  contentStyle={{ direction: isRtl ? 'rtl' : 'ltr', borderRadius: 10, border: '1px solid #e5e7eb', fontSize: 12, boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+                  contentStyle={{ direction: isRtl ? 'rtl' : 'ltr', borderRadius: 8, border: '1px solid #e5e7eb', fontSize: 12 }}
                   formatter={(value: any, name: any) => {
                     if (name === 'meters') return [`${fmt(value)} ${isRtl ? 'م' : 'm'}`, isRtl ? 'الأمتار' : 'Meters']
                     if (name === 'revenue') return [fmtCurrency(value), isRtl ? 'الإيراد' : 'Revenue']
@@ -264,12 +303,12 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
 
         {/* Cost breakdown pie */}
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <PieChartIcon className="h-4 w-4 text-primary" />
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Wallet className="h-5 w-5 text-primary" />
               {isRtl ? 'توزيع التكاليف' : 'Cost Breakdown'}
             </CardTitle>
-            <CardDescription className="text-xs">{isRtl ? 'حسب الفئة - هذا الشهر' : 'By category - this month'}</CardDescription>
+            <CardDescription>{isRtl ? 'حسب الفئة - هذا الشهر' : 'By category - this month'}</CardDescription>
           </CardHeader>
           <CardContent>
             {costsByCategory.length === 0 ? (
@@ -279,16 +318,28 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
             ) : (
               <ResponsiveContainer width="100%" height={300}>
                 <PieChart>
-                  <Pie data={costsByCategory} dataKey="amount" nameKey="category" cx="50%" cy="50%" innerRadius={60} outerRadius={90} paddingAngle={2}>
+                  <Pie
+                    data={costsByCategory}
+                    dataKey="amount"
+                    nameKey="category"
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={60}
+                    outerRadius={90}
+                    paddingAngle={2}
+                  >
                     {costsByCategory.map((entry, idx) => (
                       <Cell key={idx} fill={categoryColors[entry.category] || '#94a3b8'} />
                     ))}
                   </Pie>
                   <Tooltip
-                    contentStyle={{ direction: isRtl ? 'rtl' : 'ltr', borderRadius: 10, fontSize: 12, boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+                    contentStyle={{ direction: isRtl ? 'rtl' : 'ltr', borderRadius: 8, fontSize: 12 }}
                     formatter={(value: any, _name: any, props: any) => [fmtCurrency(value), categoryLabelsAr[props.payload.category] || props.payload.category]}
                   />
-                  <Legend formatter={(value) => categoryLabelsAr[value] || value} wrapperStyle={{ fontSize: 11 }} />
+                  <Legend
+                    formatter={(value) => categoryLabelsAr[value] || value}
+                    wrapperStyle={{ fontSize: 11 }}
+                  />
                 </PieChart>
               </ResponsiveContainer>
             )}
@@ -299,10 +350,10 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
       {/* Projects progress + Best/Worst */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <Card className="lg:col-span-2">
-          <CardHeader className="pb-2">
+          <CardHeader>
             <CardTitle className="flex items-center justify-between">
-              <span className="flex items-center gap-2 text-base">
-                <FolderKanban className="h-4 w-4 text-primary" />
+              <span className="flex items-center gap-2">
+                <FolderKanban className="h-5 w-5 text-primary" />
                 {isRtl ? 'تقدم المشاريع' : 'Project Progress'}
               </span>
               <Button variant="ghost" size="sm" onClick={() => onNavigate('projects')}>
@@ -322,7 +373,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-sm truncate">{p.name}</p>
-                      <p className="text-xs text-muted-foreground">{p.code} · {p.client}</p>
+                      <p className="text-xs text-muted-foreground">{p.code} • {p.client}</p>
                     </div>
                     <div className="text-left shrink-0">
                       <span className="font-semibold text-sm">{p.progress.toFixed(1)}%</span>
@@ -340,7 +391,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
             <Card className="bg-gradient-to-br from-emerald-50 to-emerald-50/50 border-emerald-200">
               <CardContent className="p-4">
                 <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center shrink-0">
+                  <div className="w-10 h-10 rounded-lg bg-emerald-100 flex items-center justify-center shrink-0">
                     <Trophy className="h-5 w-5 text-emerald-600" />
                   </div>
                   <div className="flex-1 min-w-0">
@@ -357,7 +408,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
             <Card className="bg-gradient-to-br from-orange-50 to-orange-50/50 border-orange-200">
               <CardContent className="p-4">
                 <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-orange-100 flex items-center justify-center shrink-0">
+                  <div className="w-10 h-10 rounded-lg bg-orange-100 flex items-center justify-center shrink-0">
                     <AlertCircle className="h-5 w-5 text-orange-600" />
                   </div>
                   <div className="flex-1 min-w-0">
@@ -374,7 +425,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
             <Card className="bg-red-50/50 border-red-200">
               <CardContent className="p-4">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center shrink-0">
+                  <div className="w-10 h-10 rounded-lg bg-red-100 flex items-center justify-center shrink-0">
                     <Wrench className="h-5 w-5 text-red-600" />
                   </div>
                   <div className="flex-1">
@@ -393,10 +444,10 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
       {/* Recent reports + Equipment status */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card>
-          <CardHeader className="pb-2">
+          <CardHeader>
             <CardTitle className="flex items-center justify-between">
-              <span className="flex items-center gap-2 text-base">
-                <Calendar className="h-4 w-4 text-primary" />
+              <span className="flex items-center gap-2">
+                <Calendar className="h-5 w-5 text-primary" />
                 {isRtl ? 'التقارير الأخيرة' : 'Recent Reports'}
               </span>
               <Button variant="ghost" size="sm" onClick={() => onNavigate('dailyReports')}>
@@ -413,13 +464,13 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
             ) : (
               recentReports.slice(0, 8).map((r) => (
                 <div key={r.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 transition">
-                  <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+                  <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
                     <Calendar className="h-4 w-4 text-primary" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-sm truncate">{r.project?.name}</p>
                     <p className="text-xs text-muted-foreground">
-                      {new Date(r.reportDate).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')} · {r.driveLine?.lineNumber || '-'}
+                      {new Date(r.reportDate).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')} • {r.driveLine?.lineNumber || '-'}
                     </p>
                   </div>
                   <div className="text-left shrink-0">
@@ -438,10 +489,10 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
         </Card>
 
         <Card>
-          <CardHeader className="pb-2">
+          <CardHeader>
             <CardTitle className="flex items-center justify-between">
-              <span className="flex items-center gap-2 text-base">
-                <Cpu className="h-4 w-4 text-primary" />
+              <span className="flex items-center gap-2">
+                <Cpu className="h-5 w-5 text-primary" />
                 {isRtl ? 'حالة المعدات' : 'Equipment Status'}
               </span>
               <Button variant="ghost" size="sm" onClick={() => onNavigate('equipment')}>
@@ -458,18 +509,23 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
             ) : (
               equipment.map((eq) => (
                 <div key={eq.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 transition">
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-                    eq.status === 'operational' ? 'bg-emerald-100' : eq.status === 'stopped' ? 'bg-red-100' : 'bg-orange-100'
+                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
+                    eq.status === 'operational' ? 'bg-emerald-100' :
+                    eq.status === 'stopped' ? 'bg-red-100' : 'bg-orange-100'
                   }`}>
                     <Wrench className={`h-4 w-4 ${
-                      eq.status === 'operational' ? 'text-emerald-600' : eq.status === 'stopped' ? 'text-red-600' : 'text-orange-600'
+                      eq.status === 'operational' ? 'text-emerald-600' :
+                      eq.status === 'stopped' ? 'text-red-600' : 'text-orange-600'
                     }`} />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-sm truncate">{eq.name}</p>
-                    <p className="text-xs text-muted-foreground">{eq.number} · {eq.project?.name || '-'}</p>
+                    <p className="text-xs text-muted-foreground">{eq.number} • {eq.project?.name || '-'}</p>
                   </div>
-                  <Badge variant={eq.status === 'operational' ? 'default' : eq.status === 'stopped' ? 'destructive' : 'secondary'} className="text-xs">
+                  <Badge variant={
+                    eq.status === 'operational' ? 'default' :
+                    eq.status === 'stopped' ? 'destructive' : 'secondary'
+                  } className="text-xs">
                     {eq.status === 'operational' ? (isRtl ? 'تعمل' : 'Operational') :
                      eq.status === 'stopped' ? (isRtl ? 'متوقفة' : 'Stopped') :
                      (isRtl ? 'تحتاج صيانة' : 'Maintenance')}
@@ -484,49 +540,37 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
   )
 }
 
-/* ─── Modern KPI Card ─── */
-function KpiCard({
-  icon: Icon, label, value, subtext, gradient, bgGlow, trend,
+function StatCard({
+  icon: Icon, label, value, subtext, color, bgColor,
 }: {
-  icon: any; label: string; value: string; subtext?: string
-  gradient: string; bgGlow: string; trend: 'up' | 'down' | null; isRtl: boolean
+  icon: any; label: string; value: string; subtext?: string; color: string; bgColor: string
 }) {
   return (
-    <Card className="relative overflow-hidden">
-      <div className={`absolute top-0 ${isRtl ? 'left-0' : 'right-0'} w-24 h-24 rounded-full ${bgGlow} blur-2xl -translate-y-6 ${isRtl ? '-translate-x-6' : 'translate-x-6'}`} />
-      <CardContent className="relative p-5">
+    <Card>
+      <CardContent className="p-5">
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
             <p className="text-sm text-muted-foreground font-medium">{label}</p>
             <p className="text-2xl font-bold mt-1 truncate">{value}</p>
             {subtext && <p className="text-xs text-muted-foreground mt-1 truncate">{subtext}</p>}
           </div>
-          <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center shrink-0 shadow-sm`}>
-            <Icon className="h-5 w-5 text-white" />
+          <div className={`w-10 h-10 rounded-lg ${bgColor} flex items-center justify-center shrink-0`}>
+            <Icon className={`h-5 w-5 ${color}`} />
           </div>
         </div>
-        {trend && (
-          <div className={`flex items-center gap-1 mt-2 text-xs font-medium ${trend === 'up' ? 'text-emerald-600' : 'text-red-600'}`}>
-            {trend === 'up' ? <ArrowUpRight className="h-3.5 w-3.5" /> : <ArrowDownRight className="h-3.5 w-3.5" />}
-            {trend === 'up' ? (isRtl ? 'اتجاه صاعد' : 'Trending up') : (isRtl ? 'اتجاه نازل' : 'Trending down')}
-          </div>
-        )}
       </CardContent>
     </Card>
   )
 }
 
-/* ─── Mini Stat Chip ─── */
-function MiniStat({ icon: Icon, label, value, color, bg }: { icon: any; label: string; value: string; color: string; bg: string }) {
+function MiniStat({ icon: Icon, label, value, color }: { icon: any; label: string; value: string; color: string }) {
   return (
     <Card>
       <CardContent className="p-3">
-        <div className="flex items-center gap-2.5">
-          <div className={`w-8 h-8 rounded-lg ${bg} flex items-center justify-center shrink-0`}>
-            <Icon className={`h-4 w-4 ${color}`} />
-          </div>
+        <div className="flex items-center gap-2">
+          <Icon className={`h-4 w-4 ${color} shrink-0`} />
           <div className="min-w-0">
-            <p className="text-[11px] text-muted-foreground truncate leading-tight">{label}</p>
+            <p className="text-xs text-muted-foreground truncate">{label}</p>
             <p className="font-semibold text-sm truncate">{value}</p>
           </div>
         </div>
@@ -534,5 +578,3 @@ function MiniStat({ icon: Icon, label, value, color, bg }: { icon: any; label: s
     </Card>
   )
 }
-
-
