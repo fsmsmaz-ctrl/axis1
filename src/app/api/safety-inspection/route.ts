@@ -78,7 +78,7 @@ export async function POST(req: NextRequest) {
       () => db.safetyReport.findFirst({
         where: {
           projectId: body.projectId,
-          signedById: user!.id,
+          signedById: user.id,
           reportDate: { gte: dateStart, lte: dateEnd },
         },
         include: { dailyReport: { select: { id: true } } },
@@ -121,7 +121,7 @@ export async function POST(req: NextRequest) {
           dailyRevenue: 0,
           status: 'draft',
           safetyLocked: true,
-          createdById: user!.id,
+          createdById: user.id,
         },
       }),
       'إنشاء التقرير اليومي'
@@ -154,8 +154,8 @@ export async function POST(req: NextRequest) {
       violations: body.violations || null,
       incidentType: body.incidentType || 'none',
       incidentDescription: body.incidentDescription || null,
-      signedBy: user!.name,
-      signedById: user!.id,
+      signedBy: user.name,
+      signedById: user.id,
       signedAt: new Date(),
     }
 
@@ -170,7 +170,7 @@ export async function POST(req: NextRequest) {
     await safeDbOp(
       () => db.auditLog.create({
         data: {
-          userId: user!.id,
+          userId: user.id,
           projectId: body.projectId,
           dailyReportId: createReportResult.data.id,
           action: 'create',
@@ -201,7 +201,7 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
   }
 
-  if (user!.email.toLowerCase().trim() !== ADMIN_EMAIL) {
+  if (user.email.toLowerCase().trim() !== ADMIN_EMAIL) {
     return NextResponse.json({ error: 'forbidden', message: 'هذه العملية متاحة فقط لمدير النظام' }, { status: 403 })
   }
 
@@ -265,7 +265,7 @@ export async function DELETE(req: NextRequest) {
     await safeDbOp(
       () => db.auditLog.create({
         data: {
-          userId: user!.id,
+          userId: user.id,
           projectId: report.projectId,
           action: 'delete',
           entity: 'safety_report',
@@ -281,3 +281,4 @@ export async function DELETE(req: NextRequest) {
     return handleDbError(error, 'حذف تقرير السلامة')
   }
 }
+
