@@ -12,10 +12,12 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url)
   const projectId = searchParams.get('projectId')
+  const date = searchParams.get('date')
   const limit = parseInt(searchParams.get('limit') || '50')
 
   const where: any = {}
   if (projectId) where.projectId = projectId
+  if (date) where.reportDate = new Date(date)
 
   const result = await safeDbOp(
     () => db.dailyReport.findMany({
