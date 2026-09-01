@@ -89,9 +89,10 @@ export default function DailyReportsPage() {
   }
 
   useEffect(() => {
+    if (!token) return
     fetchReports()
     fetchProjects()
-  }, [selectedProject])
+  }, [selectedProject, token])
 
   useEffect(() => {
     if (formData.projectId) {
@@ -733,3 +734,4 @@ function Stat({ label, value, color }: { label: string; value: string; color: st
     </div>
   )
 }
+
