@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -15,35 +15,37 @@ import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   PieChart, Pie, Cell, Legend
 } from 'recharts'
-import { Plus, DollarSign, TrendingUp, TrendingDown, Wallet, BarChart3, ChevronDown } from 'lucide-react'
+import {
+  Plus, DollarSign, TrendingUp, TrendingDown, Wallet, BarChart3,
+  HardHat, Fuel, Wrench, Truck, Construction, Gauge, Droplets, ShieldCheck, FolderKanban
+} from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
 import { toast } from 'sonner'
 
 const categoryLabels: Record<string, { ar: string; en: string }> = {
-  labor: { ar: '\u0623\u062c\u0648\u0631 \u0627\u0644\u0639\u0645\u0627\u0644', en: 'Labor' },
-  housing: { ar: '\u0633\u0643\u0646', en: 'Housing' },
-  transport: { ar: '\u0646\u0642\u0644', en: 'Transport' },
-  fuel: { ar: '\u062f\u064a\u0632\u0644', en: 'Fuel' },
-  maintenance: { ar: '\u0635\u064a\u0627\u0646\u0629', en: 'Maintenance' },
-  parts: { ar: '\u0642\u0637\u0639 \u063a\u064a\u0627\u0631', en: 'Parts' },
-  oil: { ar: '\u0632\u064a\u0648\u062a', en: 'Oil' },
-  safety: { ar: '\u0633\u0644\u0627\u0645\u0629', en: 'Safety' },
-  rental: { ar: '\u0625\u064a\u062c\u0627\u0631', en: 'Rental' },
-  other: { ar: '\u0623\u062e\u0631\u0649', en: 'Other' },
+  labor: { ar: 'أجور العمال', en: 'Labor' },
+  housing: { ar: 'سكن', en: 'Housing' },
+  transport: { ar: 'نقل', en: 'Transport' },
+  fuel: { ar: 'ديزل', en: 'Fuel' },
+  maintenance: { ar: 'صيانة', en: 'Maintenance' },
+  parts: { ar: 'قطع غيار', en: 'Parts' },
+  oil: { ar: 'زيوت', en: 'Oil' },
+  safety: { ar: 'سلامة', en: 'Safety' },
+  rental: { ar: 'إيجار', en: 'Rental' },
+  other: { ar: 'أخرى', en: 'Other' },
 }
 
 const categoryColors: Record<string, string> = {
-  labor: '#f97316',
-  fuel: '#06b6d4',
-  maintenance: '#8b5cf6',
-  transport: '#10b981',
-  housing: '#f59e0b',
-  parts: '#ec4899',
-  oil: '#6366f1',
-  safety: '#ef4444',
-  rental: '#14b8a6',
-  other: '#64748b',
+  labor: '#f97316', fuel: '#06b6d4', maintenance: '#8b5cf6',
+  transport: '#10b981', housing: '#f59e0b', parts: '#ec4899',
+  oil: '#6366f1', safety: '#ef4444', rental: '#14b8a6', other: '#64748b',
+}
+
+const categoryIcons: Record<string, any> = {
+  labor: HardHat, fuel: Fuel, maintenance: Wrench,
+  transport: Truck, housing: Construction, parts: Gauge,
+  oil: Droplets, safety: ShieldCheck, rental: FolderKanban, other: BarChart3,
 }
 
 export default function CostsPage() {
@@ -52,9 +54,11 @@ export default function CostsPage() {
   const [total, setTotal] = useState(0)
   const [projects, setProjects] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [fetchError, setFetchError] = useState<string | null>(null)
   const [selectedProject, setSelectedProject] = useState<string>('all')
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingCostId, setEditingCostId] = useState<string | null>(null)
+  const [visibleCount, setVisibleCount] = useState(100)
   const language = useAppStore((s) => s.language)
   const token = useAppStore((s) => s.token)
   const isRtl = language === 'ar'
@@ -63,41 +67,54 @@ export default function CostsPage() {
   const [revenue, setRevenue] = useState(0)
   const [projectReports, setProjectReports] = useState<any[]>([])
 
-  // Show all costs by default, load more on demand
-  const [visibleCount, setVisibleCount] = useState(100)
-
   const [formData, setFormData] = useState({
     projectId: '', date: new Date().toISOString().split('T')[0],
     category: 'labor', description: '', amount: '', notes: '',
   })
 
-  async function fetchCosts() {
+  const fetchCosts = useCallback(async () => {
+    if (!token) return
     setLoading(true)
-    const res = await authedFetch('/api/costs' + (selectedProject !== 'all' ? `?projectId=${selectedProject}` : ''))
-    const data = await res.json()
-    setCosts(data.costs || [])
-    setByCategory(data.byCategory || [])
-    setTotal(data.total || 0)
+    setFetchError(null)
+    try {
+      // Fetch costs
+      const costsRes = await authedFetch('/api/costs' + (selectedProject !== 'all' ? `?projectId=${selectedProject}` : ''))
+      if (!costsRes.ok) {
+        const errBody = await costsRes.json().catch(() => ({}))
+        throw new Error(errBody?.message || errBody?.error || `Error ${costsRes.status}`)
+      }
+      const costsData = await costsRes.json()
+      setCosts(costsData.costs || [])
+      setByCategory(costsData.byCategory || [])
+      setTotal(costsData.total || 0)
 
-    // Get revenue from reports
-    const repParams = new URLSearchParams()
-    if (selectedProject !== 'all') repParams.set('projectId', selectedProject)
-    repParams.set('limit', '500')
-    const repRes = await authedFetch('/api/daily-reports?' + repParams.toString())
-    const repData = await repRes.json()
-    const reports = (repData.reports || []).filter((r: any) => r.status === 'approved')
-    const totalRev = reports.reduce((s: number, r: any) => s + r.dailyRevenue, 0)
-    setRevenue(totalRev)
-    setProjectReports(reports)
-
-    setLoading(false)
-  }
+      // Fetch revenue from approved reports
+      const repParams = new URLSearchParams()
+      if (selectedProject !== 'all') repParams.set('projectId', selectedProject)
+      repParams.set('limit', '500')
+      const repRes = await authedFetch('/api/daily-reports?' + repParams.toString())
+      if (repRes.ok) {
+        const repData = await repRes.json()
+        const reports = (repData.reports || []).filter((r: any) => r.status === 'approved')
+        const totalRev = reports.reduce((s: number, r: any) => s + (r.dailyRevenue || 0), 0)
+        setRevenue(totalRev)
+        setProjectReports(reports)
+      }
+    } catch (e: any) {
+      console.error('[CostsPage]', e)
+      setFetchError(e.message || (isRtl ? 'خطأ في تحميل البيانات' : 'Failed to load data'))
+    } finally {
+      setLoading(false)
+    }
+  }, [token, selectedProject, isRtl])
 
   useEffect(() => {
-    if (!token) return
     fetchCosts()
-    authedFetch('/api/projects/list').then(r => r.json()).then(d => setProjects(d.projects || []))
-  }, [selectedProject, token])
+    authedFetch('/api/projects/list')
+      .then(r => r.ok ? r.json() : Promise.resolve(null))
+      .then(d => { if (d) setProjects(d.projects || []) })
+      .catch(() => {})
+  }, [fetchCosts, token])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -110,7 +127,7 @@ export default function CostsPage() {
         body: JSON.stringify(formData),
       })
       if (res.ok) {
-        toast.success(editingCostId ? (isRtl ? '\u062a\u0645 \u062a\u062d\u062f\u064a\u062b \u0627\u0644\u062a\u0643\u0644\u0641\u0629' : 'Cost updated') : (isRtl ? '\u062a\u0645 \u0625\u0636\u0627\u0641\u0629 \u0627\u0644\u062a\u0643\u0644\u0641\u0629' : 'Cost added'))
+        toast.success(editingCostId ? (isRtl ? 'تم تحديث التكلفة' : 'Cost updated') : (isRtl ? 'تم إضافة التكلفة' : 'Cost added'))
         setDialogOpen(false)
         setEditingCostId(null)
         setFormData({
@@ -120,26 +137,26 @@ export default function CostsPage() {
         fetchCosts()
       }
     } catch {
-      toast.error(isRtl ? '\u062d\u062f\u062b \u062e\u0637\u0623' : 'Error')
+      toast.error(isRtl ? 'حدث خطأ' : 'Error')
     }
   }
 
   async function deleteCost(id: string) {
-    if (!confirm(isRtl ? '\u0647\u0644 \u0623\u0646\u062a \u0645\u062a\u0623\u0643\u062f \u0645\u0646 \u062d\u0630\u0641 \u0647\u0630\u0647 \u0627\u0644\u062a\u0643\u0644\u0641\u0629\u061f' : 'Are you sure you want to delete this cost?')) return
+    if (!confirm(isRtl ? 'هل أنت متأكد من حذف هذه التكلفة؟' : 'Are you sure you want to delete this cost?')) return
     try {
       const res = await authedFetch(`/api/costs/${id}`, { method: 'DELETE' })
       if (res.ok) {
-        toast.success(isRtl ? '\u062a\u0645 \u062d\u0630\u0641 \u0627\u0644\u062a\u0643\u0644\u0641\u0629' : 'Cost deleted')
+        toast.success(isRtl ? 'تم حذف التكلفة' : 'Cost deleted')
         fetchCosts()
       }
     } catch {
-      toast.error(isRtl ? '\u062d\u062f\u062b \u062e\u0637\u0623' : 'Error')
+      toast.error(isRtl ? 'حدث خطأ' : 'Error')
     }
   }
 
   const netProfit = revenue - total
   const profitMargin = revenue > 0 ? (netProfit / revenue) * 100 : 0
-  const totalMeters = projectReports.reduce((s, r) => s + r.dailyMeters, 0)
+  const totalMeters = projectReports.reduce((s, r) => s + (r.dailyMeters || 0), 0)
   const costPerMeter = totalMeters > 0 ? total / totalMeters : 0
 
   // Chart data
@@ -156,9 +173,14 @@ export default function CostsPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold">{isRtl ? '\u0627\u0644\u062a\u0643\u0627\u0644\u064a\u0641 \u0648\u0627\u0644\u0625\u064a\u0631\u0627\u062f\u0627\u062a' : 'Costs & Revenue'}</h1>
+          <h1 className="text-2xl font-bold flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-500 to-violet-500 flex items-center justify-center">
+              <Wallet className="h-4 w-4 text-white" />
+            </div>
+            {isRtl ? 'التكاليف والإيرادات' : 'Costs & Revenue'}
+          </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            {isRtl ? '\u0645\u062a\u0627\u0628\u0639\u0629 \u0627\u0644\u062a\u0643\u0627\u0644\u064a\u0641 \u0648\u0627\u0644\u0625\u064a\u0631\u0627\u062f\u0627\u062a \u0648\u062d\u0633\u0627\u0628 \u0627\u0644\u0623\u0631\u0628\u0627\u062d' : 'Track costs, revenue, and profit'}
+            {isRtl ? 'متابعة التكاليف والإيرادات وحساب الأرباح' : 'Track costs, revenue, and profit'}
           </p>
         </div>
         <Button onClick={() => {
@@ -170,70 +192,96 @@ export default function CostsPage() {
           setDialogOpen(true)
         }}>
           <Plus className="h-4 w-4 ml-2" />
-          {isRtl ? '\u0625\u0636\u0627\u0641\u0629 \u062a\u0643\u0644\u0641\u0629' : 'Add Cost'}
+          {isRtl ? 'إضافة تكلفة' : 'Add Cost'}
         </Button>
       </div>
+
+      {/* Error state */}
+      {fetchError && !loading && (
+        <Card className="border-red-200 bg-red-50/50">
+          <CardContent className="flex items-center justify-between py-3 px-4">
+            <p className="text-sm text-red-700">{fetchError}</p>
+            <Button variant="outline" size="sm" onClick={fetchCosts}>{isRtl ? 'إعادة المحاولة' : 'Retry'}</Button>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Card className="bg-gradient-to-br from-emerald-50 to-emerald-50/30 border-emerald-200">
           <CardContent className="p-4">
-            <div className="flex items-center gap-2 mb-1">
-              <TrendingUp className="h-4 w-4 text-emerald-600" />
-              <span className="text-xs text-muted-foreground">{isRtl ? '\u0627\u0644\u0625\u064a\u0631\u0627\u062f\u0627\u062a' : 'Revenue'}</span>
+            <div className="flex items-center justify-between">
+              <div className="min-w-0 flex-1">
+                <span className="text-xs text-muted-foreground">{isRtl ? 'الإيرادات' : 'Revenue'}</span>
+                <p className="text-xl font-bold text-emerald-700 mt-1">
+                  {revenue.toLocaleString(isRtl ? 'ar-EG' : 'en-US', { maximumFractionDigits: 0 })}
+                  <span className="text-sm font-normal mr-1">{isRtl ? 'ر.ع' : 'OMR'}</span>
+                </p>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center shrink-0">
+                <TrendingUp className="h-5 w-5 text-white" />
+              </div>
             </div>
-            <p className="text-xl font-bold text-emerald-700">
-              {revenue.toLocaleString(isRtl ? 'ar-EG' : 'en-US', { maximumFractionDigits: 0 })}
-              <span className="text-sm font-normal mr-1">{isRtl ? '\u0631.\u0639' : 'OMR'}</span>
-            </p>
           </CardContent>
         </Card>
         <Card className="bg-gradient-to-br from-red-50 to-red-50/30 border-red-200">
           <CardContent className="p-4">
-            <div className="flex items-center gap-2 mb-1">
-              <TrendingDown className="h-4 w-4 text-red-600" />
-              <span className="text-xs text-muted-foreground">{isRtl ? '\u0627\u0644\u062a\u0643\u0627\u0644\u064a\u0641' : 'Costs'}</span>
+            <div className="flex items-center justify-between">
+              <div className="min-w-0 flex-1">
+                <span className="text-xs text-muted-foreground">{isRtl ? 'التكاليف' : 'Costs'}</span>
+                <p className="text-xl font-bold text-red-700 mt-1">
+                  {total.toLocaleString(isRtl ? 'ar-EG' : 'en-US', { maximumFractionDigits: 0 })}
+                  <span className="text-sm font-normal mr-1">{isRtl ? 'ر.ع' : 'OMR'}</span>
+                </p>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-red-400 to-red-600 flex items-center justify-center shrink-0">
+                <TrendingDown className="h-5 w-5 text-white" />
+              </div>
             </div>
-            <p className="text-xl font-bold text-red-700">
-              {total.toLocaleString(isRtl ? 'ar-EG' : 'en-US', { maximumFractionDigits: 0 })}
-              <span className="text-sm font-normal mr-1">{isRtl ? '\u0631.\u0639' : 'OMR'}</span>
-            </p>
           </CardContent>
         </Card>
         <Card className={netProfit >= 0 ? 'bg-gradient-to-br from-blue-50 to-blue-50/30 border-blue-200' : 'bg-gradient-to-br from-red-50 to-red-50/30 border-red-200'}>
           <CardContent className="p-4">
-            <div className="flex items-center gap-2 mb-1">
-              <Wallet className="h-4 w-4 text-blue-600" />
-              <span className="text-xs text-muted-foreground">{isRtl ? '\u0635\u0627\u0641\u064a \u0627\u0644\u0631\u0628\u062d' : 'Net Profit'}</span>
+            <div className="flex items-center justify-between">
+              <div className="min-w-0 flex-1">
+                <span className="text-xs text-muted-foreground">{isRtl ? 'صافي الربح' : 'Net Profit'}</span>
+                <p className={`text-xl font-bold mt-1 ${netProfit >= 0 ? 'text-blue-700' : 'text-red-700'}`}>
+                  {netProfit.toLocaleString(isRtl ? 'ar-EG' : 'en-US', { maximumFractionDigits: 0 })}
+                  <span className="text-sm font-normal mr-1">{isRtl ? 'ر.ع' : 'OMR'}</span>
+                </p>
+              </div>
+              <div className={`w-10 h-10 rounded-xl bg-gradient-to-br flex items-center justify-center shrink-0 ${netProfit >= 0 ? 'from-blue-400 to-blue-600' : 'from-red-400 to-red-600'}`}>
+                <Wallet className="h-5 w-5 text-white" />
+              </div>
             </div>
-            <p className={`text-xl font-bold ${netProfit >= 0 ? 'text-blue-700' : 'text-red-700'}`}>
-              {netProfit.toLocaleString(isRtl ? 'ar-EG' : 'en-US', { maximumFractionDigits: 0 })}
-              <span className="text-sm font-normal mr-1">{isRtl ? '\u0631.\u0639' : 'OMR'}</span>
-            </p>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="bg-gradient-to-br from-purple-50 to-purple-50/30 border-purple-200">
           <CardContent className="p-4">
-            <div className="flex items-center gap-2 mb-1">
-              <DollarSign className="h-4 w-4 text-purple-600" />
-              <span className="text-xs text-muted-foreground">{isRtl ? '\u0647\u0627\u0645\u0634 \u0627\u0644\u0631\u0628\u062d' : 'Profit Margin'}</span>
+            <div className="flex items-center justify-between">
+              <div className="min-w-0 flex-1">
+                <span className="text-xs text-muted-foreground">{isRtl ? 'هامش الربح' : 'Profit Margin'}</span>
+                <p className={`text-xl font-bold mt-1 ${profitMargin >= 0 ? 'text-purple-700' : 'text-red-700'}`}>
+                  {profitMargin.toFixed(1)}%
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {isRtl ? 'تكلفة المتر' : 'Cost/m'}: {costPerMeter.toFixed(1)} {isRtl ? 'ر.ع' : 'OMR'}
+                </p>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-400 to-purple-600 flex items-center justify-center shrink-0">
+                <DollarSign className="h-5 w-5 text-white" />
+              </div>
             </div>
-            <p className={`text-xl font-bold ${profitMargin >= 0 ? 'text-purple-700' : 'text-red-700'}`}>
-              {profitMargin.toFixed(1)}%
-            </p>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              {isRtl ? '\u062a\u0643\u0644\u0641\u0629 \u0627\u0644\u0645\u062a\u0631' : 'Cost/m'}: {costPerMeter.toFixed(1)} {isRtl ? '\u0631.\u0639' : 'OMR'}
-            </p>
           </CardContent>
         </Card>
       </div>
 
-      <Select value={selectedProject} onValueChange={setSelectedProject}>
+      <Select value={selectedProject} onValueChange={(v) => { setSelectedProject(v); setVisibleCount(100) }}>
         <SelectTrigger className="w-full sm:w-[300px]">
-          <SelectValue placeholder={isRtl ? '\u0627\u062e\u062a\u0631 \u0627\u0644\u0645\u0634\u0631\u0648\u0639' : 'Select project'} />
+          <SelectValue placeholder={isRtl ? 'اختر المشروع' : 'Select project'} />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="all">{isRtl ? '\u0643\u0644 \u0627\u0644\u0645\u0634\u0627\u0631\u064a\u0639' : 'All Projects'}</SelectItem>
+          <SelectItem value="all">{isRtl ? 'كل المشاريع' : 'All Projects'}</SelectItem>
           {projects.map((p) => (
             <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
           ))}
@@ -243,16 +291,18 @@ export default function CostsPage() {
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <BarChart3 className="h-5 w-5 text-primary" />
-              {isRtl ? '\u0627\u0644\u062a\u0643\u0627\u0644\u064a\u0641 \u062d\u0633\u0628 \u0627\u0644\u0641\u0626\u0629' : 'Costs by Category'}
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <div className="w-7 h-7 rounded-md bg-gradient-to-br from-orange-500 to-amber-500 flex items-center justify-center">
+                <BarChart3 className="h-3.5 w-3.5 text-white" />
+              </div>
+              {isRtl ? 'التكاليف حسب الفئة' : 'Costs by Category'}
             </CardTitle>
           </CardHeader>
           <CardContent>
             {pieData.length === 0 ? (
               <div className="h-64 flex items-center justify-center text-muted-foreground text-sm">
-                {isRtl ? '\u0644\u0627 \u062a\u0648\u062c\u062f \u0628\u064a\u0627\u0646\u0627\u062a' : 'No data'}
+                {isRtl ? 'لا توجد بيانات' : 'No data'}
               </div>
             ) : (
               <ResponsiveContainer width="100%" height={300}>
@@ -271,7 +321,7 @@ export default function CostsPage() {
                   </Pie>
                   <Tooltip
                     contentStyle={{ direction: isRtl ? 'rtl' : 'ltr', borderRadius: 8, fontSize: 12 }}
-                    formatter={(value: any) => [`${value.toLocaleString()} \u0631.\u0639`, '']}
+                    formatter={(value: any) => [`${value.toLocaleString()} ر.ع`, '']}
                   />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
                 </PieChart>
@@ -281,13 +331,18 @@ export default function CostsPage() {
         </Card>
 
         <Card>
-          <CardHeader>
-            <CardTitle>{isRtl ? '\u0623\u0639\u0644\u0649 \u0627\u0644\u062a\u0643\u0627\u0644\u064a\u0641' : 'Top Categories'}</CardTitle>
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <div className="w-7 h-7 rounded-md bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center">
+                <BarChart3 className="h-3.5 w-3.5 text-white" />
+              </div>
+              {isRtl ? 'أعلى التكاليف' : 'Top Categories'}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             {pieData.length === 0 ? (
               <div className="h-64 flex items-center justify-center text-muted-foreground text-sm">
-                {isRtl ? '\u0644\u0627 \u062a\u0648\u062c\u062f \u0628\u064a\u0627\u0646\u0627\u062a' : 'No data'}
+                {isRtl ? 'لا توجد بيانات' : 'No data'}
               </div>
             ) : (
               <ResponsiveContainer width="100%" height={300}>
@@ -297,7 +352,7 @@ export default function CostsPage() {
                   <YAxis dataKey="name" type="category" tick={{ fontSize: 11 }} width={80} orientation={isRtl ? 'right' : 'left'} />
                   <Tooltip
                     contentStyle={{ direction: isRtl ? 'rtl' : 'ltr', borderRadius: 8, fontSize: 12 }}
-                    formatter={(value: any) => [`${value.toLocaleString()} \u0631.\u0639`, isRtl ? '\u0627\u0644\u0645\u0628\u0644\u063a' : 'Amount']}
+                    formatter={(value: any) => [`${value.toLocaleString()} ر.ع`, isRtl ? 'المبلغ' : 'Amount']}
                   />
                   <Bar dataKey="value" radius={[0, 4, 4, 0]}>
                     {pieData.map((entry, idx) => (
@@ -313,10 +368,15 @@ export default function CostsPage() {
 
       {/* Costs list */}
       <Card>
-        <CardHeader>
+        <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
-            <CardTitle>{isRtl ? '\u062c\u0645\u064a\u0639 \u0627\u0644\u062a\u0643\u0627\u0644\u064a\u0641 \u0627\u0644\u0645\u0633\u062c\u0644\u0629' : 'All Recorded Costs'}</CardTitle>
-            <Badge variant="outline">{costs.length}</Badge>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <div className="w-7 h-7 rounded-md bg-gradient-to-br from-slate-500 to-slate-700 flex items-center justify-center">
+                <DollarSign className="h-3.5 w-3.5 text-white" />
+              </div>
+              {isRtl ? 'سجل التكاليف' : 'Costs Record'}
+              <Badge variant="secondary" className="text-xs">{costs.length}</Badge>
+            </CardTitle>
           </div>
         </CardHeader>
         <CardContent>
@@ -324,63 +384,60 @@ export default function CostsPage() {
             <div className="h-32 bg-muted animate-pulse rounded" />
           ) : costs.length === 0 ? (
             <div className="py-8 text-center text-muted-foreground text-sm">
-              {isRtl ? '\u0644\u0627 \u062a\u0648\u062c\u062f \u062a\u0643\u0627\u0644\u064a\u0641' : 'No costs'}
+              {isRtl ? 'لا توجد تكاليف' : 'No costs'}
             </div>
           ) : (
             <div className="space-y-2">
-              {visibleCosts.map((c) => (
-                <div key={c.id} className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-muted/50 transition group">
-                  <div
-                    className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
-                    style={{ backgroundColor: (categoryColors[c.category] || '#94a3b8') + '20' }}
-                  >
-                    <DollarSign className="h-4 w-4" style={{ color: categoryColors[c.category] || '#94a3b8' }} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{c.description}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {isRtl ? categoryLabels[c.category]?.ar : categoryLabels[c.category]?.en || c.category}
-                      {' \u2022 '}
-                      {new Date(c.date).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')}
-                      {c.project && ` \u2022 ${c.project.name}`}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <p className="font-semibold text-sm text-red-600">
-                      {c.amount.toLocaleString()} {isRtl ? '\u0631.\u0639' : 'OMR'}
-                    </p>
-                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition">
-                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => {
-                        setEditingCostId(c.id)
-                        setFormData({
-                          projectId: c.projectId || '',
-                          date: new Date(c.date).toISOString().split('T')[0],
-                          category: c.category,
-                          description: c.description,
-                          amount: String(c.amount),
-                          notes: c.notes || '',
-                        })
-                        setDialogOpen(true)
-                      }}>{'\u270F\uFE0F'}</Button>
-                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-destructive" onClick={() => deleteCost(c.id)}>
-                        {'\uD83D\uDDD1\uFE0F'}
-                      </Button>
+              {visibleCosts.map((c) => {
+                const CatIcon = categoryIcons[c.category] || DollarSign
+                return (
+                  <div key={c.id} className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-muted/50 transition group">
+                    <div
+                      className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
+                      style={{ backgroundColor: (categoryColors[c.category] || '#94a3b8') + '20' }}
+                    >
+                      <CatIcon className="h-4 w-4" style={{ color: categoryColors[c.category] || '#94a3b8' }} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{c.description}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {isRtl ? categoryLabels[c.category]?.ar : categoryLabels[c.category]?.en || c.category}
+                        {' • '}
+                        {new Date(c.date).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')}
+                        {c.project && ` • ${c.project.name}`}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <p className="font-semibold text-sm text-red-600">
+                        {c.amount.toLocaleString()} {isRtl ? 'ر.ع' : 'OMR'}
+                      </p>
+                      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition">
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => {
+                          setEditingCostId(c.id)
+                          setFormData({
+                            projectId: c.projectId || '',
+                            date: new Date(c.date).toISOString().split('T')[0],
+                            category: c.category,
+                            description: c.description,
+                            amount: String(c.amount),
+                            notes: c.notes || '',
+                          })
+                          setDialogOpen(true)
+                        }}>
+                          ✏️
+                        </Button>
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-destructive" onClick={() => deleteCost(c.id)}>
+                          🗑️
+                        </Button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
               {hasMore && (
                 <div className="pt-2 text-center">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={function() { setVisibleCount(function(prev) { return prev + 100 }) }}
-                  >
-                    <ChevronDown className="h-4 w-4 ml-1" />
-                    {isRtl
-                      ? '\u0639\u0631\u0636 \u0627\u0644\u0645\u0632\u064a\u062f (' + (costs.length - visibleCount) + ')'
-                      : 'Show more (' + (costs.length - visibleCount) + ')'
-                    }
+                  <Button variant="outline" size="sm" onClick={() => setVisibleCount(prev => prev + 100)}>
+                    {isRtl ? `عرض المزيد (${costs.length - visibleCount} متبقية)` : `Show more (${costs.length - visibleCount} remaining)`}
                   </Button>
                 </div>
               )}
@@ -393,17 +450,17 @@ export default function CostsPage() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>{editingCostId ? (isRtl ? '\u062a\u0639\u062f\u064a\u0644 \u0627\u0644\u062a\u0643\u0644\u0641\u0629' : 'Edit Cost') : (isRtl ? '\u0625\u0636\u0627\u0641\u0629 \u062a\u0643\u0644\u064a\u0641\u0629' : 'Add Cost')}</DialogTitle>
+            <DialogTitle>{editingCostId ? (isRtl ? 'تعديل التكلفة' : 'Edit Cost') : (isRtl ? 'إضافة تكلفة' : 'Add Cost')}</DialogTitle>
             <DialogDescription>
-              {editingCostId ? (isRtl ? '\u0639\u062f\u0651\u0644 \u0628\u064a\u0627\u0646\u0627\u062a \u0627\u0644\u062a\u0643\u0644\u0641\u0629' : 'Edit cost details') : (isRtl ? '\u0633\u062c\u0651\u0644 \u062a\u0643\u0644\u0641\u0629 \u062c\u062f\u064a\u062f\u0629' : 'Record a new cost')}
+              {editingCostId ? (isRtl ? 'عدّل بيانات التكلفة' : 'Edit cost details') : (isRtl ? 'سجل تكلفة جديدة' : 'Record a new cost')}
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label>{isRtl ? '\u0627\u0644\u0645\u0634\u0631\u0648\u0639' : 'Project'} *</Label>
+                <Label>{isRtl ? 'المشروع' : 'Project'} *</Label>
                 <Select value={formData.projectId} onValueChange={(v) => setFormData({ ...formData, projectId: v })} required>
-                  <SelectTrigger><SelectValue placeholder={isRtl ? '\u0627\u062e\u062a\u0631' : 'Select'} /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder={isRtl ? 'اختر' : 'Select'} /></SelectTrigger>
                   <SelectContent>
                     {projects.map((p) => (
                       <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
@@ -412,11 +469,11 @@ export default function CostsPage() {
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label>{isRtl ? '\u0627\u0644\u062a\u0627\u0631\u064a\u062e' : 'Date'} *</Label>
+                <Label>{isRtl ? 'التاريخ' : 'Date'} *</Label>
                 <Input type="date" value={formData.date} onChange={(e) => setFormData({ ...formData, date: e.target.value })} required />
               </div>
               <div className="space-y-1.5">
-                <Label>{isRtl ? '\u0627\u0644\u0641\u0626\u0629' : 'Category'} *</Label>
+                <Label>{isRtl ? 'الفئة' : 'Category'} *</Label>
                 <Select value={formData.category} onValueChange={(v) => setFormData({ ...formData, category: v })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -427,23 +484,23 @@ export default function CostsPage() {
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label>{isRtl ? '\u0627\u0644\u0645\u0628\u0644\u063a (\u0631.\u0639)' : 'Amount (OMR)'} *</Label>
+                <Label>{isRtl ? 'المبلغ (ر.ع)' : 'Amount (OMR)'} *</Label>
                 <Input type="number" step="0.01" value={formData.amount} onChange={(e) => setFormData({ ...formData, amount: e.target.value })} required />
               </div>
             </div>
             <div className="space-y-1.5">
-              <Label>{isRtl ? '\u0627\u0644\u0648\u0635\u0641' : 'Description'} *</Label>
+              <Label>{isRtl ? 'الوصف' : 'Description'} *</Label>
               <Input value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} required />
             </div>
             <div className="space-y-1.5">
-              <Label>{isRtl ? '\u0645\u0644\u0627\u062d\u0638\u0627\u062a' : 'Notes'}</Label>
+              <Label>{isRtl ? 'ملاحظات' : 'Notes'}</Label>
               <Textarea value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} rows={2} />
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
-                {isRtl ? '\u0625\u0644\u063a\u0627\u0621' : 'Cancel'}
+                {isRtl ? 'إلغاء' : 'Cancel'}
               </Button>
-              <Button type="submit">{isRtl ? '\u062d\u0641\u0638' : 'Save'}</Button>
+              <Button type="submit">{isRtl ? 'حفظ' : 'Save'}</Button>
             </DialogFooter>
           </form>
         </DialogContent>
