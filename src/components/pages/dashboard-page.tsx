@@ -1,19 +1,19 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { Button } from '@/components/ui/button'
 import {
   Activity, TrendingUp, TrendingDown, DollarSign, Wallet,
   Users, AlertTriangle, Wrench, FolderKanban, ArrowLeft,
-  Trophy, AlertCircle, Calendar, HardHat, Timer, Gauge,
-  CircleDollarSign, Ruler, ChevronRight, Construction
+  Trophy, AlertCircle, Calendar, Cpu, HardHat, Fuel, Truck,
+  Construction, Gauge, BarChart3, PieChartIcon, Clock, ShieldCheck
 } from 'lucide-react'
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid,
-  Tooltip, PieChart, Pie, Cell, Legend
+  Tooltip, BarChart, Bar, PieChart, Pie, Cell, Legend
 } from 'recharts'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
@@ -31,10 +31,8 @@ interface DashboardData {
     monthCosts: number
     netProfit: number
     stoppedEquipment: number
-    totalEquipment: number
     presentWorkers: number
     unreadNotifications: number
-    totalMeters: number
   }
   trend: Array<{ date: string; meters: number; revenue: number; cost: number }>
   projects: Array<{ id: string; name: string; code: string; status: string; progress: number; totalLength: number; pricePerMeter: number; client: string }>
@@ -45,29 +43,27 @@ interface DashboardData {
 }
 
 const categoryColors: Record<string, string> = {
-  labor: '#f97316',
-  fuel: '#06b6d4',
-  maintenance: '#8b5cf6',
-  transport: '#10b981',
-  housing: '#f59e0b',
-  parts: '#ec4899',
-  oil: '#6366f1',
-  safety: '#ef4444',
-  rental: '#14b8a6',
-  other: '#64748b',
+  labor: '#f97316', fuel: '#06b6d4', maintenance: '#8b5cf6',
+  transport: '#10b981', housing: '#f59e0b', parts: '#ec4899',
+  oil: '#6366f1', safety: '#ef4444', rental: '#14b8a6', other: '#64748b',
 }
 
 const categoryLabelsAr: Record<string, string> = {
-  labor: '\u0623\u062c\u0648\u0631 \u0627\u0644\u0639\u0645\u0627\u0644',
-  fuel: '\u062f\u064a\u0632\u0644',
-  maintenance: '\u0635\u064a\u0627\u0646\u0629',
-  transport: '\u0646\u0642\u0644',
-  housing: '\u0633\u0643\u0646',
-  parts: '\u0642\u0637\u0639 \u063a\u064a\u0627\u0631',
-  oil: '\u0632\u064a\u0648\u062a',
-  safety: '\u0633\u0644\u0627\u0645\u0629',
-  rental: '\u0625\u064a\u062c\u0627\u0631',
-  other: '\u0623\u062e\u0631\u0649',
+  labor: 'أجور العمال', fuel: 'ديزل', maintenance: 'صيانة',
+  transport: 'نقل', housing: 'سكن', parts: 'قطع غيار',
+  oil: 'زيوت', safety: 'سلامة', rental: 'إيجار', other: 'أخرى',
+}
+
+const categoryLabelsEn: Record<string, string> = {
+  labor: 'Labor', fuel: 'Fuel', maintenance: 'Maintenance',
+  transport: 'Transport', housing: 'Housing', parts: 'Parts',
+  oil: 'Oil', safety: 'Safety', rental: 'Rental', other: 'Other',
+}
+
+const categoryIcons: Record<string, any> = {
+  labor: HardHat, fuel: Fuel, maintenance: Wrench,
+  transport: Truck, housing: Construction, parts: Gauge,
+  oil: Droplets, safety: ShieldCheck, rental: FolderKanban, other: BarChart3,
 }
 
 export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) => void }) {
@@ -79,14 +75,13 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
   const isRtl = language === 'ar'
 
   async function fetchDashboard() {
-    if (!token) return
     setLoading(true)
     setError(null)
     try {
       const r = await authedFetch('/api/dashboard')
       if (!r.ok) {
-        const body = await r.json().catch(function() { return {} })
-        throw new Error(body.details || body.error || 'Error ' + r.status)
+        const body = await r.json().catch(() => ({}))
+        throw new Error(body?.details || body?.error || `Error ${r.status}`)
       }
       const d = await r.json()
       if (d.error) {
@@ -95,28 +90,33 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
       setData(d)
     } catch (e: any) {
       console.error('[Dashboard]', e)
-      setError(e.message || (isRtl ? '\u062e\u0637\u0623 \u0641\u064a \u062a\u062d\u0645\u064a\u0644 \u0627\u0644\u0628\u064a\u0627\u0646\u0627\u062a' : 'Failed to load data'))
+      setError(e.message || (isRtl ? 'خطأ في تحميل البيانات' : 'Failed to load data'))
     } finally {
       setLoading(false)
     }
   }
 
-  useEffect(function() {
+  useEffect(() => {
     fetchDashboard()
   }, [token])
 
   if (loading) {
     return (
       <div className="space-y-4">
-        {[1, 2, 3].map(function(i) {
-          return (
-            <Card key={i} className="overflow-hidden">
-              <CardContent className="p-6">
-                <div className="h-36 bg-muted/60 animate-pulse rounded-xl" />
-              </CardContent>
-            </Card>
-          )
-        })}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {[1, 2, 3, 4].map(i => (
+            <Card key={i}><CardContent className="p-5"><div className="h-20 bg-muted animate-pulse rounded-xl" /></CardContent></Card>
+          ))}
+        </div>
+        <div className="grid grid-cols-3 lg:grid-cols-6 gap-3">
+          {[1, 2, 3, 4, 5, 6].map(i => (
+            <Card key={i}><CardContent className="p-3"><div className="h-12 bg-muted animate-pulse rounded-lg" /></CardContent></Card>
+          ))}
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <Card className="lg:col-span-2"><CardContent className="p-6"><div className="h-72 bg-muted animate-pulse rounded-xl" /></CardContent></Card>
+          <Card><CardContent className="p-6"><div className="h-72 bg-muted animate-pulse rounded-xl" /></CardContent></Card>
+        </div>
       </div>
     )
   }
@@ -125,15 +125,15 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
     return (
       <Card className="border-red-200 bg-red-50/50">
         <CardContent className="flex flex-col items-center justify-center py-12 gap-4">
-          <div className="w-14 h-14 rounded-2xl bg-red-100 flex items-center justify-center">
+          <div className="w-14 h-14 rounded-full bg-red-100 flex items-center justify-center">
             <AlertCircle className="h-7 w-7 text-red-600" />
           </div>
           <div className="text-center">
-            <p className="font-semibold text-red-800">{isRtl ? '\u0641\u0634\u0644 \u062a\u062d\u0645\u064a\u0644 \u0644\u0648\u062d\u0629 \u0627\u0644\u062a\u062d\u0643\u0645' : 'Failed to load dashboard'}</p>
+            <p className="font-semibold text-red-800">{isRtl ? 'فشل تحميل لوحة التحكم' : 'Failed to load dashboard'}</p>
             <p className="text-sm text-red-600/80 mt-1 max-w-md">{error}</p>
           </div>
           <Button variant="outline" onClick={fetchDashboard}>
-            {isRtl ? '\u0625\u0639\u0627\u062f\u0629 \u0627\u0644\u0645\u062d\u0627\u0648\u0644\u0629' : 'Retry'}
+            {isRtl ? 'إعادة المحاولة' : 'Retry'}
           </Button>
         </CardContent>
       </Card>
@@ -145,181 +145,210 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
   const stats = data.stats || {
     activeProjects: 0, totalProjects: 0, metersToday: 0, metersThisMonth: 0,
     revenueToday: 0, revenueThisMonth: 0, totalRevenue: 0, totalCosts: 0,
-    monthCosts: 0, netProfit: 0, stoppedEquipment: 0, totalEquipment: 0,
-    presentWorkers: 0, unreadNotifications: 0, totalMeters: 0,
+    monthCosts: 0, netProfit: 0, stoppedEquipment: 0, presentWorkers: 0,
+    unreadNotifications: 0,
   }
   const projects = Array.isArray(data.projects) ? data.projects : []
   const trend = Array.isArray(data.trend) ? data.trend : []
   const recentReports = Array.isArray(data.recentReports) ? data.recentReports : []
+  const notifications = Array.isArray(data.notifications) ? data.notifications : []
   const equipment = Array.isArray(data.equipment) ? data.equipment : []
   const costsByCategory = Array.isArray(data.costsByCategory) ? data.costsByCategory : []
 
-  const fmt = function(n: number) { return (n || 0).toLocaleString(isRtl ? 'ar-EG' : 'en-US', { maximumFractionDigits: 1 }) }
-  const fmtInt = function(n: number) { return (n || 0).toLocaleString(isRtl ? 'ar-EG' : 'en-US', { maximumFractionDigits: 0 }) }
-  const fmtCurrency = function(n: number) { return fmt(n || 0) + ' ' + (isRtl ? '\u0631.\u0639' : 'OMR') }
+  const fmt = (n: number) => (n || 0).toLocaleString(isRtl ? 'ar-EG' : 'en-US', { maximumFractionDigits: 1 })
+  const fmtCurrency = (n: number) => `${fmt(n || 0)} ${isRtl ? 'ر.ع' : 'OMR'}`
 
-  var sortedByProgress = projects.slice().sort(function(a, b) { return (b.progress || 0) - (a.progress || 0) })
-  var bestProject = sortedByProgress[0]
-  var worstProject = sortedByProgress[sortedByProgress.length - 1]
+  const sortedByProgress = [...projects].sort((a, b) => (b.progress || 0) - (a.progress || 0))
+  const bestProject = sortedByProgress[0]
+  const worstProject = sortedByProgress[sortedByProgress.length - 1]
 
-  var trendData = trend.map(function(t) {
-    return {
-      ...t,
-      date: new Date(t.date + 'T00:00:00').toLocaleDateString(isRtl ? 'ar-EG' : 'en-US', { month: 'short', day: 'numeric' }),
-      profit: (t.revenue || 0) - (t.cost || 0),
-    }
-  })
+  const trendData = trend.map(t => ({
+    ...t,
+    date: new Date(t.date).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US', { month: 'short', day: 'numeric' }),
+    profit: (t.revenue || 0) - (t.cost || 0),
+  }))
 
   return (
-    <div className="space-y-5">
-      {/* Header */}
+    <div className="space-y-6">
+      {/* Page title */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">{isRtl ? '\u0644\u0648\u062d\u0629 \u0627\u0644\u062a\u062d\u0643\u0645' : 'Dashboard'}</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            {isRtl ? '\u0646\u0638\u0631\u0629 \u0639\u0627\u0645\u0629 \u0639\u0644\u0649 \u062c\u0645\u064a\u0639 \u0627\u0644\u0645\u0634\u0627\u0631\u064a\u0639 \u0648\u0627\u0644\u0639\u0645\u0644\u064a\u0627\u062a' : 'Overview of all projects and operations'}
+          <h1 className="text-2xl font-bold flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center">
+              <Activity className="h-4 w-4 text-white" />
+            </div>
+            {isRtl ? 'لوحة التحكم' : 'Dashboard'}
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            {isRtl ? 'نظرة عامة على جميع المشاريع والعمليات' : 'Overview of all projects and operations'}
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={function() { onNavigate('reports') }}>
+        <Button variant="outline" onClick={() => onNavigate('reports')}>
           <Calendar className="h-4 w-4 ml-2" />
-          {isRtl ? '\u0627\u0644\u062a\u0642\u0627\u0631\u064a\u0631' : 'Reports'}
+          {isRtl ? 'التقارير اليومية' : 'Daily Reports'}
         </Button>
       </div>
 
-      {/* === Primary KPI Cards === */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <KpiCard
+      {/* Main KPI Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <KPICard
           icon={FolderKanban}
-          label={isRtl ? '\u0627\u0644\u0645\u0634\u0627\u0631\u064a\u0639 \u0627\u0644\u0646\u0634\u0637\u0629' : 'Active Projects'}
-          value={fmtInt(stats.activeProjects)}
-          subtext={(isRtl ? '\u0645\u0646 \u0625\u062c\u0645\u0627\u0644\u064a ' : 'of ') + stats.totalProjects}
-          gradient="from-blue-500 to-blue-600"
-          iconBg="bg-white/20"
+          label={isRtl ? 'المشاريع النشطة' : 'Active Projects'}
+          value={String(stats.activeProjects)}
+          subtext={`${isRtl ? 'من إجمالي' : 'of'} ${stats.totalProjects}`}
+          gradient="from-orange-500 to-amber-500"
+          lightBg="bg-orange-50"
+          iconBg="bg-orange-100"
         />
-        <KpiCard
-          icon={TrendingUp}
-          label={isRtl ? '\u0627\u0644\u0625\u064a\u0631\u0627\u062f\u0627\u062a' : 'Revenue'}
+        <KPICard
+          icon={Activity}
+          label={isRtl ? 'الأمتار اليوم' : 'Meters Today'}
+          value={`${fmt(stats.metersToday)} ${isRtl ? 'م' : 'm'}`}
+          subtext={`${fmt(stats.metersThisMonth)} ${isRtl ? 'م هذا الشهر' : 'm this month'}`}
+          gradient="from-blue-500 to-cyan-500"
+          lightBg="bg-blue-50"
+          iconBg="bg-blue-100"
+        />
+        <KPICard
+          icon={DollarSign}
+          label={isRtl ? 'الإيرادات' : 'Revenue'}
           value={fmtCurrency(stats.totalRevenue)}
-          subtext={fmtCurrency(stats.revenueThisMonth) + ' ' + (isRtl ? '\u0647\u0630\u0627 \u0627\u0644\u0634\u0647\u0631' : 'this month')}
-          gradient="from-emerald-500 to-emerald-600"
-          iconBg="bg-white/20"
+          subtext={`${fmtCurrency(stats.revenueThisMonth)} ${isRtl ? 'هذا الشهر' : 'this month'}`}
+          gradient="from-emerald-500 to-teal-500"
+          lightBg="bg-emerald-50"
+          iconBg="bg-emerald-100"
         />
-        <KpiCard
+        <KPICard
           icon={Wallet}
-          label={isRtl ? '\u0635\u0627\u0641\u064a \u0627\u0644\u0631\u0628\u062d' : 'Net Profit'}
+          label={isRtl ? 'صافي الربح' : 'Net Profit'}
           value={fmtCurrency(stats.netProfit)}
-          subtext={stats.totalRevenue > 0 ? (((stats.netProfit / stats.totalRevenue) * 100).toFixed(1) + '% ' + (isRtl ? '\u0647\u0627\u0645\u0634' : 'margin')) : ''}
-          gradient={stats.netProfit >= 0 ? 'from-violet-500 to-violet-600' : 'from-red-500 to-red-600'}
-          iconBg="bg-white/20"
-        />
-        <KpiCard
-          icon={Ruler}
-          label={isRtl ? '\u0625\u062c\u0645\u0627\u0644\u064a \u0627\u0644\u0623\u0645\u062a\u0627\u0631' : 'Total Meters'}
-          value={fmt(stats.totalMeters) + ' ' + (isRtl ? '\u0645' : 'm')}
-          subtext={fmt(stats.metersThisMonth) + ' ' + (isRtl ? '\u0645 \u0647\u0630\u0627 \u0627\u0644\u0634\u0647\u0631' : 'm this month')}
-          gradient="from-amber-500 to-orange-500"
-          iconBg="bg-white/20"
+          subtext={stats.netProfit >= 0
+            ? `+${((stats.netProfit / Math.max(stats.totalRevenue, 1)) * 100).toFixed(1)}% ${isRtl ? 'هامش' : 'margin'}`
+            : (isRtl ? 'خسارة' : 'Loss')}
+          gradient={stats.netProfit >= 0 ? 'from-emerald-500 to-green-500' : 'from-red-500 to-rose-500'}
+          lightBg={stats.netProfit >= 0 ? 'bg-emerald-50' : 'bg-red-50'}
+          iconBg={stats.netProfit >= 0 ? 'bg-emerald-100' : 'bg-red-100'}
         />
       </div>
 
-      {/* === Secondary Stats Row === */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-        <MiniCard
-          icon={HardHat}
-          label={isRtl ? '\u0639\u0645\u0627\u0644 \u0627\u0644\u064a\u0648\u0645' : 'Workers Today'}
-          value={fmtInt(stats.presentWorkers)}
-          color="text-sky-600"
-          bg="bg-sky-50"
-          border="border-sky-100"
+      {/* Secondary stats row */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <MiniStatCard
+          icon={Users}
+          label={isRtl ? 'عمال اليوم' : 'Workers Today'}
+          value={String(stats.presentWorkers)}
+          colorClass="text-blue-600"
+          bgClass="bg-blue-50"
         />
-        <MiniCard
+        <MiniStatCard
           icon={Wrench}
-          label={isRtl ? '\u0645\u0639\u062f\u0627\u062a \u0645\u062a\u0648\u0642\u0641\u0629' : 'Stopped Eq.'}
-          value={fmtInt(stats.stoppedEquipment) + '/' + fmtInt(stats.totalEquipment)}
-          color="text-red-600"
-          bg="bg-red-50"
-          border="border-red-100"
+          label={isRtl ? 'معدات متوقفة' : 'Stopped Eq.'}
+          value={String(stats.stoppedEquipment)}
+          colorClass={stats.stoppedEquipment > 0 ? 'text-red-600' : 'text-emerald-600'}
+          bgClass={stats.stoppedEquipment > 0 ? 'bg-red-50' : 'bg-emerald-50'}
+          alert={stats.stoppedEquipment > 0}
         />
-        <MiniCard
-          icon={CircleDollarSign}
-          label={isRtl ? '\u0627\u0644\u0625\u064a\u0631\u0627\u062f \u0627\u0644\u064a\u0648\u0645' : "Today's Rev."}
+        <MiniStatCard
+          icon={AlertTriangle}
+          label={isRtl ? 'تنبيهات' : 'Alerts'}
+          value={String(stats.unreadNotifications)}
+          colorClass={stats.unreadNotifications > 0 ? 'text-orange-600' : 'text-slate-500'}
+          bgClass={stats.unreadNotifications > 0 ? 'bg-orange-50' : 'bg-slate-50'}
+          alert={stats.unreadNotifications > 0}
+        />
+        <MiniStatCard
+          icon={TrendingUp}
+          label={isRtl ? 'الإيراد اليوم' : "Today's Rev."}
           value={fmtCurrency(stats.revenueToday)}
-          color="text-emerald-600"
-          bg="bg-emerald-50"
-          border="border-emerald-100"
+          colorClass="text-emerald-600"
+          bgClass="bg-emerald-50"
         />
-        <MiniCard
-          icon={Timer}
-          label={isRtl ? '\u062a\u0643\u0627\u0644\u064a\u0641 \u0627\u0644\u0634\u0647\u0631' : 'Month Costs'}
+        <MiniStatCard
+          icon={TrendingDown}
+          label={isRtl ? 'تكاليف الشهر' : 'Month Costs'}
           value={fmtCurrency(stats.monthCosts)}
-          color="text-purple-600"
-          bg="bg-purple-50"
-          border="border-purple-100"
+          colorClass="text-purple-600"
+          bgClass="bg-purple-50"
         />
-        <MiniCard
+        <MiniStatCard
           icon={Gauge}
-          label={isRtl ? '\u0623\u0645\u062a\u0627\u0631 \u0627\u0644\u0634\u0647\u0631' : 'Month Meters'}
-          value={fmt(stats.metersThisMonth) + ' ' + (isRtl ? '\u0645' : 'm')}
-          color="text-cyan-600"
-          bg="bg-cyan-50"
-          border="border-cyan-100"
+          label={isRtl ? 'أمتار الشهر' : 'Month Meters'}
+          value={`${fmt(stats.metersThisMonth)} ${isRtl ? 'م' : 'm'}`}
+          colorClass="text-cyan-600"
+          bgClass="bg-cyan-50"
         />
       </div>
 
-      {/* === Charts Row === */}
+      {/* Charts row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <Card className="lg:col-span-2">
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-base">
-              <Activity className="h-5 w-5 text-blue-600" />
-              {isRtl ? '\u0627\u062a\u062c\u0627\u0647 \u0627\u0644\u0625\u0646\u062a\u0627\u062c (\u0622\u062e\u0631 14 \u064a\u0648\u0645)' : 'Production Trend (Last 14 days)'}
+              <div className="w-7 h-7 rounded-md bg-gradient-to-br from-orange-500 to-amber-500 flex items-center justify-center">
+                <BarChart3 className="h-3.5 w-3.5 text-white" />
+              </div>
+              {isRtl ? 'اتجاه الإنتاج (آخر 14 يوم)' : 'Production Trend (Last 14 days)'}
             </CardTitle>
+            <CardDescription className="text-xs">
+              {isRtl ? 'الأمتار المنجزة والإيرادات اليومية' : 'Daily meters drilled and revenue'}
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={280}>
-              <AreaChart data={trendData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
-                <defs>
-                  <linearGradient id="gMeters" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-                  </linearGradient>
-                  <linearGradient id="gRevenue" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#94a3b8' }} reversed={isRtl} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} orientation={isRtl ? 'right' : 'left'} axisLine={false} tickLine={false} />
-                <Tooltip
-                  contentStyle={{ direction: isRtl ? 'rtl' : 'ltr', borderRadius: 12, border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.1)', fontSize: 12, padding: '10px 14px' }}
-                  formatter={function(value: any, name: any) {
-                    if (name === 'meters') return [fmt(value) + ' ' + (isRtl ? '\u0645' : 'm'), isRtl ? '\u0627\u0644\u0623\u0645\u062a\u0627\u0631' : 'Meters']
-                    if (name === 'revenue') return [fmtCurrency(value), isRtl ? '\u0627\u0644\u0625\u064a\u0631\u0627\u062f' : 'Revenue']
-                    return [value, name]
-                  }}
-                />
-                <Area type="monotone" dataKey="meters" stroke="#3b82f6" fillOpacity={1} fill="url(#gMeters)" strokeWidth={2.5} dot={false} />
-                <Area type="monotone" dataKey="revenue" stroke="#10b981" fillOpacity={1} fill="url(#gRevenue)" strokeWidth={2.5} dot={false} />
-              </AreaChart>
-            </ResponsiveContainer>
+            {trendData.length === 0 ? (
+              <div className="h-[300px] flex items-center justify-center text-muted-foreground text-sm">
+                {isRtl ? 'لا توجد بيانات' : 'No data'}
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height={300}>
+                <AreaChart data={trendData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                  <defs>
+                    <linearGradient id="colorMeters" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#f97316" stopOpacity={0.8} />
+                      <stop offset="95%" stopColor="#f97316" stopOpacity={0} />
+                    </linearGradient>
+                    <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.6} />
+                      <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                  <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#6b7280' }} reversed={isRtl} />
+                  <YAxis tick={{ fontSize: 11, fill: '#6b7280' }} orientation={isRtl ? 'right' : 'left'} />
+                  <Tooltip
+                    contentStyle={{ direction: isRtl ? 'rtl' : 'ltr', borderRadius: 8, border: '1px solid #e5e7eb', fontSize: 12 }}
+                    formatter={(value: any, name: any) => {
+                      if (name === 'meters') return [`${fmt(value)} ${isRtl ? 'م' : 'm'}`, isRtl ? 'الأمتار' : 'Meters']
+                      if (name === 'revenue') return [fmtCurrency(value), isRtl ? 'الإيراد' : 'Revenue']
+                      if (name === 'profit') return [fmtCurrency(value), isRtl ? 'الربح' : 'Profit']
+                      return [value, name]
+                    }}
+                  />
+                  <Area type="monotone" dataKey="meters" stroke="#f97316" fillOpacity={1} fill="url(#colorMeters)" strokeWidth={2} />
+                  <Area type="monotone" dataKey="revenue" stroke="#10b981" fillOpacity={1} fill="url(#colorRevenue)" strokeWidth={2} />
+                </AreaChart>
+              </ResponsiveContainer>
+            )}
           </CardContent>
         </Card>
 
+        {/* Cost breakdown pie */}
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-base">
-              <div className="w-2 h-2 rounded-full bg-purple-500" />
-              {isRtl ? '\u062a\u0648\u0632\u064a\u0639 \u0627\u0644\u062a\u0643\u0627\u0644\u064a\u0641' : 'Cost Breakdown'}
+              <div className="w-7 h-7 rounded-md bg-gradient-to-br from-purple-500 to-violet-500 flex items-center justify-center">
+                <PieChartIcon className="h-3.5 w-3.5 text-white" />
+              </div>
+              {isRtl ? 'توزيع التكاليف' : 'Cost Breakdown'}
             </CardTitle>
+            <CardDescription className="text-xs">{isRtl ? 'حسب الفئة - هذا الشهر' : 'By category - this month'}</CardDescription>
           </CardHeader>
           <CardContent>
             {costsByCategory.length === 0 ? (
-              <div className="h-[280px] flex items-center justify-center text-muted-foreground text-sm">
-                {isRtl ? '\u0644\u0627 \u062a\u0648\u062c\u062f \u0628\u064a\u0627\u0646\u0627\u062a' : 'No data'}
+              <div className="h-[300px] flex items-center justify-center text-muted-foreground text-sm">
+                {isRtl ? 'لا توجد بيانات' : 'No data'}
               </div>
             ) : (
-              <ResponsiveContainer width="100%" height={280}>
+              <ResponsiveContainer width="100%" height={300}>
                 <PieChart>
                   <Pie
                     data={costsByCategory}
@@ -327,22 +356,21 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
                     nameKey="category"
                     cx="50%"
                     cy="50%"
-                    innerRadius={55}
-                    outerRadius={85}
-                    paddingAngle={3}
-                    strokeWidth={0}
+                    innerRadius={60}
+                    outerRadius={90}
+                    paddingAngle={2}
                   >
-                    {costsByCategory.map(function(entry, idx) {
-                      return <Cell key={idx} fill={categoryColors[entry.category] || '#94a3b8'} />
-                    })}
+                    {costsByCategory.map((entry, idx) => (
+                      <Cell key={idx} fill={categoryColors[entry.category] || '#94a3b8'} />
+                    ))}
                   </Pie>
                   <Tooltip
-                    contentStyle={{ direction: isRtl ? 'rtl' : 'ltr', borderRadius: 12, border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.1)', fontSize: 12 }}
-                    formatter={function(value: any, _name: any, props: any) { return [fmtCurrency(value), categoryLabelsAr[props.payload.category] || props.payload.category] }}
+                    contentStyle={{ direction: isRtl ? 'rtl' : 'ltr', borderRadius: 8, fontSize: 12 }}
+                    formatter={(value: any, _name: any, props: any) => [fmtCurrency(value), (isRtl ? categoryLabelsAr : categoryLabelsEn)[props.payload.category] || props.payload.category]}
                   />
                   <Legend
-                    formatter={function(value) { return categoryLabelsAr[value] || value }}
-                    wrapperStyle={{ fontSize: 10 }}
+                    formatter={(value) => (isRtl ? categoryLabelsAr : categoryLabelsEn)[value] || value}
+                    wrapperStyle={{ fontSize: 11 }}
                   />
                 </PieChart>
               </ResponsiveContainer>
@@ -351,60 +379,59 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
         </Card>
       </div>
 
-      {/* === Projects + Highlights === */}
+      {/* Projects progress + Best/Worst */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <Card className="lg:col-span-2">
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center justify-between">
               <span className="flex items-center gap-2 text-base">
-                <Construction className="h-5 w-5 text-amber-600" />
-                {isRtl ? '\u062a\u0642\u062f\u0645 \u0627\u0644\u0645\u0634\u0627\u0631\u064a\u0639' : 'Project Progress'}
+                <div className="w-7 h-7 rounded-md bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center">
+                  <FolderKanban className="h-3.5 w-3.5 text-white" />
+                </div>
+                {isRtl ? 'تقدم المشاريع' : 'Project Progress'}
               </span>
-              <Button variant="ghost" size="sm" className="text-xs" onClick={function() { onNavigate('projects') }}>
-                {isRtl ? '\u0639\u0631\u0636 \u0627\u0644\u0643\u0644' : 'View all'}
-                <ChevronRight className="h-3.5 w-3.5 mr-1 rtl:rotate-180" />
+              <Button variant="ghost" size="sm" onClick={() => onNavigate('projects')}>
+                {isRtl ? 'عرض الكل' : 'View all'}
+                <ArrowLeft className="h-4 w-4 mr-1 rtl:rotate-180" />
               </Button>
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3 max-h-72 overflow-y-auto">
+          <CardContent className="space-y-3 max-h-80 overflow-y-auto">
             {projects.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground text-sm">
-                {isRtl ? '\u0644\u0627 \u062a\u0648\u062c\u062f \u0645\u0634\u0627\u0631\u064a\u0639' : 'No projects'}
+                {isRtl ? 'لا توجد مشاريع' : 'No projects'}
               </div>
             ) : (
-              projects.map(function(p) {
-                var progressColor = p.progress >= 75 ? 'bg-emerald-500' : p.progress >= 40 ? 'bg-blue-500' : 'bg-amber-500'
-                return (
-                  <div key={p.id} className="space-y-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-sm truncate">{p.name}</p>
-                        <p className="text-xs text-muted-foreground">{p.code} {'\u2022'} {p.client}</p>
-                      </div>
-                      <span className="font-bold text-sm tabular-nums">{p.progress.toFixed(1)}%</span>
+              projects.map((p) => (
+                <div key={p.id} className="space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm truncate">{p.name}</p>
+                      <p className="text-xs text-muted-foreground">{p.code} • {p.client}</p>
                     </div>
-                    <div className="relative h-2 bg-muted rounded-full overflow-hidden">
-                      <div className={"absolute inset-y-0 " + progressColor + " rounded-full transition-all duration-500"} style={{ width: Math.min(p.progress, 100) + '%' }} />
+                    <div className="text-left shrink-0">
+                      <span className="font-semibold text-sm">{p.progress.toFixed(1)}%</span>
                     </div>
                   </div>
-                )
-              })
+                  <Progress value={p.progress} className="h-2" />
+                </div>
+              ))
             )}
           </CardContent>
         </Card>
 
-        <div className="space-y-3">
+        <div className="space-y-4">
           {bestProject && (
-            <Card className="border-emerald-200 bg-gradient-to-br from-emerald-50 to-white">
+            <Card className="bg-gradient-to-br from-emerald-50 to-emerald-50/50 border-emerald-200">
               <CardContent className="p-4">
                 <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center shrink-0">
-                    <Trophy className="h-5 w-5 text-emerald-600" />
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center shrink-0">
+                    <Trophy className="h-5 w-5 text-white" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs text-emerald-700 font-medium">{isRtl ? '\u0623\u0641\u0636\u0644 \u0645\u0634\u0631\u0648\u0639' : 'Best Project'}</p>
-                    <p className="font-semibold text-sm truncate mt-0.5">{bestProject.name}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">{bestProject.progress.toFixed(1)}% {isRtl ? '\u0625\u0646\u062c\u0627\u0632' : 'complete'}</p>
+                    <p className="text-xs text-emerald-700 font-medium">{isRtl ? 'أفضل مشروع' : 'Best Project'}</p>
+                    <p className="font-semibold truncate mt-0.5">{bestProject.name}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{bestProject.progress.toFixed(1)}% {isRtl ? 'إنجاز' : 'complete'}</p>
                   </div>
                 </div>
               </CardContent>
@@ -412,16 +439,16 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
           )}
 
           {worstProject && worstProject.id !== bestProject?.id && (
-            <Card className="border-orange-200 bg-gradient-to-br from-orange-50 to-white">
+            <Card className="bg-gradient-to-br from-orange-50 to-orange-50/50 border-orange-200">
               <CardContent className="p-4">
                 <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-orange-100 flex items-center justify-center shrink-0">
-                    <AlertCircle className="h-5 w-5 text-orange-600" />
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center shrink-0">
+                    <AlertCircle className="h-5 w-5 text-white" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs text-orange-700 font-medium">{isRtl ? '\u0623\u0642\u0644 \u0645\u0634\u0631\u0648\u0639 \u0623\u062f\u0627\u0621\u064b' : 'Worst Project'}</p>
-                    <p className="font-semibold text-sm truncate mt-0.5">{worstProject.name}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">{worstProject.progress.toFixed(1)}% {isRtl ? '\u0625\u0646\u062c\u0627\u0632' : 'complete'}</p>
+                    <p className="text-xs text-orange-700 font-medium">{isRtl ? 'أقل مشروع أداءً' : 'Worst Project'}</p>
+                    <p className="font-semibold truncate mt-0.5">{worstProject.name}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{worstProject.progress.toFixed(1)}% {isRtl ? 'إنجاز' : 'complete'}</p>
                   </div>
                 </div>
               </CardContent>
@@ -429,17 +456,33 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
           )}
 
           {stats.stoppedEquipment > 0 && (
-            <Card className="border-red-200 bg-gradient-to-br from-red-50 to-white">
+            <Card className="bg-red-50/50 border-red-200">
               <CardContent className="p-4">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center shrink-0">
-                    <Wrench className="h-5 w-5 text-red-600" />
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-red-400 to-red-600 flex items-center justify-center shrink-0">
+                    <Wrench className="h-5 w-5 text-white" />
                   </div>
                   <div className="flex-1">
-                    <p className="font-semibold text-sm">{stats.stoppedEquipment} {isRtl ? '\u0645\u0639\u062f\u0629 \u0645\u062a\u0648\u0642\u0641\u0629' : 'Stopped Equipment'}</p>
-                    <Button variant="link" size="sm" className="p-0 h-auto text-xs" onClick={function() { onNavigate('equipment') }}>
-                      {isRtl ? '\u0639\u0631\u0636 \u0627\u0644\u062a\u0641\u0627\u0635\u064a\u0644' : 'View details'}
+                    <p className="font-semibold text-sm">{stats.stoppedEquipment} {isRtl ? 'معدة متوقفة' : 'Stopped Equipment'}</p>
+                    <Button variant="link" size="sm" className="p-0 h-auto text-xs" onClick={() => onNavigate('equipment')}>
+                      {isRtl ? 'عرض التفاصيل' : 'View details'}
                     </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {stats.stoppedEquipment === 0 && equipment.length > 0 && (
+            <Card className="bg-emerald-50/50 border-emerald-200">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center shrink-0">
+                    <ShieldCheck className="h-5 w-5 text-white" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-semibold text-sm">{isRtl ? 'جميع المعدات تعمل' : 'All Equipment Running'}</p>
+                    <p className="text-xs text-muted-foreground">{equipment.length} {isRtl ? 'معدة نشطة' : 'active equipment'}</p>
                   </div>
                 </div>
               </CardContent>
@@ -448,51 +491,51 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
         </div>
       </div>
 
-      {/* === Recent Reports + Equipment === */}
+      {/* Recent reports + Equipment status */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center justify-between">
               <span className="flex items-center gap-2 text-base">
-                <Calendar className="h-5 w-5 text-blue-600" />
-                {isRtl ? '\u0627\u0644\u062a\u0642\u0627\u0631\u064a\u0631 \u0627\u0644\u0623\u062e\u064a\u0631\u0629' : 'Recent Reports'}
+                <div className="w-7 h-7 rounded-md bg-gradient-to-br from-sky-500 to-blue-500 flex items-center justify-center">
+                  <Calendar className="h-3.5 w-3.5 text-white" />
+                </div>
+                {isRtl ? 'التقارير الأخيرة' : 'Recent Reports'}
               </span>
-              <Button variant="ghost" size="sm" className="text-xs" onClick={function() { onNavigate('dailyReports') }}>
-                {isRtl ? '\u0639\u0631\u0636 \u0627\u0644\u0643\u0644' : 'View all'}
-                <ChevronRight className="h-3.5 w-3.5 mr-1 rtl:rotate-180" />
+              <Button variant="ghost" size="sm" onClick={() => onNavigate('dailyReports')}>
+                {isRtl ? 'عرض الكل' : 'View all'}
+                <ArrowLeft className="h-4 w-4 mr-1 rtl:rotate-180" />
               </Button>
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-1.5 max-h-72 overflow-y-auto">
+          <CardContent className="space-y-2 max-h-80 overflow-y-auto">
             {recentReports.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground text-sm">
-                {isRtl ? '\u0644\u0627 \u062a\u0648\u062c\u062f \u062a\u0642\u0627\u0631\u064a\u0631' : 'No reports'}
+                {isRtl ? 'لا توجد تقارير' : 'No reports'}
               </div>
             ) : (
-              recentReports.slice(0, 8).map(function(r) {
-                return (
-                  <div key={r.id} className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-muted/50 transition">
-                    <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
-                      <Calendar className="h-4 w-4 text-blue-600" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-sm truncate">{r.project ? r.project.name : '-'}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {new Date(r.reportDate).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')} {'\u2022'} {r.driveLine ? r.driveLine.lineNumber : '-'}
-                      </p>
-                    </div>
-                    <div className="text-left shrink-0">
-                      <p className="font-semibold text-sm tabular-nums">{r.dailyMeters} {isRtl ? '\u0645' : 'm'}</p>
-                      <Badge variant={r.status === 'approved' ? 'default' : r.status === 'rejected' ? 'destructive' : 'secondary'} className="text-[10px] px-1.5">
-                        {r.status === 'approved' ? (isRtl ? '\u0645\u0639\u062a\u0645\u062f' : 'Approved') :
-                         r.status === 'submitted' ? (isRtl ? '\u0645\u0631\u0633\u0644' : 'Submitted') :
-                         r.status === 'rejected' ? (isRtl ? '\u0645\u0631\u0641\u0648\u0636' : 'Rejected') :
-                         (isRtl ? '\u0645\u0633\u0648\u062f\u0629' : 'Draft')}
-                      </Badge>
-                    </div>
+              recentReports.slice(0, 8).map((r) => (
+                <div key={r.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 transition">
+                  <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
+                    <Calendar className="h-4 w-4 text-blue-600" />
                   </div>
-                )
-              })
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm truncate">{r.project?.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {new Date(r.reportDate).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')} • {r.driveLine?.lineNumber || '-'}
+                    </p>
+                  </div>
+                  <div className="text-left shrink-0">
+                    <p className="font-semibold text-sm">{r.dailyMeters} {isRtl ? 'م' : 'm'}</p>
+                    <Badge variant={r.status === 'approved' ? 'default' : r.status === 'rejected' ? 'destructive' : 'secondary'} className="text-xs">
+                      {r.status === 'approved' ? (isRtl ? 'معتمد' : 'Approved') :
+                       r.status === 'submitted' ? (isRtl ? 'مرسل' : 'Submitted') :
+                       r.status === 'rejected' ? (isRtl ? 'مرفوض' : 'Rejected') :
+                       (isRtl ? 'مسودة' : 'Draft')}
+                    </Badge>
+                  </div>
+                </div>
+              ))
             )}
           </CardContent>
         </Card>
@@ -501,37 +544,48 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center justify-between">
               <span className="flex items-center gap-2 text-base">
-                <Construction className="h-5 w-5 text-amber-600" />
-                {isRtl ? '\u062d\u0627\u0644\u0629 \u0627\u0644\u0645\u0639\u062f\u0627\u062a' : 'Equipment Status'}
+                <div className="w-7 h-7 rounded-md bg-gradient-to-br from-slate-500 to-slate-700 flex items-center justify-center">
+                  <Cpu className="h-3.5 w-3.5 text-white" />
+                </div>
+                {isRtl ? 'حالة المعدات' : 'Equipment Status'}
               </span>
-              <Button variant="ghost" size="sm" className="text-xs" onClick={function() { onNavigate('equipment') }}>
-                {isRtl ? '\u0639\u0631\u0636 \u0627\u0644\u0643\u0644' : 'View all'}
-                <ChevronRight className="h-3.5 w-3.5 mr-1 rtl:rotate-180" />
+              <Button variant="ghost" size="sm" onClick={() => onNavigate('equipment')}>
+                {isRtl ? 'عرض الكل' : 'View all'}
+                <ArrowLeft className="h-4 w-4 mr-1 rtl:rotate-180" />
               </Button>
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-1.5 max-h-72 overflow-y-auto">
+          <CardContent className="space-y-2 max-h-80 overflow-y-auto">
             {equipment.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground text-sm">
-                {isRtl ? '\u0644\u0627 \u062a\u0648\u062c\u062f \u0645\u0639\u062f\u0627\u062a' : 'No equipment'}
+                {isRtl ? 'لا توجد معدات' : 'No equipment'}
               </div>
             ) : (
-              equipment.map(function(eq) {
-                var isOperational = eq.status === 'operational'
-                var isStopped = eq.status === 'stopped'
-                return (
-                  <div key={eq.id} className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-muted/50 transition">
-                    <div className={"w-9 h-9 rounded-lg flex items-center justify-center shrink-0 " + (isOperational ? 'bg-emerald-50' : isStopped ? 'bg-red-50' : 'bg-amber-50')}>
-                      <Wrench className={"h-4 w-4 " + (isOperational ? 'text-emerald-600' : isStopped ? 'text-red-600' : 'text-amber-600')} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-sm truncate">{eq.name}</p>
-                      <p className="text-xs text-muted-foreground">{eq.number} {'\u2022'} {eq.project ? eq.project.name : '-'}</p>
-                    </div>
-                    <div className={"w-2 h-2 rounded-full shrink-0 " + (isOperational ? 'bg-emerald-500' : isStopped ? 'bg-red-500' : 'bg-amber-500')} />
+              equipment.map((eq) => (
+                <div key={eq.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 transition">
+                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
+                    eq.status === 'operational' ? 'bg-emerald-100' :
+                    eq.status === 'stopped' ? 'bg-red-100' : 'bg-orange-100'
+                  }`}>
+                    <Wrench className={`h-4 w-4 ${
+                      eq.status === 'operational' ? 'text-emerald-600' :
+                      eq.status === 'stopped' ? 'text-red-600' : 'text-orange-600'
+                    }`} />
                   </div>
-                )
-              })
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm truncate">{eq.name}</p>
+                    <p className="text-xs text-muted-foreground">{eq.number} • {eq.project?.name || '-'}</p>
+                  </div>
+                  <Badge variant={
+                    eq.status === 'operational' ? 'default' :
+                    eq.status === 'stopped' ? 'destructive' : 'secondary'
+                  } className="text-xs">
+                    {eq.status === 'operational' ? (isRtl ? 'تعمل' : 'Operational') :
+                     eq.status === 'stopped' ? (isRtl ? 'متوقفة' : 'Stopped') :
+                     (isRtl ? 'تحتاج صيانة' : 'Maintenance')}
+                  </Badge>
+                </div>
+              ))
             )}
           </CardContent>
         </Card>
@@ -540,25 +594,23 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
   )
 }
 
-/* === Modern KPI Card with gradient === */
-function KpiCard({
-  icon: Icon, label, value, subtext, gradient, iconBg,
+/* ========== KPI Card with gradient icon ========== */
+function KPICard({
+  icon: Icon, label, value, subtext, gradient, lightBg, iconBg,
 }: {
-  icon: any; label: string; value: string; subtext?: string; gradient: string; iconBg: string
+  icon: any; label: string; value: string; subtext?: string; gradient: string; lightBg: string; iconBg: string
 }) {
   return (
     <Card className="overflow-hidden">
-      <CardContent className="p-0">
-        <div className={"bg-gradient-to-br " + gradient + " p-5 text-white"}>
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex-1 min-w-0">
-              <p className="text-white/80 text-sm font-medium">{label}</p>
-              <p className="text-2xl font-bold mt-1.5 truncate tracking-tight">{value}</p>
-              {subtext && <p className="text-white/70 text-xs mt-1 truncate">{subtext}</p>}
-            </div>
-            <div className={"w-11 h-11 rounded-xl " + iconBg + " flex items-center justify-center shrink-0"}>
-              <Icon className="h-5.5 w-5.5" />
-            </div>
+      <CardContent className="p-5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex-1 min-w-0">
+            <p className="text-sm text-muted-foreground font-medium">{label}</p>
+            <p className="text-2xl font-bold mt-1.5 truncate">{value}</p>
+            {subtext && <p className="text-xs text-muted-foreground mt-1 truncate">{subtext}</p>}
+          </div>
+          <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center shrink-0 shadow-sm`}>
+            <Icon className="h-5 w-5 text-white" />
           </div>
         </div>
       </CardContent>
@@ -566,22 +618,22 @@ function KpiCard({
   )
 }
 
-/* === Clean Mini Stat Card === */
-function MiniCard({
-  icon: Icon, label, value, color, bg, border,
+/* ========== Mini Stat Card with colored left bar ========== */
+function MiniStatCard({
+  icon: Icon, label, value, colorClass, bgClass, alert = false,
 }: {
-  icon: any; label: string; value: string; color: string; bg: string; border: string
+  icon: any; label: string; value: string; colorClass: string; bgClass: string; alert?: boolean
 }) {
   return (
-    <Card className={border + " bg-white"}>
-      <CardContent className="p-3.5">
-        <div className="flex items-center gap-3">
-          <div className={"w-9 h-9 rounded-lg " + bg + " flex items-center justify-center shrink-0"}>
-            <Icon className={"h-4.5 w-4.5 " + color} />
+    <Card className={alert ? 'border-red-200 bg-red-50/30' : ''}>
+      <CardContent className="p-3">
+        <div className="flex items-center gap-2.5">
+          <div className={`w-8 h-8 rounded-lg ${bgClass} flex items-center justify-center shrink-0`}>
+            <Icon className={`h-4 w-4 ${colorClass}`} />
           </div>
           <div className="min-w-0">
-            <p className="text-[11px] text-muted-foreground truncate leading-tight">{label}</p>
-            <p className={"font-bold text-sm truncate mt-0.5 " + color}>{value}</p>
+            <p className="text-xs text-muted-foreground truncate">{label}</p>
+            <p className={`font-bold text-sm truncate ${colorClass}`}>{value}</p>
           </div>
         </div>
       </CardContent>
