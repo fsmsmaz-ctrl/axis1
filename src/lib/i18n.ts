@@ -618,3 +618,4 @@ export type TranslationKey = keyof typeof translations.ar
 export function t(lang: Language, key: TranslationKey): string {
   return translations[lang][key] || translations.ar[key] || key
 }
+
