@@ -39,6 +39,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
   }
 
+  var userId = user.id
+
   var rl = checkRateLimit(req, RateLimitPresets.write)
   if (rl.limited) {
     return NextResponse.json(
@@ -65,7 +67,7 @@ export async function POST(req: NextRequest) {
           contractorName: body.contractorName || null,
           projectId: body.projectId || null,
           notes: body.notes || null,
-          createdById: user.id,
+          createdById: userId,
         },
         include: {
           project: { select: { id: true, name: true, code: true } },
@@ -80,7 +82,7 @@ export async function POST(req: NextRequest) {
     await safeDbOp(
       () => db.auditLog.create({
         data: {
-          userId: user.id,
+          userId: userId,
           projectId: body.projectId || null,
           action: 'create',
           entity: 'worker',
