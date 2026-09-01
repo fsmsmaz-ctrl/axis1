@@ -131,3 +131,4 @@ export async function getAuthUser(req: NextRequest): Promise<SessionUser | null>
   const token = extractToken(req)
   return await getSessionUser(token)
 }
+
