@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
-import { handleDbError, validateRequired, safeDbOp } from '@/lib/api-helpers'
+import { handleDbError, safeDbOp } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 
 export async function GET(req: NextRequest) {
   var user = await getAuthUser(req)
+
   if (!user) {
-    return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+    return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
   }
 
   var searchParams = new URL(req.url).searchParams
@@ -21,60 +22,77 @@ export async function GET(req: NextRequest) {
       where,
       orderBy: { createdAt: 'desc' },
       include: {
-        project: { select: { id: true, name: true } },
-        createdBy: { select: { name: true, nameEn: true } },
+        project: { select: { id: true, name: true, code: true } },
       },
     }),
-    'fetch workers'
+    'جلب بيانات العمال'
   )
 
   if (!result.success) return result.response
-
   return NextResponse.json({ workers: result.data })
 }
 
 export async function POST(req: NextRequest) {
   var user = await getAuthUser(req)
+
   if (!user) {
-    return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+    return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
   }
 
   var rl = checkRateLimit(req, RateLimitPresets.write)
   if (rl.limited) {
     return NextResponse.json(
-      { error: 'too_many_requests', message: 'طلبات كثيرة' },
+      { error: 'too_many_requests', message: 'طلبات كثيرة جداً، يرجى الانتظار قليلاً' },
       { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } }
     )
   }
 
   try {
     var body = await req.json()
-    var validationError = validateRequired(body, ['name', 'phone'])
-    if (validationError) return validationError
 
-    var userId = user.id
+    if (!body.name || !body.phone) {
+      return NextResponse.json(
+        { error: 'missing_fields', message: 'اسم العامل ورقم التواصل مطلوبان' },
+        { status: 400 }
+      )
+    }
 
-    var result = await safeDbOp(
+    var createResult = await safeDbOp(
       () => db.worker.create({
         data: {
-          name: String(body.name),
-          phone: String(body.phone),
-          contractorName: body.contractorName ? String(body.contractorName) : null,
-          projectId: body.projectId ? String(body.projectId) : null,
-          notes: body.notes ? String(body.notes) : null,
-          createdById: userId,
+          name: body.name,
+          phone: body.phone,
+          contractorName: body.contractorName || null,
+          projectId: body.projectId || null,
+          notes: body.notes || null,
+          createdById: user.id,
         },
         include: {
-          project: { select: { id: true, name: true } },
-          createdBy: { select: { name: true, nameEn: true } },
+          project: { select: { id: true, name: true, code: true } },
         },
       }),
-      'create worker'
+      'إضافة عامل'
     )
 
-    if (!result.success) return result.response
-    return NextResponse.json({ worker: result.data, success: true })
+    if (!createResult.success) return createResult.response
+
+    // Audit log
+    await safeDbOp(
+      () => db.auditLog.create({
+        data: {
+          userId: user.id,
+          projectId: body.projectId || null,
+          action: 'create',
+          entity: 'worker',
+          entityId: createResult.data.id,
+          details: 'Added worker: ' + body.name,
+        },
+      }),
+      'سجل التدقيق'
+    )
+
+    return NextResponse.json({ worker: createResult.data })
   } catch (error: any) {
-    return handleDbError(error, 'create worker')
+    return handleDbError(error, 'إضافة عامل')
   }
 }
