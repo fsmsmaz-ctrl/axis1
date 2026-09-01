@@ -4,222 +4,180 @@ import { db } from '@/lib/db'
 
 export async function GET(req: NextRequest) {
   try {
-    const user = await getAuthUser(req)
+  const user = await getAuthUser(req)
 
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
 
-    // === Fix: Use Oman timezone (UTC+4) for all date calculations ===
-    function getOmanNow() {
-      var now = new Date()
-      // Convert to Oman time (UTC+4)
-      var utcMs = now.getTime() + now.getTimezoneOffset() * 60000
-      return new Date(utcMs + 4 * 60 * 60000)
-    }
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const tomorrow = new Date(today)
+  tomorrow.setDate(tomorrow.getDate() + 1)
 
-    var omanNow = getOmanNow()
-    var todayStr = omanNow.toISOString().split('T')[0] // "2026-09-02"
+  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1)
+  const fourteenDaysAgo = new Date(today)
+  fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14)
 
-    // Today boundaries in UTC (to match how dates are stored)
-    var todayStart = new Date(todayStr + 'T00:00:00.000Z')
-    var todayEnd = new Date(todayStr + 'T23:59:59.999Z')
+  // === Run each query independently so one failure doesn't break everything ===
 
-    // Month boundaries
-    var monthStr = todayStr.substring(0, 7) + '-01' // "2026-09-01"
-    var monthStart = new Date(monthStr + 'T00:00:00.000Z')
+  // Active projects count
+  let activeProjects = 0
+  try { activeProjects = await db.project.count({ where: { status: 'in_progress' } }) } catch (e: any) { console.error('[Dashboard] activeProjects:', e.message) }
 
-    // 14 days ago
-    var fourteenDaysAgo = new Date(todayStart)
-    fourteenDaysAgo.setUTCDate(fourteenDaysAgo.getUTCDate() - 14)
-
-    // Active projects count
-    var activeProjects = await db.project.count({
-      where: { status: 'in_progress' },
+  // Today's approved reports
+  let todayReports: any[] = []
+  try {
+    todayReports = await db.dailyReport.findMany({
+      where: { reportDate: { gte: today, lt: tomorrow }, status: 'approved' },
     })
+  } catch (e: any) { console.error('[Dashboard] todayReports:', e.message) }
 
-    // === Fix: Today's reports - include ALL non-rejected statuses ===
-    var todayReports = await db.dailyReport.findMany({
-      where: {
-        reportDate: { gte: todayStart, lte: todayEnd },
-        status: { in: ['approved', 'submitted', 'draft'] },
-      },
+  const metersToday = todayReports.reduce((sum: number, r: any) => sum + (r.dailyMeters || 0), 0)
+  const revenueToday = todayReports.reduce((sum: number, r: any) => sum + (r.dailyRevenue || 0), 0)
+  const presentWorkers = todayReports.reduce((sum: number, r: any) => sum + (r.workersCount || 0), 0)
+
+  // This month reports
+  let monthReports: any[] = []
+  try {
+    monthReports = await db.dailyReport.findMany({
+      where: { reportDate: { gte: monthStart }, status: 'approved' },
     })
+  } catch (e: any) { console.error('[Dashboard] monthReports:', e.message) }
 
-    var metersToday = todayReports.reduce(function(sum, r) { return sum + r.dailyMeters }, 0)
-    var revenueToday = todayReports.reduce(function(sum, r) { return sum + r.dailyRevenue }, 0)
-    var workersToday = todayReports.reduce(function(sum, r) { return sum + r.workersCount }, 0)
+  const metersThisMonth = monthReports.reduce((sum: number, r: any) => sum + (r.dailyMeters || 0), 0)
+  const revenueThisMonth = monthReports.reduce((sum: number, r: any) => sum + (r.dailyRevenue || 0), 0)
 
-    // Approved reports only for official stats
-    var approvedTodayReports = todayReports.filter(function(r) { return r.status === 'approved' })
-    var approvedRevenueToday = approvedTodayReports.reduce(function(sum, r) { return sum + r.dailyRevenue }, 0)
+  // Total costs this month
+  let monthCosts = 0
+  try {
+    const mc = await db.cost.aggregate({ where: { date: { gte: monthStart } }, _sum: { amount: true } })
+    monthCosts = mc._sum.amount || 0
+  } catch (e: any) { console.error('[Dashboard] monthCosts:', e.message) }
 
-    // === Fix: This month reports - include ALL non-rejected statuses ===
-    var monthReports = await db.dailyReport.findMany({
-      where: {
-        reportDate: { gte: monthStart },
-        status: { in: ['approved', 'submitted', 'draft'] },
-      },
-    })
+  // All costs (total)
+  let totalCosts = 0
+  try {
+    const tc = await db.cost.aggregate({ _sum: { amount: true } })
+    totalCosts = tc._sum.amount || 0
+  } catch (e: any) { console.error('[Dashboard] totalCosts:', e.message) }
 
-    var metersThisMonth = monthReports.reduce(function(sum, r) { return sum + r.dailyMeters }, 0)
-    var revenueThisMonth = monthReports.reduce(function(sum, r) { return sum + r.dailyRevenue }, 0)
+  // Total revenue (all approved reports)
+  let totalRevenue = 0
+  try {
+    const tr = await db.dailyReport.aggregate({ where: { status: 'approved' }, _sum: { dailyRevenue: true } })
+    totalRevenue = tr._sum.dailyRevenue || 0
+  } catch (e: any) { console.error('[Dashboard] totalRevenue:', e.message) }
 
-    // Approved this month for revenue
-    var approvedMonthReports = monthReports.filter(function(r) { return r.status === 'approved' })
-    var approvedRevenueThisMonth = approvedMonthReports.reduce(function(sum, r) { return sum + r.dailyRevenue }, 0)
+  // Stopped equipment
+  let stoppedEquipment = 0
+  try {
+    stoppedEquipment = await db.equipment.count({ where: { status: { in: ['stopped', 'maintenance_needed'] } } })
+  } catch (e: any) { console.error('[Dashboard] stoppedEquipment:', e.message) }
 
-    // Total costs this month
-    var monthCostsResult = await db.cost.aggregate({
-      where: { date: { gte: monthStart } },
-      _sum: { amount: true },
-    })
+  // Unread notifications
+  let unreadNotifications = 0
+  try {
+    unreadNotifications = await db.notification.count({ where: { read: false } })
+  } catch (e: any) { console.error('[Dashboard] unreadNotifications:', e.message) }
 
-    // All costs (total)
-    var totalCostsResult = await db.cost.aggregate({
-      _sum: { amount: true },
-    })
-
-    // Total revenue (all approved reports)
-    var totalRevenueResult = await db.dailyReport.aggregate({
-      where: { status: 'approved' },
-      _sum: { dailyRevenue: true },
-    })
-
-    // === Fix: Stopped equipment - also include maintenance_needed ===
-    var stoppedEquipment = await db.equipment.count({
-      where: { status: { in: ['stopped', 'maintenance_needed'] } },
-    })
-
-    // Total equipment count
-    var totalEquipment = await db.equipment.count()
-
-    // Unread notifications
-    var unreadNotifications = await db.notification.count({
-      where: { read: false },
-    })
-
-    // === Production trend (last 14 days) ===
-    var trendReports = await db.dailyReport.findMany({
-      where: {
-        reportDate: { gte: fourteenDaysAgo },
-        status: { in: ['approved', 'submitted', 'draft'] },
-      },
+  // Production trend (last 14 days)
+  let trend: Array<{ date: string; meters: number; revenue: number; cost: number }> = []
+  try {
+    const trendReports = await db.dailyReport.findMany({
+      where: { reportDate: { gte: fourteenDaysAgo }, status: 'approved' },
       orderBy: { reportDate: 'asc' },
-      select: {
-        reportDate: true,
-        dailyMeters: true,
-        dailyRevenue: true,
-        projectId: true,
-        status: true,
-      },
+      select: { reportDate: true, dailyMeters: true, dailyRevenue: true },
     })
-
-    // Group by date
-    var trendMap: Record<string, { meters: number; revenue: number; cost: number }> = {}
-    var trendCosts = await db.cost.findMany({
+    const trendCosts = await db.cost.findMany({
       where: { date: { gte: fourteenDaysAgo } },
       select: { date: true, amount: true },
     })
-
-    for (var i = 0; i < trendReports.length; i++) {
-      var r = trendReports[i]
-      var key = r.reportDate.toISOString().split('T')[0]
-      if (!trendMap[key]) trendMap[key] = { meters: 0, revenue: 0, cost: 0 }
-      trendMap[key].meters += r.dailyMeters
-      trendMap[key].revenue += r.dailyRevenue
+    const trendMap = new Map<string, { meters: number; revenue: number; cost: number }>()
+    for (const r of trendReports) {
+      const key = r.reportDate.toISOString().split('T')[0]
+      if (!trendMap.has(key)) trendMap.set(key, { meters: 0, revenue: 0, cost: 0 })
+      const item = trendMap.get(key)!
+      item.meters += r.dailyMeters || 0
+      item.revenue += r.dailyRevenue || 0
     }
-
-    for (var j = 0; j < trendCosts.length; j++) {
-      var c = trendCosts[j]
-      var cKey = c.date.toISOString().split('T')[0]
-      if (!trendMap[cKey]) trendMap[cKey] = { meters: 0, revenue: 0, cost: 0 }
-      trendMap[cKey].cost += c.amount
+    for (const c of trendCosts) {
+      const key = c.date.toISOString().split('T')[0]
+      if (!trendMap.has(key)) trendMap.set(key, { meters: 0, revenue: 0, cost: 0 })
+      trendMap.get(key)!.cost += c.amount || 0
     }
+    trend = Array.from(trendMap.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([date, vals]) => ({ date, ...vals }))
+  } catch (e: any) { console.error('[Dashboard] trend:', e.message) }
 
-    var trend = Object.keys(trendMap)
-      .sort()
-      .map(function(date) { return { date: date, meters: trendMap[date].meters, revenue: trendMap[date].revenue, cost: trendMap[date].cost } })
-
-    // Projects with progress
-    var projects = await db.project.findMany({
-      select: {
-        id: true, name: true, code: true, status: true,
-        progress: true, totalLength: true, pricePerMeter: true, client: true,
-      },
+  // Projects
+  let projects: any[] = []
+  try {
+    projects = await db.project.findMany({
+      select: { id: true, name: true, code: true, status: true, progress: true, totalLength: true, pricePerMeter: true, client: true },
     })
+  } catch (e: any) { console.error('[Dashboard] projects:', e.message) }
 
-    // Recent reports
-    var recentReports = await db.dailyReport.findMany({
-      take: 10,
-      orderBy: { reportDate: 'desc' },
-      include: {
-        project: { select: { name: true, code: true } },
-        driveLine: { select: { lineNumber: true } },
-      },
+  // Recent reports
+  let recentReports: any[] = []
+  try {
+    recentReports = await db.dailyReport.findMany({
+      take: 10, orderBy: { reportDate: 'desc' },
+      include: { project: { select: { name: true, code: true } }, driveLine: { select: { lineNumber: true } } },
     })
+  } catch (e: any) { console.error('[Dashboard] recentReports:', e.message) }
 
-    // Notifications
-    var notifications = await db.notification.findMany({
-      take: 5,
-      orderBy: { createdAt: 'desc' },
+  // Notifications
+  let notifications: any[] = []
+  try {
+    notifications = await db.notification.findMany({
+      take: 5, orderBy: { createdAt: 'desc' },
       include: { project: { select: { name: true } } },
     })
+  } catch (e: any) { console.error('[Dashboard] notifications:', e.message) }
 
-    // Equipment list
-    var equipment = await db.equipment.findMany({
+  // Equipment
+  let equipment: any[] = []
+  try {
+    equipment = await db.equipment.findMany({
       include: { project: { select: { name: true } } },
     })
+  } catch (e: any) { console.error('[Dashboard] equipment:', e.message) }
 
-    // Cost breakdown by category (this month)
-    var costsByCategoryRaw = await db.cost.groupBy({
-      by: ['category'],
-      where: { date: { gte: monthStart } },
-      _sum: { amount: true },
-    })
+  // Cost breakdown by category (this month)
+  let costsByCategory: Array<{ category: string; amount: number }> = []
+  try {
+    const raw = await db.cost.groupBy({ by: ['category'], where: { date: { gte: monthStart } }, _sum: { amount: true } })
+    costsByCategory = raw.map((c) => ({ category: c.category, amount: c._sum.amount || 0 }))
+  } catch (e: any) { console.error('[Dashboard] costsByCategory:', e.message) }
 
-    var costsByCategory = costsByCategoryRaw.map(function(c) {
-      return { category: c.category, amount: c._sum.amount || 0 }
-    })
+  // Calculate net profit
+  const netProfit = totalRevenue - totalCosts
 
-    // Calculate net profit
-    var totalRevenue = totalRevenueResult._sum.dailyRevenue || 0
-    var totalCosts = totalCostsResult._sum.amount || 0
-    var monthCosts = monthCostsResult._sum.amount || 0
-    var netProfit = totalRevenue - totalCosts
-
-    // Total meters all time (from approved)
-    var totalMetersResult = await db.dailyReport.aggregate({
-      where: { status: 'approved' },
-      _sum: { dailyMeters: true },
-    })
-    var totalMeters = totalMetersResult._sum.dailyMeters || 0
-
-    return NextResponse.json({
-      stats: {
-        activeProjects: activeProjects,
-        totalProjects: projects.length,
-        metersToday: metersToday,
-        metersThisMonth: metersThisMonth,
-        revenueToday: approvedRevenueToday,
-        revenueThisMonth: approvedRevenueThisMonth,
-        totalRevenue: totalRevenue,
-        totalCosts: totalCosts,
-        monthCosts: monthCosts,
-        netProfit: netProfit,
-        stoppedEquipment: stoppedEquipment,
-        totalEquipment: totalEquipment,
-        presentWorkers: workersToday,
-        unreadNotifications: unreadNotifications,
-        totalMeters: totalMeters,
-      },
-      trend: trend,
-      projects: projects,
-      recentReports: recentReports,
-      notifications: notifications,
-      equipment: equipment,
-      costsByCategory: costsByCategory,
-    })
+  return NextResponse.json({
+    stats: {
+      activeProjects,
+      totalProjects: projects.length,
+      metersToday,
+      metersThisMonth,
+      revenueToday,
+      revenueThisMonth,
+      totalRevenue,
+      totalCosts,
+      monthCosts,
+      netProfit,
+      stoppedEquipment,
+      presentWorkers,
+      unreadNotifications,
+    },
+    trend,
+    projects,
+    recentReports,
+    notifications,
+    equipment,
+    costsByCategory,
+  })
   } catch (error: any) {
     console.error('[Dashboard API] Error:', error)
     return NextResponse.json(
