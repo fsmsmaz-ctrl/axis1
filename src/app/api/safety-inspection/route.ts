@@ -53,6 +53,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
   }
 
+  // Extract user info after null check to satisfy TypeScript inside callbacks
+  var userId = user.id
+  var userName = user.name
+
   // Rate limit write operations
   var rl = checkRateLimit(req, RateLimitPresets.write)
   if (rl.limited) {
@@ -78,7 +82,7 @@ export async function POST(req: NextRequest) {
       () => db.safetyReport.findFirst({
         where: {
           projectId: body.projectId,
-          signedById: user.id,
+          signedById: userId,
           reportDate: { gte: dateStart, lte: dateEnd },
         },
         include: { dailyReport: { select: { id: true } } },
@@ -105,7 +109,7 @@ export async function POST(req: NextRequest) {
           projectId: String(body.projectId),
           driveLineId: body.driveLineId || null,
           reportDate: new Date(body.reportDate),
-          weather: null,
+          weather: body.weather || null,
           workStartTime: null,
           workEndTime: null,
           operatingHours: 0,
@@ -120,8 +124,7 @@ export async function POST(req: NextRequest) {
           pipesInstalled: 0,
           dailyRevenue: 0,
           status: 'draft',
-          safetyLocked: true,
-          createdById: user.id,
+          createdById: userId,
         },
       }),
       'إنشاء التقرير اليومي'
@@ -154,8 +157,8 @@ export async function POST(req: NextRequest) {
       violations: body.violations || null,
       incidentType: body.incidentType || 'none',
       incidentDescription: body.incidentDescription || null,
-      signedBy: user.name,
-      signedById: user.id,
+      signedBy: userName,
+      signedById: userId,
       signedAt: new Date(),
     }
 
@@ -170,7 +173,7 @@ export async function POST(req: NextRequest) {
     await safeDbOp(
       () => db.auditLog.create({
         data: {
-          userId: user.id,
+          userId: userId,
           projectId: body.projectId,
           dailyReportId: createReportResult.data.id,
           action: 'create',
@@ -205,6 +208,8 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: 'forbidden', message: 'هذه العملية متاحة فقط لمدير النظام' }, { status: 403 })
   }
 
+  var userId = user.id
+
   var rl = checkRateLimit(req, RateLimitPresets.write)
   if (rl.limited) {
     return NextResponse.json(
@@ -237,7 +242,7 @@ export async function DELETE(req: NextRequest) {
     var report = reportResult.data
     var dailyReportId = report.dailyReportId
 
-    // Delete the safety report (cascade will not delete daily report since it is the parent)
+    // Delete the safety report
     var deleteSafetyResult = await safeDbOp(
       () => db.safetyReport.delete({ where: { id: reportId } }),
       'حذف تقرير السلامة'
@@ -265,7 +270,7 @@ export async function DELETE(req: NextRequest) {
     await safeDbOp(
       () => db.auditLog.create({
         data: {
-          userId: user.id,
+          userId: userId,
           projectId: report.projectId,
           action: 'delete',
           entity: 'safety_report',
@@ -281,4 +286,3 @@ export async function DELETE(req: NextRequest) {
     return handleDbError(error, 'حذف تقرير السلامة')
   }
 }
-
