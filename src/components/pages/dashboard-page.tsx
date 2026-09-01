@@ -8,8 +8,8 @@ import { Button } from '@/components/ui/button'
 import {
   Activity, TrendingUp, TrendingDown, DollarSign, Wallet,
   Users, AlertTriangle, Wrench, FolderKanban, ArrowLeft,
-  Trophy, AlertCircle, Calendar, Cpu, HardHat, Fuel, Truck,
-  Construction, Gauge, BarChart3, PieChartIcon, Clock, ShieldCheck
+  Trophy, AlertCircle, Calendar, Cpu, Clock, ShieldCheck,
+  Ruler, MapPin, Layers, Settings, GitBranch
 } from 'lucide-react'
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid,
@@ -61,9 +61,9 @@ const categoryLabelsEn: Record<string, string> = {
 }
 
 const categoryIcons: Record<string, any> = {
-  labor: HardHat, fuel: Fuel, maintenance: Wrench,
-  transport: Truck, housing: Construction, parts: Gauge,
-  oil: Droplets, safety: ShieldCheck, rental: FolderKanban, other: BarChart3,
+  labor: Users, fuel: Activity, maintenance: Wrench,
+  transport: MapPin, housing: Layers, parts: Settings,
+  oil: Ruler, safety: ShieldCheck, rental: FolderKanban, other: GitBranch,
 }
 
 export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) => void }) {
@@ -271,7 +271,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
           bgClass="bg-purple-50"
         />
         <MiniStatCard
-          icon={Gauge}
+          icon={Activity}
           label={isRtl ? 'أمتار الشهر' : 'Month Meters'}
           value={`${fmt(stats.metersThisMonth)} ${isRtl ? 'م' : 'm'}`}
           colorClass="text-cyan-600"
@@ -285,7 +285,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-base">
               <div className="w-7 h-7 rounded-md bg-gradient-to-br from-orange-500 to-amber-500 flex items-center justify-center">
-                <BarChart3 className="h-3.5 w-3.5 text-white" />
+                <Activity className="h-3.5 w-3.5 text-white" />
               </div>
               {isRtl ? 'اتجاه الإنتاج (آخر 14 يوم)' : 'Production Trend (Last 14 days)'}
             </CardTitle>
@@ -336,7 +336,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-base">
               <div className="w-7 h-7 rounded-md bg-gradient-to-br from-purple-500 to-violet-500 flex items-center justify-center">
-                <PieChartIcon className="h-3.5 w-3.5 text-white" />
+                <Wallet className="h-3.5 w-3.5 text-white" />
               </div>
               {isRtl ? 'توزيع التكاليف' : 'Cost Breakdown'}
             </CardTitle>
@@ -640,3 +640,4 @@ function MiniStatCard({
     </Card>
   )
 }
+
