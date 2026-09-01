@@ -11,6 +11,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
   }
 
+  var userId = user.id
+
   var rl = checkRateLimit(req, RateLimitPresets.write)
   if (rl.limited) {
     return NextResponse.json(
@@ -57,7 +59,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     await safeDbOp(
       () => db.auditLog.create({
         data: {
-          userId: user.id,
+          userId: userId,
           projectId: body.projectId || existingResult.data.projectId || null,
           action: 'update',
           entity: 'worker',
@@ -80,6 +82,8 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   if (!user) {
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
   }
+
+  var userId = user.id
 
   var rl = checkRateLimit(req, RateLimitPresets.write)
   if (rl.limited) {
@@ -113,7 +117,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     await safeDbOp(
       () => db.auditLog.create({
         data: {
-          userId: user.id,
+          userId: userId,
           projectId: existingResult.data.projectId || null,
           action: 'delete',
           entity: 'worker',
