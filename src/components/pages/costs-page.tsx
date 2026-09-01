@@ -17,7 +17,8 @@ import {
 } from 'recharts'
 import {
   Plus, DollarSign, TrendingUp, TrendingDown, Wallet, BarChart3,
-  HardHat, Fuel, Wrench, Truck, Construction, Gauge, Droplets, ShieldCheck, FolderKanban
+  Users, Wrench, MapPin, Layers, Settings, Ruler, ShieldCheck, FolderKanban,
+  Activity, GitBranch
 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
@@ -43,9 +44,9 @@ const categoryColors: Record<string, string> = {
 }
 
 const categoryIcons: Record<string, any> = {
-  labor: HardHat, fuel: Fuel, maintenance: Wrench,
-  transport: Truck, housing: Construction, parts: Gauge,
-  oil: Droplets, safety: ShieldCheck, rental: FolderKanban, other: BarChart3,
+  labor: Users, fuel: Activity, maintenance: Wrench,
+  transport: MapPin, housing: Layers, parts: Settings,
+  oil: Ruler, safety: ShieldCheck, rental: FolderKanban, other: GitBranch,
 }
 
 export default function CostsPage() {
