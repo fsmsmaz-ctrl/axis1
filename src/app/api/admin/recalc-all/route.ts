@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db, invalidateCachePrefix } from '@/lib/db'
 
-// Admin/Manager endpoint to recalculate ALL progress and revenue data.
+// Admin/Manager endpoint to recalculate ALL progress data.
 // Call via: POST /api/admin/recalc-all
 // This fixes:
-// 1. Daily report dailyMeters and dailyRevenue for all reports
+// 1. Daily report dailyMeters for all reports
 // 2. DriveLine completedLength and progress
 // 3. Project progress
 // 4. Invalidates the dashboard cache so the new numbers show up immediately.
@@ -30,14 +30,13 @@ export async function POST(req: NextRequest) {
       errors: [] as string[],
     }
 
-    // Step 1: Get ALL projects with their pricePerMeter
+    // Step 1: Get ALL projects
     const projects = await db.project.findMany({
-      select: { id: true, pricePerMeter: true, totalLength: true },
+      select: { id: true, totalLength: true },
     })
 
     // Process projects sequentially to avoid connection pool exhaustion.
     for (const project of projects) {
-      const pricePerMeter = project.pricePerMeter || 0
       try {
         // Step 2: Get all daily reports for this project
         const reports = await db.dailyReport.findMany({
@@ -47,33 +46,27 @@ export async function POST(req: NextRequest) {
             startReading: true,
             endReading: true,
             dailyMeters: true,
-            dailyRevenue: true,
             driveLineId: true,
             status: true,
           },
         })
 
-        // Step 3: Fix each report's dailyMeters and dailyRevenue.
-        // For approved reports, always recompute (in case pricePerMeter changed).
+        // Step 3: Fix each report's dailyMeters.
         // For draft/submitted reports, only recompute if values are clearly wrong.
         for (const r of reports) {
           const startReading = r.startReading || 0
           const endReading = r.endReading || 0
           const correctDailyMeters = Math.max(0, endReading - startReading)
-          const correctRevenue = correctDailyMeters * pricePerMeter
 
           const needsUpdate =
             Math.abs((r.dailyMeters || 0) - correctDailyMeters) > 0.001 ||
-            Math.abs((r.dailyRevenue || 0) - correctRevenue) > 0.001 ||
-            r.dailyMeters === null ||
-            r.dailyRevenue === null
+            r.dailyMeters === null
 
           if (needsUpdate) {
             await db.dailyReport.update({
               where: { id: r.id },
               data: {
                 dailyMeters: correctDailyMeters,
-                dailyRevenue: correctRevenue,
               },
             })
             results.reportsFixed++
