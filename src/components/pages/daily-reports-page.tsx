@@ -934,4 +934,3 @@ function Stat({ label, value, color }: { label: string; value: string; color: st
     </div>
   )
 }
-
