@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
+import { SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { safeDbOp, handleDbError, recalcProgress } from '@/lib/api-helpers'
 
@@ -82,20 +83,16 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       delete body.reportDate
     }
 
-    // Permission: top_management, project_manager, site_engineer can edit any draft/submitted report
-    // Any authenticated user can edit draft reports (for safety → production handoff)
-    var canEditAny = user!.role === 'top_management' || user.role === 'project_manager' || user.role === 'site_engineer'
-    if (!canEditAny && existingReport.createdById !== user!.id) {
-      if (existingReport.status !== 'draft') {
-        return NextResponse.json({ error: 'forbidden', message: 'لا يمكنك تعديل تقرير آخر موظف' }, { status: 403 })
-      }
+    // بعد التسليم أو الاعتماد أو الرفض: التعديل لمدير النظام (admin@axis.om) فقط
+    var isSystemAdmin = (user!.email || '').toLowerCase().trim() === SYSTEM_ADMIN_EMAIL
+    if (existingReport.status !== 'draft' && !isSystemAdmin) {
+      return NextResponse.json({ error: 'forbidden', message: 'لا يمكن تعديل التقرير بعد تسليمه — التعديل متاح لمدير النظام فقط' }, { status: 403 })
     }
 
-    // Only draft and submitted reports can be edited (not approved)
-    if (existingReport.status === 'approved' || existingReport.status === 'rejected') {
-      if (user.role !== 'top_management') {
-        return NextResponse.json({ error: 'forbidden', message: 'لا يمكن تعديل تقرير تم اعتماده أو رفضه' }, { status: 403 })
-      }
+    // المسودات: الإدارة العليا/مدير المشروع/مهندس الموقع يعدّلون أي مسودة، وباقي الموظفين مسوداتهم فقط
+    var canEditAny = user!.role === 'top_management' || user.role === 'project_manager' || user.role === 'site_engineer'
+    if (!canEditAny && existingReport.createdById !== user!.id) {
+      return NextResponse.json({ error: 'forbidden', message: 'لا يمكنك تعديل تقرير آخر موظف' }, { status: 403 })
     }
 
     var startReading = parseFloat(body.startReading) || 0
@@ -142,7 +139,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
           pipesInstalled: parseInt(body.pipesInstalled) || 0,
           productionNotes: body.productionNotes || null,
           problems: body.problems || null,
-          status: body.status || 'draft',
+          // الحالة: تُحفظ الحالية إلا إذا طُلب صراحة draft/submitted —
+          // لا يمكن تعيين approved/rejected إلا عبر مسار الاعتماد المخصص
+          status: (body.status === 'draft' || body.status === 'submitted') ? body.status : existingReport.status,
         },
       }),
       'تحديث التقرير اليومي'
@@ -228,16 +227,10 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     var deletedDriveLineId = report.driveLineId
     var deletedProjectId = report.projectId
 
-    // Only top management can delete approved reports
-    if (report.status === 'approved' && user.role !== 'top_management') {
-      return NextResponse.json({ error: 'Cannot delete approved report' }, { status: 403 })
-    }
-
-    // Only allow deleting own draft/submitted reports (or admin/manager can delete any non-approved)
-    if (user.role !== 'top_management' && user.role !== 'project_manager') {
-      if (report.createdById !== user!.id) {
-        return NextResponse.json({ error: 'forbidden', message: 'لا يمكنك حذف تقرير آخر موظف' }, { status: 403 })
-      }
+    // الحذف: مدير النظام (admin@axis.om) فقط — مخفٍ وممنوع عن كل المستخدمين الآخرين
+    var isSystemAdminDelete = (user!.email || '').toLowerCase().trim() === SYSTEM_ADMIN_EMAIL
+    if (!isSystemAdminDelete) {
+      return NextResponse.json({ error: 'forbidden', message: 'حذف التقارير متاح لمدير النظام فقط' }, { status: 403 })
     }
 
     var deleteResult = await safeDbOp(
