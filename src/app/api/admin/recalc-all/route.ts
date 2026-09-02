@@ -30,9 +30,9 @@ export async function POST(req: NextRequest) {
       errors: [] as string[],
     }
 
-    // Step 1: Get ALL projects
+    // Step 1: Get ALL projects (with price per meter for revenue calculation)
     const projects = await db.project.findMany({
-      select: { id: true, totalLength: true },
+      select: { id: true, totalLength: true, pricePerMeter: true },
     })
 
     // Process projects sequentially to avoid connection pool exhaustion.
@@ -46,27 +46,32 @@ export async function POST(req: NextRequest) {
             startReading: true,
             endReading: true,
             dailyMeters: true,
+            dailyRevenue: true,
             driveLineId: true,
             status: true,
           },
         })
 
-        // Step 3: Fix each report's dailyMeters.
-        // For draft/submitted reports, only recompute if values are clearly wrong.
+        // Step 3: Fix each report's dailyMeters AND dailyRevenue.
+        // dailyRevenue = dailyMeters × project pricePerMeter (fixes reports stuck at 0).
+        const projectPrice = project.pricePerMeter || 0
         for (const r of reports) {
           const startReading = r.startReading || 0
           const endReading = r.endReading || 0
           const correctDailyMeters = Math.max(0, endReading - startReading)
+          const correctDailyRevenue = correctDailyMeters * projectPrice
 
           const needsUpdate =
             Math.abs((r.dailyMeters || 0) - correctDailyMeters) > 0.001 ||
-            r.dailyMeters === null
+            r.dailyMeters === null ||
+            Math.abs((r.dailyRevenue || 0) - correctDailyRevenue) > 0.001
 
           if (needsUpdate) {
             await db.dailyReport.update({
               where: { id: r.id },
               data: {
                 dailyMeters: correctDailyMeters,
+                dailyRevenue: correctDailyRevenue,
               },
             })
             results.reportsFixed++
