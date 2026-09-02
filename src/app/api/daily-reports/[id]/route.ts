@@ -99,6 +99,14 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     var endReading = parseFloat(body.endReading) || 0
     var dailyMeters = Math.max(0, endReading - startReading)
 
+    // إعادة حساب الإيراد عند التعديل = الأمتار الجديدة × سعر المتر الحالي للمشروع
+    var projectPriceResult = await safeDbOp(
+      () => db.project.findUnique({ where: { id: existingReport.projectId }, select: { pricePerMeter: true } }),
+      'جلب سعر المتر'
+    )
+    var projectPrice = projectPriceResult.success && projectPriceResult.data ? (projectPriceResult.data.pricePerMeter || 0) : 0
+    var dailyRevenue = dailyMeters * projectPrice
+
     // Look up drive line (safe)
     var driveLineResult = body.driveLineId
       ? await safeDbOp(
@@ -132,6 +140,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
           startReading: startReading,
           endReading: endReading,
           dailyMeters: dailyMeters,
+          dailyRevenue: dailyRevenue,
           totalMeters: totalMeters,
           remainingMeters: remainingMeters,
           progressPercent: progressPercent,
