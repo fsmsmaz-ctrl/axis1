@@ -486,10 +486,6 @@ export default function DailyReportsPage() {
                         <p className="text-xs text-muted-foreground">{isRtl ? 'الإنتاج' : 'Production'}</p>
                         <p className="font-semibold">{r.dailyMeters} {isRtl ? 'م' : 'm'}</p>
                       </div>
-                      <div className="text-center">
-                        <p className="text-xs text-muted-foreground">{isRtl ? 'الإيراد' : 'Revenue'}</p>
-                        <p className="font-semibold text-emerald-600">{r.dailyRevenue} {isRtl ? 'ر.ع' : 'OMR'}</p>
-                      </div>
                       {r.safety && (
                         <div className="text-center">
                           <p className="text-xs text-muted-foreground">{isRtl ? 'السلامة' : 'Safety'}</p>
@@ -819,10 +815,9 @@ function ReportDetails({ report }: { report: any }) {
         <Detail label={isRtl ? 'قراءة النهاية' : 'End Reading'} value={`${report.endReading} م`} />
       </div>
 
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-2 gap-2">
         <Stat label={isRtl ? 'إنتاج اليوم' : 'Daily Meters'} value={`${report.dailyMeters} م`} color="text-blue-600" />
         <Stat label={isRtl ? 'إجمالي الأمتار' : 'Total Meters'} value={`${report.totalMeters.toFixed(1)} م`} color="text-purple-600" />
-        <Stat label={isRtl ? 'الإيراد اليومي' : 'Daily Revenue'} value={`${report.dailyRevenue} ر.ع`} color="text-emerald-600" />
       </div>
 
       {report.stoppageReason && (
