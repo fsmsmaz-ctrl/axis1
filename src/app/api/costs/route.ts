@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
-import { handleDbError, validateRequired, parseNumber, safeDbOp } from '@/lib/api-helpers'
+import { handleDbError, validateRequired, parseNumber, safeDbOp, parseDateRange } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 
 export async function GET(req: NextRequest) {
@@ -16,6 +16,11 @@ export async function GET(req: NextRequest) {
 
   var where: any = {}
   if (projectId) where.projectId = projectId
+
+  // Period range filter (from/to) — used by the Reports section so cost,
+  // revenue and profit reports respect the selected period.
+  var dateRange = parseDateRange(searchParams.get('from'), searchParams.get('to'))
+  if (dateRange.gte || dateRange.lt) where.date = dateRange
 
   // Try full query with includes first
   var costsResult = await safeDbOp(
