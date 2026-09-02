@@ -74,58 +74,30 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
   const language = useAppStore((s) => s.language)
   const token = useAppStore((s) => s.token)
   const isRtl = language === 'ar'
-  const [loadingSeconds, setLoadingSeconds] = useState(0)
 
   async function fetchDashboard() {
-    // Read token directly from localStorage for reliability
-    let authToken = token
-    if (!authToken && typeof window !== 'undefined') {
-      try { authToken = localStorage.getItem('axis_token') } catch { /* ignore */ }
-    }
-    if (!authToken) {
-      console.warn('[Dashboard] No token available, skipping fetch')
+    if (!token) {
       setLoading(false)
       return
     }
     setLoading(true)
     setError(null)
-    setLoadingSeconds(0)
-    const timer = setInterval(() => setLoadingSeconds(s => s + 1), 1000)
     try {
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 20000)
-      const r = await authedFetch('/api/dashboard', { signal: controller.signal })
-      clearTimeout(timeoutId)
+      const r = await authedFetch('/api/dashboard')
       if (!r.ok) {
-        const body = await r.json().catch(() => ({}))
-        throw new Error(body?.details || body?.error || `Error ${r.status}`)
+        const body = await r.json().catch(function() { return {} })
+        throw new Error(body?.details || body?.error || 'Error ' + r.status)
       }
       const d = await r.json()
       if (d.error) {
         throw new Error(d.details || d.error)
       }
-      if (d._partialErrors?.length) {
-        console.warn('[Dashboard] Partial errors in:', d._partialErrors)
-      }
-      console.log('[Dashboard] Data received:', {
-        presentWorkers: d.stats?.presentWorkers,
-        revenueToday: d.stats?.revenueToday,
-        monthCosts: d.stats?.monthCosts,
-        metersThisMonth: d.stats?.metersThisMonth,
-        partialErrors: d._partialErrors,
-      })
       setData(d)
     } catch (e: any) {
       console.error('[Dashboard]', e)
-      if (e.name === 'AbortError') {
-        setError(isRtl ? 'انتهت مهلة الاتصال - يرجى المحاولة' : 'Connection timeout - please retry')
-      } else {
-        setError(e.message || (isRtl ? 'خطأ في تحميل البيانات' : 'Failed to load data'))
-      }
+      setError(e.message || (isRtl ? 'خطأ في تحميل البيانات' : 'Failed to load data'))
     } finally {
-      clearInterval(timer)
       setLoading(false)
-      setLoadingSeconds(0)
     }
   }
 
@@ -136,28 +108,19 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
   if (loading) {
     return (
       <div className="space-y-4">
-        {[1, 2, 3].map(i => (
-          <Card key={i}>
-            <CardContent className="p-6">
-              <div className="h-32 bg-muted animate-pulse rounded" />
-            </CardContent>
-          </Card>
-        ))}
-        {loadingSeconds > 5 && (
-          <p className="text-center text-sm text-muted-foreground">
-            {isRtl ? `جاري تحميل البيانات... (${loadingSeconds} ثانية)` : `Loading data... (${loadingSeconds}s)`}
-          </p>
-        )}
-        {loadingSeconds > 12 && (
-          <div className="text-center">
-            <Button variant="outline" onClick={() => { fetchDashboard() }}>
-              {isRtl ? 'إعادة المحاولة' : 'Retry'}
-            </Button>
-          </div>
-        )}
+        {[1, 2, 3].map(function(i) {
+          return (
+            <Card key={i}>
+              <CardContent className="p-6">
+                <div className="h-32 bg-muted animate-pulse rounded" />
+              </CardContent>
+            </Card>
+          )
+        })}
       </div>
     )
   }
+
   if (error) {
     return (
       <Card className="border-red-200 bg-red-50/50">
@@ -176,10 +139,8 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
       </Card>
     )
   }
-  if (!data) {
-    setLoading(false)
-    return null
-  }
+
+  if (!data) return null
 
   const stats = data.stats || {
     activeProjects: 0, totalProjects: 0, metersToday: 0, metersThisMonth: 0,
@@ -194,24 +155,23 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
   const equipment = Array.isArray(data.equipment) ? data.equipment : []
   const costsByCategory = Array.isArray(data.costsByCategory) ? data.costsByCategory : []
 
-  const fmt = (n: number) => (n || 0).toLocaleString(isRtl ? 'ar-EG' : 'en-US', { maximumFractionDigits: 1 })
-  const fmtCurrency = (n: number) => `${fmt(n || 0)} ${isRtl ? 'ر.ع' : 'OMR'}`
+  const fmt = function(n: number) { return (n || 0).toLocaleString(isRtl ? 'ar-EG' : 'en-US', { maximumFractionDigits: 1 }) }
+  const fmtCurrency = function(n: number) { return fmt(n || 0) + ' ' + (isRtl ? 'ر.ع' : 'OMR') }
 
-  // Sort projects for best/worst
-  const sortedByProgress = [...projects].sort((a, b) => (b.progress || 0) - (a.progress || 0))
+  const sortedByProgress = [...projects].sort(function(a, b) { return (b.progress || 0) - (a.progress || 0) })
   const bestProject = sortedByProgress[0]
   const worstProject = sortedByProgress[sortedByProgress.length - 1]
 
-  // Format trend for chart
-  const trendData = trend.map(t => ({
-    ...t,
-    date: new Date(t.date).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US', { month: 'short', day: 'numeric' }),
-    profit: (t.revenue || 0) - (t.cost || 0),
-  }))
+  const trendData = trend.map(function(t) {
+    return {
+      ...t,
+      date: new Date(t.date).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US', { month: 'short', day: 'numeric' }),
+      profit: (t.revenue || 0) - (t.cost || 0),
+    }
+  })
 
   return (
     <div className="space-y-6">
-      {/* Page title */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold">{isRtl ? 'لوحة التحكم' : 'Dashboard'}</h1>
@@ -219,27 +179,26 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
             {isRtl ? 'نظرة عامة على جميع المشاريع والعمليات' : 'Overview of all projects and operations'}
           </p>
         </div>
-        <Button variant="outline" onClick={() => onNavigate('reports')}>
+        <Button variant="outline" onClick={function() { onNavigate('reports') }}>
           <Calendar className="h-4 w-4 ml-2" />
           {isRtl ? 'التقارير' : 'Reports'}
         </Button>
       </div>
 
-      {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           icon={FolderKanban}
           label={isRtl ? 'المشاريع النشطة' : 'Active Projects'}
-          value={`${stats.activeProjects}`}
-          subtext={`${isRtl ? 'من إجمالي' : 'of'} ${stats.totalProjects}`}
+          value={'' + stats.activeProjects}
+          subtext={(isRtl ? 'من إجمالي ' : 'of ') + stats.totalProjects}
           color="text-orange-600"
           bgColor="bg-orange-50"
         />
         <StatCard
           icon={Activity}
           label={isRtl ? 'الأمتار اليوم' : 'Meters Today'}
-          value={`${fmt(stats.metersToday)} ${isRtl ? 'م' : 'm'}`}
-          subtext={`${fmt(stats.metersThisMonth)} ${isRtl ? 'م هذا الشهر' : 'm this month'}`}
+          value={fmt(stats.metersToday) + ' ' + (isRtl ? 'م' : 'm')}
+          subtext={fmt(stats.metersThisMonth) + ' ' + (isRtl ? 'م هذا الشهر' : 'm this month')}
           color="text-blue-600"
           bgColor="bg-blue-50"
         />
@@ -247,7 +206,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
           icon={DollarSign}
           label={isRtl ? 'الإيرادات' : 'Revenue'}
           value={fmtCurrency(stats.totalRevenue)}
-          subtext={`${fmtCurrency(stats.revenueThisMonth)} ${isRtl ? 'هذا الشهر' : 'this month'}`}
+          subtext={fmtCurrency(stats.revenueThisMonth) + ' ' + (isRtl ? 'هذا الشهر' : 'this month')}
           color="text-emerald-600"
           bgColor="bg-emerald-50"
         />
@@ -255,55 +214,22 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
           icon={Wallet}
           label={isRtl ? 'صافي الربح' : 'Net Profit'}
           value={fmtCurrency(stats.netProfit)}
-          subtext={stats.netProfit >= 0 ? `+${((stats.netProfit / Math.max(stats.totalRevenue, 1)) * 100).toFixed(1)}% ${isRtl ? 'هامش' : 'margin'}` : ''}
+          subtext={stats.netProfit >= 0 ? ('+' + ((stats.netProfit / Math.max(stats.totalRevenue, 1)) * 100).toFixed(1) + '% ' + (isRtl ? 'هامش' : 'margin')) : ''}
           color={stats.netProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}
           bgColor={stats.netProfit >= 0 ? 'bg-emerald-50' : 'bg-red-50'}
         />
       </div>
 
-      {/* Secondary stats */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        <MiniStat
-          icon={Users}
-          label={isRtl ? 'العمال اليوم' : 'Workers Today'}
-          value={`${stats.presentWorkers}`}
-          color="text-blue-600"
-        />
-        <MiniStat
-          icon={Wrench}
-          label={isRtl ? 'معدات متوقفة' : 'Stopped Eq.'}
-          value={`${stats.stoppedEquipment}`}
-          color="text-red-600"
-        />
-        <MiniStat
-          icon={AlertTriangle}
-          label={isRtl ? 'تنبيهات' : 'Alerts'}
-          value={`${stats.unreadNotifications}`}
-          color="text-orange-600"
-        />
-        <MiniStat
-          icon={TrendingUp}
-          label={isRtl ? 'الإيراد اليوم' : "Today's Rev."}
-          value={fmtCurrency(stats.revenueToday)}
-          color="text-emerald-600"
-        />
-        <MiniStat
-          icon={TrendingDown}
-          label={isRtl ? 'تكاليف الشهر' : 'Month Costs'}
-          value={fmtCurrency(stats.monthCosts)}
-          color="text-purple-600"
-        />
-        <MiniStat
-          icon={Activity}
-          label={isRtl ? 'أمتار الشهر' : 'Month Meters'}
-          value={`${fmt(stats.metersThisMonth)} م`}
-          color="text-cyan-600"
-        />
+        <MiniStat icon={Users} label={isRtl ? 'العمال اليوم' : 'Workers Today'} value={'' + stats.presentWorkers} color="text-blue-600" />
+        <MiniStat icon={Wrench} label={isRtl ? 'معدات متوقفة' : 'Stopped Eq.'} value={'' + stats.stoppedEquipment} color="text-red-600" />
+        <MiniStat icon={AlertTriangle} label={isRtl ? 'تنبيهات' : 'Alerts'} value={'' + stats.unreadNotifications} color="text-orange-600" />
+        <MiniStat icon={TrendingUp} label={isRtl ? 'الإيراد اليوم' : "Today's Rev."} value={fmtCurrency(stats.revenueToday)} color="text-emerald-600" />
+        <MiniStat icon={TrendingDown} label={isRtl ? 'تكاليف الشهر' : 'Month Costs'} value={fmtCurrency(stats.monthCosts)} color="text-purple-600" />
+        <MiniStat icon={Activity} label={isRtl ? 'أمتار الشهر' : 'Month Meters'} value={fmt(stats.metersThisMonth) + ' م'} color="text-cyan-600" />
       </div>
 
-      {/* Charts row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Production trend */}
         <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -332,8 +258,8 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
                 <YAxis tick={{ fontSize: 11, fill: '#6b7280' }} orientation={isRtl ? 'right' : 'left'} />
                 <Tooltip
                   contentStyle={{ direction: isRtl ? 'rtl' : 'ltr', borderRadius: 8, border: '1px solid #e5e7eb', fontSize: 12 }}
-                  formatter={(value: any, name: any) => {
-                    if (name === 'meters') return [`${fmt(value)} ${isRtl ? 'م' : 'm'}`, isRtl ? 'الأمتار' : 'Meters']
+                  formatter={function(value: any, name: any) {
+                    if (name === 'meters') return [fmt(value) + ' ' + (isRtl ? 'م' : 'm'), isRtl ? 'الأمتار' : 'Meters']
                     if (name === 'revenue') return [fmtCurrency(value), isRtl ? 'الإيراد' : 'Revenue']
                     if (name === 'profit') return [fmtCurrency(value), isRtl ? 'الربح' : 'Profit']
                     return [value, name]
@@ -346,7 +272,6 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
           </CardContent>
         </Card>
 
-        {/* Cost breakdown pie */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -373,16 +298,16 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
                     outerRadius={90}
                     paddingAngle={2}
                   >
-                    {costsByCategory.map((entry, idx) => (
-                      <Cell key={idx} fill={categoryColors[entry.category] || '#94a3b8'} />
-                    ))}
+                    {costsByCategory.map(function(entry, idx) {
+                      return <Cell key={idx} fill={categoryColors[entry.category] || '#94a3b8'} />
+                    })}
                   </Pie>
                   <Tooltip
                     contentStyle={{ direction: isRtl ? 'rtl' : 'ltr', borderRadius: 8, fontSize: 12 }}
-                    formatter={(value: any, _name: any, props: any) => [fmtCurrency(value), categoryLabelsAr[props.payload.category] || props.payload.category]}
+                    formatter={function(value: any, _name: any, props: any) { return [fmtCurrency(value), categoryLabelsAr[props.payload.category] || props.payload.category] }}
                   />
                   <Legend
-                    formatter={(value) => categoryLabelsAr[value] || value}
+                    formatter={function(value) { return categoryLabelsAr[value] || value }}
                     wrapperStyle={{ fontSize: 11 }}
                   />
                 </PieChart>
@@ -392,7 +317,6 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
         </Card>
       </div>
 
-      {/* Projects progress + Best/Worst */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <Card className="lg:col-span-2">
           <CardHeader>
@@ -401,7 +325,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
                 <FolderKanban className="h-5 w-5 text-primary" />
                 {isRtl ? 'تقدم المشاريع' : 'Project Progress'}
               </span>
-              <Button variant="ghost" size="sm" onClick={() => onNavigate('projects')}>
+              <Button variant="ghost" size="sm" onClick={function() { onNavigate('projects') }}>
                 {isRtl ? 'عرض الكل' : 'View all'}
                 <ArrowLeft className="h-4 w-4 mr-1 rtl:rotate-180" />
               </Button>
@@ -413,20 +337,22 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
                 {isRtl ? 'لا توجد مشاريع' : 'No projects'}
               </div>
             ) : (
-              projects.map((p) => (
-                <div key={p.id} className="space-y-1.5">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-sm truncate">{p.name}</p>
-                      <p className="text-xs text-muted-foreground">{p.code} • {p.client}</p>
+              projects.map(function(p) {
+                return (
+                  <div key={p.id} className="space-y-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-sm truncate">{p.name}</p>
+                        <p className="text-xs text-muted-foreground">{p.code} • {p.client}</p>
+                      </div>
+                      <div className="text-left shrink-0">
+                        <span className="font-semibold text-sm">{p.progress.toFixed(1)}%</span>
+                      </div>
                     </div>
-                    <div className="text-left shrink-0">
-                      <span className="font-semibold text-sm">{p.progress.toFixed(1)}%</span>
-                    </div>
+                    <Progress value={p.progress} className="h-2" />
                   </div>
-                  <Progress value={p.progress} className="h-2" />
-                </div>
-              ))
+                )
+              })
             )}
           </CardContent>
         </Card>
@@ -475,7 +401,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
                   </div>
                   <div className="flex-1">
                     <p className="font-semibold text-sm">{stats.stoppedEquipment} {isRtl ? 'معدة متوقفة' : 'Stopped Equipment'}</p>
-                    <Button variant="link" size="sm" className="p-0 h-auto text-xs" onClick={() => onNavigate('equipment')}>
+                    <Button variant="link" size="sm" className="p-0 h-auto text-xs" onClick={function() { onNavigate('equipment') }}>
                       {isRtl ? 'عرض التفاصيل' : 'View details'}
                     </Button>
                   </div>
@@ -486,7 +412,6 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
         </div>
       </div>
 
-      {/* Recent reports + Equipment status */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card>
           <CardHeader>
@@ -495,7 +420,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
                 <Calendar className="h-5 w-5 text-primary" />
                 {isRtl ? 'التقارير الأخيرة' : 'Recent Reports'}
               </span>
-              <Button variant="ghost" size="sm" onClick={() => onNavigate('dailyReports')}>
+              <Button variant="ghost" size="sm" onClick={function() { onNavigate('dailyReports') }}>
                 {isRtl ? 'عرض الكل' : 'View all'}
                 <ArrowLeft className="h-4 w-4 mr-1 rtl:rotate-180" />
               </Button>
@@ -507,28 +432,30 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
                 {isRtl ? 'لا توجد تقارير' : 'No reports'}
               </div>
             ) : (
-              recentReports.slice(0, 8).map((r) => (
-                <div key={r.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 transition">
-                  <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                    <Calendar className="h-4 w-4 text-primary" />
+              recentReports.slice(0, 8).map(function(r) {
+                return (
+                  <div key={r.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 transition">
+                    <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                      <Calendar className="h-4 w-4 text-primary" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm truncate">{r.project?.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {new Date(r.reportDate).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')} • {r.driveLine?.lineNumber || '-'}
+                      </p>
+                    </div>
+                    <div className="text-left shrink-0">
+                      <p className="font-semibold text-sm">{r.dailyMeters} {isRtl ? 'م' : 'm'}</p>
+                      <Badge variant={r.status === 'approved' ? 'default' : r.status === 'rejected' ? 'destructive' : 'secondary'} className="text-xs">
+                        {r.status === 'approved' ? (isRtl ? 'معتمد' : 'Approved') :
+                         r.status === 'submitted' ? (isRtl ? 'مرسل' : 'Submitted') :
+                         r.status === 'rejected' ? (isRtl ? 'مرفوض' : 'Rejected') :
+                         (isRtl ? 'مسودة' : 'Draft')}
+                      </Badge>
+                    </div>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-sm truncate">{r.project?.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {new Date(r.reportDate).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')} • {r.driveLine?.lineNumber || '-'}
-                    </p>
-                  </div>
-                  <div className="text-left shrink-0">
-                    <p className="font-semibold text-sm">{r.dailyMeters} {isRtl ? 'م' : 'm'}</p>
-                    <Badge variant={r.status === 'approved' ? 'default' : r.status === 'rejected' ? 'destructive' : 'secondary'} className="text-xs">
-                      {r.status === 'approved' ? (isRtl ? 'معتمد' : 'Approved') :
-                       r.status === 'submitted' ? (isRtl ? 'مرسل' : 'Submitted') :
-                       r.status === 'rejected' ? (isRtl ? 'مرفوض' : 'Rejected') :
-                       (isRtl ? 'مسودة' : 'Draft')}
-                    </Badge>
-                  </div>
-                </div>
-              ))
+                )
+              })
             )}
           </CardContent>
         </Card>
@@ -540,7 +467,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
                 <Cpu className="h-5 w-5 text-primary" />
                 {isRtl ? 'حالة المعدات' : 'Equipment Status'}
               </span>
-              <Button variant="ghost" size="sm" onClick={() => onNavigate('equipment')}>
+              <Button variant="ghost" size="sm" onClick={function() { onNavigate('equipment') }}>
                 {isRtl ? 'عرض الكل' : 'View all'}
                 <ArrowLeft className="h-4 w-4 mr-1 rtl:rotate-180" />
               </Button>
@@ -552,31 +479,31 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
                 {isRtl ? 'لا توجد معدات' : 'No equipment'}
               </div>
             ) : (
-              equipment.map((eq) => (
-                <div key={eq.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 transition">
-                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
-                    eq.status === 'operational' ? 'bg-emerald-100' :
-                    eq.status === 'stopped' ? 'bg-red-100' : 'bg-orange-100'
-                  }`}>
-                    <Wrench className={`h-4 w-4 ${
-                      eq.status === 'operational' ? 'text-emerald-600' :
-                      eq.status === 'stopped' ? 'text-red-600' : 'text-orange-600'
-                    }`} />
+              equipment.map(function(eq) {
+                return (
+                  <div key={eq.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 transition">
+                    <div className={'w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ' +
+                      (eq.status === 'operational' ? 'bg-emerald-100' :
+                       eq.status === 'stopped' ? 'bg-red-100' : 'bg-orange-100')}>
+                      <Wrench className={'h-4 w-4 ' +
+                        (eq.status === 'operational' ? 'text-emerald-600' :
+                         eq.status === 'stopped' ? 'text-red-600' : 'text-orange-600')} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm truncate">{eq.name}</p>
+                      <p className="text-xs text-muted-foreground">{eq.number} • {eq.project?.name || '-'}</p>
+                    </div>
+                    <Badge variant={
+                      eq.status === 'operational' ? 'default' :
+                      eq.status === 'stopped' ? 'destructive' : 'secondary'
+                    } className="text-xs">
+                      {eq.status === 'operational' ? (isRtl ? 'تعمل' : 'Operational') :
+                       eq.status === 'stopped' ? (isRtl ? 'متوقفة' : 'Stopped') :
+                       (isRtl ? 'تحتاج صيانة' : 'Maintenance')}
+                    </Badge>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-sm truncate">{eq.name}</p>
-                    <p className="text-xs text-muted-foreground">{eq.number} • {eq.project?.name || '-'}</p>
-                  </div>
-                  <Badge variant={
-                    eq.status === 'operational' ? 'default' :
-                    eq.status === 'stopped' ? 'destructive' : 'secondary'
-                  } className="text-xs">
-                    {eq.status === 'operational' ? (isRtl ? 'تعمل' : 'Operational') :
-                     eq.status === 'stopped' ? (isRtl ? 'متوقفة' : 'Stopped') :
-                     (isRtl ? 'تحتاج صيانة' : 'Maintenance')}
-                  </Badge>
-                </div>
-              ))
+                )
+              })
             )}
           </CardContent>
         </Card>
@@ -599,8 +526,8 @@ function StatCard({
             <p className="text-2xl font-bold mt-1 truncate">{value}</p>
             {subtext && <p className="text-xs text-muted-foreground mt-1 truncate">{subtext}</p>}
           </div>
-          <div className={`w-10 h-10 rounded-lg ${bgColor} flex items-center justify-center shrink-0`}>
-            <Icon className={`h-5 w-5 ${color}`} />
+          <div className={'w-10 h-10 rounded-lg ' + bgColor + ' flex items-center justify-center shrink-0'}>
+            <Icon className={'h-5 w-5 ' + color} />
           </div>
         </div>
       </CardContent>
@@ -613,7 +540,7 @@ function MiniStat({ icon: Icon, label, value, color }: { icon: any; label: strin
     <Card>
       <CardContent className="p-3">
         <div className="flex items-center gap-2">
-          <Icon className={`h-4 w-4 ${color} shrink-0`} />
+          <Icon className={'h-4 w-4 ' + color + ' shrink-0'} />
           <div className="min-w-0">
             <p className="text-xs text-muted-foreground truncate">{label}</p>
             <p className="font-semibold text-sm truncate">{value}</p>
