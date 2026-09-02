@@ -77,6 +77,12 @@ export function clearStoredToken(): void {
  * Authenticated fetch - drop-in replacement for fetch()
  * Automatically adds Authorization header with JWT token from localStorage
  * Use this for ALL API requests to ensure authentication works
+ *
+ * NOTE: 401 responses are returned to the caller — they are NOT silently
+ * auto-cleared here. Clearing the session on any transient 401 would
+ * freeze the UI (AppShell returns null when user is null). Instead, the
+ * caller decides what to do. The login flow's `/api/auth/me` check is
+ * the single source of truth for "is the session still valid?".
  */
 export async function authedFetch(
   url: string,
@@ -92,6 +98,7 @@ export async function authedFetch(
   // Add no-cache header if requested
   if (options.noCache) {
     headers['Cache-Control'] = 'no-cache'
+    headers['Pragma'] = 'no-cache'
   }
 
   // Add Authorization header if we have a token
@@ -109,22 +116,10 @@ export async function authedFetch(
     ...fetchOptions,
     headers,
     credentials: 'include',
+    // Never let the browser cache authenticated GET responses —
+    // otherwise stale empty lists can persist across logins.
+    cache: options.method && options.method !== 'GET' ? 'default' : 'no-store',
   })
-
-  // If unauthorized, clear session (but don't throw - let caller handle the 401)
-  if (res.status === 401) {
-    const state = useAppStore.getState()
-    state.setUser(null)
-    state.setToken(null)
-    // Also clear localStorage
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.removeItem(TOKEN_KEY)
-      } catch {
-        // ignore
-      }
-    }
-  }
 
   return res
 }
