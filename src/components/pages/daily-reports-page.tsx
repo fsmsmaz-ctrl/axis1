@@ -52,7 +52,7 @@ export default function DailyReportsPage() {
   const isRtl = language === 'ar'
 
   const [formData, setFormData] = useState({
-    projectId: '', driveLineId: '', reportDate: new Date().toISOString().split('T')[0],
+    projectId: '', driveLineId: '', reportDate: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0],
     weather: 'sunny', workStartTime: '06:30', workEndTime: '17:00',
     operatingHours: '8.5', stoppageHours: '0', stoppageReason: '',
     workersCount: '12', attendees: '', startReading: '', endReading: '',
