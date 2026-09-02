@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
       // so reports created on the same day show newest-entry-first.
       orderBy: [{ reportDate: 'desc' }, { createdAt: 'desc' }],
       include: {
-        project: { select: { id: true, name: true, code: true, pricePerMeter: true } },
+        project: { select: { id: true, name: true, code: true } },
         driveLine: { select: { id: true, lineNumber: true, totalLength: true } },
         safety: true,
         createdBy: { select: { name: true, nameEn: true } },
@@ -100,7 +100,7 @@ export async function POST(req: NextRequest) {
           )
         : Promise.resolve({ success: false as const, response: NextResponse.json({ skip: true }) }),
       safeDbOp(
-        () => db.project.findUnique({ where: { id: body.projectId }, select: { pricePerMeter: true } }),
+        () => db.project.findUnique({ where: { id: body.projectId }, select: { id: true } }),
         'جلب بيانات المشروع'
       ),
     ])
@@ -109,9 +109,6 @@ export async function POST(req: NextRequest) {
     const totalMeters = endReading
     const remainingMeters = Math.max(0, totalLength - totalMeters)
     const progressPercent = totalLength > 0 ? (totalMeters / totalLength) * 100 : 0
-
-    const pricePerMeter = projResult.success && projResult.data ? projResult.data.pricePerMeter : 0
-    const dailyRevenue = dailyMeters * pricePerMeter
 
     const createResult = await safeDbOp(
       () => db.dailyReport.create({
@@ -137,7 +134,6 @@ export async function POST(req: NextRequest) {
           pipesInstalled: parseInt(body.pipesInstalled) || 0,
           productionNotes: body.productionNotes || null,
           problems: body.problems || null,
-          dailyRevenue,
           status: body.status || 'draft',
           createdById: user.id,
         },
