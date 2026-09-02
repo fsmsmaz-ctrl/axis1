@@ -143,6 +143,10 @@ export default function ReportsPage() {
         // All of these come from the daily reports log (filters: project + period)
         const res = await authedFetch('/api/daily-reports?' + qs)
         data = await res.json()
+        // تقرير الإيراد: التقارير المعتمدة فقط — الإيراد لا يُعترف به قبل الاعتماد
+        if (selectedReport === 'revenue') {
+          data.reports = (data.reports || []).filter((r: any) => r.status === 'approved')
+        }
       } else if (selectedReport === 'costs') {
         const res = await authedFetch('/api/costs?' + qs)
         data = await res.json()
@@ -155,7 +159,9 @@ export default function ReportsPage() {
         const rev = await revRes.json()
         const cost = await costRes.json()
         const reports = rev.reports || []
-        const totalRevenue = reports.reduce((s: number, r: any) => s + (Number(r.dailyRevenue) || 0), 0)
+        // الإيراد في تقرير الربح: من التقارير المعتمدة فقط
+        const approvedReports = reports.filter((r: any) => r.status === 'approved')
+        const totalRevenue = approvedReports.reduce((s: number, r: any) => s + (Number(r.dailyRevenue) || 0), 0)
         const totalCosts = Number(cost.grandTotal) || 0
         data = { reports, byCategory: cost.byCategory || [], totalRevenue, totalCosts, netProfit: totalRevenue - totalCosts }
       } else if (selectedReport === 'equipment') {
@@ -175,7 +181,9 @@ export default function ReportsPage() {
         const cost = await costRes.json()
         const reports = rev.reports || []
         const totalMeters = reports.reduce((s: number, r: any) => s + (Number(r.dailyMeters) || 0), 0)
-        const totalRevenue = reports.reduce((s: number, r: any) => s + (Number(r.dailyRevenue) || 0), 0)
+        // الإيراد في التقرير الشهري/الأسبوعي: من التقارير المعتمدة فقط
+        const totalRevenue = reports.filter((r: any) => r.status === 'approved')
+          .reduce((s: number, r: any) => s + (Number(r.dailyRevenue) || 0), 0)
         const totalCosts = Number(cost.grandTotal) || 0
         const progressProjects = selectedProject !== 'all'
           ? projects.filter((p: any) => p.id === selectedProject)
@@ -587,6 +595,9 @@ function ReportPreview({ data }: { data: any }) {
                 {' '}{fmtNum((data.data.reports || []).reduce((s: number, r: any) => s + (Number(r.dailyRevenue) || 0), 0))} ر.ع
               </span>
             </p>
+            <p className="text-xs text-emerald-600/80 mt-0.5">
+              {isRtl ? 'يُحسب من التقارير المعتمدة فقط (الأمتار المحفورة × سعر المتر)' : 'From approved reports only (meters × price per meter)'}
+            </p>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
@@ -869,3 +880,4 @@ function ReportPreview({ data }: { data: any }) {
     </div>
   )
 }
+
