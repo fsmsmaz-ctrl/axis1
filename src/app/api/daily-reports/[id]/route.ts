@@ -62,7 +62,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     var existingResult = await safeDbOp(
       () => db.dailyReport.findUnique({
         where: { id },
-        select: { createdById: true, status: true, projectId: true, safetyLocked: true, driveLineId: true, reportDate: true },
+        select: { createdById: true, status: true, projectId: true, safetyLocked: true, driveLineId: true, reportDate: true, safety: { select: { id: true } } },
       }),
       'البحث عن التقرير'
     )
@@ -76,11 +76,15 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
     var body = await req.json()
 
-    // Enforce immutability: if safetyLocked, prevent changing locked fields
-    if (existingReport.safetyLocked) {
+    // بيانات السلامة (المشروع/خط الحفر/التاريخ/الطقس) للقراءة فقط — لا يمكن تعديلها
+    // يكفي وجود تقرير سلامة مرتبط (أو علم safetyLocked) لإثبات أن التقرير قادم من قسم السلامة
+    // — يشمل التقارير القديمة التي أُنشئت قبل تفعيل العلم
+    var fromSafety = !!existingReport.safetyLocked || !!existingReport.safety
+    if (fromSafety) {
       delete body.projectId
       delete body.driveLineId
       delete body.reportDate
+      delete body.weather
     }
 
     // بعد التسليم أو الاعتماد أو الرفض: التعديل لمدير النظام (admin@axis.om) فقط
@@ -127,9 +131,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         where: { id },
         data: {
           projectId: existingReport.projectId,
-          driveLineId: existingReport.safetyLocked ? existingReport.driveLineId : (body.driveLineId || null),
+          driveLineId: fromSafety ? existingReport.driveLineId : (body.driveLineId || null),
           reportDate: existingReport.reportDate,
-          weather: body.weather || null,
+          weather: fromSafety ? existingReport.weather : (body.weather || null),
           workStartTime: body.workStartTime || null,
           workEndTime: body.workEndTime || null,
           operatingHours: parseFloat(body.operatingHours) || 0,
@@ -160,7 +164,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
     // CRITICAL: Recalculate progress after editing a report
     // Determine which drive line(s) to recalculate
-    var newDriveLineId = existingReport.safetyLocked ? existingReport.driveLineId : (body.driveLineId || null)
+    var newDriveLineId = fromSafety ? existingReport.driveLineId : (body.driveLineId || null)
     if (newDriveLineId) {
       // If drive line changed, also recalc the old one
       if (existingReport.driveLineId && existingReport.driveLineId !== newDriveLineId) {
