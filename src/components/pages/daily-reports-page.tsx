@@ -17,7 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   FileText, Calendar, Users, Ruler, AlertTriangle,
   ShieldCheck, CheckCircle2, Clock, DollarSign, Eye, Check, X, Pencil, Trash2,
-  AlertCircle, RefreshCw, Loader2, Send
+  AlertCircle, RefreshCw, Loader2, Send, Lock
 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
@@ -75,6 +75,11 @@ export default function DailyReportsPage() {
     fireExtinguishers: false, workPermit: false, toolboxTalk: false,
     hazards: '', observations: '', violations: '', incidentType: 'none', incidentDescription: '',
   })
+
+  // لقطات بيانات السلامة عند فتح التعديل — تُعرض للقراءة فقط
+  // (بديل موثوق إذا لم تكن قوائم المشاريع/الخطوط محملة بعد)
+  const [editProjectNameFallback, setEditProjectNameFallback] = useState('')
+  const [editDriveLineFallback, setEditDriveLineFallback] = useState('')
 
 
   // Track the in-flight request so we don't fire duplicates when StrictMode
@@ -201,6 +206,9 @@ export default function DailyReportsPage() {
     setEditingReportId(report.id)
     setEditingStatus(report.status || 'draft')
     setSaveMode('draft')
+    // لقطات للقراءة فقط: المشروع وخط الحفر قادمان من قسم السلامة ولا يمكن تغييرهما
+    setEditProjectNameFallback(report.project?.name || '')
+    setEditDriveLineFallback(report.driveLine ? String(report.driveLine.lineNumber) : '')
     setFormData({
       projectId: report.projectId || '',
       driveLineId: report.driveLineId || '',
@@ -274,8 +282,16 @@ export default function DailyReportsPage() {
       // الإنشاء: تُحفظ كمسودة — عند التعديل: الخادم يحافظ على الحالة الحالية
       // إلا مع "حفظ وتسليم" للمسودة فتصبح مرسلة
       const body: Record<string, unknown> = { ...formData }
-      if (!editingReportId) body.status = 'draft'
-      else if (opts?.submitAfter && editingStatus === 'draft') body.status = 'submitted'
+      if (!editingReportId) {
+        body.status = 'draft'
+      } else {
+        // بيانات السلامة (المشروع/خط الحفر/التاريخ/الطقس) للقراءة فقط — لا تُرسل عند التعديل
+        delete body.projectId
+        delete body.driveLineId
+        delete body.reportDate
+        delete body.weather
+        if (opts?.submitAfter && editingStatus === 'draft') body.status = 'submitted'
+      }
 
       const res = await authedFetch(url, {
         method,
@@ -390,6 +406,23 @@ export default function DailyReportsPage() {
   const isSupervisor = user?.role === 'foreman'
   // الاعتماد — مدير النظام أو من لديه صلاحية الوصول للوحة التحكم فقط
   const canApprove = canAccessDashboard(user)
+
+  // تسميات القراءة فقط لبيانات السلامة في وضع التعديل
+  const editProjectName = projects.find((p) => p.id === formData.projectId)?.name || editProjectNameFallback
+  const editDriveLine = driveLines.find((l) => l.id === formData.driveLineId)
+  const editDriveLineLabel = editDriveLine
+    ? `${editDriveLine.lineNumber} - ${editDriveLine.startPoint} → ${editDriveLine.endPoint}`
+    : editDriveLineFallback
+  const editWeatherLabel = weatherLabels[formData.weather]
+    ? (isRtl ? weatherLabels[formData.weather].ar : weatherLabels[formData.weather].en)
+    : (formData.weather || '—')
+  // رسالة القفل الموحدة لبيانات السلامة
+  const safetyLockHint = (
+    <p className="text-[11px] text-muted-foreground flex items-center gap-1 mt-1">
+      <Lock className="h-3 w-3 shrink-0" />
+      {isRtl ? 'بيانات من قسم السلامة — للقراءة فقط' : 'From Safety section — read-only'}
+    </p>
+  )
 
   return (
     <div className="space-y-4">
@@ -678,41 +711,69 @@ export default function DailyReportsPage() {
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1.5">
                         <Label>{isRtl ? 'المشروع' : 'Project'} *</Label>
-                        <Select value={formData.projectId} onValueChange={(v) => setFormData({ ...formData, projectId: v, driveLineId: '' })}>
-                          <SelectTrigger><SelectValue placeholder={isRtl ? 'اختر' : 'Select'} /></SelectTrigger>
-                          <SelectContent>
-                            {projects.map((p) => (
-                              <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        {editingReportId ? (
+                          <div>
+                            <Input value={editProjectName || '—'} disabled readOnly dir="ltr" className="bg-muted/60 text-muted-foreground cursor-not-allowed" />
+                            {safetyLockHint}
+                          </div>
+                        ) : (
+                          <Select value={formData.projectId} onValueChange={(v) => setFormData({ ...formData, projectId: v, driveLineId: '' })}>
+                            <SelectTrigger><SelectValue placeholder={isRtl ? 'اختر' : 'Select'} /></SelectTrigger>
+                            <SelectContent>
+                              {projects.map((p) => (
+                                <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
                       </div>
                       <div className="space-y-1.5">
                         <Label>{isRtl ? 'خط الحفر' : 'Drive Line'}</Label>
-                        <Select value={formData.driveLineId} onValueChange={(v) => setFormData({ ...formData, driveLineId: v })}>
-                          <SelectTrigger><SelectValue placeholder={isRtl ? 'اختر' : 'Select'} /></SelectTrigger>
-                          <SelectContent>
-                            {driveLines.map((l) => (
-                              <SelectItem key={l.id} value={l.id}>{l.lineNumber} - {l.startPoint} → {l.endPoint}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        {editingReportId ? (
+                          <div>
+                            <Input value={editDriveLineLabel || '—'} disabled readOnly dir="ltr" className="bg-muted/60 text-muted-foreground cursor-not-allowed" />
+                            {safetyLockHint}
+                          </div>
+                        ) : (
+                          <Select value={formData.driveLineId} onValueChange={(v) => setFormData({ ...formData, driveLineId: v })}>
+                            <SelectTrigger><SelectValue placeholder={isRtl ? 'اختر' : 'Select'} /></SelectTrigger>
+                            <SelectContent>
+                              {driveLines.map((l) => (
+                                <SelectItem key={l.id} value={l.id}>{l.lineNumber} - {l.startPoint} → {l.endPoint}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
                       </div>
                       <div className="space-y-1.5">
                         <Label>{isRtl ? 'التاريخ' : 'Date'} *</Label>
-                        <Input type="date" value={formData.reportDate} onChange={(e) => setFormData({ ...formData, reportDate: e.target.value })} />
+                        {editingReportId ? (
+                          <div>
+                            <Input type="date" value={formData.reportDate} disabled readOnly className="bg-muted/60 text-muted-foreground cursor-not-allowed" />
+                            {safetyLockHint}
+                          </div>
+                        ) : (
+                          <Input type="date" value={formData.reportDate} onChange={(e) => setFormData({ ...formData, reportDate: e.target.value })} />
+                        )}
                       </div>
                       <div className="space-y-1.5">
                         <Label>{isRtl ? 'الطقس' : 'Weather'}</Label>
-                        <Select value={formData.weather} onValueChange={(v) => setFormData({ ...formData, weather: v })}>
-                          <SelectTrigger><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="sunny">{isRtl ? 'مشمس' : 'Sunny'}</SelectItem>
-                            <SelectItem value="cloudy">{isRtl ? 'غائم' : 'Cloudy'}</SelectItem>
-                            <SelectItem value="rainy">{isRtl ? 'ممطر' : 'Rainy'}</SelectItem>
-                            <SelectItem value="windy">{isRtl ? 'عاصف' : 'Windy'}</SelectItem>
-                          </SelectContent>
-                        </Select>
+                        {editingReportId ? (
+                          <div>
+                            <Input value={editWeatherLabel} disabled readOnly className="bg-muted/60 text-muted-foreground cursor-not-allowed" />
+                            {safetyLockHint}
+                          </div>
+                        ) : (
+                          <Select value={formData.weather} onValueChange={(v) => setFormData({ ...formData, weather: v })}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="sunny">{isRtl ? 'مشمس' : 'Sunny'}</SelectItem>
+                              <SelectItem value="cloudy">{isRtl ? 'غائم' : 'Cloudy'}</SelectItem>
+                              <SelectItem value="rainy">{isRtl ? 'ممطر' : 'Rainy'}</SelectItem>
+                              <SelectItem value="windy">{isRtl ? 'عاصف' : 'Windy'}</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        )}
                       </div>
                       <div className="space-y-1.5">
                         <Label>{isRtl ? 'بداية العمل' : 'Work Start'}</Label>
