@@ -16,7 +16,8 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Plus, FileText, Calendar, Users, Ruler, AlertTriangle,
-  ShieldCheck, CheckCircle2, Clock, DollarSign, Eye, Check, X, Pencil, Trash2
+  ShieldCheck, CheckCircle2, Clock, DollarSign, Eye, Check, X, Pencil, Trash2,
+  AlertCircle, RefreshCw, Loader2
 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
@@ -41,11 +42,13 @@ export default function DailyReportsPage() {
   const [projects, setProjects] = useState<any[]>([])
   const [driveLines, setDriveLines] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [selectedProject, setSelectedProject] = useState<string>('all')
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingReportId, setEditingReportId] = useState<string | null>(null)
   const [viewReport, setViewReport] = useState<any | null>(null)
   const [viewDialogOpen, setViewDialogOpen] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
   const language = useAppStore((s) => s.language)
   const token = useAppStore((s) => s.token)
   const user = useAppStore((s) => s.user)
@@ -73,19 +76,62 @@ export default function DailyReportsPage() {
 
   async function fetchReports() {
     setLoading(true)
-    const params = new URLSearchParams()
-    if (selectedProject !== 'all') params.set('projectId', selectedProject)
-    params.set('limit', '100')
-    const res = await authedFetch('/api/daily-reports?' + params.toString())
-    const data = await res.json()
-    setReports(data.reports || [])
-    setLoading(false)
+    setLoadError(null)
+    try {
+      // Add a 15-second timeout so the user never waits forever.
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 15000)
+      const params = new URLSearchParams()
+      if (selectedProject !== 'all') params.set('projectId', selectedProject)
+      params.set('limit', '200')
+      const res = await authedFetch('/api/daily-reports?' + params.toString(), {
+        signal: controller.signal,
+      })
+      clearTimeout(timeout)
+
+      // If unauthorized, the authedFetch helper already clears the session.
+      // Just bail out — the AppShell will redirect to login.
+      if (res.status === 401) {
+        setLoadError(isRtl ? 'انتهت الجلسة - يرجى إعادة تسجيل الدخول' : 'Session expired - please login again')
+        return
+      }
+
+      let data: any = {}
+      try { data = await res.json() } catch { /* empty body */ }
+
+      if (!res.ok) {
+        const msg = data?.message || data?.error || ('Error ' + res.status)
+        setLoadError(msg)
+        toast.error(msg)
+        return
+      }
+
+      // Ensure we always have an array even if the API returns null/undefined.
+      const list = Array.isArray(data.reports) ? data.reports : []
+      setReports(list)
+      if (list.length === 0) {
+        console.info('[DailyReports] No reports found — list is empty')
+      }
+    } catch (e: any) {
+      const msg = e?.name === 'AbortError'
+        ? (isRtl ? 'انتهت مهلة الطلب - تحقق من سرعة الإنترنت' : 'Request timed out')
+        : (e?.message || (isRtl ? 'فشل تحميل التقارير' : 'Failed to load reports'))
+      setLoadError(msg)
+      toast.error(msg)
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function fetchProjects() {
-    const res = await authedFetch('/api/projects/list')
-    const data = await res.json()
-    setProjects(data.projects || [])
+    try {
+      const res = await authedFetch('/api/projects/list')
+      if (!res.ok) return
+      const data = await res.json().catch(() => ({}))
+      setProjects(Array.isArray(data.projects) ? data.projects : [])
+    } catch {
+      // Silent — projects list is non-critical for showing reports.
+    }
   }
 
   useEffect(() => {
@@ -94,12 +140,22 @@ export default function DailyReportsPage() {
     fetchProjects()
   }, [selectedProject, token])
 
+  // Fetch drive lines for selected project in form (used in dialog).
   useEffect(() => {
-    if (formData.projectId) {
-      fetch(`/api/drive-lines?projectId=${formData.projectId}`)
-        .then(r => r.json())
-        .then(d => setDriveLines(d.driveLines || []))
+    if (!formData.projectId) {
+      setDriveLines([])
+      return
     }
+    let cancelled = false
+    authedFetch(`/api/drive-lines?projectId=${encodeURIComponent(formData.projectId)}`)
+      .then((r) => r.json().catch(() => ({})))
+      .then((d) => {
+        if (!cancelled) setDriveLines(Array.isArray(d.driveLines) ? d.driveLines : [])
+      })
+      .catch(() => {
+        if (!cancelled) setDriveLines([])
+      })
+    return () => { cancelled = true }
   }, [formData.projectId])
 
   function openCreate() {
@@ -181,9 +237,12 @@ export default function DailyReportsPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    if (submitting) return
+    setSubmitting(true)
 
     if (!editingReportId && !allSafetyPassed) {
       toast.error(isRtl ? 'يجب إكمال جميع فحوصات السلامة أولاً' : 'Complete all safety checks first')
+      setSubmitting(false)
       return
     }
 
@@ -197,22 +256,30 @@ export default function DailyReportsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       })
-      const data = await res.json()
+      const data = await res.json().catch(() => ({}))
 
       if (!res.ok) {
-        toast.error(editingReportId
+        const msg = data?.message || data?.error || (editingReportId
           ? (isRtl ? 'فشل تحديث التقرير' : 'Failed to update report')
           : (isRtl ? 'فشل إنشاء التقرير' : 'Failed to create report'))
+        toast.error(msg)
+        setSubmitting(false)
         return
       }
 
-      // Only save safety checklist for new reports
+      // Only save safety checklist for new reports — use authedFetch
+      // (the previous version used plain fetch which silently failed with 401).
       if (!editingReportId) {
-        await fetch(`/api/daily-reports/${data.report.id}/safety`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(safety),
-        })
+        try {
+          await authedFetch(`/api/daily-reports/${data.report.id}/safety`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(safety),
+          })
+        } catch {
+          // Safety save failure is not critical — report is already created.
+          console.warn('[DailyReports] Safety save failed for', data.report.id)
+        }
         toast.success(isRtl ? 'تم إنشاء التقرير بنجاح' : 'Report created successfully')
       } else {
         toast.success(isRtl ? 'تم تحديث التقرير' : 'Report updated successfully')
@@ -220,31 +287,51 @@ export default function DailyReportsPage() {
 
       setDialogOpen(false)
       setEditingReportId(null)
-        fetchReports()
-    } catch {
-      toast.error(isRtl ? 'حدث خطأ' : 'Error')
+      fetchReports()
+    } catch (e: any) {
+      toast.error(e?.message || (isRtl ? 'حدث خطأ' : 'Error'))
+    } finally {
+      setSubmitting(false)
     }
   }
 
   async function approveReport(id: string, action: 'approve' | 'reject') {
-    const res = await fetch(`/api/daily-reports/${id}/approve`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action }),
-    })
-    if (res.ok) {
-      toast.success(action === 'approve' ? (isRtl ? 'تم الاعتماد' : 'Approved') : (isRtl ? 'تم الرفض' : 'Rejected'))
+    try {
+      // FIX: was plain `fetch` — replaced with authedFetch so the JWT
+      // token is sent. Without auth, the approve endpoint returns 401
+      // and the action silently fails.
+      const res = await authedFetch(`/api/daily-reports/${id}/approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action }),
+      })
+      if (res.ok) {
+        toast.success(action === 'approve'
+          ? (isRtl ? 'تم الاعتماد' : 'Approved')
+          : (isRtl ? 'تم الرفض' : 'Rejected'))
         fetchReports()
+      } else {
+        const body = await res.json().catch(() => ({}))
+        toast.error(body?.message || body?.error || (isRtl ? 'فشل العملية' : 'Action failed'))
+      }
+    } catch (e: any) {
+      toast.error(e?.message || (isRtl ? 'فشل الاتصال' : 'Network error'))
     }
   }
 
   async function viewReportDetails(report: any) {
     setViewReport(report)
     setViewDialogOpen(true)
-    // Fetch full details including safety
-    const res = await fetch(`/api/daily-reports/${report.id}`)
-    const data = await res.json()
-    setViewReport(data.report)
+    try {
+      // FIX: was plain `fetch`. Use authedFetch to avoid 401.
+      const res = await authedFetch(`/api/daily-reports/${report.id}`)
+      if (res.ok) {
+        const data = await res.json().catch(() => ({}))
+        if (data.report) setViewReport(data.report)
+      }
+    } catch {
+      // Keep the basic report data already set above.
+    }
   }
 
   const canApprove = user?.role === 'project_manager' || user?.role === 'top_management'
@@ -258,10 +345,17 @@ export default function DailyReportsPage() {
             {isRtl ? `${reports.length} تقرير` : `${reports.length} reports`}
           </p>
         </div>
-        <Button onClick={openCreate}>
-          <Plus className="h-4 w-4 ml-2" />
-          {isRtl ? 'تقرير جديد' : 'New Report'}
-        </Button>
+        <div className="flex gap-2">
+          {/* Quick refresh button so the user can reload without changing
+              the project filter. Helps when the previous load failed. */}
+          <Button variant="outline" size="icon" onClick={fetchReports} title={isRtl ? 'تحديث' : 'Refresh'}>
+            <RefreshCw className={'h-4 w-4 ' + (loading ? 'animate-spin' : '')} />
+          </Button>
+          <Button onClick={openCreate}>
+            <Plus className="h-4 w-4 ml-2" />
+            {isRtl ? 'تقرير جديد' : 'New Report'}
+          </Button>
+        </div>
       </div>
 
       <Select value={selectedProject} onValueChange={setSelectedProject}>
@@ -277,12 +371,50 @@ export default function DailyReportsPage() {
       </Select>
 
       {loading ? (
-        <div className="h-32 bg-muted animate-pulse rounded" />
+        // Skeleton: shows the approximate shape of a report row so the
+        // user sees immediate structure rather than a blank pulse.
+        <div className="space-y-2">
+          {[1, 2, 3, 4].map((i) => (
+            <Card key={i}>
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-muted animate-pulse" />
+                  <div className="flex-1 space-y-1.5">
+                    <div className="h-3.5 bg-muted animate-pulse rounded w-1/3" />
+                    <div className="h-3 bg-muted animate-pulse rounded w-1/2" />
+                  </div>
+                  <div className="h-7 bg-muted animate-pulse rounded w-32" />
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      ) : loadError ? (
+        // Error state with retry button — replaces the old silent-empty
+        // behaviour where any API failure just showed "No reports".
+        <Card className="border-red-200 bg-red-50/50">
+          <CardContent className="flex flex-col items-center justify-center py-12 gap-4">
+            <div className="w-14 h-14 rounded-full bg-red-100 flex items-center justify-center">
+              <AlertCircle className="h-7 w-7 text-red-600" />
+            </div>
+            <div className="text-center">
+              <p className="font-semibold text-red-800">{isRtl ? 'فشل تحميل التقارير' : 'Failed to load reports'}</p>
+              <p className="text-sm text-red-600/80 mt-1 max-w-md">{loadError}</p>
+            </div>
+            <Button variant="outline" onClick={fetchReports}>
+              <RefreshCw className="h-4 w-4 ml-2" />
+              {isRtl ? 'إعادة المحاولة' : 'Retry'}
+            </Button>
+          </CardContent>
+        </Card>
       ) : reports.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center">
             <FileText className="h-12 w-12 mx-auto text-muted-foreground/50" />
             <p className="mt-3 text-muted-foreground">{isRtl ? 'لا توجد تقارير' : 'No reports'}</p>
+            <p className="text-xs text-muted-foreground/70 mt-1">
+              {isRtl ? 'اضغط "تقرير جديد" لإضافة أول تقرير' : 'Click "New Report" to add the first one'}
+            </p>
           </CardContent>
         </Card>
       ) : (
@@ -586,10 +718,11 @@ export default function DailyReportsPage() {
           </div>
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => { setDialogOpen(false); setEditingReportId(null) }}>
+            <Button type="button" variant="outline" onClick={() => { setDialogOpen(false); setEditingReportId(null) }} disabled={submitting}>
               {isRtl ? 'إلغاء' : 'Cancel'}
             </Button>
-            <Button type="button" onClick={handleSubmit} disabled={!editingReportId && !allSafetyPassed}>
+            <Button type="button" onClick={handleSubmit} disabled={submitting || (!editingReportId && !allSafetyPassed)}>
+              {submitting && <Loader2 className="h-4 w-4 ml-2 animate-spin" />}
               {editingReportId ? (isRtl ? 'تحديث التقرير' : 'Update Report') : (isRtl ? 'حفظ التقرير' : 'Save Report')}
             </Button>
           </DialogFooter>
