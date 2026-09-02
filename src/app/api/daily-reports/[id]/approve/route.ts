@@ -27,10 +27,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   try {
     var existingResult = await safeDbOp(
-      () => db.dailyReport.findUnique({
-        where: { id },
-        include: { project: { select: { pricePerMeter: true } } },
-      }),
+      () => db.dailyReport.findUnique({ where: { id } }),
       'البحث عن التقرير'
     )
     if (!existingResult.success) return existingResult.response
@@ -47,10 +44,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       )
     }
 
-    var pricePerMeter = existingReport.project?.pricePerMeter || 0
-    var dailyMeters = Math.max(0, (existingReport.endReading || 0) - (existingReport.startReading || 0))
-    var dailyRevenue = dailyMeters * pricePerMeter
-
     var updateResult = await safeDbOp(
       () => db.dailyReport.update({
         where: { id },
@@ -58,7 +51,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           status: 'approved',
           approvedById: user!.id,
           approvedAt: new Date(),
-          dailyRevenue: dailyRevenue,
         },
       }),
       'اعتماد التقرير'
@@ -70,7 +62,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         data: {
           userId: user!.id, dailyReportId: id, projectId: existingReport.projectId,
           action: 'approve', entity: 'daily_report', entityId: id,
-          details: 'Approved daily report (revenue: ' + dailyRevenue + ' OMR)',
+          details: 'Approved daily report',
         },
       }),
       'سجل التدقيق'
