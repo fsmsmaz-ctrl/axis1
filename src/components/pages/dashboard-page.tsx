@@ -76,10 +76,6 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
   const isRtl = language === 'ar'
 
   async function fetchDashboard() {
-    if (!token) {
-      setLoading(false)
-      return
-    }
     setLoading(true)
     setError(null)
     try {
