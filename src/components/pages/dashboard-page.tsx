@@ -74,13 +74,28 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
   const language = useAppStore((s) => s.language)
   const token = useAppStore((s) => s.token)
   const isRtl = language === 'ar'
+  const [loadingSeconds, setLoadingSeconds] = useState(0)
 
   async function fetchDashboard() {
-    if (!token) return
+    // Read token directly from localStorage for reliability
+    let authToken = token
+    if (!authToken && typeof window !== 'undefined') {
+      try { authToken = localStorage.getItem('axis_token') } catch { /* ignore */ }
+    }
+    if (!authToken) {
+      console.warn('[Dashboard] No token available, skipping fetch')
+      setLoading(false)
+      return
+    }
     setLoading(true)
     setError(null)
+    setLoadingSeconds(0)
+    const timer = setInterval(() => setLoadingSeconds(s => s + 1), 1000)
     try {
-      const r = await authedFetch('/api/dashboard')
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 20000)
+      const r = await authedFetch('/api/dashboard', { signal: controller.signal })
+      clearTimeout(timeoutId)
       if (!r.ok) {
         const body = await r.json().catch(() => ({}))
         throw new Error(body?.details || body?.error || `Error ${r.status}`)
@@ -92,12 +107,25 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
       if (d._partialErrors?.length) {
         console.warn('[Dashboard] Partial errors in:', d._partialErrors)
       }
+      console.log('[Dashboard] Data received:', {
+        presentWorkers: d.stats?.presentWorkers,
+        revenueToday: d.stats?.revenueToday,
+        monthCosts: d.stats?.monthCosts,
+        metersThisMonth: d.stats?.metersThisMonth,
+        partialErrors: d._partialErrors,
+      })
       setData(d)
     } catch (e: any) {
       console.error('[Dashboard]', e)
-      setError(e.message || (isRtl ? 'خطأ في تحميل البيانات' : 'Failed to load data'))
+      if (e.name === 'AbortError') {
+        setError(isRtl ? 'انتهت مهلة الاتصال - يرجى المحاولة' : 'Connection timeout - please retry')
+      } else {
+        setError(e.message || (isRtl ? 'خطأ في تحميل البيانات' : 'Failed to load data'))
+      }
     } finally {
+      clearInterval(timer)
       setLoading(false)
+      setLoadingSeconds(0)
     }
   }
 
@@ -115,10 +143,21 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
             </CardContent>
           </Card>
         ))}
+        {loadingSeconds > 5 && (
+          <p className="text-center text-sm text-muted-foreground">
+            {isRtl ? `جاري تحميل البيانات... (${loadingSeconds} ثانية)` : `Loading data... (${loadingSeconds}s)`}
+          </p>
+        )}
+        {loadingSeconds > 12 && (
+          <div className="text-center">
+            <Button variant="outline" onClick={() => { fetchDashboard() }}>
+              {isRtl ? 'إعادة المحاولة' : 'Retry'}
+            </Button>
+          </div>
+        )}
       </div>
     )
   }
-
   if (error) {
     return (
       <Card className="border-red-200 bg-red-50/50">
@@ -137,8 +176,10 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
       </Card>
     )
   }
-
-  if (!data) return null
+  if (!data) {
+    setLoading(false)
+    return null
+  }
 
   const stats = data.stats || {
     activeProjects: 0, totalProjects: 0, metersToday: 0, metersThisMonth: 0,
