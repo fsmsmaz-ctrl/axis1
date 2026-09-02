@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
+import { SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 import { safeDbOp, handleDbError } from '@/lib/api-helpers'
@@ -10,9 +11,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
   }
 
-  // FIX: Use role-based check for consistency
-  if (user.role !== 'project_manager' && user.role !== 'top_management') {
-    return NextResponse.json({ error: 'forbidden', message: 'اعتماد التقارير متاح فقط لمدير المشاريع أو الإدارة العليا' }, { status: 403 })
+  // الاعتماد: مدير النظام (admin@axis.om) أو الإدارة العليا فقط — نفس مستخدمي لوحة التحكم
+  var isSystemAdmin = (user.email || '').toLowerCase().trim() === SYSTEM_ADMIN_EMAIL
+  if (!isSystemAdmin && user.role !== 'top_management') {
+    return NextResponse.json({ error: 'forbidden', message: 'اعتماد التقارير متاح فقط لمدير النظام أو الإدارة العليا' }, { status: 403 })
   }
 
   var rl = checkRateLimit(req, RateLimitPresets.write)
