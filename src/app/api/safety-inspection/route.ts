@@ -123,6 +123,8 @@ export async function POST(req: NextRequest) {
           progressPercent: 0,
           pipesInstalled: 0,
           status: 'draft',
+          // التقرير قادم من قسم السلامة: بياناته الأساسية (المشروع/خط الحفر/التاريخ/الطقس) مقفلة للقراءة فقط
+          safetyLocked: true,
           createdById: userId,
         },
       }),
@@ -285,3 +287,4 @@ export async function DELETE(req: NextRequest) {
     return handleDbError(error, 'حذف تقرير السلامة')
   }
 }
+
