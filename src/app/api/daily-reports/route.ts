@@ -57,6 +57,24 @@ export async function POST(req: NextRequest) {
     const endReading = parseNumber(body.endReading, 0)
     const dailyMeters = Math.max(0, endReading - startReading)
 
+    // IMPORTANT: store reportDate as UTC midnight of the calendar date
+    // the user picked. If body.reportDate is "2026-09-02" we want to store
+    // 2026-09-02T00:00:00.000Z (not local-midnight-converted-to-UTC which
+    // can shift the date backwards by up to ~14 hours depending on the
+    // server's timezone). This keeps the dashboard's `reportDate: { gte: todayUTC, lt: tomorrowUTC }`
+    // filter working correctly.
+    const rawDate = String(body.reportDate || '')
+    let reportDate: Date
+    if (/^\d{4}-\d{2}-\d{2}$/.test(rawDate)) {
+      // "YYYY-MM-DD" — split into parts to avoid Date() interpreting it as
+      // local time.
+      const [y, m, d] = rawDate.split('-').map(Number)
+      reportDate = new Date(Date.UTC(y, (m || 1) - 1, d || 1))
+    } else {
+      // Fall back to whatever Date() does for non-ISO inputs.
+      reportDate = new Date(rawDate || Date.now())
+    }
+
     // Run drive line and project queries in parallel
     const [dlResult, projResult] = await Promise.all([
       body.driveLineId
@@ -84,7 +102,7 @@ export async function POST(req: NextRequest) {
         data: {
           projectId: String(body.projectId),
           driveLineId: body.driveLineId || null,
-          reportDate: new Date(body.reportDate),
+          reportDate,
           weather: body.weather || null,
           workStartTime: body.workStartTime || null,
           workEndTime: body.workEndTime || null,
