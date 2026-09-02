@@ -195,11 +195,14 @@ export default function AppShell() {
 
   async function loadSlotInfo() {
     try {
-      const res = await authedFetch('/api/users/list')
+      // FIX: كان يستدعي /api/users/list — مسار خفيف يُرجع id/name فقط بدون بريد/دور/صلاحيات،
+      // فتنفتح نافذة التعديل بحالة فارغة خاطئة. المسار الصحيح للإدارة هو /api/users
+      const res = await authedFetch('/api/users')
       const data = await res.json()
       if (res.ok) {
-        setRemainingSlots(data.remainingSlots ?? 50)
-        setExistingUsers(data.users || [])
+        const users = data.users || []
+        setExistingUsers(users)
+        setRemainingSlots(Math.max(0, 50 - users.length))
       }
     } catch {}
   }
@@ -207,11 +210,13 @@ export default function AppShell() {
   async function loadUserList() {
     setListLoading(true)
     try {
-      const res = await authedFetch('/api/users/list')
+      // FIX: نفس المشكلة — /api/users/list بدل /api/users (القائمة الكاملة للإدارة)
+      const res = await authedFetch('/api/users')
       const data = await res.json()
       if (res.ok) {
-        setExistingUsers(data.users || [])
-        setRemainingSlots(data.remainingSlots)
+        const users = data.users || []
+        setExistingUsers(users)
+        setRemainingSlots(Math.max(0, 50 - users.length))
       }
     } catch {} finally {
       setListLoading(false)
@@ -657,7 +662,7 @@ export default function AppShell() {
                           <p className="text-xs text-muted-foreground" dir="ltr">{u.email}</p>
                         </div>
                         <span className="text-xs px-2 py-1 rounded-full bg-primary/10 text-primary font-medium shrink-0">
-                          {u.roleLabel ? (isAr ? u.roleLabel.ar : u.roleLabel.en) : u.role}
+                          {roleLabels[u.role] ? (isAr ? roleLabels[u.role].ar : roleLabels[u.role].en) : (u.roleLabel ? (isAr ? u.roleLabel.ar : u.roleLabel.en) : u.role)}
                         </span>
                         <div className="flex items-center gap-1 shrink-0">
                           {deleteConfirm === u.id ? (
