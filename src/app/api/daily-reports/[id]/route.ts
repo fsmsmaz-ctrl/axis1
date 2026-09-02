@@ -116,17 +116,6 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     var remainingMeters = Math.max(0, totalLength - totalMeters)
     var progressPercent = totalLength > 0 ? (totalMeters / totalLength) * 100 : 0
 
-    // Look up project for price (safe)
-    var projectResult = await safeDbOp(
-      () => db.project.findUnique({
-        where: { id: existingReport.projectId },
-        select: { pricePerMeter: true },
-      }),
-      'جلب بيانات المشروع'
-    )
-
-    var dailyRevenue = dailyMeters * ((projectResult.success && projectResult.data) ? projectResult.data.pricePerMeter : 0)
-
     // Update the report (safe)
     var updateResult = await safeDbOp(
       () => db.dailyReport.update({
@@ -153,7 +142,6 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
           pipesInstalled: parseInt(body.pipesInstalled) || 0,
           productionNotes: body.productionNotes || null,
           problems: body.problems || null,
-          dailyRevenue: dailyRevenue,
           status: body.status || 'draft',
         },
       }),
