@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import {
   Activity, TrendingUp, TrendingDown, DollarSign, Wallet,
   Users, AlertTriangle, Wrench, FolderKanban, ArrowLeft,
-  Trophy, AlertCircle, Calendar, Cpu
+  Trophy, AlertCircle, Calendar, Cpu, RefreshCw
 } from 'lucide-react'
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid,
@@ -71,15 +71,22 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [recalculating, setRecalculating] = useState(false)
   const language = useAppStore((s) => s.language)
   const token = useAppStore((s) => s.token)
+  const user = useAppStore((s) => s.user)
   const isRtl = language === 'ar'
 
   async function fetchDashboard() {
     setLoading(true)
     setError(null)
     try {
-      const r = await authedFetch('/api/dashboard')
+      // Add a 15-second timeout — if the API is slower than that, the user
+      // should see a retry button rather than staring at a spinner forever.
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 15000)
+      const r = await authedFetch('/api/dashboard', { signal: controller.signal })
+      clearTimeout(timeout)
       if (!r.ok) {
         const body = await r.json().catch(function() { return {} })
         throw new Error(body?.details || body?.error || 'Error ' + r.status)
@@ -89,9 +96,17 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
         throw new Error(d.details || d.error)
       }
       setData(d)
+      // Log diagnostics if there are 0 today-reports — helps the user
+      // understand whether 0 is "no reports yet" vs "data problem".
+      if (d._diagnostics && d._diagnostics.todayReportsTotal === 0) {
+        console.info('[Dashboard] No reports found for today — values may legitimately be 0.')
+      }
     } catch (e: any) {
       console.error('[Dashboard]', e)
-      setError(e.message || (isRtl ? 'خطأ في تحميل البيانات' : 'Failed to load data'))
+      const msg = e?.name === 'AbortError'
+        ? (isRtl ? 'انتهت مهلة الطلب — تحقق من سرعة الإنترنت' : 'Request timed out — check your connection')
+        : (e.message || (isRtl ? 'خطأ في تحميل البيانات' : 'Failed to load data'))
+      setError(msg)
     } finally {
       setLoading(false)
     }
@@ -101,18 +116,60 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
     fetchDashboard()
   }, [token])
 
+  // Recalculate all progress & revenue. Available to top_management and
+  // project_manager. Useful when the dashboard shows 0 because some old
+  // reports have stale dailyMeters / dailyRevenue values.
+  async function recalcAll() {
+    setRecalculating(true)
+    try {
+      const r = await authedFetch('/api/admin/recalc-all', { method: 'POST' })
+      const body = await r.json().catch(() => ({}))
+      if (!r.ok) {
+        throw new Error(body?.message || body?.error || ('Error ' + r.status))
+      }
+      // Refresh the dashboard with the freshly recomputed numbers.
+      await fetchDashboard()
+      // Use a console.info rather than toast to avoid importing sonner here.
+      console.info('[Dashboard] Recalc done:', body.results)
+    } catch (e: any) {
+      console.error('[Dashboard] recalc failed:', e)
+      setError(e.message || (isRtl ? 'فشل إعادة الحساب' : 'Recalc failed'))
+    } finally {
+      setRecalculating(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="space-y-4">
-        {[1, 2, 3].map(function(i) {
-          return (
-            <Card key={i}>
-              <CardContent className="p-6">
-                <div className="h-32 bg-muted animate-pulse rounded" />
-              </CardContent>
-            </Card>
-          )
-        })}
+        {/* Quick-loading skeleton: show the layout structure so the user
+            immediately sees what's coming instead of a blank page. */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {[1, 2, 3, 4].map(function(i) {
+            return (
+              <Card key={i}>
+                <CardContent className="p-5">
+                  <div className="flex justify-between">
+                    <div className="space-y-2 flex-1">
+                      <div className="h-3 bg-muted animate-pulse rounded w-3/4" />
+                      <div className="h-7 bg-muted animate-pulse rounded w-1/2" />
+                      <div className="h-3 bg-muted animate-pulse rounded w-2/3" />
+                    </div>
+                    <div className="w-10 h-10 rounded-lg bg-muted animate-pulse" />
+                  </div>
+                </CardContent>
+              </Card>
+            )
+          })}
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <Card className="lg:col-span-2">
+            <CardContent className="p-6 h-[360px] bg-muted/30 animate-pulse rounded" />
+          </Card>
+          <Card>
+            <CardContent className="p-6 h-[360px] bg-muted/30 animate-pulse rounded" />
+          </Card>
+        </div>
       </div>
     )
   }
@@ -175,10 +232,33 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
             {isRtl ? 'نظرة عامة على جميع المشاريع والعمليات' : 'Overview of all projects and operations'}
           </p>
         </div>
-        <Button variant="outline" onClick={function() { onNavigate('reports') }}>
-          <Calendar className="h-4 w-4 ml-2" />
-          {isRtl ? 'التقارير' : 'Reports'}
-        </Button>
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Recalculate button — fixes 0 values by recomputing dailyMeters
+              and dailyRevenue from startReading/endReading for every report,
+              then invalidates the dashboard cache. Visible to admins only. */}
+          {(user?.role === 'top_management' || user?.role === 'project_manager') && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={recalcAll}
+              disabled={recalculating}
+              title={isRtl ? 'إعادة حساب جميع البيانات (يصلح القيم 0)' : 'Recalculate all data (fixes 0 values)'}
+            >
+              <RefreshCw className={'h-4 w-4 ml-2 ' + (recalculating ? 'animate-spin' : '')} />
+              {recalculating
+                ? (isRtl ? 'جارٍ التحديث...' : 'Recalculating...')
+                : (isRtl ? 'تحديث البيانات' : 'Recalc Data')}
+            </Button>
+          )}
+          <Button variant="outline" size="sm" onClick={fetchDashboard}>
+            <RefreshCw className="h-4 w-4 ml-2" />
+            {isRtl ? 'تحديث' : 'Refresh'}
+          </Button>
+          <Button variant="outline" size="sm" onClick={function() { onNavigate('reports') }}>
+            <Calendar className="h-4 w-4 ml-2" />
+            {isRtl ? 'التقارير' : 'Reports'}
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
