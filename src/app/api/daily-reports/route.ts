@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
-import { handleDbError, validateRequired, parseNumber, safeDbOp } from '@/lib/api-helpers'
+import { handleDbError, validateRequired, parseNumber, safeDbOp, parseDateRange } from '@/lib/api-helpers'
 
 export async function GET(req: NextRequest) {
   const user = await getAuthUser(req)
@@ -31,6 +31,14 @@ export async function GET(req: NextRequest) {
       // Fall back to whatever Date() does for non-ISO inputs.
       where.reportDate = new Date(date)
     }
+  }
+
+  // Period range filter (from/to) — used by the Reports section so the
+  // selected period actually filters the data. Ignored when a single
+  // "date" filter is present (single-day filter takes precedence).
+  if (!date) {
+    const range = parseDateRange(searchParams.get('from'), searchParams.get('to'))
+    if (range.gte || range.lt) where.reportDate = range
   }
 
   const result = await safeDbOp(
