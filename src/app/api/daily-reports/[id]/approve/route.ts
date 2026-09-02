@@ -46,11 +46,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       )
     }
 
+    // لحظة الاعتماد: إعادة حساب الإيراد = الأمتار المحفورة × سعر المتر الحالي للمشروع
+    var priceResult = await safeDbOp(
+      () => db.project.findUnique({ where: { id: existingReport.projectId }, select: { pricePerMeter: true } }),
+      'جلب سعر المتر'
+    )
+    var pricePerMeter = priceResult.success && priceResult.data ? (priceResult.data.pricePerMeter || 0) : 0
+    var finalRevenue = (existingReport.dailyMeters || 0) * pricePerMeter
+
     var updateResult = await safeDbOp(
       () => db.dailyReport.update({
         where: { id },
         data: {
           status: 'approved',
+          dailyRevenue: finalRevenue,
           approvedById: user!.id,
           approvedAt: new Date(),
         },
