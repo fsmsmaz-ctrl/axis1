@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -73,26 +73,40 @@ export default function DailyReportsPage() {
   })
 
   const [safetyCompleted, setSafetyCompleted] = useState(false)
+  // Track the in-flight request so we don't fire duplicates when StrictMode
+  // double-invokes effects in dev, and so the cancel logic works cleanly.
+  const inflightRef = useRef<AbortController | null>(null)
 
-  async function fetchReports() {
+  const fetchReports = useCallback(async function fetchReports() {
+    // Cancel any previous in-flight request to avoid races.
+    if (inflightRef.current) {
+      inflightRef.current.abort()
+    }
+    const controller = new AbortController()
+    inflightRef.current = controller
+
     setLoading(true)
     setLoadError(null)
     try {
-      // Add a 15-second timeout so the user never waits forever.
-      const controller = new AbortController()
+      // 15-second timeout — show a retry button rather than hanging forever.
       const timeout = setTimeout(() => controller.abort(), 15000)
       const params = new URLSearchParams()
       if (selectedProject !== 'all') params.set('projectId', selectedProject)
       params.set('limit', '200')
+      // Cache-buster: ensures we always get fresh data even if a CDN
+      // or the Next.js fetch cache is holding an older copy.
+      params.set('_t', String(Date.now()))
       const res = await authedFetch('/api/daily-reports?' + params.toString(), {
         signal: controller.signal,
       })
       clearTimeout(timeout)
 
-      // If unauthorized, the authedFetch helper already clears the session.
-      // Just bail out — the AppShell will redirect to login.
       if (res.status === 401) {
+        // Session expired — surface a friendly error and let the user
+        // re-login. We DO NOT auto-clear the session here (that would
+        // hide the page); the user can click "Retry" or log in again.
         setLoadError(isRtl ? 'انتهت الجلسة - يرجى إعادة تسجيل الدخول' : 'Session expired - please login again')
+        setReports([])
         return
       }
 
@@ -113,17 +127,27 @@ export default function DailyReportsPage() {
         console.info('[DailyReports] No reports found — list is empty')
       }
     } catch (e: any) {
-      const msg = e?.name === 'AbortError'
-        ? (isRtl ? 'انتهت مهلة الطلب - تحقق من سرعة الإنترنت' : 'Request timed out')
-        : (e?.message || (isRtl ? 'فشل تحميل التقارير' : 'Failed to load reports'))
+      // Ignore AbortError from our own cancellation — that's expected.
+      if (e?.name === 'AbortError') {
+        // Only show timeout UI if this was the latest request (not cancelled by a newer one).
+        if (inflightRef.current === controller) {
+          setLoadError(isRtl ? 'انتهت مهلة الطلب - تحقق من سرعة الإنترنت' : 'Request timed out')
+        }
+        return
+      }
+      const msg = e?.message || (isRtl ? 'فشل تحميل التقارير' : 'Failed to load reports')
       setLoadError(msg)
       toast.error(msg)
     } finally {
-      setLoading(false)
+      // Only clear loading if this is still the active request.
+      if (inflightRef.current === controller) {
+        setLoading(false)
+        inflightRef.current = null
+      }
     }
-  }
+  }, [selectedProject, isRtl])
 
-  async function fetchProjects() {
+  const fetchProjects = useCallback(async function fetchProjects() {
     try {
       const res = await authedFetch('/api/projects/list')
       if (!res.ok) return
@@ -132,13 +156,24 @@ export default function DailyReportsPage() {
     } catch {
       // Silent — projects list is non-critical for showing reports.
     }
-  }
+  }, [])
 
   useEffect(() => {
-    if (!token) return
+    if (!token) {
+      // No token = nothing to fetch. Don't leave loading=true forever.
+      setLoading(false)
+      return
+    }
     fetchReports()
     fetchProjects()
-  }, [selectedProject, token])
+    return () => {
+      // Cancel any in-flight request on unmount / dep change.
+      if (inflightRef.current) {
+        inflightRef.current.abort()
+        inflightRef.current = null
+      }
+    }
+  }, [token, fetchReports, fetchProjects])
 
   // Fetch drive lines for selected project in form (used in dialog).
   useEffect(() => {
@@ -160,8 +195,10 @@ export default function DailyReportsPage() {
 
   function openCreate() {
     setEditingReportId(null)
+    // Use timezone-safe date: offset by local tz so toISOString gives today.
+    const todayLocal = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]
     setFormData({
-      projectId: projects[0]?.id || '', driveLineId: '', reportDate: new Date().toISOString().split('T')[0],
+      projectId: projects[0]?.id || '', driveLineId: '', reportDate: todayLocal,
       weather: 'sunny', workStartTime: '06:30', workEndTime: '17:00',
       operatingHours: '8.5', stoppageHours: '0', stoppageReason: '',
       workersCount: '12', attendees: '', startReading: '', endReading: '',
