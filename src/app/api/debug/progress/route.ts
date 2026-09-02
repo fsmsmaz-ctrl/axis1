@@ -17,7 +17,7 @@ export async function GET() {
 
     var reportCounts = await db.dailyReport.groupBy({
       by: ['projectId', 'status'],
-      _sum: { dailyMeters: true, dailyRevenue: true },
+      _sum: { dailyMeters: true },
       _count: true,
     })
 
@@ -28,7 +28,7 @@ export async function GET() {
     var sampleReports = await db.dailyReport.findMany({
       take: 5,
       orderBy: { createdAt: 'desc' },
-      select: { id: true, projectId: true, driveLineId: true, reportDate: true, status: true, startReading: true, endReading: true, dailyMeters: true, dailyRevenue: true },
+      select: { id: true, projectId: true, driveLineId: true, reportDate: true, status: true, startReading: true, endReading: true, dailyMeters: true },
     })
 
     var debugProjects = projects.map(function(p: any) {
