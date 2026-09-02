@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
+import { canAccessDashboard } from '@/lib/auth'
 import { db, cached } from '@/lib/db'
 
 // ────────────────────────────────────────────────────────────────
@@ -56,6 +57,16 @@ export async function GET(req: NextRequest) {
     const user = await getAuthUser(req)
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // لوحة التحكم محظورة على كل الموظفين — متاحة فقط لمدير النظام والإدارة العليا.
+    // Dashboard access is restricted to the System Administrator and Top
+    // Management; every other role gets 403 even if called directly.
+    if (!canAccessDashboard(user)) {
+      return NextResponse.json(
+        { error: 'forbidden', message: 'لوحة التحكم متاحة فقط لمدير النظام والإدارة العليا' },
+        { status: 403 }
+      )
     }
 
     // Cache the whole dashboard payload per-user for 30 seconds. The dashboard
