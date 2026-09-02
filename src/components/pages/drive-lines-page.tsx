@@ -229,61 +229,33 @@ export default function DriveLinesPage() {
                   {group.lines.map((line) => {
                     const status = statusLabels[line.status] || statusLabels.not_started
                     return (
-                      <div key={line.id} className="border rounded-lg p-4 space-y-3 hover:shadow-sm transition relative">
-                        {/* Action buttons — top-left in RTL, top-right in LTR */}
-                        {canEdit && (
-                          <div className="absolute top-2 ltr:right-2 rtl:left-2 flex gap-1">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 text-muted-foreground hover:text-primary"
-                              onClick={() => openEdit(line)}
-                              title={isRtl ? 'تعديل' : 'Edit'}
-                              aria-label={isRtl ? 'تعديل' : 'Edit'}
-                            >
-                              <Pencil className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                              onClick={() => setDeleteTarget(line)}
-                              title={isRtl ? 'حذف' : 'Delete'}
-                              aria-label={isRtl ? 'حذف' : 'Delete'}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          </div>
-                        )}
-
-                        <div className="flex items-center justify-between pr-14">
-                          <div className="flex items-center gap-2">
-                            <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center">
+                      <div key={line.id} className="border rounded-lg p-4 space-y-3 hover:shadow-sm transition flex flex-col">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2 min-w-0 flex-1">
+                            <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
                               <GitBranch className="h-4 w-4 text-primary" />
                             </div>
-                            <div>
-                              <p className="font-semibold text-sm">{line.lineNumber}</p>
-                              <p className="text-xs text-muted-foreground">{line.diameter} • {line.pipeType}</p>
+                            <div className="min-w-0">
+                              <p className="font-semibold text-sm truncate">{line.lineNumber}</p>
+                              <p className="text-xs text-muted-foreground truncate">{line.diameter} • {line.pipeType}</p>
                             </div>
                           </div>
-                          <Badge variant={status.color as any} className="text-xs">
+                          <Badge variant={status.color as any} className="text-xs shrink-0">
                             {isRtl ? status.ar : status.en}
                           </Badge>
                         </div>
 
                         <div className="space-y-1.5 text-sm">
                           <div className="flex items-center gap-2 text-muted-foreground">
-                            <MapPin className="h-3.5 w-3.5" />
-                            <span className="text-xs">{line.startPoint} → {line.endPoint}</span>
+                            <MapPin className="h-3.5 w-3.5 shrink-0" />
+                            <span className="text-xs truncate">{line.startPoint} → {line.endPoint}</span>
                           </div>
                           <div className="flex items-center gap-2 text-muted-foreground">
-                            <Ruler className="h-3.5 w-3.5" />
+                            <Ruler className="h-3.5 w-3.5 shrink-0" />
                             <span className="text-xs">{line.completedLength} / {line.totalLength} {isRtl ? 'م' : 'm'}</span>
                           </div>
                           <div className="flex items-center gap-2 text-muted-foreground">
-                            <Layers className="h-3.5 w-3.5" />
+                            <Layers className="h-3.5 w-3.5 shrink-0" />
                             <span className="text-xs">{isRtl ? 'العمق' : 'Depth'}: {line.depth} {isRtl ? 'م' : 'm'} • {line.soilType}</span>
                           </div>
                         </div>
@@ -300,6 +272,40 @@ export default function DriveLinesPage() {
                           <div className="flex items-start gap-1.5 text-xs text-orange-600 bg-orange-50 p-2 rounded">
                             <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
                             <span>{line.problems}</span>
+                          </div>
+                        )}
+
+                        {/* Action buttons — placed at the bottom of the card,
+                            separated by a top border so they never overlap
+                            the data above. They sit in a row aligned to the
+                            end (right in LTR, left in RTL) so they're easy
+                            to find and click. */}
+                        {canEdit && (
+                          <div className="flex items-center justify-end gap-1 pt-2 mt-auto border-t">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 px-2 text-muted-foreground hover:text-primary"
+                              onClick={() => openEdit(line)}
+                              title={isRtl ? 'تعديل' : 'Edit'}
+                              aria-label={isRtl ? 'تعديل' : 'Edit'}
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                              <span className="text-xs ml-1">{isRtl ? 'تعديل' : 'Edit'}</span>
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 px-2 text-muted-foreground hover:text-destructive hover:bg-destructive/5"
+                              onClick={() => setDeleteTarget(line)}
+                              title={isRtl ? 'حذف' : 'Delete'}
+                              aria-label={isRtl ? 'حذف' : 'Delete'}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                              <span className="text-xs ml-1">{isRtl ? 'حذف' : 'Delete'}</span>
+                            </Button>
                           </div>
                         )}
                       </div>
