@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
+import { SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 import { safeDbOp, handleDbError } from '@/lib/api-helpers'
@@ -25,7 +26,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     var existingResult = await safeDbOp(
       () => db.dailyReport.findUnique({
         where: { id },
-        select: { status: true, projectId: true, createdById: true },
+        select: { status: true, projectId: true },
       }),
       'البحث عن التقرير'
     )
@@ -40,10 +41,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: 'invalid_status', message: 'التقرير مسلّم مسبقاً' }, { status: 400 })
     }
 
-    // نفس صلاحية تعديل المسودات: صاحب التقرير أو (الإدارة العليا/مدير المشروع/مهندس الموقع)
-    var canEditAny = user!.role === 'top_management' || user!.role === 'project_manager' || user!.role === 'site_engineer'
-    if (!canEditAny && existingReport.createdById !== user!.id) {
-      return NextResponse.json({ error: 'forbidden', message: 'لا يمكنك تسليم تقرير موظف آخر' }, { status: 403 })
+    // التسليم: المشرف (foreman) أو مدير النظام فقط — لا يمكن لأي مستخدم آخر التسليم إطلاقاً
+    var isSupervisor = user!.role === 'foreman'
+    var isSystemAdmin = (user!.email || '').toLowerCase().trim() === SYSTEM_ADMIN_EMAIL
+    if (!isSupervisor && !isSystemAdmin) {
+      return NextResponse.json({ error: 'forbidden', message: 'تسليم التقارير اليومية متاح للمشرف ومدير النظام فقط' }, { status: 403 })
     }
 
     var updateResult = await safeDbOp(
@@ -71,3 +73,4 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return handleDbError(error, 'تسليم التقرير')
   }
 }
+
