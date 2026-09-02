@@ -78,25 +78,43 @@ export const TOGGLABLE_PERMISSION_LABELS: Record<string, { ar: string; en: strin
   ...REPORT_LABELS,
 }
 
+// NOTE: 'dashboard' is intentionally NOT granted to employee roles.
+// لوحة التحكم متاحة فقط لمدير النظام وحسابات الإدارة العليا (top_management '*').
 export const ROLE_PERMISSIONS: Record<string, string[]> = {
   top_management: ['*'],
   project_manager: [
-    'dashboard', 'projects', 'drive_lines', 'daily_reports', 'safety',
+    'projects', 'drive_lines', 'daily_reports', 'safety',
     'equipment', 'costs', 'finishings', 'reports', 'performance', 'notifications',
   ],
   site_engineer: [
-    'dashboard', 'projects', 'drive_lines', 'daily_reports', 'safety',
+    'projects', 'drive_lines', 'daily_reports', 'safety',
     'equipment', 'finishings', 'notifications',
   ],
   hse_officer: [
-    'dashboard', 'projects', 'equipment', 'safety', 'reports', 'notifications',
+    'projects', 'equipment', 'safety', 'reports', 'notifications',
   ],
   foreman: [
-    'dashboard', 'projects', 'daily_reports', 'reports', 'notifications',
+    'projects', 'daily_reports', 'reports', 'notifications',
   ],
   accountant: [
-    'dashboard', 'projects', 'costs', 'reports', 'notifications',
+    'projects', 'costs', 'reports', 'notifications',
   ],
+}
+
+// ─── Dashboard access (restricted) ─────────────────────────────
+// لوحة التحكم مخفية عن كل الموظفين — تظهر فقط لـ:
+//   1) مدير النظام (حساب الأدمن الرئيسي)
+//   2) الإدارة العليا (دور top_management)
+// Enforced in three layers: sidebar nav, landing page, and /api/dashboard.
+export const SYSTEM_ADMIN_EMAIL = 'admin@axis.om'
+export const DASHBOARD_ALLOWED_ROLES = ['top_management'] as const
+
+export function canAccessDashboard(
+  user: { role?: string; email?: string } | null | undefined
+): boolean {
+  if (!user) return false
+  if (user.email && user.email.toLowerCase().trim() === SYSTEM_ADMIN_EMAIL) return true
+  return (DASHBOARD_ALLOWED_ROLES as readonly string[]).includes(user.role || '')
 }
 
 // H-1 FIX: Role-based access control helper for API routes
