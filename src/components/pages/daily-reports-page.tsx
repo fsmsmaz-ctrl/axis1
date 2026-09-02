@@ -17,10 +17,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Plus, FileText, Calendar, Users, Ruler, AlertTriangle,
   ShieldCheck, CheckCircle2, Clock, DollarSign, Eye, Check, X, Pencil, Trash2,
-  AlertCircle, RefreshCw, Loader2
+  AlertCircle, RefreshCw, Loader2, Send
 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
+import { canAccessDashboard, SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
 import { toast } from 'sonner'
 
 const statusLabels: Record<string, { ar: string; en: string; color: string }> = {
@@ -49,6 +50,9 @@ export default function DailyReportsPage() {
   const [viewReport, setViewReport] = useState<any | null>(null)
   const [viewDialogOpen, setViewDialogOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  // حالة التقرير الجاري تعديله + نوع الحفظ (مسودة أم حفظ وتسليم)
+  const [editingStatus, setEditingStatus] = useState<string>('draft')
+  const [saveMode, setSaveMode] = useState<'draft' | 'submit'>('draft')
   const language = useAppStore((s) => s.language)
   const token = useAppStore((s) => s.token)
   const user = useAppStore((s) => s.user)
@@ -195,6 +199,8 @@ export default function DailyReportsPage() {
 
   function openCreate() {
     setEditingReportId(null)
+    setEditingStatus('draft')
+    setSaveMode('draft')
     // Use timezone-safe date: offset by local tz so toISOString gives today.
     const todayLocal = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]
     setFormData({
@@ -218,6 +224,8 @@ export default function DailyReportsPage() {
 
   async function openEditReport(report: any) {
     setEditingReportId(report.id)
+    setEditingStatus(report.status || 'draft')
+    setSaveMode('draft')
     setFormData({
       projectId: report.projectId || '',
       driveLineId: report.driveLineId || '',
@@ -241,6 +249,7 @@ export default function DailyReportsPage() {
   }
 
   async function deleteReport(id: string) {
+    if (!window.confirm(isRtl ? 'هل أنت متأكد من حذف هذا التقرير؟' : 'Delete this report?')) return
     const res = await authedFetch(`/api/daily-reports/${id}`, { method: 'DELETE' })
     if (res.ok) {
       toast.success(isRtl ? 'تم حذف التقرير' : 'Report deleted')
@@ -272,10 +281,11 @@ export default function DailyReportsPage() {
   const safetyPassedCount = safetyChecklistItems.filter(item => safety[item.key as keyof typeof safety]).length
   const allSafetyPassed = safetyPassedCount === safetyChecklistItems.length
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent, opts?: { submitAfter?: boolean }) {
     e.preventDefault()
     if (submitting) return
     setSubmitting(true)
+    setSaveMode(opts?.submitAfter ? 'submit' : 'draft')
 
     if (!editingReportId && !allSafetyPassed) {
       toast.error(isRtl ? 'يجب إكمال جميع فحوصات السلامة أولاً' : 'Complete all safety checks first')
@@ -286,7 +296,11 @@ export default function DailyReportsPage() {
     try {
       const url = editingReportId ? `/api/daily-reports/${editingReportId}` : '/api/daily-reports'
       const method = editingReportId ? 'PUT' : 'POST'
-      const body = { ...formData, status: 'submitted' }
+      // الإنشاء: تُحفظ كمسودة — عند التعديل: الخادم يحافظ على الحالة الحالية
+      // إلا مع "حفظ وتسليم" للمسودة فتصبح مرسلة
+      const body: Record<string, unknown> = { ...formData }
+      if (!editingReportId) body.status = 'draft'
+      else if (opts?.submitAfter && editingStatus === 'draft') body.status = 'submitted'
 
       const res = await authedFetch(url, {
         method,
@@ -317,7 +331,9 @@ export default function DailyReportsPage() {
           // Safety save failure is not critical — report is already created.
           console.warn('[DailyReports] Safety save failed for', data.report.id)
         }
-        toast.success(isRtl ? 'تم إنشاء التقرير بنجاح' : 'Report created successfully')
+        toast.success(isRtl ? 'تم إنشاء التقرير كمسودة — راجع البيانات ثم سلّم التقرير' : 'Report created as draft — review then submit')
+      } else if (opts?.submitAfter && editingStatus === 'draft') {
+        toast.success(isRtl ? 'تم حفظ التقرير وتسليمه للاعتماد' : 'Report saved & submitted for approval')
       } else {
         toast.success(isRtl ? 'تم تحديث التقرير' : 'Report updated successfully')
       }
@@ -329,6 +345,27 @@ export default function DailyReportsPage() {
       toast.error(e?.message || (isRtl ? 'حدث خطأ' : 'Error'))
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  // تسليم التقرير: من مسودة إلى مرسل — يظهر بعد تعديل البيانات
+  async function submitReport(id: string) {
+    if (!window.confirm(isRtl ? 'تسليم التقرير للاعتماد؟ لا يمكنك تعديله بعد التسليم' : 'Submit for approval? You cannot edit it after submission')) return
+    try {
+      const res = await authedFetch(`/api/daily-reports/${id}/submit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      if (res.ok) {
+        toast.success(isRtl ? 'تم تسليم التقرير — بانتظار الاعتماد' : 'Report submitted — awaiting approval')
+        fetchReports()
+      } else {
+        const body = await res.json().catch(() => ({}))
+        toast.error(body?.message || body?.error || (isRtl ? 'فشل تسليم التقرير' : 'Submit failed'))
+      }
+    } catch (e: any) {
+      toast.error(e?.message || (isRtl ? 'فشل الاتصال' : 'Network error'))
     }
   }
 
@@ -371,7 +408,10 @@ export default function DailyReportsPage() {
     }
   }
 
-  const canApprove = user?.role === 'project_manager' || user?.role === 'top_management'
+  // مدير النظام (admin@axis.om) — يرى زر الحذف والتعديل دائماً
+  const isAdmin = (user?.email || '').toLowerCase().trim() === SYSTEM_ADMIN_EMAIL
+  // الاعتماد — مدير النظام أو من لديه صلاحية الوصول للوحة التحكم فقط
+  const canApprove = canAccessDashboard(user)
 
   return (
     <div className="space-y-4">
@@ -494,15 +534,28 @@ export default function DailyReportsPage() {
                       )}
                     </div>
                     <div className="flex gap-1">
-                      <Button variant="ghost" size="sm" onClick={() => openEditReport(r)}>
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => deleteReport(r.id)}>
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                      <Button variant="outline" size="sm" onClick={() => viewReportDetails(r)}>
+                      {/* التعديل: متاح للمسودات — وبعد التسليم/الاعتماد لمدير النظام فقط */}
+                      {(isAdmin || r.status === 'draft') && (
+                        <Button variant="ghost" size="sm" title={isRtl ? 'تعديل' : 'Edit'} onClick={() => openEditReport(r)}>
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                      )}
+                      {/* تسليم التقرير: يظهر للمسودة بعد تعديل البيانات — يغلق التعديل */}
+                      {r.status === 'draft' && (
+                        <Button variant="outline" size="sm" className="text-emerald-600" title={isRtl ? 'تسليم التقرير للاعتماد' : 'Submit for approval'} onClick={() => submitReport(r.id)}>
+                          <Send className="h-4 w-4" />
+                        </Button>
+                      )}
+                      {/* الحذف: مدير النظام (admin@axis.om) فقط */}
+                      {isAdmin && (
+                        <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" title={isRtl ? 'حذف — مدير النظام فقط' : 'Delete — admin only'} onClick={() => deleteReport(r.id)}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
+                      <Button variant="outline" size="sm" title={isRtl ? 'عرض التفاصيل' : 'View details'} onClick={() => viewReportDetails(r)}>
                         <Eye className="h-4 w-4" />
                       </Button>
+                      {/* الاعتماد/الرفض: بعد التسليم — لمدير النظام أو أصحاب صلاحية لوحة التحكم فقط */}
                       {canApprove && r.status === 'submitted' && (
                         <>
                           <Button variant="outline" size="sm" className="text-emerald-600" onClick={() => approveReport(r.id, 'approve')}>
@@ -754,9 +807,17 @@ export default function DailyReportsPage() {
             <Button type="button" variant="outline" onClick={() => { setDialogOpen(false); setEditingReportId(null) }} disabled={submitting}>
               {isRtl ? 'إلغاء' : 'Cancel'}
             </Button>
-            <Button type="button" onClick={handleSubmit} disabled={submitting || (!editingReportId && !allSafetyPassed)}>
-              {submitting && <Loader2 className="h-4 w-4 ml-2 animate-spin" />}
-              {editingReportId ? (isRtl ? 'تحديث التقرير' : 'Update Report') : (isRtl ? 'حفظ التقرير' : 'Save Report')}
+            {/* حفظ وتسليم: لتسليم المسودة بعد تعديل البيانات مباشرة */}
+            {editingReportId && editingStatus === 'draft' && (
+              <Button type="button" variant="outline" className="text-emerald-600 border-emerald-300 hover:bg-emerald-50" onClick={(e) => handleSubmit(e, { submitAfter: true })} disabled={submitting}>
+                {submitting && saveMode === 'submit' && <Loader2 className="h-4 w-4 ml-2 animate-spin" />}
+                <Send className="h-4 w-4 ml-2" />
+                {isRtl ? 'حفظ وتسليم' : 'Save & Submit'}
+              </Button>
+            )}
+            <Button type="button" onClick={(e) => handleSubmit(e)} disabled={submitting || (!editingReportId && !allSafetyPassed)}>
+              {submitting && saveMode === 'draft' && <Loader2 className="h-4 w-4 ml-2 animate-spin" />}
+              {editingReportId ? (isRtl ? 'تحديث التقرير' : 'Update Report') : (isRtl ? 'حفظ كمسودة' : 'Save as Draft')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -899,3 +960,4 @@ function Stat({ label, value, color }: { label: string; value: string; color: st
     </div>
   )
 }
+
