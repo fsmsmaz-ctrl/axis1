@@ -67,6 +67,19 @@ const equipmentStatusLabels: Record<string, { ar: string; en: string }> = {
   stopped: { ar: 'متوقفة', en: 'Stopped' },
 }
 
+const costCategoryLabels: Record<string, { ar: string; en: string }> = {
+  labor: { ar: 'أجور العمال', en: 'Labor' },
+  housing: { ar: 'سكن', en: 'Housing' },
+  transport: { ar: 'نقل', en: 'Transport' },
+  fuel: { ar: 'ديزل', en: 'Fuel' },
+  maintenance: { ar: 'صيانة', en: 'Maintenance' },
+  parts: { ar: 'قطع غيار', en: 'Parts' },
+  oil: { ar: 'زيوت', en: 'Oil' },
+  safety: { ar: 'سلامة', en: 'Safety' },
+  rental: { ar: 'إيجارات', en: 'Rental' },
+  other: { ar: 'أخرى', en: 'Other' },
+}
+
 function localized(map: Record<string, { ar: string; en: string }>, key: any, isRtl: boolean): string {
   const item = key ? map[String(key)] : undefined
   if (!item) return key ? String(key) : '-'
@@ -273,14 +286,34 @@ export default function ReportsPage() {
             r.safety.signedBy || '-',
           ]),
         ]
-      case 'costs':
-        return [
+      case 'costs': {
+        const rows: any[][] = [
           [H('الفئة', 'Category'), H('المبلغ (ر.ع)', 'Amount (OMR)')],
-          ...(d.byCategory || []).map((c: any) => [c.category, c.amount ?? 0]),
+          ...(d.byCategory || []).map((c: any) => [localized(costCategoryLabels, c.category, isRtl), c.amount ?? 0]),
           [H('إجمالي التكاليف', 'Total Costs'), d.total ?? 0],
           [H('تكاليف الإيجارات', 'Rental Costs'), d.totalRentalCost ?? 0],
           [H('الإجمالي الشامل', 'Grand Total'), d.grandTotal ?? 0],
+          [],
+          [H('تفصيل الفواتير المسجلة', 'Recorded Invoices Detail')],
+          [H('التاريخ', 'Date'), H('الفئة', 'Category'), H('البيان', 'Description'), H('المشروع', 'Project'), H('سجّلها', 'Recorded by'), H('ملاحظات', 'Notes'), H('المبلغ (ر.ع)', 'Amount (OMR)')],
+          ...(d.costs || []).map((c: any) => [
+            new Date(c.date).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US'),
+            localized(costCategoryLabels, c.category, isRtl),
+            c.description || '-',
+            c.project?.name || '-',
+            c.recordedBy ? (isRtl ? (c.recordedBy.name || '-') : (c.recordedBy.nameEn || c.recordedBy.name || '-')) : '-',
+            c.notes || '-',
+            c.amount ?? 0,
+          ]),
         ]
+        if ((d.rentalAssets || []).length > 0) {
+          rows.push([])
+          rows.push([H('الإيجارات الشهرية النشطة', 'Active Monthly Rentals')])
+          rows.push([H('المعدة / الأصل', 'Asset'), H('المورد', 'Supplier'), H('المشروع', 'Project'), H('الإيجار الشهري (ر.ع)', 'Monthly Rent (OMR)')])
+          for (const a of d.rentalAssets) rows.push([a.name, a.supplier || '-', a.projectName || '-', a.rentalCost ?? 0])
+        }
+        return rows
+      }
       case 'profit':
         return [
           [H('البند', 'Item'), H('القيمة (ر.ع)', 'Value (OMR)')],
@@ -582,12 +615,12 @@ function ReportPreview({ data }: { data: any }) {
           )}
         </div>
       ) : data.type === 'costs' ? (
-        <div className="space-y-3">
+        <div className="space-y-4">
           <h3 className="font-semibold text-sm">{isRtl ? 'التكاليف حسب الفئة' : 'Costs by Category'}</h3>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {(data.data.byCategory || []).map((c: any) => (
               <div key={c.category} className="p-3 rounded-lg border">
-                <p className="text-xs text-muted-foreground">{c.category}</p>
+                <p className="text-xs text-muted-foreground">{localized(costCategoryLabels, c.category, isRtl)}</p>
                 <p className="font-bold text-sm">{fmtNum(c.amount)} ر.ع</p>
               </div>
             ))}
@@ -605,6 +638,114 @@ function ReportPreview({ data }: { data: any }) {
               {isRtl ? 'الإجمالي الشامل' : 'Grand Total'}: <span className="text-red-700">{fmtNum(data.data.grandTotal)} ر.ع</span>
             </p>
           </div>
+
+          {/* ─── تفصيل الفواتير المسجلة حسب الفئة ─── */}
+          {(() => {
+            const costs = data.data.costs || []
+            const rentals = data.data.rentalAssets || []
+            if (costs.length === 0 && rentals.length === 0) {
+              return (
+                <p className="text-center text-xs text-muted-foreground py-4">
+                  {isRtl ? 'لا توجد فواتير مسجلة في هذه الفترة' : 'No invoices recorded in this period'}
+                </p>
+              )
+            }
+            const groups = new Map<string, any[]>()
+            for (const c of costs) {
+              const key = String(c.category || 'other')
+              if (!groups.has(key)) groups.set(key, [])
+              groups.get(key)!.push(c)
+            }
+            const groupList = Array.from(groups.entries()).sort((a, b) =>
+              b[1].reduce((s: number, c: any) => s + (Number(c.amount) || 0), 0) -
+              a[1].reduce((s: number, c: any) => s + (Number(c.amount) || 0), 0)
+            )
+            return (
+              <div className="space-y-4">
+                <h3 className="font-semibold text-sm pt-2">
+                  {isRtl ? 'تفصيل الفواتير المسجلة حسب الفئة' : 'Recorded Invoices by Category'}
+                </h3>
+                {groupList.map(([cat, items]) => {
+                  const subtotal = items.reduce((s: number, c: any) => s + (Number(c.amount) || 0), 0)
+                  return (
+                    <div key={cat} className="rounded-lg border overflow-hidden">
+                      <div className="flex items-center justify-between px-3 py-2 bg-muted/50 border-b">
+                        <p className="font-medium text-sm">
+                          {localized(costCategoryLabels, cat, isRtl)}
+                          <span className="text-xs text-muted-foreground mr-2">({items.length} {isRtl ? 'فاتورة' : 'invoices'})</span>
+                        </p>
+                        <p className="text-sm font-bold text-red-600">{fmtNum(subtotal)} ر.ع</p>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="border-b bg-muted/20">
+                              <th className="text-start p-2 font-medium">{isRtl ? 'التاريخ' : 'Date'}</th>
+                              <th className="text-start p-2 font-medium">{isRtl ? 'البيان' : 'Description'}</th>
+                              <th className="text-start p-2 font-medium">{isRtl ? 'المشروع' : 'Project'}</th>
+                              <th className="text-start p-2 font-medium">{isRtl ? 'سجّلها' : 'Recorded by'}</th>
+                              <th className="text-start p-2 font-medium">{isRtl ? 'ملاحظات' : 'Notes'}</th>
+                              <th className="text-end p-2 font-medium">{isRtl ? 'المبلغ (ر.ع)' : 'Amount (OMR)'}</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {items
+                              .slice()
+                              .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                              .map((c: any) => (
+                              <tr key={c.id} className="border-b last:border-0">
+                                <td className="p-2 whitespace-nowrap">{new Date(c.date).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')}</td>
+                                <td className="p-2 font-medium">{c.description || '-'}</td>
+                                <td className="p-2">{c.project?.name || '-'}</td>
+                                <td className="p-2">{c.recordedBy ? (isRtl ? (c.recordedBy.name || '-') : (c.recordedBy.nameEn || c.recordedBy.name || '-')) : '-'}</td>
+                                <td className="p-2 text-muted-foreground max-w-[180px] truncate" title={c.notes || ''}>{c.notes || '-'}</td>
+                                <td className="p-2 text-end font-semibold">{fmtNum(c.amount)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )
+                })}
+
+                {/* الإيجارات الشهرية النشطة — جزء من الإجمالي الشامل وليست فواتير مسجلة */}
+                {rentals.length > 0 && (
+                  <div className="rounded-lg border border-amber-200 overflow-hidden">
+                    <div className="flex items-center justify-between px-3 py-2 bg-amber-50 border-b border-amber-200">
+                      <p className="font-medium text-sm">
+                        {isRtl ? 'الإيجارات الشهرية النشطة (معدات وأصول مستأجرة)' : 'Active Monthly Rentals (rented equipment & assets)'}
+                        <span className="text-xs text-muted-foreground mr-2">({rentals.length})</span>
+                      </p>
+                      <p className="text-sm font-bold text-amber-600">{fmtNum(data.data.totalRentalCost)} ر.ع</p>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="border-b bg-muted/20">
+                            <th className="text-start p-2 font-medium">{isRtl ? 'المعدة / الأصل' : 'Asset'}</th>
+                            <th className="text-start p-2 font-medium">{isRtl ? 'المورد' : 'Supplier'}</th>
+                            <th className="text-start p-2 font-medium">{isRtl ? 'المشروع' : 'Project'}</th>
+                            <th className="text-end p-2 font-medium">{isRtl ? 'الإيجار الشهري (ر.ع)' : 'Monthly Rent (OMR)'}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rentals.map((a: any) => (
+                            <tr key={a.id} className="border-b last:border-0">
+                              <td className="p-2 font-medium">{a.name}</td>
+                              <td className="p-2">{a.supplier || '-'}</td>
+                              <td className="p-2">{a.projectName || '-'}</td>
+                              <td className="p-2 text-end font-semibold">{fmtNum(a.rentalCost)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })()}
         </div>
       ) : data.type === 'profit' ? (
         <div className="space-y-3">
@@ -728,4 +869,3 @@ function ReportPreview({ data }: { data: any }) {
     </div>
   )
 }
-
