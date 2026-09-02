@@ -13,17 +13,33 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const projectId = searchParams.get('projectId')
   const date = searchParams.get('date')
-  const limit = parseInt(searchParams.get('limit') || '50')
+  const limit = Math.min(parseInt(searchParams.get('limit') || '50'), 500)
 
   const where: any = {}
   if (projectId) where.projectId = projectId
-  if (date) where.reportDate = new Date(date)
+  // Normalize date filter to a UTC-midnight range so the comparison works
+  // regardless of the server's local timezone. Previously `new Date(date)`
+  // interpreted "2026-09-02" as local-midnight → could shift the date
+  // forward/backward by up to ~14 hours on servers in non-UTC timezones.
+  if (date) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date)
+    if (m) {
+      const start = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])))
+      const end = new Date(start.getTime() + 24 * 60 * 60 * 1000)
+      where.reportDate = { gte: start, lt: end }
+    } else {
+      // Fall back to whatever Date() does for non-ISO inputs.
+      where.reportDate = new Date(date)
+    }
+  }
 
   const result = await safeDbOp(
     () => db.dailyReport.findMany({
       where,
       take: limit,
-      orderBy: { reportDate: 'desc' },
+      // Sort by reportDate DESC, then by createdAt DESC as a tiebreaker
+      // so reports created on the same day show newest-entry-first.
+      orderBy: [{ reportDate: 'desc' }, { createdAt: 'desc' }],
       include: {
         project: { select: { id: true, name: true, code: true, pricePerMeter: true } },
         driveLine: { select: { id: true, lineNumber: true, totalLength: true } },
