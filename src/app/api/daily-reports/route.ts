@@ -108,7 +108,7 @@ export async function POST(req: NextRequest) {
           )
         : Promise.resolve({ success: false as const, response: NextResponse.json({ skip: true }) }),
       safeDbOp(
-        () => db.project.findUnique({ where: { id: body.projectId }, select: { id: true } }),
+        () => db.project.findUnique({ where: { id: body.projectId }, select: { id: true, pricePerMeter: true } }),
         'جلب بيانات المشروع'
       ),
     ])
@@ -117,6 +117,10 @@ export async function POST(req: NextRequest) {
     const totalMeters = endReading
     const remainingMeters = Math.max(0, totalLength - totalMeters)
     const progressPercent = totalLength > 0 ? (totalMeters / totalLength) * 100 : 0
+
+    // الإيراد = الأمتار المحفورة اليوم × سعر المتر للمشروع
+    const projectPrice = projResult.success && projResult.data ? (projResult.data.pricePerMeter || 0) : 0
+    const dailyRevenue = dailyMeters * projectPrice
 
     const createResult = await safeDbOp(
       () => db.dailyReport.create({
@@ -135,6 +139,7 @@ export async function POST(req: NextRequest) {
           startReading,
           endReading,
           dailyMeters,
+          dailyRevenue,
           totalMeters,
           remainingMeters,
           progressPercent,
