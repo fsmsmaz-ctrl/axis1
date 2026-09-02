@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
-import { handleDbError, validateRequired, safeDbOp } from '@/lib/api-helpers'
+import { handleDbError, validateRequired, safeDbOp, parseDateRange } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 import { canWrite } from '@/lib/auth'
 
@@ -17,6 +17,11 @@ export async function GET(req: NextRequest) {
     const limit = Math.min(parseInt(searchParams.get('limit') || '50'), 200)
     const where: any = {}
     if (projectId) where.projectId = projectId
+
+    // Period range filter (from/to) — used by the Reports section's
+    // handover report so the selected period filters the records.
+    const dateRange = parseDateRange(searchParams.get('from'), searchParams.get('to'))
+    if (dateRange.gte || dateRange.lt) where.date = dateRange
 
     const result = await safeDbOp(
       () => db.finishing.findMany({
