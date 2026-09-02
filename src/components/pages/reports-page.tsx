@@ -230,13 +230,12 @@ export default function ReportsPage() {
       case 'daily_site':
       case 'production':
         return [
-          [H('التاريخ', 'Date'), H('المشروع', 'Project'), H('الخط', 'Line'), H('أمتار', 'Meters'), H('إيراد (ر.ع)', 'Revenue (OMR)'), H('العمال', 'Workers'), H('الحالة', 'Status')],
+          [H('التاريخ', 'Date'), H('المشروع', 'Project'), H('الخط', 'Line'), H('أمتار', 'Meters'), H('العمال', 'Workers'), H('الحالة', 'Status')],
           ...reports.map((r: any) => [
             new Date(r.reportDate).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US'),
             r.project?.name || '-',
             r.driveLine?.lineNumber || '-',
             r.dailyMeters ?? 0,
-            r.dailyRevenue ?? 0,
             r.workersCount ?? 0,
             localized(reportStatusLabels, r.status, isRtl),
           ]),
@@ -465,7 +464,6 @@ function ReportPreview({ data }: { data: any }) {
                   <th className="p-2">{isRtl ? 'المشروع' : 'Project'}</th>
                   <th className="p-2">{isRtl ? 'الخط' : 'Line'}</th>
                   <th className="p-2">{isRtl ? 'أمتار' : 'Meters'}</th>
-                  <th className="p-2">{isRtl ? 'إيراد' : 'Revenue'}</th>
                   <th className="p-2">{isRtl ? 'العمال' : 'Workers'}</th>
                   <th className="p-2">{isRtl ? 'الحالة' : 'Status'}</th>
                 </tr>
@@ -477,7 +475,6 @@ function ReportPreview({ data }: { data: any }) {
                     <td className="p-2">{r.project?.name}</td>
                     <td className="p-2">{r.driveLine?.lineNumber || '-'}</td>
                     <td className="p-2">{fmtNum(r.dailyMeters)}</td>
-                    <td className="p-2">{fmtNum(r.dailyRevenue)} ر.ع</td>
                     <td className="p-2">{r.workersCount}</td>
                     <td className="p-2">{localized(reportStatusLabels, r.status, isRtl)}</td>
                   </tr>
@@ -731,3 +728,4 @@ function ReportPreview({ data }: { data: any }) {
     </div>
   )
 }
+
