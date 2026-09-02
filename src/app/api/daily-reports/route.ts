@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
+import { SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { handleDbError, validateRequired, parseNumber, safeDbOp, parseDateRange } from '@/lib/api-helpers'
 
@@ -68,6 +69,15 @@ export async function POST(req: NextRequest) {
 
   if (!user) {
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
+  }
+
+  // التقارير اليومية تُنشأ من قسم السلامة — الإنشاء المباشر من هنا لمدير النظام فقط
+  const isSystemAdmin = (user.email || '').toLowerCase().trim() === SYSTEM_ADMIN_EMAIL
+  if (!isSystemAdmin) {
+    return NextResponse.json(
+      { error: 'forbidden', message: 'إنشاء التقارير اليومية يتم من قسم السلامة — الإنشاء المباشر متاح لمدير النظام فقط' },
+      { status: 403 }
+    )
   }
 
   try {
@@ -229,3 +239,4 @@ export async function POST(req: NextRequest) {
     return handleDbError(error, 'إنشاء التقرير اليومي')
   }
 }
+
