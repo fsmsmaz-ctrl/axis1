@@ -122,7 +122,6 @@ export async function POST(req: NextRequest) {
           remainingMeters: 0,
           progressPercent: 0,
           pipesInstalled: 0,
-          dailyRevenue: 0,
           status: 'draft',
           createdById: userId,
         },
