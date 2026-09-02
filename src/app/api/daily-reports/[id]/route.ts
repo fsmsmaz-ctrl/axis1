@@ -89,10 +89,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: 'forbidden', message: 'لا يمكن تعديل التقرير بعد تسليمه — التعديل متاح لمدير النظام فقط' }, { status: 403 })
     }
 
-    // المسودات: الإدارة العليا/مدير المشروع/مهندس الموقع يعدّلون أي مسودة، وباقي الموظفين مسوداتهم فقط
-    var canEditAny = user!.role === 'top_management' || user.role === 'project_manager' || user.role === 'site_engineer'
-    if (!canEditAny && existingReport.createdById !== user!.id) {
-      return NextResponse.json({ error: 'forbidden', message: 'لا يمكنك تعديل تقرير آخر موظف' }, { status: 403 })
+    // التعديل: المشرف (foreman) أو مدير النظام فقط — لا يمكن لأي مستخدم آخر التعديل إطلاقاً
+    var isSupervisor = user!.role === 'foreman'
+    if (!isSystemAdmin && !isSupervisor) {
+      return NextResponse.json({ error: 'forbidden', message: 'تعديل التقارير اليومية متاح للمشرف ومدير النظام فقط' }, { status: 403 })
     }
 
     var startReading = parseFloat(body.startReading) || 0
@@ -287,3 +287,4 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     return handleDbError(error, 'حذف التقرير اليومي')
   }
 }
+
