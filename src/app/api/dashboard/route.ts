@@ -242,19 +242,21 @@ async function buildDashboard() {
 
   // ── Aggregate today's stats from todayReports (status-aware) ──
   const todayReports = unwrap(todayReportsResult, [], 'todayReports')
-  // Prefer approved reports, but fall back to ANY status if no approved ones.
+  // الأمتار والعمال: المعتمد اليوم إن وجد وإلا كل الحالات (سلوك قديم محفوظ)
+  // الإيراد: من التقارير المعتمدة فقط — المسودة والمرسل لا يُحسبان إيراداً قبل الاعتماد
   const approvedToday = todayReports.filter((r: any) => r.status === 'approved')
   const todaySource = approvedToday.length > 0 ? approvedToday : todayReports
   const metersToday = todaySource.reduce((s: number, r: any) => s + (r.dailyMeters || 0), 0)
-  const revenueToday = todaySource.reduce((s: number, r: any) => s + (r.dailyRevenue || 0), 0)
+  const revenueToday = approvedToday.reduce((s: number, r: any) => s + (r.dailyRevenue || 0), 0)
   const presentWorkers = todaySource.reduce((s: number, r: any) => s + (r.workersCount || 0), 0)
 
   // ── Aggregate month stats ──
   const monthReports = unwrap(monthReportsResult, [], 'monthReports')
+  // نفس اليوم: الأمتار بسلوك الاحتياط القديم، والإيراد من المعتمد فقط
   const approvedMonth = monthReports.filter((r: any) => r.status === 'approved')
   const monthSource = approvedMonth.length > 0 ? approvedMonth : monthReports
   const metersThisMonth = monthSource.reduce((s: number, r: any) => s + (r.dailyMeters || 0), 0)
-  const revenueThisMonth = monthSource.reduce((s: number, r: any) => s + (r.dailyRevenue || 0), 0)
+  const revenueThisMonth = approvedMonth.reduce((s: number, r: any) => s + (r.dailyRevenue || 0), 0)
 
   // ── Scalar aggregates ──
   const activeProjects = unwrap(activeProjectsResult, 0, 'activeProjects')
@@ -277,7 +279,8 @@ async function buildDashboard() {
     if (!trendMap.has(key)) trendMap.set(key, { meters: 0, revenue: 0, cost: 0 })
     const item = trendMap.get(key)!
     item.meters += r.dailyMeters || 0
-    item.revenue += r.dailyRevenue || 0
+    // الإيراد في المنحنى: من التقارير المعتمدة فقط
+    if (r.status === 'approved') item.revenue += r.dailyRevenue || 0
   }
   for (const c of trendCosts as any[]) {
     const key = new Date(c.date).toISOString().split('T')[0]
