@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
-  Plus, FileText, Calendar, Users, Ruler, AlertTriangle,
+  FileText, Calendar, Users, Ruler, AlertTriangle,
   ShieldCheck, CheckCircle2, Clock, DollarSign, Eye, Check, X, Pencil, Trash2,
   AlertCircle, RefreshCw, Loader2, Send
 } from 'lucide-react'
@@ -76,7 +76,7 @@ export default function DailyReportsPage() {
     hazards: '', observations: '', violations: '', incidentType: 'none', incidentDescription: '',
   })
 
-  const [safetyCompleted, setSafetyCompleted] = useState(false)
+
   // Track the in-flight request so we don't fire duplicates when StrictMode
   // double-invokes effects in dev, and so the cancel logic works cleanly.
   const inflightRef = useRef<AbortController | null>(null)
@@ -196,31 +196,6 @@ export default function DailyReportsPage() {
       })
     return () => { cancelled = true }
   }, [formData.projectId])
-
-  function openCreate() {
-    setEditingReportId(null)
-    setEditingStatus('draft')
-    setSaveMode('draft')
-    // Use timezone-safe date: offset by local tz so toISOString gives today.
-    const todayLocal = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]
-    setFormData({
-      projectId: projects[0]?.id || '', driveLineId: '', reportDate: todayLocal,
-      weather: 'sunny', workStartTime: '06:30', workEndTime: '17:00',
-      operatingHours: '8.5', stoppageHours: '0', stoppageReason: '',
-      workersCount: '12', attendees: '', startReading: '', endReading: '',
-      soilExcavated: 'mixed', pipesInstalled: '0', productionNotes: '',
-      problems: '',
-    })
-    setSafety({
-      ppeAvailable: false, helmetCheck: false, bootsCheck: false, glovesCheck: false,
-      glassesCheck: false, workAreaCheck: false, barriersCheck: false, shaftCheck: false,
-      ventilationCheck: false, electricalCheck: false, craneCheck: false, hydraulicCheck: false,
-      fireExtinguishers: false, workPermit: false, toolboxTalk: false,
-      hazards: '', observations: '', violations: '', incidentType: 'none', incidentDescription: '',
-    })
-    setSafetyCompleted(false)
-    setDialogOpen(true)
-  }
 
   async function openEditReport(report: any) {
     setEditingReportId(report.id)
@@ -410,6 +385,9 @@ export default function DailyReportsPage() {
 
   // مدير النظام (admin@axis.om) — يرى زر الحذف والتعديل دائماً
   const isAdmin = (user?.email || '').toLowerCase().trim() === SYSTEM_ADMIN_EMAIL
+  // المشرف (foreman) — هو الوحيد (مع مدير النظام) الذي يعدّل ويسلّم التقارير
+  // التقارير تأتي من قسم السلامة، والمشرف يراجع بياناتها ويسلّمها للاعتماد
+  const isSupervisor = user?.role === 'foreman'
   // الاعتماد — مدير النظام أو من لديه صلاحية الوصول للوحة التحكم فقط
   const canApprove = canAccessDashboard(user)
 
@@ -427,10 +405,6 @@ export default function DailyReportsPage() {
               the project filter. Helps when the previous load failed. */}
           <Button variant="outline" size="icon" onClick={fetchReports} title={isRtl ? 'تحديث' : 'Refresh'}>
             <RefreshCw className={'h-4 w-4 ' + (loading ? 'animate-spin' : '')} />
-          </Button>
-          <Button onClick={openCreate}>
-            <Plus className="h-4 w-4 ml-2" />
-            {isRtl ? 'تقرير جديد' : 'New Report'}
           </Button>
         </div>
       </div>
@@ -490,7 +464,7 @@ export default function DailyReportsPage() {
             <FileText className="h-12 w-12 mx-auto text-muted-foreground/50" />
             <p className="mt-3 text-muted-foreground">{isRtl ? 'لا توجد تقارير' : 'No reports'}</p>
             <p className="text-xs text-muted-foreground/70 mt-1">
-              {isRtl ? 'اضغط "تقرير جديد" لإضافة أول تقرير' : 'Click "New Report" to add the first one'}
+              {isRtl ? 'تأتي التقارير اليومية من قسم السلامة' : 'Daily reports come from the Safety section'}
             </p>
           </CardContent>
         </Card>
@@ -534,14 +508,14 @@ export default function DailyReportsPage() {
                       )}
                     </div>
                     <div className="flex gap-1">
-                      {/* التعديل: متاح للمسودات — وبعد التسليم/الاعتماد لمدير النظام فقط */}
-                      {(isAdmin || r.status === 'draft') && (
-                        <Button variant="ghost" size="sm" title={isRtl ? 'تعديل' : 'Edit'} onClick={() => openEditReport(r)}>
+                      {/* التعديل: المشرف للمسودات فقط — وبعد التسليم/الاعتماد لمدير النظام فقط */}
+                      {(isAdmin || (isSupervisor && r.status === 'draft')) && (
+                        <Button variant="ghost" size="sm" title={isRtl ? 'تعديل — المشرف ومدير النظام فقط' : 'Edit — supervisor & admin only'} onClick={() => openEditReport(r)}>
                           <Pencil className="h-4 w-4" />
                         </Button>
                       )}
-                      {/* تسليم التقرير: يظهر للمسودة بعد تعديل البيانات — يغلق التعديل */}
-                      {r.status === 'draft' && (
+                      {/* تسليم التقرير: المشرف ومدير النظام فقط — للمسودة بعد تعديل البيانات */}
+                      {(isSupervisor || isAdmin) && r.status === 'draft' && (
                         <Button variant="outline" size="sm" className="text-emerald-600" title={isRtl ? 'تسليم التقرير للاعتماد' : 'Submit for approval'} onClick={() => submitReport(r.id)}>
                           <Send className="h-4 w-4" />
                         </Button>
