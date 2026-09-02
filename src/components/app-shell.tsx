@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useAppStore } from '@/lib/store'
-import { hasPermission, MODULE_PERMISSIONS, MODULE_PERMISSION_LABELS, REPORT_PERMISSIONS, REPORT_LABELS, ROLE_PERMISSIONS, type SessionUser } from '@/lib/auth'
+import { hasPermission, MODULE_PERMISSIONS, MODULE_PERMISSION_LABELS, REPORT_PERMISSIONS, REPORT_LABELS, ROLE_PERMISSIONS, canAccessDashboard, SYSTEM_ADMIN_EMAIL, type SessionUser } from '@/lib/auth'
 import { clearStoredToken, authedFetch } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -163,7 +163,11 @@ export default function AppShell() {
   if (!user) return null
 
   const allowedItems = navItems.filter(item => hasPermission(user.role, item.resource, user.permissions))
-  const isAdmin = user.email.toLowerCase().trim() === 'admin@axis.om'
+  // لوحة التحكم لمدير النظام والإدارة العليا فقط — الموظفون يُوجّهون لأول صفحة مخوّلة
+  const canSeeDashboard = canAccessDashboard(user)
+  const landingPage: PageId = allowedItems.find(i => i.id !== 'dashboard')?.id ?? 'notifications'
+  const effectivePage: PageId = currentPage === 'dashboard' && !canSeeDashboard ? landingPage : currentPage
+  const isAdmin = user.email.toLowerCase().trim() === SYSTEM_ADMIN_EMAIL
   const isAr = language === 'ar'
   const isRtl = isAr
 
@@ -303,7 +307,7 @@ export default function AppShell() {
   }
 
   function renderPage() {
-    switch (currentPage) {
+    switch (effectivePage) {
       case 'dashboard': return <DashboardPage onNavigate={setCurrentPage} />
       case 'projects': return <ProjectsPage />
       case 'driveLines': return <DriveLinesPage />
@@ -315,7 +319,7 @@ export default function AppShell() {
       case 'performance': return <PerformancePage />
       case 'reports': return <ReportsPage />
       case 'notifications': return <NotificationsPage />
-      default: return <DashboardPage onNavigate={setCurrentPage} />
+      default: return canSeeDashboard ? <DashboardPage onNavigate={setCurrentPage} /> : <ProjectsPage />
     }
   }
 
@@ -357,7 +361,7 @@ export default function AppShell() {
           <div className="h-2" />
           {allowedItems.map((item) => {
             const Icon = item.icon
-            const isActive = currentPage === item.id
+            const isActive = effectivePage === item.id
             const label = isRtl ? item.labelAr : item.labelEn
             const unreadCount = item.id === 'notifications' ? notifications.length : 0
             return (
@@ -400,7 +404,7 @@ export default function AppShell() {
 
           <div className="flex-1">
             <h2 className="text-lg font-semibold">
-              {isRtl ? navItems.find(i => i.id === currentPage)?.labelAr : navItems.find(i => i.id === currentPage)?.labelEn}
+              {isRtl ? navItems.find(i => i.id === effectivePage)?.labelAr : navItems.find(i => i.id === effectivePage)?.labelEn}
             </h2>
           </div>
 
@@ -688,3 +692,4 @@ export default function AppShell() {
     </div>
   )
 }
+
