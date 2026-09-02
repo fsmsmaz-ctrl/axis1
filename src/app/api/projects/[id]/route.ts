@@ -120,29 +120,6 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     )
     if (!updateResult.success) return updateResult.response
 
-    // CRITICAL: If pricePerMeter changed, recalculate dailyRevenue for ALL daily reports
-    var oldPrice = oldResult.data.pricePerMeter || 0
-    var priceChanged = Math.abs(pricePerMeter - oldPrice) > 0.001
-    if (priceChanged) {
-      try {
-        // Fetch all reports for this project that have dailyMeters > 0
-        var reportsToUpdate = await db.dailyReport.findMany({
-          where: { projectId: id, dailyMeters: { gt: 0 } },
-          select: { id: true, dailyMeters: true },
-        })
-        // Bulk update each report's dailyRevenue
-        for (var i = 0; i < reportsToUpdate.length; i++) {
-          var r = reportsToUpdate[i]
-          await db.dailyReport.update({
-            where: { id: r.id },
-            data: { dailyRevenue: r.dailyMeters * pricePerMeter },
-          })
-        }
-      } catch (err) {
-        console.error('[Project Update] Error recalculating dailyRevenue:', err)
-      }
-    }
-
     // FIX: Use buildAuditDetails for proper change tracking
     var newData = { ...updateData, totalLength, pricePerMeter }
     var details = buildAuditDetails(
