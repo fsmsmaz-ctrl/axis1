@@ -87,6 +87,14 @@ export async function getSessionUser(token: string | undefined): Promise<Session
     const user = await db.user.findUnique({ where: { id: userId } })
     if (!user || !user.active) return null
 
+    // FIX: الصلاحيات يجب أن تُقرأ من سجل قاعدة البيانات (الحالي) وليس من لقطة JWT
+    // القديمة لحظة الدخول. الكود السابق كان يقرأ payload.permissions مع فحص
+    // Array.isArray — وبما أن الجلسة تخزن الصلاحيات ككائن (أو null) كان الفحص
+    // يُرجع [] دائماً، فلا تنطبق الصلاحيات المخصصة أبداً حتى بعد حفظها بنجاح.
+    const permissions = (user.permissions && typeof user.permissions === 'object' && !Array.isArray(user.permissions))
+      ? user.permissions as Record<string, boolean>
+      : null
+
     return {
       id: user.id,
       email: user.email,
@@ -95,7 +103,7 @@ export async function getSessionUser(token: string | undefined): Promise<Session
       role: user.role,
       phone: user.phone,
       language: user.language,
-      permissions: (Array.isArray(payload.permissions) ? payload.permissions : []) as unknown as Record<string, boolean>,
+      permissions,
     }
   } catch (error) {
     return null
@@ -131,3 +139,4 @@ export async function getAuthUser(req: NextRequest): Promise<SessionUser | null>
   const token = extractToken(req)
   return await getSessionUser(token)
 }
+
