@@ -418,6 +418,8 @@ export default function AppShell() {
             <span className="text-sm">{isRtl ? 'EN' : 'ع'}</span>
           </Button>
 
+          {/* زر التنبيهات في الأعلى — لمستخدمي لوحة التحكم فقط (مدير النظام والإدارة العليا) */}
+          {canSeeDashboard && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="relative">
@@ -454,6 +456,7 @@ export default function AppShell() {
               <DropdownMenuItem onClick={() => setCurrentPage('notifications')}>{isAr ? 'عرض الكل' : 'View all'}</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          )}
 
           <Avatar className="h-9 w-9 border-2 border-primary/20 shrink-0">
             <AvatarFallback className="bg-primary/10 text-primary text-sm font-semibold">
