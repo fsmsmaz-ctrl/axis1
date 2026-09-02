@@ -107,6 +107,37 @@ export function parseDate(value: any, defaultDaysFromNow: number = 0): Date {
   return d
 }
 
+/**
+ * Build a UTC-safe Prisma date range from "from"/"to" query params.
+ * Both params are optional "YYYY-MM-DD" strings (as sent by date inputs).
+ *
+ * - "from" → { gte: UTC-midnight of that day }
+ * - "to"   → { lt: UTC-midnight of the NEXT day } (inclusive end day)
+ *
+ * Returns a partial Prisma range — only keys that were provided are set.
+ * Used by report APIs (daily-reports / costs / finishings) so the Reports
+ * section's period filter actually filters data.
+ */
+export function parseDateRange(from: string | null, to: string | null): { gte?: Date; lt?: Date } {
+  const range: { gte?: Date; lt?: Date } = {}
+  const iso = /^(\d{4})-(\d{2})-(\d{2})$/
+  if (from) {
+    const m = iso.exec(from)
+    if (m) {
+      range.gte = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])))
+    }
+  }
+  if (to) {
+    const m = iso.exec(to)
+    if (m) {
+      const end = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])))
+      end.setUTCDate(end.getUTCDate() + 1)
+      range.lt = end
+    }
+  }
+  return range
+}
+
 export async function safeDbOp(
   operation: () => Promise<any>,
   opName: string
