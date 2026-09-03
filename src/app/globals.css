@@ -401,3 +401,11 @@ button,
   }
 }
 
+/* القائمة الجانبية: احترام المساحات الآمنة
+   (النوتش/شريط الحالة أعلى + شريط الهوم أسفل في iPhone) */
+.mobile-safe-y {
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+  
