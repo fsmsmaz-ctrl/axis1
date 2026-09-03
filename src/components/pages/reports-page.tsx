@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -14,82 +15,11 @@ import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
 import { hasReportPermission } from '@/lib/auth'
 import { toast } from 'sonner'
-
-interface ReportType {
-  id: string
-  labelAr: string
-  labelEn: string
-  icon: any
-  color: string
-  description: string
-}
-
-const reportTypes: ReportType[] = [
-  { id: 'daily_site', labelAr: 'التقرير اليومي للموقع', labelEn: 'Daily Site Report', icon: FileText, color: 'text-blue-600', description: 'تقرير شامل لكل ما يحدث في الموقع يومياً' },
-  { id: 'production', labelAr: 'تقرير الإنتاج اليومي', labelEn: 'Production Report', icon: TrendingUp, color: 'text-emerald-600', description: 'تفاصيل الإنتاج اليومي والأمتار المنجزة' },
-  { id: 'safety', labelAr: 'تقرير السلامة اليومي', labelEn: 'Safety Report', icon: Shield, color: 'text-orange-600', description: 'فحوصات السلامة والمخالحات' },
-  { id: 'attendance', labelAr: 'تقرير الحضور', labelEn: 'Attendance Report', icon: Users, color: 'text-purple-600', description: 'حضور العمال والغرائب' },
-  { id: 'revenue', labelAr: 'تقرير الإيرادات', labelEn: 'Revenue Report', icon: DollarSign, color: 'text-emerald-600', description: 'الإيرادات اليومية والشهرية' },
-  { id: 'costs', labelAr: 'تقرير التكاليف', labelEn: 'Cost Report', icon: DollarSign, color: 'text-red-600', description: 'التكاليف حسب الفئة' },
-  { id: 'profit', labelAr: 'تقرير صافي الربح', labelEn: 'Profit Report', icon: DollarSign, color: 'text-blue-600', description: 'صافي الربح وهامش الربحية' },
-  { id: 'equipment', labelAr: 'تقرير المعدات', labelEn: 'Equipment Report', icon: Wrench, color: 'text-cyan-600', description: 'حالة المعدات والصيانة' },
-  { id: 'weekly', labelAr: 'تقرير الإنجاز الأسبوعي', labelEn: 'Weekly Progress', icon: Calendar, color: 'text-indigo-600', description: 'ملخص أسبوعي لجميع الأعمال' },
-  { id: 'monthly', labelAr: 'تقرير شهري للإدارة', labelEn: 'Monthly Management', icon: FileBarChart, color: 'text-purple-600', description: 'تقرير شهري للإدارة العليا' },
-  { id: 'handover', labelAr: 'تقرير تسليم الأعمال', labelEn: 'Handover Report', icon: CheckCircle2, color: 'text-emerald-600', description: 'تقارير التشطيب والتسليم' },
-]
-
-// ── Shared label maps (Arabic-first UI) ──
-const reportStatusLabels: Record<string, { ar: string; en: string }> = {
-  draft: { ar: 'مسودة', en: 'Draft' },
-  submitted: { ar: 'مرسل', en: 'Submitted' },
-  pending_approval: { ar: 'بانتظار الاعتماد', en: 'Pending Approval' },
-  approved: { ar: 'معتمد', en: 'Approved' },
-  rejected: { ar: 'مرفوض', en: 'Rejected' },
-}
-
-const incidentLabels: Record<string, { ar: string; en: string }> = {
-  none: { ar: 'لا يوجد', en: 'None' },
-  near_miss: { ar: 'شبه حادث', en: 'Near Miss' },
-  incident: { ar: 'حادث', en: 'Incident' },
-  accident: { ar: 'حادث مع إصابة', en: 'Accident' },
-}
-
-const handoverStatusLabels: Record<string, { ar: string; en: string }> = {
-  pending: { ar: 'بانتظار القبول', en: 'Pending' },
-  accepted: { ar: 'مقبول', en: 'Accepted' },
-  needs_revision: { ar: 'يحتاج تعديل', en: 'Needs Revision' },
-  rejected: { ar: 'مرفوض', en: 'Rejected' },
-}
-
-const equipmentStatusLabels: Record<string, { ar: string; en: string }> = {
-  operational: { ar: 'تعمل', en: 'Operational' },
-  maintenance_needed: { ar: 'تحتاج صيانة', en: 'Maintenance Needed' },
-  stopped: { ar: 'متوقفة', en: 'Stopped' },
-}
-
-const costCategoryLabels: Record<string, { ar: string; en: string }> = {
-  labor: { ar: 'أجور العمال', en: 'Labor' },
-  housing: { ar: 'سكن', en: 'Housing' },
-  transport: { ar: 'نقل', en: 'Transport' },
-  fuel: { ar: 'ديزل', en: 'Fuel' },
-  maintenance: { ar: 'صيانة', en: 'Maintenance' },
-  parts: { ar: 'قطع غيار', en: 'Parts' },
-  oil: { ar: 'زيوت', en: 'Oil' },
-  safety: { ar: 'سلامة', en: 'Safety' },
-  rental: { ar: 'إيجارات', en: 'Rental' },
-  other: { ar: 'أخرى', en: 'Other' },
-}
-
-function localized(map: Record<string, { ar: string; en: string }>, key: any, isRtl: boolean): string {
-  const item = key ? map[String(key)] : undefined
-  if (!item) return key ? String(key) : '-'
-  return isRtl ? item.ar : item.en
-}
-
-function fmtNum(n: any): string {
-  const v = Number(n)
-  return isNaN(v) ? '0' : v.toLocaleString(undefined, { maximumFractionDigits: 2 })
-}
+import {
+  reportTypes, reportStatusLabels, incidentLabels, handoverStatusLabels,
+  equipmentStatusLabels, costCategoryLabels, localized, fmtNum,
+} from '@/lib/report-labels'
+import { PrintableReport } from '@/components/reports/printable-report'
 
 export default function ReportsPage() {
   const [projects, setProjects] = useState<any[]>([])
@@ -100,8 +30,13 @@ export default function ReportsPage() {
   const [toDate, setToDate] = useState('')
   const [reportData, setReportData] = useState<any>(null)
   const [generating, setGenerating] = useState(false)
+  const [mounted, setMounted] = useState(false)
   const language = useAppStore((s) => s.language)
   const isRtl = language === 'ar'
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   useEffect(() => {
     authedFetch('/api/projects/list')
@@ -213,8 +148,21 @@ export default function ReportsPage() {
   }
 
   function exportPDF() {
-    if (!reportData) return
-    // Open print dialog
+    if (!reportData) {
+      toast.error(isRtl ? 'قم بتوليد التقرير أولاً' : 'Generate the report first')
+      return
+    }
+    // Give the saved PDF a meaningful default file name
+    // (browsers use document.title as the suggested file name)
+    const originalTitle = document.title
+    document.title = `axis-${reportData.type}-${reportData.fromDate}_${reportData.toDate}`
+    const restore = () => {
+      document.title = originalTitle
+      window.removeEventListener('afterprint', restore)
+    }
+    window.addEventListener('afterprint', restore)
+    // The printable document lives in the .print-root portal (see PrintableReport);
+    // print CSS hides the whole app and prints ONLY that document.
     window.print()
   }
 
@@ -371,8 +319,8 @@ export default function ReportsPage() {
         </p>
       </div>
 
-      {/* Report type selection */}
-      <div>
+      {/* Report type selection (screen-only — never printed) */}
+      <div className="no-print">
         <Label className="mb-2 block">{isRtl ? 'اختر نوع التقرير' : 'Select Report Type'}</Label>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {reportTypes
@@ -403,8 +351,8 @@ export default function ReportsPage() {
         </div>
       </div>
 
-      {/* Filters */}
-      <Card>
+      {/* Filters (screen-only — never printed) */}
+      <Card className="no-print">
         <CardHeader>
           <CardTitle className="text-base">{isRtl ? 'خيارات التقرير' : 'Report Options'}</CardTitle>
         </CardHeader>
@@ -453,15 +401,15 @@ export default function ReportsPage() {
         </CardContent>
       </Card>
 
-      {/* Report preview */}
+      {/* Report preview (screen-only; the PDF comes from PrintableReport portal) */}
       {reportData && (
         <Card className="no-print">
           <CardHeader>
             <CardTitle className="flex items-center justify-between">
               <span>{isRtl ? 'معاينة التقرير' : 'Report Preview'}</span>
-              <Button variant="ghost" size="sm" onClick={() => window.print()}>
+              <Button variant="ghost" size="sm" onClick={exportPDF}>
                 <Download className="h-4 w-4 ml-1" />
-                {isRtl ? 'طباعة/حفظ' : 'Print/Save'}
+                {isRtl ? 'طباعة/حفظ PDF' : 'Print/Save PDF'}
               </Button>
             </CardTitle>
           </CardHeader>
@@ -469,6 +417,15 @@ export default function ReportsPage() {
             <ReportPreview data={reportData} />
           </CardContent>
         </Card>
+      )}
+
+      {/* Dedicated print document — portal attached to <body>; hidden on screen,
+          shown ONLY during printing (see @media print in globals.css) */}
+      {mounted && reportData && createPortal(
+        <div className="print-root">
+          <PrintableReport data={reportData} generatedBy={user?.name || null} />
+        </div>,
+        document.body
       )}
     </div>
   )
@@ -510,7 +467,7 @@ function ReportPreview({ data }: { data: any }) {
                 </tr>
               </thead>
               <tbody>
-                {(data.data.reports || []).slice(0, 50).map((r: any) => (
+                {(data.data.reports || []).map((r: any) => (
                   <tr key={r.id} className="border-b">
                     <td className="p-2">{new Date(r.reportDate).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')}</td>
                     <td className="p-2">{r.project?.name}</td>
@@ -542,7 +499,7 @@ function ReportPreview({ data }: { data: any }) {
                 </tr>
               </thead>
               <tbody>
-                {(data.data.reports || []).slice(0, 50).map((r: any) => (
+                {(data.data.reports || []).map((r: any) => (
                   <tr key={r.id} className="border-b">
                     <td className="p-2">{new Date(r.reportDate).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')}</td>
                     <td className="p-2">{r.project?.name}</td>
@@ -573,7 +530,7 @@ function ReportPreview({ data }: { data: any }) {
                 </tr>
               </thead>
               <tbody>
-                {(data.data.reports || []).filter((r: any) => r.safety).slice(0, 50).map((r: any) => (
+                {(data.data.reports || []).filter((r: any) => r.safety).map((r: any) => (
                   <tr key={r.id} className="border-b">
                     <td className="p-2">{new Date(r.reportDate).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')}</td>
                     <td className="p-2">{r.project?.name}</td>
@@ -610,7 +567,7 @@ function ReportPreview({ data }: { data: any }) {
                 </tr>
               </thead>
               <tbody>
-                {(data.data.reports || []).slice(0, 50).map((r: any) => (
+                {(data.data.reports || []).map((r: any) => (
                   <tr key={r.id} className="border-b">
                     <td className="p-2">{new Date(r.reportDate).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')}</td>
                     <td className="p-2">{r.project?.name}</td>
@@ -880,4 +837,5 @@ function ReportPreview({ data }: { data: any }) {
     </div>
   )
 }
+
 
