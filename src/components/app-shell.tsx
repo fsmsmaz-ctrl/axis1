@@ -160,6 +160,15 @@ export default function AppShell() {
     }
   }, [language])
 
+  // منع تمرير الصفحة الخلفية أثناء فتح القائمة الجانبية على الهاتف
+  useEffect(() => {
+    if (sidebarOpen && typeof window !== 'undefined' && window.innerWidth < 1024) {
+      const prev = document.body.style.overflow
+      document.body.style.overflow = 'hidden'
+      return () => { document.body.style.overflow = prev }
+    }
+  }, [sidebarOpen])
+
   if (!user) return null
 
   const allowedItems = navItems.filter(item => hasPermission(user.role, item.resource, user.permissions))
@@ -194,6 +203,7 @@ export default function AppShell() {
   }
 
   function openUserDialog() {
+    setSidebarOpen(false)
     setDialogTab('create')
     setFormData({ email: '', name: '', nameEn: '', password: '', role: 'site_engineer', phone: '', permissions: {} })
     setCreateError('')
@@ -338,12 +348,18 @@ export default function AppShell() {
 
   return (
     <div className="min-h-screen bg-muted/30" dir={isRtl ? 'rtl' : 'ltr'}>
-      {sidebarOpen && (
-        <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setSidebarOpen(false)} />
-      )}
+      {/* خلفية معتمة تظهر وتختفي بتدرج بدل الظهور المفاجئ */}
+      <div
+        className={cn(
+          "fixed inset-0 bg-black/50 z-40 lg:hidden transition-opacity duration-300",
+          sidebarOpen ? "opacity-100" : "opacity-0 pointer-events-none"
+        )}
+        onClick={() => setSidebarOpen(false)}
+        aria-hidden="true"
+      />
 
       <aside className={cn(
-        "fixed top-0 bottom-0 z-50 w-72 bg-sidebar border-sidebar-border flex flex-col transition-transform duration-300 lg:translate-x-0",
+        "mobile-safe-y fixed top-0 bottom-0 z-50 w-72 bg-sidebar border-sidebar-border flex flex-col transition-transform duration-300 lg:translate-x-0",
         isRtl ? "right-0 border-l" : "left-0 border-r",
         sidebarOpen ? "translate-x-0" : (isRtl ? "translate-x-full" : "-translate-x-full")
       )}>
@@ -354,7 +370,7 @@ export default function AppShell() {
               alt="AXIS"
               className="h-9 w-auto object-contain flex-1 min-w-0"
             />
-            <Button variant="ghost" size="icon" className={cn("lg:hidden shrink-0 h-7 w-7", isRtl ? "-mr-1" : "-ml-1")} onClick={() => setSidebarOpen(false)}>
+            <Button variant="ghost" size="icon" className={cn("lg:hidden shrink-0 h-9 w-9", isRtl ? "-mr-1" : "-ml-1")} onClick={() => setSidebarOpen(false)}>
               <X className="h-4 w-4" />
             </Button>
           </div>
@@ -741,3 +757,4 @@ export default function AppShell() {
 }
 
 
+  
