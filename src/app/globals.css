@@ -146,79 +146,182 @@
   background: oklch(0.6 0.01 60);
 }
 
-/* Print styles for reports */
+/* ─────────────────────────────────────────────────────────────────────────
+   Print / PDF export — ROOT-FIX architecture
+   ─────────────────────────────────────────────────────────────────────────
+   1. PrintableReport renders a dedicated A4 print document into a `.print-root`
+      portal attached to <body>. On screen it is always hidden.
+   2. When printing WITH a generated report (body :has(.print-root)), the whole
+      app is hidden and ONLY .print-root is printed → clean official PDF.
+   3. When printing WITHOUT a generated report (Ctrl+P anywhere else), a legacy
+      fallback applies: app chrome (aside/header/buttons/inputs) is hidden.
+   4. All design tokens are overridden with print-safe sRGB hex values inside
+      @media print, so Tailwind v4 oklch colors can never render as black-on-
+      black or washed-out in the PDF — even in dark mode.
+   5. Fonts are referenced through next/font CSS variables (--font-cairo /
+      --font-tajawal); literal family names like "Cairo" never match because
+      next/font generates internal names.
+   ───────────────────────────────────────────────────────────────────────── */
+
+.print-root { display: none !important; }
+
 @media print {
+  /* Print-safe token overrides (fix oklch printing + dark mode) */
+  :root, .dark {
+    --background: #ffffff;
+    --foreground: #111827;
+    --card: #ffffff;
+    --card-foreground: #111827;
+    --popover: #ffffff;
+    --popover-foreground: #111827;
+    --primary: #c2410c;
+    --primary-foreground: #ffffff;
+    --secondary: #f3f4f6;
+    --secondary-foreground: #111827;
+    --muted: #f9fafb;
+    --muted-foreground: #4b5563;
+    --accent: #fff7ed;
+    --accent-foreground: #111827;
+    --destructive: #b91c1c;
+    --border: #d1d5db;
+    --input: #e5e7eb;
+    --ring: #c2410c;
+    --sidebar: #ffffff;
+    --sidebar-foreground: #111827;
+    --sidebar-primary: #c2410c;
+    --sidebar-primary-foreground: #ffffff;
+    --sidebar-accent: #f3f4f6;
+    --sidebar-accent-foreground: #111827;
+    --sidebar-border: #d1d5db;
+    --sidebar-ring: #c2410c;
+  }
+
+  /* Keep background colors & images in the printed output */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  html, body {
+    background: #ffffff !important;
+    color: #111827 !important;
+    font-family: var(--font-cairo), var(--font-tajawal), sans-serif !important;
+  }
+
   .no-print { display: none !important; }
-  body { background: white !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; font-family: Cairo, Tajawal, sans-serif !important; font-size: 11pt !important; color: #111827 !important; }
 
-  /* Hide sidebar, header, mobile overlay */
-  aside { display: none !important; }
-  header { display: none !important; }
-  .fixed.inset-0 { display: none !important; }
+  /* ── Dedicated print document mode ──
+     When a report was generated, hide the ENTIRE app and print only the
+     .print-root portal. This replaces the old fragile per-element hiding. */
+  .print-root { display: block !important; }
+  body:has(.print-root) > *:not(.print-root) { display: none !important; }
 
-  /* Remove main content padding and margin - full width for print */
-  main { padding: 0 !important; margin: 0 !important; max-width: 100% !important; }
-  .lg\:pl-72, .lg\:pr-72 { padding-left: 0 !important; padding-right: 0 !important; }
-  .min-h-screen { min-height: auto !important; }
-  .bg-muted\/30 { background: white !important; }
-
-  /* Card styles */
-  .border { border-color: #d1d5db !important; }
-  .rounded-lg { border-radius: 4px !important; }
-  .shadow-sm, .shadow { box-shadow: none !important; }
-
-  /* Table styles - FIX-PDF: ensure tables are readable */
-  .print-table { width: 100% !important; border-collapse: collapse !important; }
-  .print-table thead th { 
-    background: #f3f4f6 !important; 
-    color: #111827 !important; 
-    font-weight: 700 !important; 
-    padding: 8px 10px !important; 
-    border-bottom: 2px solid #9ca3af !important; 
-    font-size: 10pt !important;
+  /* ── Legacy fallback (no report generated): hide app chrome ── */
+  body:not(:has(.print-root)) aside,
+  body:not(:has(.print-root)) header,
+  body:not(:has(.print-root)) button,
+  body:not(:has(.print-root)) input,
+  body:not(:has(.print-root)) select { display: none !important; }
+  body:not(:has(.print-root)) main {
+    padding: 0 !important;
+    margin: 0 !important;
+    max-width: 100% !important;
   }
-  .print-table tbody td { 
-    padding: 6px 10px !important; 
-    border-bottom: 1px solid #e5e7eb !important; 
-    color: #1f2937 !important; 
-    font-size: 10pt !important;
+
+  /* ── Printable report document styles ── */
+  .pr-doc {
+    color: #111827;
+    font-size: 10.5pt;
+    line-height: 1.55;
   }
-  .print-table tfoot td { 
-    padding: 8px 10px !important; 
-    border-top: 2px solid #374151 !important; 
-    font-weight: 700 !important; 
+  .pr-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    border-bottom: 3px solid #c2410c;
+    padding-bottom: 10px;
   }
-  table { page-break-inside: auto !important; }
-  tr { page-break-inside: avoid !important; }
-  thead { display: table-header-group !important; }
-  tfoot { display: table-footer-group !important; }
+  .pr-logo { height: 44px; width: auto; }
+  .pr-brand {
+    font-size: 20pt;
+    font-weight: 800;
+    letter-spacing: 1px;
+    color: #c2410c;
+    line-height: 1.1;
+  }
+  .pr-sub { font-size: 8.5pt; color: #6b7280; letter-spacing: 0.5px; }
+  .pr-head-badge {
+    border: 1.5px solid #c2410c;
+    color: #c2410c;
+    font-size: 8.5pt;
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: 4px;
+    white-space: nowrap;
+  }
+  .pr-title { font-size: 15pt; font-weight: 800; margin: 14px 0 4px; color: #111827; }
+  .pr-meta { width: 100%; border-collapse: collapse; margin: 6px 0 4px; }
+  .pr-meta td { border: 1px solid #e5e7eb; padding: 4px 8px; font-size: 9pt; color: #111827; }
+  .pr-meta td.k { background: #f9fafb; font-weight: 700; width: 110px; color: #374151; white-space: nowrap; }
+  .pr-section-title { font-size: 11.5pt; font-weight: 800; margin: 16px 0 6px; color: #c2410c; page-break-after: avoid; }
+  .pr-note { font-size: 8.5pt; color: #6b7280; margin-top: 0; }
+  .pr-empty { text-align: center; color: #6b7280 !important; padding: 14px 8px !important; }
 
-  /* Ensure text is visible - override oklch colors */
-  .text-muted-foreground { color: #4b5563 !important; }
-  .text-foreground { color: #111827 !important; }
-  .text-emerald-700 { color: #047857 !important; }
-  .text-red-700, .text-red-600 { color: #b91c1c !important; }
-  .text-orange-600, .text-orange-700 { color: #c2410c !important; }
-  .text-blue-700 { color: #1d4ed8 !important; }
-  .text-purple-700 { color: #7e22ce !important; }
-  .text-teal-700 { color: #0f766e !important; }
-  .bg-emerald-50 { background-color: #ecfdf5 !important; }
-  .bg-red-50 { background-color: #fef2f2 !important; }
-  .bg-orange-50 { background-color: #fff7ed !important; }
-  .bg-blue-50 { background-color: #eff6ff !important; }
-  .bg-teal-50 { background-color: #f0fdfa !important; }
-  .bg-muted { background-color: #f9fafb !important; }
-  .font-semibold, .font-bold { font-weight: 700 !important; }
-  .font-medium { font-weight: 500 !important; }
+  .pr-table { width: 100%; border-collapse: collapse; page-break-inside: auto; }
+  .pr-table thead { display: table-header-group; }   /* repeat header on every page */
+  .pr-table tfoot { display: table-footer-group; }
+  .pr-table tr { page-break-inside: avoid; }
+  .pr-table th, .pr-table td {
+    border: 1px solid #d1d5db;
+    padding: 4px 8px;
+    font-size: 9pt;
+    text-align: start;
+    vertical-align: top;
+    color: #1f2937;
+  }
+  .pr-table thead th { background: #f3f4f6; font-weight: 700; color: #111827; }
+  .pr-table tfoot td { background: #fff7ed; font-weight: 800; border-top: 2px solid #c2410c; color: #7c2d12; }
+  .pr-num { text-align: end !important; white-space: nowrap; font-variant-numeric: tabular-nums; }
 
-  /* Report header styling */
-  .print-header { margin-bottom: 16px !important; }
-  .print-title { font-size: 16pt !important; color: #111827 !important; }
+  .pr-group-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #f9fafb;
+    border: 1px solid #d1d5db;
+    border-bottom: 0;
+    padding: 6px 10px;
+    font-weight: 800;
+    font-size: 9.5pt;
+    color: #111827;
+    page-break-after: avoid;
+    page-break-inside: avoid;
+  }
 
-  /* Hide interactive elements */
-  button { display: none !important; }
-  .overflow-y-auto, .overflow-x-auto { overflow: visible !important; max-height: none !important; }
+  .pr-kv-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 6px; }
+  .pr-kv { border: 1px solid #d1d5db; border-radius: 6px; padding: 8px 10px; page-break-inside: avoid; }
+  .pr-kv .k { font-size: 8.5pt; color: #6b7280; margin: 0; }
+  .pr-kv .v { font-size: 13pt; font-weight: 800; margin: 2px 0 0; color: #111827; }
 
-  /* Page margins */
-  @page { margin: 15mm; size: A4; }
+  .pr-bar { background: #e5e7eb; height: 9px; border-radius: 4px; overflow: hidden; min-width: 90px; }
+  .pr-bar > div { background: #c2410c; height: 9px; }
+
+  .pr-foot {
+    margin-top: 18px;
+    padding-top: 8px;
+    border-top: 1px solid #d1d5db;
+    display: flex;
+    justify-content: space-between;
+    font-size: 8.5pt;
+    color: #6b7280;
+  }
+
+  /* Safety net for tables printed via the legacy fallback path */
+  table { page-break-inside: auto; }
+  tr { page-break-inside: avoid; }
+  thead { display: table-header-group; }
+
+  /* Page setup */
+  @page { size: A4; margin: 14mm 12mm; }
 }
+
