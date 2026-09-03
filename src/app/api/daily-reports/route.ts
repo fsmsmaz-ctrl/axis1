@@ -123,6 +123,39 @@ export async function POST(req: NextRequest) {
       ),
     ])
 
+    // === Validate drive line: must exist, belong to the project, and have actually started ===
+    if (body.driveLineId) {
+      if (!dlResult.success || !dlResult.data) {
+        return NextResponse.json(
+          { error: 'invalid_drive_line', message: 'خط الحفر المحدد غير موجود' },
+          { status: 400 }
+        )
+      }
+      if (dlResult.data.projectId !== String(body.projectId)) {
+        return NextResponse.json(
+          { error: 'invalid_drive_line', message: 'خط الحفر المحدد لا ينتمي إلى المشروع المختار' },
+          { status: 400 }
+        )
+      }
+      if (dlResult.data.status === 'not_started') {
+        // نتحقق من وجود قراءات فعلية (نفس منطق /api/drive-lines الديناميكي)
+        const progressCheck = await safeDbOp(
+          () => db.dailyReport.findFirst({
+            where: { driveLineId: dlResult.data!.id, endReading: { gt: 0 } },
+            select: { id: true },
+          }),
+          'التحقق من بدء خط الحفر'
+        )
+        if (!progressCheck.success || !progressCheck.data) {
+          return NextResponse.json(
+            { error: 'drive_line_not_started', message: 'لا يمكن تسجيل تقرير لخط حفر لم يبدأ العمل عليه بعد' },
+            { status: 400 }
+          )
+        }
+      }
+    }
+    // === End of drive line validation ===
+
     const totalLength = dlResult.success && dlResult.data ? dlResult.data.totalLength : 0
     const totalMeters = endReading
     const remainingMeters = Math.max(0, totalLength - totalMeters)
@@ -239,4 +272,5 @@ export async function POST(req: NextRequest) {
     return handleDbError(error, 'إنشاء التقرير اليومي')
   }
 }
+
 
