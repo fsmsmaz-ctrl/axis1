@@ -350,7 +350,7 @@ export default function DriveLinesPage() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>{isRtl ? 'رقم الخط' : 'Line Number'} *</Label>
                 <Input value={formData.lineNumber} onChange={(e) => setFormData({ ...formData, lineNumber: e.target.value })} placeholder="L-01" required />
@@ -463,3 +463,4 @@ export default function DriveLinesPage() {
     </div>
   )
 }
+
