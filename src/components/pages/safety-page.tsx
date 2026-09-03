@@ -212,7 +212,18 @@ export default function SafetyPage() {
     driveLinesLoaded.current = form.projectId
     authedFetch('/api/drive-lines?projectId=' + form.projectId)
       .then(function(r) { return r.json() })
-      .then(function(d) { setDriveLines(d.driveLines || []) })
+      .then(function(d) {
+        // إخفاء خطوط الحفر التي لم تبدأ بعد — لا يمكن تسجيل سلامة لخط لم يبدأ العمل عليه
+        var list = (d.driveLines || []).filter(function(l: any) { return l.status !== 'not_started' })
+        setDriveLines(list)
+        // إذا كان الخط المختار سابقاً ضمن الخطوط المخفية نُفرغه
+        setForm(function(f) {
+          if (f.driveLineId && !list.some(function(l) { return l.id === f.driveLineId })) {
+            return Object.assign({}, f, { driveLineId: '' })
+          }
+          return f
+        })
+      })
       .catch(function() { setDriveLines([]) })
   }, [form.projectId])
 
@@ -621,7 +632,7 @@ export default function SafetyPage() {
           </SheetHeader>
 
           <div className="mt-6 space-y-5">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>{isRtl ? 'المشروع' : 'Project'} *</Label>
                 <Select value={form.projectId} onValueChange={function(v) { setForm({ ...form, projectId: v, driveLineId: '' }) }}>
@@ -654,6 +665,11 @@ export default function SafetyPage() {
                   return <option key={l.id} value={l.id}>{(l.lineNumber || '-') + ' - ' + (l.startPoint || '-') + ' \u2192 ' + (l.endPoint || '-')}</option>
                 })}
               </select>
+              <p className="text-xs text-muted-foreground mt-1">
+                {isRtl
+                  ? 'تظهر هنا فقط خطوط الحفر التي بدأ العمل عليها فعلياً'
+                  : 'Only drive lines that have actually started are listed'}
+              </p>
             </div>
 
             <div className="space-y-2">
@@ -747,3 +763,4 @@ export default function SafetyPage() {
     </div>
   )
 }
+
