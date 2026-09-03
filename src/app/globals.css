@@ -364,3 +364,40 @@ button,
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
+/* ============================================================
+   Mobile fixes round 2 — الأطراف والتداخل العلوي
+   ============================================================ */
+
+/* رأس الصفحة: احترام النوتش/الشريط العلوي في iPhone
+   (مع viewport-fit=cover يجب تعويض المساحة الآمنة العلوية)
+   على الحواسيب env() = 0 فلا يتأثر شيء */
+.mobile-safe-top {
+  height: calc(4rem + env(safe-area-inset-top, 0px));
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+@media (max-width: 767px) {
+  /* نوافذ حوارية أقرب للحواف: مساحة بيانات أكبر داخل الشاشة */
+  [data-slot="dialog-content"] {
+    padding: 1rem !important;
+    gap: 0.75rem;
+  }
+
+  /* تمرير أفقي سلس في الجداول + مؤشر ظاهر يكشف الأعمدة المخفية */
+  .overflow-x-auto {
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+  }
+  .overflow-x-auto::-webkit-scrollbar {
+    height: 5px;
+  }
+  .overflow-x-auto::-webkit-scrollbar-thumb {
+    background: rgba(125, 125, 135, 0.45);
+    border-radius: 9999px;
+  }
+  .overflow-x-auto::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
