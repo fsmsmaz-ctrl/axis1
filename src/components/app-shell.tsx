@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { useAppStore } from '@/lib/store'
 import { hasPermission, MODULE_PERMISSIONS, MODULE_PERMISSION_LABELS, REPORT_PERMISSIONS, REPORT_LABELS, ROLE_PERMISSIONS, canAccessDashboard, SYSTEM_ADMIN_EMAIL, type SessionUser } from '@/lib/auth'
 import { clearStoredToken, authedFetch } from '@/lib/api-client'
@@ -195,6 +195,14 @@ export default function AppShell() {
     toast.success('تم تسجيل الخروج')
   }
 
+  // النقر على أي مكان فارغ (الخلفية المعتمة أو فراغ القائمة نفسها) يغلقها فوراً — للهاتف
+  function handleSidebarTap(e: ReactMouseEvent<HTMLElement>) {
+    if (!sidebarOpen) return
+    const el = e.target as HTMLElement
+    if (el.closest('button, a, input, select, textarea, label')) return
+    setSidebarOpen(false)
+  }
+
   function toggleLanguage() {
     const newLang = language === 'ar' ? 'en' : 'ar'
     setLanguage(newLang)
@@ -351,15 +359,17 @@ export default function AppShell() {
       {/* خلفية معتمة تظهر وتختفي بتدرج بدل الظهور المفاجئ */}
       <div
         className={cn(
-          "fixed inset-0 bg-black/50 z-40 lg:hidden transition-opacity duration-300",
+          "fixed inset-0 bg-black/50 z-40 lg:hidden transition-opacity duration-200",
           sidebarOpen ? "opacity-100" : "opacity-0 pointer-events-none"
         )}
         onClick={() => setSidebarOpen(false)}
         aria-hidden="true"
       />
 
-      <aside className={cn(
-        "mobile-safe-y fixed top-0 bottom-0 z-50 w-72 bg-sidebar border-sidebar-border flex flex-col transition-transform duration-300 lg:translate-x-0",
+      <aside
+        onClick={handleSidebarTap}
+        className={cn(
+        "mobile-safe-y fixed top-0 bottom-0 z-50 w-80 bg-sidebar border-sidebar-border flex flex-col transition-transform duration-200 lg:translate-x-0",
         isRtl ? "right-0 border-l" : "left-0 border-r",
         sidebarOpen ? "translate-x-0" : (isRtl ? "translate-x-full" : "-translate-x-full")
       )}>
@@ -377,11 +387,11 @@ export default function AppShell() {
           <p className="text-[10px] text-muted-foreground mt-0.5 leading-tight">Pipe Jacking Management System</p>
         </div>
 
-        <nav className="flex-1 overflow-y-auto p-3 space-y-1">
+        <nav className="flex-1 overflow-y-auto p-3 space-y-1.5">
           {isAdmin && (
             <button
               onClick={openUserDialog}
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-all border border-primary/20 border-dashed"
+              className="w-full flex items-center gap-3 px-3.5 py-3 rounded-xl text-[15px] font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-all border border-primary/20 border-dashed"
             >
               <UserPlus className="h-5 w-5 shrink-0" />
               <span className="flex-1 text-start">{isAr ? 'إدارة المستخدمين' : 'User Management'}</span>
@@ -395,7 +405,7 @@ export default function AppShell() {
             const unreadCount = item.id === 'notifications' ? notifications.length : 0
             return (
               <button key={item.id} onClick={() => { setCurrentPage(item.id); setSidebarOpen(false) }} className={cn(
-                "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all",
+                "w-full flex items-center gap-3 px-3.5 py-3 rounded-xl text-[15px] font-medium transition-all",
                 isActive ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm" : "text-sidebar-foreground hover:bg-sidebar-accent"
               )}>
                 <Icon className={cn("h-5 w-5 shrink-0", isActive ? "" : "text-muted-foreground")} />
@@ -425,7 +435,7 @@ export default function AppShell() {
         </div>
       </aside>
 
-      <div className={isRtl ? "lg:pr-72" : "lg:pl-72"}>
+      <div className={isRtl ? "lg:pr-80" : "lg:pl-80"}>
         <header className="mobile-safe-top sticky top-0 z-30 h-16 bg-background/95 backdrop-blur border-b flex items-center px-3 lg:px-6 gap-2">
           <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setSidebarOpen(true)}>
             <Menu className="h-5 w-5" />
@@ -757,4 +767,4 @@ export default function AppShell() {
 }
 
 
-  
+   
