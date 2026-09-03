@@ -410,13 +410,13 @@ export default function AppShell() {
       </aside>
 
       <div className={isRtl ? "lg:pr-72" : "lg:pl-72"}>
-        <header className="sticky top-0 z-30 h-16 bg-background/80 backdrop-blur border-b flex items-center px-4 lg:px-6 gap-3">
+        <header className="mobile-safe-top sticky top-0 z-30 h-16 bg-background/95 backdrop-blur border-b flex items-center px-3 lg:px-6 gap-2">
           <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setSidebarOpen(true)}>
             <Menu className="h-5 w-5" />
           </Button>
 
-          <div className="flex-1">
-            <h2 className="text-lg font-semibold">
+          <div className="flex-1 min-w-0">
+            <h2 className="text-lg font-semibold truncate">
               {isRtl ? navItems.find(i => i.id === effectivePage)?.labelAr : navItems.find(i => i.id === effectivePage)?.labelEn}
             </h2>
           </div>
@@ -473,7 +473,7 @@ export default function AppShell() {
           </Avatar>
         </header>
 
-        <main className="p-4 pb-24 lg:p-6 max-w-[1600px] mx-auto">
+        <main className="p-3 pb-24 lg:p-6 max-w-[1600px] mx-auto">
           {renderPage()}
         </main>
       </div>
