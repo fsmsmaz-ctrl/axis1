@@ -171,6 +171,14 @@ export default function AppShell() {
   const isAr = language === 'ar'
   const isRtl = isAr
 
+  // شريط التنقل السفلي للهاتف: أهم 3 أقسام متاحة حسب صلاحية المستخدم
+  // (بترتيب أولوية الاستخدام الميداني) + زر "المزيد" يفتح القائمة الجانبية
+  const bottomNavPriority: PageId[] = ['dailyReports', 'safety', 'driveLines', 'dashboard', 'projects']
+  const bottomItems = bottomNavPriority
+    .map(id => allowedItems.find(i => i.id === id))
+    .filter((i): i is NavItem => !!i)
+    .slice(0, 3)
+
   async function handleLogout() {
     await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
     clearStoredToken()
@@ -431,7 +439,7 @@ export default function AppShell() {
                 )}
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align={isRtl ? "start" : "end"} className="w-80">
+            <DropdownMenuContent align={isRtl ? "start" : "end"} className="w-80 max-w-[calc(100vw-2rem)]">
               <DropdownMenuLabel className="flex items-center justify-between">
                 <span>{isAr ? 'التنبيهات' : 'Notifications'}</span>
                 {notifications.length > 0 && <Badge variant="secondary">{notifications.length}</Badge>}
@@ -465,11 +473,42 @@ export default function AppShell() {
           </Avatar>
         </header>
 
-        <main className="p-4 lg:p-6 max-w-[1600px] mx-auto">
+        <main className="p-4 pb-24 lg:p-6 max-w-[1600px] mx-auto">
           {renderPage()}
         </main>
       </div>
 
+
+      {/* شريط التنقل السفلي السريع — للهاتف فقط (يخفى على شاشات lg وأكبر) */}
+      <nav
+        className="mobile-bottom-nav fixed bottom-0 inset-x-0 z-30 lg:hidden bg-background/95 backdrop-blur border-t flex items-stretch justify-around"
+        dir={isRtl ? 'rtl' : 'ltr'}
+      >
+        {bottomItems.map((item) => {
+          const Icon = item.icon
+          const isActive = effectivePage === item.id
+          return (
+            <button
+              key={item.id}
+              onClick={() => setCurrentPage(item.id)}
+              className={cn(
+                'flex flex-col items-center justify-center gap-0.5 min-h-[56px] flex-1 px-1 text-[10px] font-medium transition-colors',
+                isActive ? 'text-primary' : 'text-muted-foreground active:bg-muted/60'
+              )}
+            >
+              <Icon className="h-5 w-5 shrink-0" />
+              <span className="truncate max-w-full">{isRtl ? item.labelAr : item.labelEn}</span>
+            </button>
+          )
+        })}
+        <button
+          onClick={() => setSidebarOpen(true)}
+          className="flex flex-col items-center justify-center gap-0.5 min-h-[56px] flex-1 px-1 text-[10px] font-medium text-muted-foreground transition-colors active:bg-muted/60"
+        >
+          <Menu className="h-5 w-5 shrink-0" />
+          <span>{isRtl ? 'المزيد' : 'More'}</span>
+        </button>
+      </nav>
       {isAdmin && (
         <Dialog open={userDialogOpen} onOpenChange={(v) => setUserDialogOpen(v)}>
           <DialogContent className="sm:max-w-[680px] max-h-[90vh] overflow-y-auto">
@@ -700,4 +739,5 @@ export default function AppShell() {
     </div>
   )
 }
+
 
