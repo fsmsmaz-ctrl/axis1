@@ -325,3 +325,42 @@
   @page { size: A4; margin: 14mm 12mm; }
 }
 
+/* ============================================================
+   Mobile UX enhancements — تحسينات تجربة الهاتف
+   ============================================================ */
+
+/* النوافذ الحوارية: لا تلامس حواف الشاشة على الهاتف
+   (تصحيح عام لكل الحوارات مهما كانت max-w الممررة من الصفحات) */
+@media (max-width: 639px) {
+  [data-slot="dialog-content"] {
+    max-width: calc(100% - 2rem) !important;
+  }
+}
+
+/* منع تكبير iOS التلقائي عند التركيز على الحقول
+   (أي حجم خط أقل من 16px يجعل Safari يكبّر الصفحة فجأة) */
+@media (max-width: 767px) and (pointer: coarse) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* لمسات أسرع وبدون وميض رمادي عند اللمس */
+button,
+[role="button"],
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button,
+[role="button"] {
+  touch-action: manipulation;
+}
+
+/* شريط التنقل السفلي — احترام المساحة الآمنة في أجهزة iPhone */
+.mobile-bottom-nav {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
