@@ -72,6 +72,52 @@ export async function POST(req: NextRequest) {
     var validationError = validateRequired(body, ['projectId', 'reportDate'])
     if (validationError) return validationError
 
+    // === Validate drive line: must exist, belong to the project, and have actually started ===
+    if (body.driveLineId) {
+      var dlResult = await safeDbOp(
+        () => db.driveLine.findUnique({ where: { id: String(body.driveLineId) } }),
+        'جلب خط الحفر'
+      )
+      if (!dlResult.success) return dlResult.response
+
+      var dl = dlResult.data
+      if (!dl) {
+        return NextResponse.json(
+          { error: 'invalid_drive_line', message: 'خط الحفر المحدد غير موجود' },
+          { status: 400 }
+        )
+      }
+      if (dl.projectId !== String(body.projectId)) {
+        return NextResponse.json(
+          { error: 'invalid_drive_line', message: 'خط الحفر المحدد لا ينتمي إلى المشروع المختار' },
+          { status: 400 }
+        )
+      }
+      // الخط يُعتبر "مبدوءاً" إذا كانت حالته المحفوظة ليست not_started،
+      // أو إذا كان لديه بالفعل قراءات حفر مسجلة في التقارير اليومية
+      // (نفس منطق الحساب الديناميكي في /api/drive-lines)
+      if (dl.status === 'not_started') {
+        var progressResult = await safeDbOp(
+          () => db.dailyReport.findFirst({
+            where: { driveLineId: dl.id, endReading: { gt: 0 } },
+            select: { id: true },
+          }),
+          'التحقق من بدء خط الحفر'
+        )
+        var hasProgress = !!(progressResult.success && progressResult.data)
+        if (!hasProgress) {
+          return NextResponse.json(
+            {
+              error: 'drive_line_not_started',
+              message: 'لا يمكن تسجيل تقرير سلامة لخط حفر لم يبدأ العمل عليه بعد',
+            },
+            { status: 400 }
+          )
+        }
+      }
+    }
+    // === End of drive line validation ===
+
     // === Check: only ONE safety report per employee per project per day ===
     var dateStart = new Date(body.reportDate)
     dateStart.setHours(0, 0, 0, 0)
@@ -287,4 +333,5 @@ export async function DELETE(req: NextRequest) {
     return handleDbError(error, 'حذف تقرير السلامة')
   }
 }
+
 
