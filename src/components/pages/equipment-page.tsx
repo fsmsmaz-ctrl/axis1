@@ -501,7 +501,7 @@ export default function EquipmentPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 min-[480px]:grid-cols-3 gap-3">
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center gap-2">
@@ -847,7 +847,7 @@ export default function EquipmentPage() {
                 </div>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-3">
               <div className="space-y-1.5"><Label>{isRtl ? 'اسم المعدة' : 'Equipment Name'} *</Label><Input value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required /></div>
               <div className="space-y-1.5"><Label>{isRtl ? 'رقم المعدة' : 'Number'} *</Label><Input value={formData.number} onChange={(e) => setFormData({ ...formData, number: e.target.value })} required /></div>
               <div className="space-y-1.5">
@@ -949,7 +949,7 @@ export default function EquipmentPage() {
                 </div>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-3">
               <div className="space-y-1.5"><Label>{isRtl ? 'اسم المعدة' : 'Equipment Name'} *</Label><Input value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required /></div>
               <div className="space-y-1.5"><Label>{isRtl ? 'رقم المعدة' : 'Number'} *</Label><Input value={formData.number} onChange={(e) => setFormData({ ...formData, number: e.target.value })} required /></div>
               <div className="space-y-1.5">
@@ -1068,7 +1068,7 @@ export default function EquipmentPage() {
                 })}
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-3">
               <div className="space-y-1.5"><Label>{isRtl ? 'اسم الغرض *' : 'Item Name *'}</Label><Input value={assetForm.name} onChange={(e) => setAssetForm({ ...assetForm, name: e.target.value })} required /></div>
               <div className="space-y-1.5">
                 <Label>{isRtl ? 'النوع *' : 'Type *'}</Label>
@@ -1122,7 +1122,7 @@ export default function EquipmentPage() {
             {(assetForm.ownership === 'rented' || assetForm.ownership === 'borrowed') && (
               <div className={`p-3 rounded-lg border-2 border-dashed ${assetForm.ownership === 'rented' ? 'border-amber-300 bg-amber-50/50' : 'border-blue-300 bg-blue-50/50'}`}>
                 <p className="text-sm font-medium mb-2">{assetForm.ownership === 'rented' ? (isRtl ? 'تفاصيل الإيجار' : 'Rental Details') : (isRtl ? 'تفاصيل الإعارة' : 'Borrow Details')}</p>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-3">
                   <div className="space-y-1.5"><Label>{isRtl ? 'الجهة المانحة/المؤجرة' : 'Supplier/Lender'}</Label><Input value={assetForm.supplier} onChange={(e) => setAssetForm({ ...assetForm, supplier: e.target.value })} /></div>
                   {assetForm.ownership === 'rented' && (
                     <div className="space-y-1.5"><Label>{isRtl ? 'تكلفة الإيجار الشهري (ر.ع)' : 'Monthly Rent (OMR)'}</Label><Input type="number" step="0.01" value={assetForm.rentalCost} onChange={(e) => setAssetForm({ ...assetForm, rentalCost: e.target.value })} /></div>
@@ -1153,7 +1153,7 @@ export default function EquipmentPage() {
                   <img src={viewAsset.image} alt={viewAsset.name} className="w-full max-h-64 object-contain bg-muted/30" />
                 </div>
               )}
-              <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-3 text-sm">
                 <div><p className="text-xs text-muted-foreground">{isRtl ? 'الاسم' : 'Name'}</p><p className="font-medium">{viewAsset.name}</p></div>
                 <div><p className="text-xs text-muted-foreground">{isRtl ? 'النوع' : 'Type'}</p><p className="font-medium">{(assetTypeLabels[viewAsset.itemType] || assetTypeLabels.other)[isRtl ? 'ar' : 'en']}</p></div>
                 <div><p className="text-xs text-muted-foreground">{isRtl ? 'نوع الملكية' : 'Ownership'}</p><p className="font-medium">{(ownershipLabels[viewAsset.ownership] || ownershipLabels.owned)[isRtl ? 'ar' : 'en']}</p></div>
@@ -1186,7 +1186,7 @@ export default function EquipmentPage() {
                   <img src={viewEquipment.image} alt={viewEquipment.name} className="w-full max-h-64 object-contain bg-muted/30" />
                 </div>
               )}
-              <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-3 text-sm">
                 <div><p className="text-xs text-muted-foreground">{isRtl ? 'الاسم' : 'Name'}</p><p className="font-medium">{viewEquipment.name}</p></div>
                 <div><p className="text-xs text-muted-foreground">{isRtl ? 'الرقم' : 'Number'}</p><p className="font-medium font-mono">{viewEquipment.number}</p></div>
                 <div><p className="text-xs text-muted-foreground">{isRtl ? 'النوع' : 'Type'}</p><p className="font-medium">{viewEquipment.type}</p></div>
@@ -1218,7 +1218,7 @@ export default function EquipmentPage() {
         <DialogContent className="max-w-lg">
           <DialogHeader><DialogTitle>{isRtl ? 'تسجيل صيانة' : 'Record Maintenance'}</DialogTitle></DialogHeader>
           <form onSubmit={handleMaintenanceSubmit} className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-3">
               <div className="space-y-1.5"><Label>{isRtl ? 'التاريخ' : 'Date'} *</Label><Input type="date" value={maintenanceForm.date} onChange={(e) => setMaintenanceForm({ ...maintenanceForm, date: e.target.value })} required /></div>
               <div className="space-y-1.5">
                 <Label>{isRtl ? 'النوع' : 'Type'}</Label>
@@ -1233,7 +1233,7 @@ export default function EquipmentPage() {
               </div>
             </div>
             <div className="space-y-1.5"><Label>{isRtl ? 'الوصف' : 'Description'} *</Label><Textarea value={maintenanceForm.description} onChange={(e) => setMaintenanceForm({ ...maintenanceForm, description: e.target.value })} rows={3} required /></div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-3">
               <div className="space-y-1.5"><Label>{isRtl ? 'التكلفة (ر.ع)' : 'Cost (OMR)'}</Label><Input type="number" step="0.01" value={maintenanceForm.cost} onChange={(e) => setMaintenanceForm({ ...maintenanceForm, cost: e.target.value })} /></div>
               <div className="space-y-1.5">
                 <Label>{isRtl ? 'الحالة بعد الصيانة' : 'Status After'}</Label>
@@ -1258,3 +1258,4 @@ export default function EquipmentPage() {
     </div>
   )
 }
+
