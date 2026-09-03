@@ -301,7 +301,7 @@ export default function ProjectsPage() {
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>{isRtl ? 'رمز المشروع' : 'Project Code'} *</Label>
                 <Input value={formData.code} onChange={(e) => setFormData({ ...formData, code: e.target.value })} required />
@@ -457,7 +457,7 @@ function ProjectDetails({ id }: { id: string | null }) {
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-3 text-sm">
+      <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-3 text-sm">
         <Detail label={isRtl ? 'الرمز' : 'Code'} value={project.code} />
         <Detail label={isRtl ? 'العميل' : 'Client'} value={project.client} />
         <Detail label={isRtl ? 'الموقع' : 'Location'} value={project.location} />
@@ -520,3 +520,4 @@ function Stat({ label, value }: { label: string; value: string }) {
     </div>
   )
 }
+
