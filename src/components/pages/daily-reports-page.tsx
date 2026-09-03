@@ -194,7 +194,11 @@ export default function DailyReportsPage() {
     authedFetch(`/api/drive-lines?projectId=${encodeURIComponent(formData.projectId)}`)
       .then((r) => r.json().catch(() => ({})))
       .then((d) => {
-        if (!cancelled) setDriveLines(Array.isArray(d.driveLines) ? d.driveLines : [])
+        // لا تُعرض خطوط الحفر التي لم تبدأ بعد عند إنشاء تقرير جديد
+        // (وضع التحرير لا يستخدم هذه القائمة أصلاً — خط الحفر مقفل للقراءة فقط)
+        const all: any[] = Array.isArray(d.driveLines) ? d.driveLines : []
+        const started = all.filter((l: any) => l.status !== 'not_started')
+        if (!cancelled) setDriveLines(started)
       })
       .catch(() => {
         if (!cancelled) setDriveLines([])
@@ -708,7 +712,7 @@ export default function DailyReportsPage() {
               <div className={editingReportId ? '' : ''}>
                 <div className={!editingReportId ? '' : ''}>
                   <TabsContent value="report" className={`space-y-4 ${editingReportId ? 'mt-0' : 'mt-4'}`}>
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-3">
                       <div className="space-y-1.5">
                         <Label>{isRtl ? 'المشروع' : 'Project'} *</Label>
                         {editingReportId ? (
@@ -896,7 +900,7 @@ function ReportDetails({ report }: { report: any }) {
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-3 text-sm">
+      <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-3 text-sm">
         <Detail label={isRtl ? 'المشروع' : 'Project'} value={report.project?.name || '-'} />
         <Detail label={isRtl ? 'خط الحفر' : 'Drive Line'} value={report.driveLine?.lineNumber || '-'} />
         <Detail label={isRtl ? 'التاريخ' : 'Date'} value={new Date(report.reportDate).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')} />
@@ -995,3 +999,4 @@ function Stat({ label, value, color }: { label: string; value: string; color: st
     </div>
   )
 }
+
