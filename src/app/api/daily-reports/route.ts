@@ -3,6 +3,7 @@ import { getAuthUser } from '@/lib/auth-server'
 import { SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { handleDbError, validateRequired, parseNumber, safeDbOp, parseDateRange } from '@/lib/api-helpers'
+import { notifyUsers } from '@/lib/notify'
 
 export async function GET(req: NextRequest) {
   const user = await getAuthUser(req)
@@ -201,6 +202,48 @@ export async function POST(req: NextRequest) {
     // Run non-critical updates in parallel (fire-and-forget style)
     const updatePromises: Promise<void>[] = []
 
+    // ── تنبيهات موجّهة حسب الصلاحيات (غير حرجة — لا تُفشل العملية) ──
+    // 1) تقرير بحاجة إلى اعتماد: يصل لأصحاب صلاحية الاعتماد
+    //    (الإدارة العليا + مديرو المشاريع + مدير النظام) ما عدا المنشئ نفسه
+    if ((body.status || 'draft') === 'submitted') {
+      updatePromises.push(
+        notifyUsers({
+          type: 'report_pending_approval',
+          title: 'تقرير يومي بحاجة إلى اعتماد',
+          message: 'تم إنشاء تقرير يومي بتاريخ ' + reportDate.toISOString().split('T')[0] + ' بواسطة ' + user.name + ' وهو بانتظار الاعتماد.',
+          severity: 'info',
+          projectId: String(body.projectId),
+          link: 'dailyReports',
+          entityType: 'daily_report',
+          entityId: createResult.data.id + ':pending',
+          permissions: ['daily_reports'],
+          roles: ['top_management', 'project_manager'],
+          includeSystemAdmin: true,
+          excludeUserIds: [user.id],
+        }).then(() => {})
+      )
+    }
+
+    // 2) اكتمال خط الحفر: عندما يصل التقدم إلى 100% عبر قراءات التقرير
+    if (body.driveLineId && progressPercent >= 100) {
+      const lineNo = dlResult.success && dlResult.data ? dlResult.data.lineNumber : ''
+      updatePromises.push(
+        notifyUsers({
+          type: 'drive_line_completed',
+          title: 'اكتمال خط حفر',
+          message: 'تم اكتمال خط الحفر ' + (lineNo ? 'رقم ' + lineNo + ' ' : '') + 'بطول ' + totalLength + ' متر بنجاح — يمكنك مراجعة بياناته وإصدار التشطيب.',
+          severity: 'info',
+          projectId: String(body.projectId),
+          link: 'driveLines',
+          entityType: 'drive_line',
+          entityId: String(body.driveLineId),
+          permissions: ['drive_lines', 'finishings'],
+          roles: ['top_management', 'project_manager'],
+          excludeUserIds: [user.id],
+        }).then(() => {})
+      )
+    }
+
     // Update drive line progress
     if (body.driveLineId) {
       updatePromises.push(
@@ -272,5 +315,6 @@ export async function POST(req: NextRequest) {
     return handleDbError(error, 'إنشاء التقرير اليومي')
   }
 }
+
 
 
