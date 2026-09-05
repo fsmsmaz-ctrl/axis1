@@ -409,3 +409,52 @@ button,
 }
 
   
+
+/* ============================================================
+   Mobile fixes round 3 — التوست (الرسائل الترحيبية) + مربعات التحديد الكبيرة
+   ============================================================ */
+
+/* الرسائل المنبثقة (Sonner): عرض مريح داخل حدود الشاشة على الهاتف
+   ولا تلتصق بالحواف، مع احترام النوتش (safe-area) */
+@media (max-width: 639px) {
+  [data-sonner-toaster] {
+    --width: calc(100vw - 24px) !important;
+  }
+  [data-sonner-toast] {
+    min-height: 56px;
+    padding: 14px 16px;
+    border-radius: 14px;
+    font-size: 14px;
+  }
+  [data-sonner-toast] [data-title] {
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  [data-sonner-toast] [data-description] {
+    font-size: 13px;
+    line-height: 1.5;
+  }
+}
+
+/* مربع تحديد كبير لقوائم اللمس (يُستخدم في نافذة تقرير السلامة):
+   نفس شكل الافتراضي لكن 24px وعلامة صح متناسبة */
+.checkbox-lg {
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 7px;
+  border-width: 2px;
+}
+.checkbox-lg svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+/* صفوف قائمة التحقق: منع تحديد النص عند اللمس المتكرر */
+.checklist-row {
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+.checklist-row:active {
+  transform: scale(0.995);
+}
+
