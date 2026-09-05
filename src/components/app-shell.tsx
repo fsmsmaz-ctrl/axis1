@@ -147,10 +147,17 @@ export default function AppShell() {
 
   useEffect(() => {
     if (!user || !token) return
-    authedFetch('/api/notifications?unreadOnly=true')
-      .then(r => r.json())
-      .then(data => setNotifications(data.notifications || []))
-      .catch(() => {})
+    let active = true
+    const loadUnread = () => {
+      authedFetch('/api/notifications?unreadOnly=true')
+        .then(r => r.json())
+        .then(data => { if (active) setNotifications(data.notifications || []) })
+        .catch(() => {})
+    }
+    loadUnread()
+    // تحديث دوري كل 60 ثانية لمزامنة التنبيهات الجديدة
+    const interval = setInterval(loadUnread, 60000)
+    return () => { active = false; clearInterval(interval) }
   }, [user, token, currentPage])
 
   useEffect(() => {
@@ -159,6 +166,19 @@ export default function AppShell() {
       document.documentElement.dir = language === 'ar' ? 'rtl' : 'ltr'
     }
   }, [language])
+
+  // التنقل عبر التنبيهات: يلتقط حدث axis:goto-page الصادر من صفحة التنبيهات
+  // وينتقل إلى الصفحة المرتبطة بالتنبيه (مثل dailyReports / driveLines)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail
+      if (typeof detail === 'string' && detail) {
+        setCurrentPage(detail as PageId)
+      }
+    }
+    window.addEventListener('axis:goto-page', handler)
+    return () => window.removeEventListener('axis:goto-page', handler)
+  }, [])
 
   // منع تمرير الصفحة الخلفية أثناء فتح القائمة الجانبية على الهاتف
   useEffect(() => {
@@ -452,15 +472,16 @@ export default function AppShell() {
             <span className="text-sm">{isRtl ? 'EN' : 'ع'}</span>
           </Button>
 
-          {/* زر التنبيهات في الأعلى — لمستخدمي لوحة التحكم فقط (مدير النظام والإدارة العليا) */}
-          {canSeeDashboard && (
+          {/* زر التنبيهات في الأعلى — متاح لكل المستخدمين.
+              التنبيهات نفسها موجّهة: الخادم يُرجع لكل مستخدم فقط
+              تنبيهاته الموجهة إليه أو العامة حسب الصلاحيات */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="relative">
+              <Button variant="ghost" size="icon" className="relative" aria-label={isAr ? 'التنبيهات' : 'Notifications'}>
                 <Bell className="h-5 w-5" />
                 {notifications.length > 0 && (
                   <span className={cn("absolute -top-1 h-5 w-5 rounded-full bg-destructive text-destructive-foreground text-xs flex items-center justify-center", isRtl ? "-left-1" : "-right-1")}>
-                    {notifications.length}
+                    {notifications.length > 9 ? '9+' : notifications.length}
                   </span>
                 )}
               </Button>
@@ -475,14 +496,23 @@ export default function AppShell() {
                 <div className="p-4 text-center text-sm text-muted-foreground">{isAr ? 'لا توجد تنبيهات جديدة' : 'No new notifications'}</div>
               ) : (
                 notifications.slice(0, 5).map((n) => (
-                  <DropdownMenuItem key={n.id} className="flex-col items-start p-3">
+                  <DropdownMenuItem
+                    key={n.id}
+                    className="flex-col items-start p-3"
+                    onClick={() => { if (n.link) setCurrentPage(n.link as PageId) }}
+                  >
                     <div className="flex items-center gap-2 w-full">
-                      {n.severity === 'critical' && <AlertTriangle className="h-4 w-4 text-destructive" />}
-                      {n.severity === 'warning' && <AlertTriangle className="h-4 w-4 text-yellow-500" />}
-                      {n.severity === 'info' && <Bell className="h-4 w-4 text-blue-500" />}
-                      <span className="font-medium text-sm">{n.title}</span>
+                      {n.severity === 'critical' && <AlertTriangle className="h-4 w-4 text-destructive shrink-0" />}
+                      {n.severity === 'warning' && <AlertTriangle className="h-4 w-4 text-yellow-500 shrink-0" />}
+                      {n.severity === 'info' && <Bell className="h-4 w-4 text-blue-500 shrink-0" />}
+                      <span className="font-medium text-sm flex-1 min-w-0">{n.title}</span>
+                      {!n.read && <span className="h-2 w-2 rounded-full bg-primary shrink-0" />}
                     </div>
-                    <p className="text-xs text-muted-foreground mt-1">{n.message}</p>
+                    <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{n.message}</p>
+                    <p className="text-[10px] text-muted-foreground/70 mt-1">
+                      {n.project?.name ? n.project.name + ' · ' : ''}
+                      {new Date(n.createdAt).toLocaleString(isAr ? 'ar-EG' : 'en-US', { dateStyle: 'short', timeStyle: 'short' })}
+                    </p>
                   </DropdownMenuItem>
                 ))
               )}
@@ -490,7 +520,6 @@ export default function AppShell() {
               <DropdownMenuItem onClick={() => setCurrentPage('notifications')}>{isAr ? 'عرض الكل' : 'View all'}</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          )}
 
           <Avatar className="h-9 w-9 border-2 border-primary/20 shrink-0">
             <AvatarFallback className="bg-primary/10 text-primary text-sm font-semibold">
@@ -768,3 +797,5 @@ export default function AppShell() {
 
 
    
+
+      
