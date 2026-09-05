@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
 
     const createResult = await safeDbOp(
       () => db.finishing.create({
-        data: { projectId: String(body.projectId), driveLineId: body.driveLineId || null, date: new Date(body.date), siteCleaned: !!body.siteCleaned, wasteRemoved: !!body.wasteRemoved, shaftClosed: !!body.shaftClosed, siteRestored: !!body.siteRestored, lineHandover: !!body.lineHandover, clientNotes: body.clientNotes ? String(body.clientNotes) : null, handoverStatus: String(body.handoverStatus || 'pending'), status: 'draft', submittedById: user.id, signedBy: user.name, signedById: user.id, signedAt: new Date() },
+        data: { projectId: String(body.projectId), driveLineId: body.driveLineId || null, date: new Date(body.date), siteCleaned: !!body.siteCleaned, wasteRemoved: !!body.wasteRemoved, shaftClosed: !!body.shaftClosed, siteRestored: !!body.siteRestored, lineHandover: !!body.lineHandover, casingSpacer: !!body.casingSpacer, clientNotes: body.clientNotes ? String(body.clientNotes) : null, handoverStatus: String(body.handoverStatus || 'pending'), status: 'draft', submittedById: user.id, signedBy: user.name, signedById: user.id, signedAt: new Date() },
       }), 'إنشاء التشطيب'
     )
     if (!createResult.success) return createResult.response
@@ -72,6 +72,7 @@ export async function POST(req: NextRequest) {
     if (!body.shaftClosed) missingItems.push('غلق البئر')
     if (!body.siteRestored) missingItems.push('إعادة الموقع')
     if (!body.lineHandover) missingItems.push('تسليم الخط')
+    if (!body.casingSpacer) missingItems.push('حشوة الكيسنج (سبيسر)')
     if (handoverStatus !== 'accepted' || missingItems.length > 0) {
       const details = missingItems.length > 0
         ? 'به بنود غير مكتملة: ' + missingItems.join('، ')
@@ -98,4 +99,3 @@ export async function POST(req: NextRequest) {
 }
 
 
-      
