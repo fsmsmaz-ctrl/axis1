@@ -58,7 +58,14 @@ export default function RootLayout({
         style={{ fontFamily: "var(--font-cairo), var(--font-tajawal), sans-serif" }}
       >
         {children}
-        <SonnerToaster position="top-center" />
+        {/* الرسائل الترحيبية/التنبيهات: أعلى الوسط مع تعويض النوتش (safe-area)
+            حتى لا تظهر ملتصقة بحافة الشاشة أو تحت شريط الحالة في الهاتف */}
+        <SonnerToaster
+          position="top-center"
+          dir="auto"
+          offset="calc(20px + env(safe-area-inset-top, 0px))"
+          mobileOffset="calc(14px + env(safe-area-inset-top, 0px))"
+        />
         <script
           dangerouslySetInnerHTML={{
             __html: `
@@ -74,4 +81,5 @@ export default function RootLayout({
     </html>
   );
 }
+
 
