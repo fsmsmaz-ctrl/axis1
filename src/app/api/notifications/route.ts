@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { handleDbError, safeDbOp } from '@/lib/api-helpers'
+import { runScanThrottled } from '@/lib/report-watch'
 
 export async function GET(req: NextRequest) {
   var user = await getAuthUser(req)
@@ -12,16 +13,30 @@ export async function GET(req: NextRequest) {
   var searchParams = new URL(req.url).searchParams
   var unreadOnly = searchParams.get('unreadOnly') === 'true'
 
-  var where: any = {}
-  if (unreadOnly) where.read = false
-
-  // FIX: Non-admin users should only see their own notifications or broadcast (userId=null)
-  if (user.role !== 'top_management' && user.role !== 'project_manager') {
-    where.OR = [
-      { userId: null },
-      { userId: user.id },
-    ]
+  // ── فحص التأخيرات الدوري: يُنفَّذ مرة واحدة كحد أقصى كل 10 دقائق ──
+  // يرصد: تقارير لم تُسلَّم/لم تُعتمد، سلامة ناقصة، تشطيب غير مكتمل،
+  // جاهزية تقييم الأداء — ويُصدر التنبيهات لأصحاب الصلاحيات.
+  // لا يُنفَّع عند طلب غير المقروءة فقط (polling الجرس الخفيف).
+  if (!unreadOnly) {
+    try {
+      await runScanThrottled(false)
+    } catch (e) {
+      // الفحص غير حرج — الاستمرار في جلب التنبيهات
+    }
   }
+
+  // ── قاعدة الظهور: التنبيه يظهر فقط لمن وُجِّه إليه ──
+  // 1) تنبيهات موجهة للمستخدم نفسه (userId = user.id)
+  // 2) تنبيهات عامة بلا مستهدف محدد (userId = null)
+  // لكل الأدوار بلا استثناء — حتى الإدارة العليا ومديرو المشاريع
+  // لا يرون إلا تنبيهاتهم الموجهة أو العامة (كان سابقاً يرون الكل).
+  var where: any = {
+    OR: [
+      { userId: user.id },
+      { userId: null },
+    ],
+  }
+  if (unreadOnly) where.read = false
 
   var result = await safeDbOp(
     () => db.notification.findMany({
@@ -33,9 +48,9 @@ export async function GET(req: NextRequest) {
     'جلب التنبيهات'
   )
 
-  var countWhere: any = { read: false }
-  if (user.role !== 'top_management' && user.role !== 'project_manager') {
-    countWhere.OR = [{ userId: null }, { userId: user.id }]
+  var countWhere: any = {
+    read: false,
+    OR: [{ userId: user.id }, { userId: null }],
   }
 
   var countResult = await safeDbOp(
@@ -50,3 +65,4 @@ export async function GET(req: NextRequest) {
     unreadCount: countResult.success ? countResult.data : 0,
   })
 }
+
