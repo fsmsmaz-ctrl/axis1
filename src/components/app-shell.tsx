@@ -393,27 +393,27 @@ export default function AppShell() {
         isRtl ? "right-0 border-l" : "left-0 border-r",
         sidebarOpen ? "translate-x-0" : (isRtl ? "translate-x-full" : "-translate-x-full")
       )}>
-        <div className="p-4 pb-3 border-b border-sidebar-border">
+        <div className="p-5 pb-3 border-b border-sidebar-border">
           <div className="flex items-center gap-2">
             <img
               src="/axis-logo.png"
               alt="AXIS"
-              className="h-9 w-auto object-contain flex-1 min-w-0"
+              className="h-11 w-auto object-contain flex-1 min-w-0"
             />
             <Button variant="ghost" size="icon" className={cn("lg:hidden shrink-0 h-9 w-9", isRtl ? "-mr-1" : "-ml-1")} onClick={() => setSidebarOpen(false)}>
               <X className="h-4 w-4" />
             </Button>
           </div>
-          <p className="text-[10px] text-muted-foreground mt-0.5 leading-tight">Pipe Jacking Management System</p>
+          <p className="text-xs text-muted-foreground mt-1 leading-tight">Pipe Jacking Management System</p>
         </div>
 
-        <nav className="flex-1 overflow-y-auto p-3 space-y-1.5">
+        <nav className="flex-1 overflow-y-auto p-3.5 space-y-2">
           {isAdmin && (
             <button
               onClick={openUserDialog}
-              className="w-full flex items-center gap-3 px-3.5 py-3 rounded-xl text-[15px] font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-all border border-primary/20 border-dashed"
+              className="w-full flex items-center gap-3.5 px-4 py-4 rounded-xl text-base font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-all border border-primary/20 border-dashed"
             >
-              <UserPlus className="h-5 w-5 shrink-0" />
+              <UserPlus className="h-[22px] w-[22px] shrink-0" />
               <span className="flex-1 text-start">{isAr ? 'إدارة المستخدمين' : 'User Management'}</span>
             </button>
           )}
@@ -425,12 +425,12 @@ export default function AppShell() {
             const unreadCount = item.id === 'notifications' ? notifications.length : 0
             return (
               <button key={item.id} onClick={() => { setCurrentPage(item.id); setSidebarOpen(false) }} className={cn(
-                "w-full flex items-center gap-3 px-3.5 py-3 rounded-xl text-[15px] font-medium transition-all",
+                "w-full flex items-center gap-3.5 px-4 py-4 rounded-xl text-base font-medium transition-all",
                 isActive ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm" : "text-sidebar-foreground hover:bg-sidebar-accent"
               )}>
-                <Icon className={cn("h-5 w-5 shrink-0", isActive ? "" : "text-muted-foreground")} />
+                <Icon className={cn("h-[22px] w-[22px] shrink-0", isActive ? "" : "text-muted-foreground")} />
                 <span className="flex-1 text-start">{label}</span>
-                {unreadCount > 0 && <Badge variant="destructive" className="h-5 min-w-5 flex items-center justify-center px-1.5 text-xs">{unreadCount}</Badge>}
+                {unreadCount > 0 && <Badge variant="destructive" className="h-6 min-w-6 flex items-center justify-center px-1.5 text-[13px]">{unreadCount}</Badge>}
                 {isActive && <ChevronLeft className={cn("h-4 w-4", isRtl ? "" : "rotate-180")} />}
               </button>
             )
@@ -439,16 +439,16 @@ export default function AppShell() {
 
         <div className="p-3 border-t border-sidebar-border">
           <div className="flex items-center gap-3 p-2 rounded-lg">
-            <Avatar className="h-10 w-10 border-2 border-primary/20 shrink-0">
+            <Avatar className="h-11 w-11 border-2 border-primary/20 shrink-0">
               <AvatarFallback className="bg-primary/10 text-primary font-semibold">
                 {(isRtl ? user.name : (user.nameEn || user.name)).charAt(0)}
               </AvatarFallback>
             </Avatar>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium truncate">{isRtl ? user.name : (user.nameEn || user.name)}</p>
+              <p className="text-[15px] font-medium truncate">{isRtl ? user.name : (user.nameEn || user.name)}</p>
               <p className="text-xs text-muted-foreground">{isRtl ? roleLabels[user.role]?.ar : roleLabels[user.role]?.en}</p>
             </div>
-            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive shrink-0" onClick={handleLogout} title={isRtl ? 'تسجيل الخروج' : 'Logout'}>
+            <Button variant="ghost" size="icon" className="h-10 w-10 text-muted-foreground hover:text-destructive shrink-0" onClick={handleLogout} title={isRtl ? 'تسجيل الخروج' : 'Logout'}>
               <LogOut className="h-4 w-4" />
             </Button>
           </div>
@@ -547,20 +547,20 @@ export default function AppShell() {
               key={item.id}
               onClick={() => setCurrentPage(item.id)}
               className={cn(
-                'flex flex-col items-center justify-center gap-0.5 min-h-[56px] flex-1 px-1 text-[10px] font-medium transition-colors',
+                'flex flex-col items-center justify-center gap-1 min-h-[62px] flex-1 px-1 text-[11px] font-medium transition-colors',
                 isActive ? 'text-primary' : 'text-muted-foreground active:bg-muted/60'
               )}
             >
-              <Icon className="h-5 w-5 shrink-0" />
+              <Icon className="h-[22px] w-[22px] shrink-0" />
               <span className="truncate max-w-full">{isRtl ? item.labelAr : item.labelEn}</span>
             </button>
           )
         })}
         <button
           onClick={() => setSidebarOpen(true)}
-          className="flex flex-col items-center justify-center gap-0.5 min-h-[56px] flex-1 px-1 text-[10px] font-medium text-muted-foreground transition-colors active:bg-muted/60"
+          className="flex flex-col items-center justify-center gap-1 min-h-[62px] flex-1 px-1 text-[11px] font-medium text-muted-foreground transition-colors active:bg-muted/60"
         >
-          <Menu className="h-5 w-5 shrink-0" />
+          <Menu className="h-[22px] w-[22px] shrink-0" />
           <span>{isRtl ? 'المزيد' : 'More'}</span>
         </button>
       </nav>
@@ -799,3 +799,5 @@ export default function AppShell() {
    
 
       
+
+  
