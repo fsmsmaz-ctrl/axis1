@@ -94,7 +94,7 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
     'projects', 'equipment', 'safety', 'reports', 'notifications',
   ],
   foreman: [
-    'projects', 'daily_reports', 'reports', 'notifications',
+    'projects', 'daily_reports', 'finishings', 'reports', 'notifications',
   ],
   accountant: [
     'projects', 'costs', 'reports', 'notifications',
@@ -128,7 +128,7 @@ export const WRITE_ROLES: Record<string, string[]> = {
   safety: ['top_management', 'project_manager', 'site_engineer', 'hse_officer'],
   equipment: ['top_management', 'project_manager', 'site_engineer'],
   costs: ['top_management', 'project_manager', 'accountant'],
-  finishings: ['top_management', 'project_manager', 'site_engineer'],
+  finishings: ['top_management', 'project_manager', 'site_engineer', 'foreman'],
   company_assets: ['top_management', 'project_manager', 'site_engineer', 'accountant'],
 }
 
@@ -159,3 +159,4 @@ export function hasPermission(role: string, resource: string, userPermissions?: 
 }
 
 export const hasReportPermission = hasPermission
+
