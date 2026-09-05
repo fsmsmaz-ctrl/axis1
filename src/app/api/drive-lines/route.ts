@@ -3,6 +3,7 @@ import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { handleDbError, validateRequired, parseNumber, safeDbOp } from '@/lib/api-helpers'
 import { canWrite } from '@/lib/auth'
+import { notifyUsers } from '@/lib/notify'
 
 export async function GET(req: NextRequest) {
   try {
@@ -98,8 +99,26 @@ export async function POST(req: NextRequest) {
       }), 'سجل التدقيق'),
     ]).catch(function() {})
 
+    // ── تنبيه اكتمال خط الحفر إذا أُنشئ بحالة مكتملة مباشرة ──
+    if (String(body.status || 'not_started') === 'completed') {
+      notifyUsers({
+        type: 'drive_line_completed',
+        title: 'اكتمال خط حفر',
+        message: 'تم اكتمال خط الحفر رقم ' + String(body.lineNumber).trim() + ' (' + String(body.startPoint).trim() + ' → ' + String(body.endPoint).trim() + ') بطول ' + parseNumber(body.totalLength, 0) + ' متر بنجاح — يمكنك مراجعة بياناته وإصدار التشطيب.',
+        severity: 'info',
+        projectId: String(body.projectId),
+        link: 'driveLines',
+        entityType: 'drive_line',
+        entityId: createResult.data.id,
+        permissions: ['drive_lines', 'finishings'],
+        roles: ['top_management', 'project_manager'],
+        excludeUserIds: [user.id],
+      }).catch(function() {})
+    }
+
     return NextResponse.json({ driveLine: createResult.data, success: true })
   } catch (error: any) {
     return handleDbError(error, 'إنشاء خط الحفر')
   }
 }
+
