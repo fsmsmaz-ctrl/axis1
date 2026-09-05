@@ -3,6 +3,7 @@ import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { handleDbError, parseNumber, safeDbOp } from '@/lib/api-helpers'
 import { canWrite } from '@/lib/auth'
+import { notifyUsers } from '@/lib/notify'
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -16,7 +17,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     var body = await req.json()
 
     var existingResult = await safeDbOp(
-      () => db.driveLine.findUnique({ where: { id }, select: { projectId: true, lineNumber: true, startPoint: true, endPoint: true } }),
+      () => db.driveLine.findUnique({ where: { id }, select: { projectId: true, lineNumber: true, startPoint: true, endPoint: true, totalLength: true, status: true } }),
       'البحث عن خط الحفر'
     )
     if (!existingResult.success) return existingResult.response
@@ -54,6 +55,24 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         },
       }), 'سجل التدقيق'),
     ]).catch(function() {})
+
+    // ── تنبيه اكتمال خط الحفر عند الانتقال إلى حالة "مكتمل" ──
+    // فقط إذا لم يكن مكتملاً سابقاً (انتقال فعلي وليس تعديلاً متكرراً)
+    if (String(body.status) === 'completed' && existing.status !== 'completed') {
+      notifyUsers({
+        type: 'drive_line_completed',
+        title: 'اكتمال خط حفر',
+        message: 'تم اكتمال خط الحفر رقم ' + existing.lineNumber + ' (' + existing.startPoint + ' → ' + existing.endPoint + ') بطول ' + (existing.totalLength || 0) + ' متر بنجاح — يمكنك مراجعة بياناته وإصدار التشطيب.',
+        severity: 'info',
+        projectId: existing.projectId,
+        link: 'driveLines',
+        entityType: 'drive_line',
+        entityId: id,
+        permissions: ['drive_lines', 'finishings'],
+        roles: ['top_management', 'project_manager'],
+        excludeUserIds: [user.id],
+      }).catch(function() {})
+    }
 
     return NextResponse.json({ driveLine: updateResult.data, success: true })
   } catch (error: any) {
@@ -100,3 +119,4 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     return handleDbError(error, 'حذف خط الحفر')
   }
 }
+
