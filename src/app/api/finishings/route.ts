@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
     const result = await safeDbOp(
       () => db.finishing.findMany({
         where, orderBy: { date: 'desc' }, skip: (page - 1) * limit, take: limit,
-        include: { project: { select: { id: true, name: true, code: true } }, signedByUser: { select: { name: true, nameEn: true } } },
+        include: { project: { select: { id: true, name: true, code: true } }, signedByUser: { select: { name: true, nameEn: true } }, submitter: { select: { name: true, nameEn: true } }, approver: { select: { name: true, nameEn: true } } },
       }), 'جلب التشطيبات'
     )
     if (!result.success) return result.response
@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
 
     const createResult = await safeDbOp(
       () => db.finishing.create({
-        data: { projectId: String(body.projectId), driveLineId: body.driveLineId || null, date: new Date(body.date), siteCleaned: !!body.siteCleaned, wasteRemoved: !!body.wasteRemoved, shaftClosed: !!body.shaftClosed, siteRestored: !!body.siteRestored, lineHandover: !!body.lineHandover, clientNotes: body.clientNotes ? String(body.clientNotes) : null, handoverStatus: String(body.handoverStatus || 'pending'), signedBy: user.name, signedById: user.id, signedAt: new Date() },
+        data: { projectId: String(body.projectId), driveLineId: body.driveLineId || null, date: new Date(body.date), siteCleaned: !!body.siteCleaned, wasteRemoved: !!body.wasteRemoved, shaftClosed: !!body.shaftClosed, siteRestored: !!body.siteRestored, lineHandover: !!body.lineHandover, clientNotes: body.clientNotes ? String(body.clientNotes) : null, handoverStatus: String(body.handoverStatus || 'pending'), status: 'draft', submittedById: user.id, signedBy: user.name, signedById: user.id, signedAt: new Date() },
       }), 'إنشاء التشطيب'
     )
     if (!createResult.success) return createResult.response
@@ -97,3 +97,5 @@ export async function POST(req: NextRequest) {
   }
 }
 
+
+      
