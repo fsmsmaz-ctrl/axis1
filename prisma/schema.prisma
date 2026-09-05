@@ -272,6 +272,7 @@ model Finishing {
   shaftClosed     Boolean  @default(false)
   siteRestored    Boolean  @default(false)
   lineHandover    Boolean  @default(false)
+  casingSpacer    Boolean  @default(false) // حشوة الكيسنج (سبيسر) — Casing Spacer
   clientNotes     String?
   handoverStatus  String   @default("pending") // pending, accepted, needs_revision, rejected
   signedBy        String?
@@ -394,4 +395,5 @@ model CompanyAsset {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 }
+
 
