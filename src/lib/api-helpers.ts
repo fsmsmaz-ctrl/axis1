@@ -258,6 +258,7 @@ const fieldLabels: Record<string, FieldLabel> = {
   shaftClosed: { ar: 'إغلاق البئر', en: 'Shaft Closed' },
   siteRestored: { ar: 'إعادة الموقع', en: 'Site Restored' },
   lineHandover: { ar: 'تسليم الخط', en: 'Line Handover' },
+  casingSpacer: { ar: 'حشوة الكيسنج (سبيسر)', en: 'Casing Spacer' },
   clientNotes: { ar: 'ملاحظات العميل', en: 'Client Notes' },
   handoverStatus: { ar: 'حالة التسليم', en: 'Handover Status' },
   projectId: { ar: 'المشروع', en: 'Project' },
@@ -346,3 +347,4 @@ export function buildAuditDetails(
   if (diff.changes.length === 0) return summary
   return JSON.stringify(diff)
 }
+
