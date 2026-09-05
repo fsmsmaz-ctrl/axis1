@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 import { handleDbError, validateRequired, safeDbOp, parseDateRange } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 import { canWrite } from '@/lib/auth'
+import { notifyUsers } from '@/lib/notify'
 
 export async function GET(req: NextRequest) {
   try {
@@ -62,8 +63,37 @@ export async function POST(req: NextRequest) {
 
     safeDbOp(() => db.auditLog.create({ data: { userId: user.id, projectId: body.projectId, action: 'create', entity: 'finishing', entityId: createResult.data.id, details: 'Created finishing record' } }), 'سجل التدقيق').catch(() => {})
 
+    // ── تنبيه تشطيب غير مكتمل: يصل لأصحاب صلاحية التشطيبات ──
+    // يُصدر عند إنشاء تشطيب ببنود ناقصة أو بحالة تسليم غير مقبولة
+    const handoverStatus = String(body.handoverStatus || 'pending')
+    const missingItems: string[] = []
+    if (!body.siteCleaned) missingItems.push('تنظيف الموقع')
+    if (!body.wasteRemoved) missingItems.push('إزالة النفايات')
+    if (!body.shaftClosed) missingItems.push('غلق البئر')
+    if (!body.siteRestored) missingItems.push('إعادة الموقع')
+    if (!body.lineHandover) missingItems.push('تسليم الخط')
+    if (handoverStatus !== 'accepted' || missingItems.length > 0) {
+      const details = missingItems.length > 0
+        ? 'به بنود غير مكتملة: ' + missingItems.join('، ')
+        : 'بانتظار قبول التسليم (الحالة: ' + handoverStatus + ')'
+      notifyUsers({
+        type: 'finishing_incomplete',
+        title: 'تشطيب غير مكتمل',
+        message: 'تم إنشاء سجل تشطيب بتاريخ ' + new Date(body.date).toISOString().split('T')[0] + ' — ' + details + '. يرجى متابعة استكماله.',
+        severity: 'warning',
+        projectId: String(body.projectId),
+        link: 'finishings',
+        entityType: 'finishing',
+        entityId: createResult.data.id,
+        permissions: ['finishings'],
+        roles: ['project_manager'],
+        excludeUserIds: [user.id],
+      }).catch(function() {})
+    }
+
     return NextResponse.json({ finishing: createResult.data, success: true })
   } catch (error: any) {
     return handleDbError(error, 'إنشاء التشطيب')
   }
 }
+
