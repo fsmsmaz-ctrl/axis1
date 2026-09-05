@@ -34,6 +34,8 @@ model User {
   costs              Cost[]
   equipmentsMaint    EquipmentMaintenance[]
   finishings         Finishing[]
+  finishingsSubmitted Finishing[] @relation("FinishingSubmitter")
+  finishingsApproved  Finishing[] @relation("FinishingApprover")
   notifications      Notification[]
   auditLogs          AuditLog[]
   companyAssets      CompanyAsset[]  @relation("AssetResponsible")
@@ -276,8 +278,19 @@ model Finishing {
   signedById      String?
   signedAt        DateTime?
 
+  // دورة اعتماد الإدارة (مطابقة لدورة التقارير اليومية):
+  // draft (مسودة لدى المشرف) → submitted (مرفوعة للإدارة) → approved (معتمد) / rejected (مرفوض)
+  status          String   @default("draft") // draft, submitted, approved, rejected
+  submittedById   String?  // المشرف الذي رفع التشطيب للإدارة
+  submittedAt     DateTime?
+  approvedById    String?  // الإداري / مدير المشروع / مدير النظام الذي اعتمد أو رفض
+  approvedAt      DateTime?
+  reviewNotes     String?  // سبب الرفض — يظهر للمشرف ليعدل بناءً عليه
+
   project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   signedByUser    User?    @relation(fields: [signedById], references: [id])
+  submitter       User?    @relation("FinishingSubmitter", fields: [submittedById], references: [id])
+  approver        User?    @relation("FinishingApprover", fields: [approvedById], references: [id])
   attachments     Attachment[]
 
   createdAt       DateTime @default(now())
