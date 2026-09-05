@@ -30,7 +30,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         where: { id },
         select: {
           status: true, projectId: true, date: true,
-          siteCleaned: true, wasteRemoved: true, shaftClosed: true, siteRestored: true, lineHandover: true,
+          siteCleaned: true, wasteRemoved: true, shaftClosed: true, siteRestored: true, lineHandover: true, casingSpacer: true,
           project: { select: { name: true, code: true } },
         },
       }),
@@ -67,6 +67,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (!existing.shaftClosed) missingItems.push('إغلاق الحفر')
     if (!existing.siteRestored) missingItems.push('إعادة الوضع كما كان')
     if (!existing.lineHandover) missingItems.push('تسليم الخط')
+    if (!existing.casingSpacer) missingItems.push('حشوة الكيسنج (سبيسر)')
     if (missingItems.length > 0) {
       return NextResponse.json(
         { error: 'incomplete_work', message: 'لا يمكن الرفع قبل الانتهاء من العمل — بنود ناقصة: ' + missingItems.join('، ') },
