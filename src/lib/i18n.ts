@@ -233,6 +233,7 @@ export const translations = {
     shaftClosed: 'إغلاق الحفر',
     siteRestored: 'إعادة الوضع كما كان',
     lineHandover: 'تسليم الخط',
+    casingSpacer: 'حشوة الكيسنج (سبيسر)',
     clientNotes: 'ملاحظات العميل',
     handoverStatus: 'حالة التسليم',
     accepted: 'مقبول',
@@ -532,6 +533,7 @@ export const translations = {
     shaftClosed: 'Shaft closed',
     siteRestored: 'Site restored',
     lineHandover: 'Line handover',
+    casingSpacer: 'Casing Spacer',
     clientNotes: 'Client notes',
     handoverStatus: 'Handover Status',
     accepted: 'Accepted',
@@ -618,3 +620,4 @@ export type TranslationKey = keyof typeof translations.ar
 export function t(lang: Language, key: TranslationKey): string {
   return translations[lang][key] || translations.ar[key] || key
 }
+
