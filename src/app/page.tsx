@@ -117,31 +117,33 @@ export default function HomePage() {
   function toggleLanguage() { setLanguage(isAr ? 'en' : 'ar') }
 
   return (
-    <div className="min-h-screen flex flex-col lg:flex-row" dir={isRtl ? 'rtl' : 'ltr'}>
-      <div className="lg:flex-1 bg-gradient-to-br from-primary to-primary/80 text-primary-foreground p-8 lg:p-16 flex flex-col justify-between relative overflow-hidden">
+    <div className="min-h-dvh flex flex-col lg:flex-row" dir={isRtl ? 'rtl' : 'ltr'}>
+      {/* قسم العلامة التعريفية: مختصر ومتماسك على الهاتف حتى لا يزيح النموذج تحت خط الطي */}
+      <div className="lg:flex-1 bg-gradient-to-br from-primary to-primary/80 text-primary-foreground p-6 sm:p-8 lg:p-16 flex flex-col justify-between relative overflow-hidden">
         <div className="absolute inset-0 opacity-10">
           <div className="absolute top-10 right-10 w-72 h-72 rounded-full bg-white blur-3xl" />
           <div className="absolute bottom-10 left-10 w-96 h-96 rounded-full bg-white blur-3xl" />
         </div>
         <div className="relative z-10 flex flex-col items-center text-center">
-          <div className="bg-white/15 backdrop-blur-sm rounded-2xl p-3 mb-3">
+          <div className="bg-white/15 backdrop-blur-sm rounded-2xl p-2.5 mb-2 lg:p-3 lg:mb-3">
             <img
               src="/logo-white.png"
               alt="AXIS"
-              className="h-24 w-auto object-contain"
+              className="h-16 sm:h-20 lg:h-24 w-auto object-contain"
             />
           </div>
-          <h1 className="text-4xl font-bold tracking-wide">AXIS</h1>
-          <p className="text-sm text-primary-foreground/70 font-light tracking-wider">Pipe Jacking &amp; Microtunneling</p>
+          <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold tracking-wide">AXIS</h1>
+          <p className="text-xs sm:text-sm text-primary-foreground/70 font-light tracking-wider">Pipe Jacking &amp; Microtunneling</p>
         </div>
-        <div className="relative z-10 space-y-6">
-          <h2 className="text-3xl lg:text-4xl font-bold leading-tight">{t.heroTitle}</h2>
+        <div className="relative z-10 space-y-4 lg:space-y-6 pt-4 lg:pt-0">
+          <h2 className="text-xl sm:text-2xl lg:text-4xl font-bold leading-snug lg:leading-tight">{t.heroTitle}</h2>
         </div>
-        <div className="relative z-10 text-sm text-primary-foreground/70">{t.copyright}</div>
+        <div className="relative z-10 text-xs lg:text-sm text-primary-foreground/70 pt-3 lg:pt-0">{t.copyright}</div>
       </div>
-      <div className="lg:flex-1 flex items-center justify-center p-6 lg:p-16 bg-background">
+      {/* نموذج الدخول: مساحة مريحة على الهاتف + احترام المساحات الآمنة أعلى/أسفل */}
+      <div className="lg:flex-1 flex items-center justify-center px-5 pt-[max(1.25rem,env(safe-area-inset-top))] pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:px-6 lg:px-16 lg:py-16 bg-background">
         <div className="w-full max-w-md">
-          <div className="flex items-center justify-between mb-8">
+          <div className="flex items-center justify-between mb-6 lg:mb-8">
             <div>
               <h2 className="text-2xl font-bold">{t.loginTitle}</h2>
               <p className="text-muted-foreground text-sm mt-1">{t.loginSubtitle}</p>
@@ -161,7 +163,7 @@ export default function HomePage() {
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder={isAr ? 'اسم المستخدم' : 'Username'}
                 required
-                className="h-11"
+                className="h-12 lg:h-11"
                 dir="ltr"
                 autoComplete="off"
               />
@@ -175,7 +177,7 @@ export default function HomePage() {
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder={isAr ? 'كلمة المرور' : 'Password'}
                 required
-                className="h-11"
+                className="h-12 lg:h-11"
                 dir="ltr"
                 autoComplete="new-password"
               />
@@ -185,7 +187,7 @@ export default function HomePage() {
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             )}
-            <Button type="submit" disabled={loading} className="w-full h-11" size="lg">
+            <Button type="submit" disabled={loading} className="w-full h-12 lg:h-11 text-[15px] lg:text-base" size="lg">
               {loading ? (
                 <Loader2 className="h-5 w-5 animate-spin" />
               ) : (
@@ -198,3 +200,4 @@ export default function HomePage() {
     </div>
   )
 }
+
