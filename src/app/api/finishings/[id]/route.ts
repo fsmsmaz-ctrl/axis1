@@ -68,7 +68,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         where: { id },
         data: {
           siteCleaned: !!body.siteCleaned, wasteRemoved: !!body.wasteRemoved, shaftClosed: !!body.shaftClosed,
-          siteRestored: !!body.siteRestored, lineHandover: !!body.lineHandover,
+          siteRestored: !!body.siteRestored, lineHandover: !!body.lineHandover, casingSpacer: !!body.casingSpacer,
           clientNotes: body.clientNotes, handoverStatus: body.handoverStatus,
           // التشطيب المرفوض يعود مسودة لدى المشرف بعد التعديل — يرفعه مجدداً بقرار الإدارة لاحقاً
           status: existing.status === 'rejected' ? 'draft' : existing.status,
