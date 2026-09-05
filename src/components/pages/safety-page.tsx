@@ -15,6 +15,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { ShieldCheck, ShieldAlert, AlertTriangle, CheckCircle2, XCircle, Calendar, Plus, Loader2, Trash2, GitBranch, Users, Phone, Building2, Pencil } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
+import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 
 const incidentLabels: Record<string, { ar: string; en: string; color: string }> = {
@@ -547,7 +548,8 @@ export default function SafetyPage() {
                         </td>
                         <td className="p-2.5 text-xs text-muted-foreground">{w.project ? w.project.name : '-'}</td>
                         <td className="p-2.5">
-                          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          {/* الأزرار ظاهرة دائماً على الهاتف (لا يوجد hover باللمس) */}
+                          <div className="flex gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                             <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={function() {
                               setEditingWorker(w)
                               setWorkerForm({
@@ -623,7 +625,7 @@ export default function SafetyPage() {
 
       {/* Add Safety Report Sheet */}
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
-        <SheetContent side={isRtl ? 'left' : 'right'} className="overflow-y-auto w-full sm:max-w-lg">
+        <SheetContent side={isRtl ? 'left' : 'right'} className="overflow-y-auto w-full sm:max-w-lg pb-[max(0px,env(safe-area-inset-bottom))]">
           <SheetHeader>
             <SheetTitle>{isRtl ? 'إضافة تقرير سلامة جديد' : 'New Safety Report'}</SheetTitle>
             <SheetDescription>
@@ -631,7 +633,8 @@ export default function SafetyPage() {
             </SheetDescription>
           </SheetHeader>
 
-          <div className="mt-6 space-y-5">
+          {/* حشوة أفقية فعلية: كانت الحقول ملتصقة بحافة الشاشة على الهاتف */}
+          <div className="mt-1 px-4 sm:px-6 pb-6 space-y-5">
             <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>{isRtl ? 'المشروع' : 'Project'} *</Label>
@@ -658,7 +661,7 @@ export default function SafetyPage() {
               <select
                 value={form.driveLineId}
                 onChange={function(e) { setForm({ ...form, driveLineId: e.target.value }) }}
-                className={"w-full h-9 rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:border-ring transition-[color,box-shadow] " + (isRtl ? 'dir-rtl' : '')}
+                className={"w-full h-11 rounded-md border border-input bg-transparent px-3 py-2 text-[15px] outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:border-ring transition-[color,box-shadow] " + (isRtl ? 'dir-rtl' : '')}
               >
                 <option value="">{isRtl ? 'اختر' : 'Select'}</option>
                 {driveLines.map(function(l) {
@@ -680,22 +683,33 @@ export default function SafetyPage() {
                 <Progress value={formCompliance} className="h-2 flex-1" />
                 <span className="text-sm font-medium">{formPassed}/15</span>
               </div>
-              <div className="grid grid-cols-1 gap-1.5">
+              {/* مربعات تحديد كبيرة وصفوف نقر واسعة (60px) — مريحة في الميدان */}
+              <div className="grid grid-cols-1 min-[480px]:grid-cols-2 gap-2">
                 {checklistItems.map(function(item) {
+                  var isChecked = !!form[item.key as keyof typeof form]
                   return (
                     <label
                       key={item.key}
-                      className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 cursor-pointer transition"
+                      className={cn(
+                        'checklist-row flex items-center gap-3.5 p-3.5 min-h-[60px] rounded-xl border-2 cursor-pointer transition-all',
+                        isChecked
+                          ? 'border-primary bg-accent/50 shadow-sm'
+                          : 'border-border bg-card hover:bg-muted/60 active:bg-muted'
+                      )}
                     >
                       <Checkbox
-                        checked={!!form[item.key as keyof typeof form]}
+                        className="checkbox-lg shrink-0"
+                        checked={isChecked}
                         onCheckedChange={function(checked) {
                           var updated = Object.assign({}, form)
                           updated[item.key] = !!checked
                           setForm(updated)
                         }}
                       />
-                      <span className="text-sm">{isRtl ? item.ar : item.en}</span>
+                      <span className={cn('text-[15px] leading-snug font-medium flex-1', isChecked ? 'text-foreground' : 'text-foreground/80')}>
+                        {isRtl ? item.ar : item.en}
+                      </span>
+                      {isChecked && <CheckCircle2 className="h-5 w-5 text-primary shrink-0" />}
                     </label>
                   )
                 })}
@@ -747,20 +761,24 @@ export default function SafetyPage() {
               </div>
             )}
 
-            <Button onClick={handleSave} disabled={saving} className="w-full h-11">
-              {saving ? (
-                <Loader2 className="h-5 w-5 animate-spin" />
-              ) : (
-                <>
-                  <ShieldCheck className="h-4 w-4 ml-2" />
-                  {isRtl ? 'حفظ تقرير السلامة' : 'Save Safety Report'}
-                </>
-              )}
-            </Button>
+            {/* زر الحفظ ثابت أسفل النافذة أثناء التمرير — سهل الوصول بالإبهام */}
+            <div className="sticky bottom-0 -mx-4 sm:-mx-6 px-4 sm:px-6 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] bg-background/95 backdrop-blur border-t border-border/60 rounded-b-lg">
+              <Button onClick={handleSave} disabled={saving} className="w-full h-12 text-[15px]">
+                {saving ? (
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                ) : (
+                  <>
+                    <ShieldCheck className="h-5 w-5 ml-2" />
+                    {isRtl ? 'حفظ تقرير السلامة' : 'Save Safety Report'}
+                  </>
+                )}
+              </Button>
+            </div>
           </div>
         </SheetContent>
       </Sheet>
     </div>
   )
 }
+
 
