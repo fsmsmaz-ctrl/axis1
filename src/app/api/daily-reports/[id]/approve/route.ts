@@ -79,9 +79,28 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       'سجل التدقيق'
     ).catch(function() {})
 
+    // ── تنبيه منشئ التقرير بنتيجة الاعتماد ──
+    // صف موجّه للمنشئ حصراً (لا يُنشأ إذا كان المعتمد هو المنشئ نفسه)
+    if (existingReport.createdById && existingReport.createdById !== user!.id) {
+      db.notification.create({
+        data: {
+          userId: existingReport.createdById,
+          projectId: existingReport.projectId,
+          type: 'report_approved',
+          title: 'تم اعتماد التقرير اليومي',
+          message: 'تم اعتماد تقريرك اليومي بتاريخ ' + new Date(existingReport.reportDate).toISOString().split('T')[0] + ' بواسطة ' + user!.name + '.',
+          severity: 'info',
+          link: 'dailyReports',
+          entityType: 'daily_report',
+          entityId: id + ':approved',
+        },
+      }).catch(function() {})
+    }
+
     return NextResponse.json({ report: updateResult.data })
   } catch (error) {
     return handleDbError(error, 'اعتماد التقرير')
   }
 }
+
 
