@@ -4,6 +4,7 @@ import { SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 import { safeDbOp, handleDbError } from '@/lib/api-helpers'
+import { notifyUsers } from '@/lib/notify'
 
 // تسليم التقرير: من مسودة إلى مرسل — بعد الانتهاء من تعديل البيانات
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -26,7 +27,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     var existingResult = await safeDbOp(
       () => db.dailyReport.findUnique({
         where: { id },
-        select: { status: true, projectId: true },
+        select: {
+          status: true, projectId: true, reportDate: true,
+          project: { select: { name: true, code: true } },
+        },
       }),
       'البحث عن التقرير'
     )
@@ -68,9 +72,27 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       'سجل التدقيق'
     ).catch(function() {})
 
+    // ── تنبيه أصحاب صلاحية الاعتماد: تقرير بحاجة إلى اعتماد ──
+    // يصل للإدارة العليا ومديري المشاريع ومدير النظام (باستثناء المُسلّم نفسه)
+    notifyUsers({
+      type: 'report_pending_approval',
+      title: 'تقرير يومي بحاجة إلى اعتماد',
+      message: 'تم تسليم تقرير يومي بتاريخ ' + new Date(existingReport.reportDate).toISOString().split('T')[0] + ' بواسطة ' + user!.name + ' — مشروع ' + (existingReport.project?.name || existingReport.project?.code || '') + ' وهو بانتظار الاعتماد.',
+      severity: 'info',
+      projectId: existingReport.projectId,
+      link: 'dailyReports',
+      entityType: 'daily_report',
+      entityId: id + ':pending',
+      permissions: ['daily_reports'],
+      roles: ['top_management', 'project_manager'],
+      includeSystemAdmin: true,
+      excludeUserIds: [user!.id],
+    }).catch(function() {})
+
     return NextResponse.json({ report: updateResult.data })
   } catch (error) {
     return handleDbError(error, 'تسليم التقرير')
   }
 }
+
 
