@@ -60,7 +60,7 @@ export default function FinishingsPage() {
   const [formData, setFormData] = useState({
     projectId: '', driveLineId: '', date: new Date().toISOString().split('T')[0],
     siteCleaned: false, wasteRemoved: false, shaftClosed: false,
-    siteRestored: false, lineHandover: false,
+    siteRestored: false, lineHandover: false, casingSpacer: false,
     clientNotes: '', handoverStatus: 'pending',
   })
 
@@ -89,7 +89,7 @@ export default function FinishingsPage() {
     setFormData({
       projectId: projects[0]?.id || '', driveLineId: '', date: new Date().toISOString().split('T')[0],
       siteCleaned: false, wasteRemoved: false, shaftClosed: false,
-      siteRestored: false, lineHandover: false,
+      siteRestored: false, lineHandover: false, casingSpacer: false,
       clientNotes: '', handoverStatus: 'pending',
     })
   }
@@ -130,6 +130,7 @@ export default function FinishingsPage() {
       shaftClosed: !!f.shaftClosed,
       siteRestored: !!f.siteRestored,
       lineHandover: !!f.lineHandover,
+      casingSpacer: !!f.casingSpacer,
       clientNotes: f.clientNotes || '',
       handoverStatus: f.handoverStatus || 'pending',
     })
@@ -185,12 +186,14 @@ export default function FinishingsPage() {
   }
 
   const checklistItems = [
-    { key: 'siteCleaned', label: isRtl ? 'تنظيف الموقع' : 'Site cleaned' },
-    { key: 'wasteRemoved', label: isRtl ? 'إزالة المخلفات' : 'Waste removed' },
-    { key: 'shaftClosed', label: isRtl ? 'إغلاق الحفر' : 'Shaft closed' },
-    { key: 'siteRestored', label: isRtl ? 'إعادة الوضع كما كان' : 'Site restored' },
-    { key: 'lineHandover', label: isRtl ? 'تسليم الخط' : 'Line handover' },
+    { key: 'siteCleaned', label: isRtl ? 'تنظيف الموقع' : 'Site cleaned', short: isRtl ? 'تنظيف' : 'Clean' },
+    { key: 'wasteRemoved', label: isRtl ? 'إزالة المخلفات' : 'Waste removed', short: isRtl ? 'المخلفات' : 'Waste' },
+    { key: 'shaftClosed', label: isRtl ? 'إغلاق الحفر' : 'Shaft closed', short: isRtl ? 'الإغلاق' : 'Shaft' },
+    { key: 'siteRestored', label: isRtl ? 'إعادة الوضع كما كان' : 'Site restored', short: isRtl ? 'الإعادة' : 'Restore' },
+    { key: 'lineHandover', label: isRtl ? 'تسليم الخط' : 'Line handover', short: isRtl ? 'التسليم' : 'Handover' },
+    { key: 'casingSpacer', label: isRtl ? 'حشوة الكيسنج (سبيسر)' : 'Casing Spacer', short: isRtl ? 'سبيسر' : 'Spacer' },
   ]
+  const totalItems = checklistItems.length
 
   // هل يمكن للمستخدم الحالي تعديل هذا السجل؟ (مسودة لأصحاب الكتابة — مرفوض للمشرف/الرافع/مدير النظام)
   function canEdit(f: any): boolean {
@@ -237,10 +240,10 @@ export default function FinishingsPage() {
             const status = statusLabels[f.handoverStatus] || statusLabels.pending
             const wf = workflowLabels[f.status] || workflowLabels.draft
             const checks = [
-              f.siteCleaned, f.wasteRemoved, f.shaftClosed, f.siteRestored, f.lineHandover,
+              f.siteCleaned, f.wasteRemoved, f.shaftClosed, f.siteRestored, f.lineHandover, f.casingSpacer,
             ]
             const completed = checks.filter(Boolean).length
-            const workDone = completed === 5
+            const workDone = completed === totalItems
             return (
               <Card key={f.id} className={f.status === 'rejected' ? 'border-destructive/40' : ''}>
                 <CardContent className="p-4">
@@ -263,7 +266,7 @@ export default function FinishingsPage() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-5 gap-1 mb-3">
+                  <div className="grid grid-cols-6 gap-1 mb-3">
                     {checks.map((ok, i) => (
                       <div key={i} className="flex flex-col items-center gap-1">
                         <div className={`w-7 h-7 rounded-full flex items-center justify-center ${
@@ -276,7 +279,7 @@ export default function FinishingsPage() {
                           )}
                         </div>
                         <span className="text-[10px] text-center text-muted-foreground">
-                          {checklistItems[i].label.split(' ')[0]}
+                          {checklistItems[i].short}
                         </span>
                       </div>
                     ))}
@@ -284,7 +287,7 @@ export default function FinishingsPage() {
 
                   <div className="flex items-center gap-2 text-xs">
                     <span className="text-muted-foreground">{isRtl ? 'مكتمل' : 'Completed'}:</span>
-                    <span className="font-semibold">{completed}/5</span>
+                    <span className="font-semibold">{completed}/{totalItems}</span>
                     {f.status === 'submitted' && f.submitter?.name && (
                       <span className="text-muted-foreground">• {isRtl ? 'رافعه' : 'Submitted by'}: {f.submitter.name}</span>
                     )}
@@ -328,7 +331,7 @@ export default function FinishingsPage() {
                         ) : (
                           <span className="text-xs text-muted-foreground flex items-center gap-1">
                             <AlertCircle className="h-3.5 w-3.5" />
-                            {isRtl ? `أكمل البنود (${completed}/5) لتفعيل الرفع للإدارة` : `Complete all items (${completed}/5) to enable submission`}
+                            {isRtl ? `أكمل البنود (${completed}/${totalItems}) لتفعيل الرفع للإدارة` : `Complete all items (${completed}/${totalItems}) to enable submission`}
                           </span>
                         )
                       )}
