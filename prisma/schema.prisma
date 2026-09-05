@@ -305,16 +305,22 @@ model Attachment {
 model Notification {
   id          String   @id @default(cuid())
   projectId   String?
-  userId      String?
-  type        String   // safety_missing, work_stopped, low_production, equipment_breakdown, mass_absence, cost_overrun, deadline_near, safety_alert, report_delay
+  userId      String?  // المستخدم المستهدف تحديداً؛ null = إشعار عام
+  type        String   // report_pending_approval, report_approved, report_delay, safety_missing, drive_line_completed, finishing_incomplete, performance_ready, project_created, cost_overrun, safety_alert...
   title       String
   message     String
   severity    String   @default("info") // info, warning, critical
   read        Boolean  @default(false)
+  link        String?  // الصفحة التي يفتحها التنبيه (PageId): dailyReports, driveLines, finishings, performance...
+  entityType  String?  // نوع الكيان المرتبط: daily_report, drive_line, finishing, safety_report, performance
+  entityId    String?  // معرف الكيان المرتبط — يُستخدم لمنع تكرار التنبيهات
   createdAt   DateTime @default(now())
 
   project     Project? @relation(fields: [projectId], references: [id])
   user        User?    @relation(fields: [userId], references: [id])
+
+  @@index([userId, read])
+  @@index([type, entityId])
 }
 
 // ==================== Audit Log ====================
@@ -375,3 +381,4 @@ model CompanyAsset {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 }
+
