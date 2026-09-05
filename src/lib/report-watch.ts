@@ -179,7 +179,7 @@ export async function runScanNow(): Promise<{ created: number }> {
       },
       select: {
         id: true, date: true, projectId: true, driveLineId: true, siteCleaned: true, wasteRemoved: true,
-        shaftClosed: true, siteRestored: true, lineHandover: true, handoverStatus: true,
+        shaftClosed: true, siteRestored: true, lineHandover: true, casingSpacer: true, handoverStatus: true,
         project: { select: { name: true, code: true } },
       },
       orderBy: { date: 'asc' },
@@ -204,6 +204,7 @@ export async function runScanNow(): Promise<{ created: number }> {
       if (!f.shaftClosed) missing.push('غلق البئر')
       if (!f.siteRestored) missing.push('إعادة الموقع')
       if (!f.lineHandover) missing.push('تسليم الخط')
+      if (!f.casingSpacer) missing.push('حشوة الكيسنج (سبيسر)')
       if (missing.length === 0) continue
 
       const dateStr = fmtDate(new Date(f.date))
@@ -287,4 +288,5 @@ export async function runScanThrottled(force: boolean = false): Promise<{ create
     scanInFlight = null
   }
 }
+
 
