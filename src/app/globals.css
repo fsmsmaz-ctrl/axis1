@@ -436,17 +436,20 @@ button,
   }
 }
 
-/* مربع تحديد كبير لقوائم اللمس (يُستخدم في نافذة تقرير السلامة):
-   نفس شكل الافتراضي لكن 24px وعلامة صح متناسبة */
-.checkbox-lg {
-  width: 1.5rem;
-  height: 1.5rem;
-  border-radius: 7px;
-  border-width: 2px;
-}
-.checkbox-lg svg {
-  width: 1rem;
-  height: 1rem;
+/* مربع تحديد كبير لقوائم اللمس (نافذة تقرير السلامة) — للهاتف فقط:
+   24px على الشاشات الصغيرة، ويعود للحجم الطبيعي (16px) على الحاسوب
+   حتى تظهر الأبعاد الطبيعية للموقع على الشاشات الكبيرة */
+@media (max-width: 1023px) {
+  .checkbox-lg {
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 7px;
+    border-width: 2px;
+  }
+  .checkbox-lg svg {
+    width: 1rem;
+    height: 1rem;
+  }
 }
 
 /* صفوف قائمة التحقق: منع تحديد النص عند اللمس المتكرر */
@@ -457,4 +460,5 @@ button,
 .checklist-row:active {
   transform: scale(0.995);
 }
+
 
