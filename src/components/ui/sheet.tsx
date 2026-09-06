@@ -72,9 +72,9 @@ function SheetContent({
         {...props}
       >
         {children}
-        {/* زر إغلاق بمساحة لمس مريحة (36px) بدل أيقونة صغيرة يصعب ضبطها على الهاتف */}
-        <SheetPrimitive.Close className="ring-offset-background focus:ring-ring data-[state=open]:bg-secondary absolute top-3 right-3 grid h-9 w-9 place-items-center rounded-full bg-background/70 backdrop-blur-sm shadow-sm opacity-80 transition-opacity hover:opacity-100 hover:bg-muted focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none">
-          <XIcon className="size-5" />
+        {/* زر إغلاق بمساحة لمس مريحة (36px) على الهاتف — طبيعي (28px) على الحاسوب */}
+        <SheetPrimitive.Close className="ring-offset-background focus:ring-ring data-[state=open]:bg-secondary absolute top-3 right-3 grid h-9 w-9 lg:h-7 lg:w-7 place-items-center rounded-full bg-background/70 backdrop-blur-sm shadow-sm opacity-80 transition-opacity hover:opacity-100 hover:bg-muted focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none">
+          <XIcon className="size-5 lg:size-4" />
           <span className="sr-only">Close</span>
         </SheetPrimitive.Close>
       </SheetPrimitive.Content>
