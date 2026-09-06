@@ -31,7 +31,7 @@ export function getCookieOptions() {
 }
 
 export const MODULE_PERMISSIONS = [
-  'projects', 'drive_lines', 'daily_reports', 'safety', 'equipment', 'costs', 'finishings', 'performance', 'notifications',
+  'projects', 'drive_lines', 'daily_reports', 'safety', 'equipment', 'costs', 'finishings', 'tasks', 'performance', 'notifications',
 ] as const
 
 export const MODULE_PERMISSION_LABELS: Record<string, { ar: string; en: string }> = {
@@ -42,6 +42,7 @@ export const MODULE_PERMISSION_LABELS: Record<string, { ar: string; en: string }
   equipment:      { ar: 'المعدات',           en: 'Equipment' },
   costs:          { ar: 'التكاليف والإيرادات', en: 'Costs & Revenue' },
   finishings:     { ar: 'التشطيبات',         en: 'Finishings' },
+  tasks:          { ar: 'إدارة المهام',      en: 'Task Management' },
   performance:    { ar: 'تقييم الأداء',      en: 'Performance' },
   notifications:  { ar: 'التنبيهات وسجل المراقبة', en: 'Notifications & Monitor' },
 }
@@ -84,20 +85,20 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
   top_management: ['*'],
   project_manager: [
     'projects', 'drive_lines', 'daily_reports', 'safety',
-    'equipment', 'costs', 'finishings', 'reports', 'performance', 'notifications',
+    'equipment', 'costs', 'finishings', 'tasks', 'reports', 'performance', 'notifications',
   ],
   site_engineer: [
     'projects', 'drive_lines', 'daily_reports', 'safety',
-    'equipment', 'finishings', 'notifications',
+    'equipment', 'finishings', 'tasks', 'notifications',
   ],
   hse_officer: [
-    'projects', 'equipment', 'safety', 'reports', 'notifications',
+    'projects', 'equipment', 'safety', 'tasks', 'reports', 'notifications',
   ],
   foreman: [
-    'projects', 'daily_reports', 'finishings', 'reports', 'notifications',
+    'projects', 'daily_reports', 'finishings', 'tasks', 'reports', 'notifications',
   ],
   accountant: [
-    'projects', 'costs', 'reports', 'notifications',
+    'projects', 'costs', 'tasks', 'reports', 'notifications',
   ],
 }
 
@@ -129,6 +130,9 @@ export const WRITE_ROLES: Record<string, string[]> = {
   equipment: ['top_management', 'project_manager', 'site_engineer'],
   costs: ['top_management', 'project_manager', 'accountant'],
   finishings: ['top_management', 'project_manager', 'site_engineer', 'foreman'],
+  // إدارة المهام: الإنشاء والتعديل والاعتماد للإدارة العليا ومدير المشروع
+  // (مدير النظام admin@axis.om يتجاوز الفحص عبر isTaskManager)
+  tasks: ['top_management', 'project_manager'],
   company_assets: ['top_management', 'project_manager', 'site_engineer', 'accountant'],
 }
 
@@ -159,4 +163,15 @@ export function hasPermission(role: string, resource: string, userPermissions?: 
 }
 
 export const hasReportPermission = hasPermission
+
+// ─── Task Management helpers ───────────────────────────────────
+// مدير المهام: ينشئ ويعدّل ويعيد ويعتمد ويغلق ويرى الكل
+// (الإدارة العليا + مدير المشروع + مدير النظام admin@axis.om)
+export const TASK_MANAGE_ROLES = ['top_management', 'project_manager'] as const
+
+export function isTaskManager(user: { role?: string; email?: string } | null | undefined): boolean {
+  if (!user) return false
+  if (user.email && user.email.toLowerCase().trim() === SYSTEM_ADMIN_EMAIL) return true
+  return (TASK_MANAGE_ROLES as readonly string[]).includes(user.role || '')
+}
 
