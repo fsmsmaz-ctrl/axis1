@@ -398,7 +398,7 @@ export default function AppShell() {
             <img
               src="/axis-logo.png"
               alt="AXIS"
-              className="h-11 w-auto object-contain flex-1 min-w-0"
+              className="h-14 w-auto object-contain flex-1 min-w-0"
             />
             <Button variant="ghost" size="icon" className={cn("lg:hidden shrink-0 h-9 w-9", isRtl ? "-mr-1" : "-ml-1")} onClick={() => setSidebarOpen(false)}>
               <X className="h-4 w-4" />
@@ -407,17 +407,17 @@ export default function AppShell() {
           <p className="text-xs text-muted-foreground mt-1 leading-tight">Pipe Jacking Management System</p>
         </div>
 
-        <nav className="flex-1 overflow-y-auto p-3.5 space-y-2">
+        <nav className="flex-1 overflow-y-auto p-3.5 lg:p-3 space-y-2 lg:space-y-1">
           {isAdmin && (
             <button
               onClick={openUserDialog}
-              className="w-full flex items-center gap-3.5 px-4 py-4 rounded-xl text-base font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-all border border-primary/20 border-dashed"
+              className="w-full flex items-center gap-3.5 px-4 py-4 lg:py-2.5 rounded-xl text-base lg:text-sm font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-all border border-primary/20 border-dashed"
             >
-              <UserPlus className="h-[22px] w-[22px] shrink-0" />
+              <UserPlus className="h-[22px] w-[22px] lg:h-5 lg:w-5 shrink-0" />
               <span className="flex-1 text-start">{isAr ? 'إدارة المستخدمين' : 'User Management'}</span>
             </button>
           )}
-          <div className="h-2" />
+          <div className="h-2 lg:h-1" />
           {allowedItems.map((item) => {
             const Icon = item.icon
             const isActive = effectivePage === item.id
@@ -425,12 +425,12 @@ export default function AppShell() {
             const unreadCount = item.id === 'notifications' ? notifications.length : 0
             return (
               <button key={item.id} onClick={() => { setCurrentPage(item.id); setSidebarOpen(false) }} className={cn(
-                "w-full flex items-center gap-3.5 px-4 py-4 rounded-xl text-base font-medium transition-all",
+                "w-full flex items-center gap-3.5 px-4 py-4 lg:py-2.5 rounded-xl text-base lg:text-sm font-medium transition-all",
                 isActive ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm" : "text-sidebar-foreground hover:bg-sidebar-accent"
               )}>
-                <Icon className={cn("h-[22px] w-[22px] shrink-0", isActive ? "" : "text-muted-foreground")} />
+                <Icon className={cn("h-[22px] w-[22px] lg:h-5 lg:w-5 shrink-0", isActive ? "" : "text-muted-foreground")} />
                 <span className="flex-1 text-start">{label}</span>
-                {unreadCount > 0 && <Badge variant="destructive" className="h-6 min-w-6 flex items-center justify-center px-1.5 text-[13px]">{unreadCount}</Badge>}
+                {unreadCount > 0 && <Badge variant="destructive" className="h-6 min-w-6 lg:h-5 lg:min-w-5 flex items-center justify-center px-1.5 text-[13px] lg:text-xs">{unreadCount}</Badge>}
                 {isActive && <ChevronLeft className={cn("h-4 w-4", isRtl ? "" : "rotate-180")} />}
               </button>
             )
@@ -439,16 +439,16 @@ export default function AppShell() {
 
         <div className="p-3 border-t border-sidebar-border">
           <div className="flex items-center gap-3 p-2 rounded-lg">
-            <Avatar className="h-11 w-11 border-2 border-primary/20 shrink-0">
+            <Avatar className="h-11 w-11 lg:h-9 lg:w-9 border-2 border-primary/20 shrink-0">
               <AvatarFallback className="bg-primary/10 text-primary font-semibold">
                 {(isRtl ? user.name : (user.nameEn || user.name)).charAt(0)}
               </AvatarFallback>
             </Avatar>
             <div className="flex-1 min-w-0">
-              <p className="text-[15px] font-medium truncate">{isRtl ? user.name : (user.nameEn || user.name)}</p>
+              <p className="text-[15px] lg:text-sm font-medium truncate">{isRtl ? user.name : (user.nameEn || user.name)}</p>
               <p className="text-xs text-muted-foreground">{isRtl ? roleLabels[user.role]?.ar : roleLabels[user.role]?.en}</p>
             </div>
-            <Button variant="ghost" size="icon" className="h-10 w-10 text-muted-foreground hover:text-destructive shrink-0" onClick={handleLogout} title={isRtl ? 'تسجيل الخروج' : 'Logout'}>
+            <Button variant="ghost" size="icon" className="h-10 w-10 lg:h-9 lg:w-9 text-muted-foreground hover:text-destructive shrink-0" onClick={handleLogout} title={isRtl ? 'تسجيل الخروج' : 'Logout'}>
               <LogOut className="h-4 w-4" />
             </Button>
           </div>
@@ -795,9 +795,5 @@ export default function AppShell() {
   )
 }
 
-
-   
-
-      
 
   
