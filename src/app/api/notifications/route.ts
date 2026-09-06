@@ -3,6 +3,7 @@ import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { handleDbError, safeDbOp } from '@/lib/api-helpers'
 import { runScanThrottled } from '@/lib/report-watch'
+import { runTaskScanThrottled } from '@/lib/task-watch'
 
 export async function GET(req: NextRequest) {
   var user = await getAuthUser(req)
@@ -20,6 +21,8 @@ export async function GET(req: NextRequest) {
   if (!unreadOnly) {
     try {
       await runScanThrottled(false)
+      // مراقب المهام: مواعيد خلال 24 ساعة / تأخيرات / بانتظار مراجعة
+      await runTaskScanThrottled(false)
     } catch (e) {
       // الفحص غير حرج — الاستمرار في جلب التنبيهات
     }
