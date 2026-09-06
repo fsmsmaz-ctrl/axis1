@@ -24,7 +24,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import {
   LayoutDashboard, FolderKanban, GitBranch, FileText, ShieldCheck,
-  Wrench, DollarSign, CheckCircle2, FileBarChart, TrendingUp,
+  Wrench, DollarSign, CheckCircle2, FileBarChart, TrendingUp, ListChecks,
   Bell, LogOut, Menu, X, Globe,
   AlertTriangle, ChevronLeft, UserPlus, Users, Loader2, Shield, Pencil, Trash2, Check,
   ShieldAlert
@@ -36,7 +36,7 @@ import dynamic from 'next/dynamic'
 
 type PageId =
   | 'dashboard' | 'projects' | 'driveLines' | 'dailyReports' | 'safety'
-  | 'equipment' | 'costs' | 'finishings' | 'reports' | 'performance' | 'notifications'
+  | 'equipment' | 'costs' | 'finishings' | 'tasks' | 'reports' | 'performance' | 'notifications'
 
 interface NavItem {
   id: PageId
@@ -55,6 +55,7 @@ const navItems: NavItem[] = [
   { id: 'equipment', labelAr: 'المعدات', labelEn: 'Equipment', icon: Wrench, resource: 'equipment' },
   { id: 'costs', labelAr: 'التكاليف والإيرادات', labelEn: 'Costs & Revenue', icon: DollarSign, resource: 'costs' },
   { id: 'finishings', labelAr: 'التشطيبات', labelEn: 'Finishings', icon: CheckCircle2, resource: 'finishings' },
+  { id: 'tasks', labelAr: 'إدارة المهام', labelEn: 'Task Management', icon: ListChecks, resource: 'tasks' },
   { id: 'performance', labelAr: 'تقييم الأداء', labelEn: 'Performance', icon: TrendingUp, resource: 'performance' },
   { id: 'reports', labelAr: 'التقارير', labelEn: 'Reports', icon: FileBarChart, resource: 'reports' },
   { id: 'notifications', labelAr: 'التنبيهات', labelEn: 'Notifications', icon: Bell, resource: 'notifications' },
@@ -120,6 +121,7 @@ const SafetyPage = dynamic(() => import('@/components/pages/safety-page'), { ssr
 const EquipmentPage = dynamic(() => import('@/components/pages/equipment-page'), { ssr: false })
 const CostsPage = dynamic(() => import('@/components/pages/costs-page'), { ssr: false })
 const FinishingsPage = dynamic(() => import('@/components/pages/finishings-page'), { ssr: false })
+const TasksPage = dynamic(() => import('@/components/pages/tasks-page'), { ssr: false })
 const PerformancePage = dynamic(() => import('@/components/pages/performance-page'), { ssr: false })
 const ReportsPage = dynamic(() => import('@/components/pages/reports-page'), { ssr: false })
 const NotificationsPage = dynamic(() => import('@/components/pages/notifications-page'), { ssr: false })
@@ -367,6 +369,7 @@ export default function AppShell() {
       case 'equipment': return <EquipmentPage />
       case 'costs': return <CostsPage />
       case 'finishings': return <FinishingsPage />
+      case 'tasks': return <TasksPage />
       case 'performance': return <PerformancePage />
       case 'reports': return <ReportsPage />
       case 'notifications': return <NotificationsPage />
@@ -795,5 +798,9 @@ export default function AppShell() {
   )
 }
 
+
+   
+
+      
 
   
