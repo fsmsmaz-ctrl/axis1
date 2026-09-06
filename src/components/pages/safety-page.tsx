@@ -691,7 +691,7 @@ export default function SafetyPage() {
                     <label
                       key={item.key}
                       className={cn(
-                        'checklist-row flex items-center gap-3.5 p-3.5 min-h-[60px] rounded-xl border-2 cursor-pointer transition-all',
+                        'checklist-row flex items-center gap-3.5 lg:gap-3 p-3.5 lg:p-3 min-h-[60px] lg:min-h-0 rounded-xl border-2 cursor-pointer transition-all',
                         isChecked
                           ? 'border-primary bg-accent/50 shadow-sm'
                           : 'border-border bg-card hover:bg-muted/60 active:bg-muted'
@@ -780,5 +780,4 @@ export default function SafetyPage() {
     </div>
   )
 }
-
 
