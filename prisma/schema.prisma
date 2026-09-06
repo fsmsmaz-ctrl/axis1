@@ -42,6 +42,12 @@ model User {
   equipmentsCreated  Equipment[]       @relation("EquipmentCreator")
   assetsCreated      CompanyAsset[]   @relation("AssetCreator")
   workersCreated      Worker[]         @relation("WorkerCreator")
+  tasksAssigned       Task[]           @relation("TaskAssignee")
+  tasksCreated        Task[]           @relation("TaskCreator")
+  tasksClosed         Task[]           @relation("TaskCloser")
+  tasksLastUpdated    Task[]           @relation("TaskLastUpdater")
+  taskEvents          TaskEvent[]      @relation("TaskEventActor")
+  taskAttachments     TaskAttachment[] @relation("TaskAttachmentUploader")
 }
 
 // ==================== Projects ====================
@@ -296,6 +302,100 @@ model Finishing {
 
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+}
+
+// ==================== Task Management (إدارة المهام) ====================
+// دورة حياة المهمة:
+//   new (جديدة) → in_progress (قيد التنفيذ) → waiting (بانتظار جهة أخرى، بسبب مسجّل)
+//   → ready_review (جاهزة للمراجعة) → closed (مغلقة نهائياً من الإدارة)
+//   returned (معادة للتعديل من الإدارة) / cancelled (ملغاة مع سبب — لا تُحذف أبداً)
+// كل الانتقالات تُسجَّل في TaskEvent مع الفاعل والوقت (سجل كامل للتدقيق وتقييم الأداء)
+model Task {
+  id                String    @id @default(cuid())
+  taskNumber        Int       @unique @default(autoincrement()) // رقم المهمة التسلسلي
+  title             String
+  description       String?   // تفاصيل اختيارية
+  category          String?   // القسم / نوع المهمة (اختياري)
+  priority          String    @default("normal") // urgent, high, normal, low
+  size              String    @default("medium") // small, medium, large — يُستخدم في تقرير الأداء
+  status            String    @default("new") // new, in_progress, waiting, ready_review, returned, closed, cancelled
+  dueDate           DateTime  // تاريخ ووقت الإنجاز المطلوب
+
+  assigneeId        String    // الموظف المسؤول
+  creatorId         String    // مَن أضاف المهمة
+
+  // طوابع زمنية تلقائية لدورة الحياة
+  startedAt         DateTime? // بدء التنفيذ
+  reviewRequestedAt DateTime? // الإرسال للمراجعة
+  closedAt          DateTime? // الإغلاق النهائي
+  cancelledAt       DateTime?
+  closedById        String?
+
+  // بيانات التقييم
+  closedOnFirstReview Boolean @default(false) // اعتُمدت من أول مراجعة بلا إعادة
+  returnCount       Int       @default(0)      // عدد مرات الإعادة للتعديل
+  reviewNote        String?   // ملاحظة الموظف عند الإرسال للمراجعة
+  waitingMinutes    Int       @default(0)      // مجموع مدد الانتظار المكتملة — لا تُحسب تأخيراً على الموظف
+  waitingSince      DateTime? // بداية الانتظار الحالي (أثناء حالة waiting)
+  waitingReason     String?   // سبب الانتظار (إلزامي عند حالة الانتظار)
+  cancelReason      String?   // سبب الإلغاء (إلزامي) — المهمة لا تُحذف
+
+  // المهام الدورية: عند الإغلاق تُنشأ المهمة التالية تلقائياً
+  recurring         String?   // daily, weekly, monthly, yearly
+  parentTaskId      String?   // رأس السلسلة (المهمة الأصلية)
+
+  lastUpdatedById   String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  assignee     User             @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  creator      User             @relation("TaskCreator", fields: [creatorId], references: [id])
+  closedBy     User?            @relation("TaskCloser", fields: [closedById], references: [id])
+  lastUpdatedBy User?           @relation("TaskLastUpdater", fields: [lastUpdatedById], references: [id])
+  events       TaskEvent[]
+  attachments  TaskAttachment[]
+
+  @@index([assigneeId, status])
+  @@index([status, dueDate])
+  @@index([dueDate])
+}
+
+// سجل كامل لكل تغيير (حالة / موعد إنجاز / مسؤول / ملاحظة / مرفق)
+model TaskEvent {
+  id            String    @id @default(cuid())
+  taskId        String
+  actorId       String
+  type          String    // created, status_change, due_date_change, assignee_change, note, attachment, review, approved, returned, cancelled, recurring_spawn
+  fromStatus    String?
+  toStatus      String?
+  oldDueDate    DateTime?
+  newDueDate    DateTime?
+  oldAssigneeId String?
+  newAssigneeId String?
+  note          String?   // سبب الانتظار / سبب الإعادة / الإجراء المنفذ / سبب الإلغاء
+  createdAt     DateTime  @default(now())
+
+  task  Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  actor User @relation("TaskEventActor", fields: [actorId], references: [id])
+
+  @@index([taskId, createdAt])
+}
+
+// مرفقات المهمة (اختيارية) — صور/ملفات بصيغة base64 مثل باقي النظام
+model TaskAttachment {
+  id         String   @id @default(cuid())
+  taskId     String
+  uploaderId String
+  fileName   String
+  fileType   String   // image, pdf, doc
+  url        String   // base64 data URL أو مسار
+  size       Int?
+  createdAt  DateTime @default(now())
+
+  task     Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  uploader User @relation("TaskAttachmentUploader", fields: [uploaderId], references: [id])
+
+  @@index([taskId])
 }
 
 // ==================== Attachments ====================
