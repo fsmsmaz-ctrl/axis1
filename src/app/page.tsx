@@ -125,13 +125,12 @@ export default function HomePage() {
           <div className="absolute bottom-10 left-10 w-96 h-96 rounded-full bg-white blur-3xl" />
         </div>
         <div className="relative z-10 flex flex-col items-center text-center">
-          <div className="bg-white/15 backdrop-blur-sm rounded-2xl p-2.5 mb-2 lg:p-3 lg:mb-3">
-            <img
-              src="/logo-white.png"
-              alt="AXIS"
-              className="h-16 sm:h-20 lg:h-24 w-auto object-contain"
-            />
-          </div>
+          {/* الشعار مفرّغ (شفاف) — يظهر مباشرة دون صندوق وبحجم أكبر */}
+          <img
+            src="/logo-white.png"
+            alt="AXIS"
+            className="h-20 sm:h-28 lg:h-32 w-auto object-contain drop-shadow-lg mb-3 lg:mb-4"
+          />
           <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold tracking-wide">AXIS</h1>
           <p className="text-xs sm:text-sm text-primary-foreground/70 font-light tracking-wider">Pipe Jacking &amp; Microtunneling</p>
         </div>
@@ -200,4 +199,5 @@ export default function HomePage() {
     </div>
   )
 }
+
 
