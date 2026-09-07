@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/dialog'
 import {
   ListChecks, Plus, Paperclip, History, Play, PauseCircle, Send, CheckCircle2,
-  Undo2, XCircle, Loader2, Clock, AlertTriangle, Filter, ChevronDown, ChevronUp, BarChart3, Download
+  Undo2, XCircle, Loader2, Clock, AlertTriangle, Filter, BarChart3, Download
 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
@@ -83,6 +83,12 @@ function toLocalInput(d: Date) {
   return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) + 'T' + pad2(d.getHours()) + ':' + pad2(d.getMinutes())
 }
 
+/** نموذج إنشاء مهمة جديد فارغ (موعد افتراضي: غداً 9:00 صباحاً) */
+function emptyTaskForm() {
+  const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(9, 0, 0, 0)
+  return { title: '', assigneeId: '', dueDate: toLocalInput(d), priority: 'normal', size: 'medium', category: '', description: '', recurring: '' }
+}
+
 function fmtDT(v: any, ar: boolean) {
   if (!v) return '—'
   const d = new Date(v)
@@ -122,12 +128,9 @@ export default function TasksPage() {
   })
   const [showFilters, setShowFilters] = useState(false)
 
-  // نموذج الإضافة السريع (للمدير)
-  const [form, setForm] = useState(() => {
-    const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(9, 0, 0, 0)
-    return { title: '', assigneeId: '', dueDate: toLocalInput(d), priority: 'normal', size: 'medium', category: '', description: '', recurring: '' }
-  })
-  const [showAdvanced, setShowAdvanced] = useState(false)
+  // نافذة إنشاء مهمة جديدة (للإدارة ومدير النظام فقط)
+  const [showCreate, setShowCreate] = useState(false)
+  const [form, setForm] = useState(emptyTaskForm)
   const [saving, setSaving] = useState(false)
 
   // التفاصيل
@@ -257,7 +260,8 @@ export default function TasksPage() {
         return
       }
       toast.success(isAr ? 'تم إنشاء المهمة #' + data.task.taskNumber : 'Task #' + data.task.taskNumber + ' created')
-      setForm((p) => ({ ...p, title: '', description: '', category: '', recurring: '' }))
+      setForm(emptyTaskForm())
+      setShowCreate(false)
       fetchTasks()
     } finally {
       setSaving(false)
@@ -452,12 +456,15 @@ export default function TasksPage() {
           </div>
         </div>
         {viewer.isManager && (
-          <div className="flex gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
             <Button variant={tab === 'tasks' ? 'default' : 'outline'} size="sm" onClick={() => setTab('tasks')}>
               <ListChecks className="h-4 w-4 ms-1" /> {t('المهام', 'Tasks')}
             </Button>
             <Button variant={tab === 'perf' ? 'default' : 'outline'} size="sm" onClick={() => setTab('perf')}>
               <BarChart3 className="h-4 w-4 ms-1" /> {t('تقرير الأداء', 'Performance')}
+            </Button>
+            <Button size="sm" className="shadow-sm" onClick={() => setShowCreate(true)}>
+              <Plus className="h-4 w-4 ms-1" /> {t('إنشاء مهمة جديدة', 'New Task')}
             </Button>
           </div>
         )}
@@ -482,77 +489,7 @@ export default function TasksPage() {
             ))}
           </div>
 
-          {/* نموذج الإضافة السريع — للمدير فقط */}
-          {viewer.isManager && (
-            <Card>
-              <CardContent className="p-4">
-                <form onSubmit={submitNew} className="space-y-3">
-                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-2.5">
-                    <div className="lg:col-span-4">
-                      <Input placeholder={t('عنوان المهمة *', 'Task title *')} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
-                    </div>
-                    <div className="lg:col-span-3">
-                      <Select value={form.assigneeId} onValueChange={(v) => setForm({ ...form, assigneeId: v })}>
-                        <SelectTrigger><SelectValue placeholder={t('الموظف المسؤول *', 'Assignee *')} /></SelectTrigger>
-                        <SelectContent>
-                          {users.map((u) => (
-                            <SelectItem key={u.id} value={u.id}>{userName(u)}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="lg:col-span-2">
-                      <Input type="datetime-local" value={form.dueDate} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} />
-                    </div>
-                    <div className="lg:col-span-1">
-                      <Select value={form.priority} onValueChange={(v) => setForm({ ...form, priority: v })}>
-                        <SelectTrigger aria-label={t('الأولوية', 'Priority')}><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          {Object.entries(PRIORITY).map(([k, p]) => (
-                            <SelectItem key={k} value={k}>{isAr ? p.ar : p.en}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="lg:col-span-1">
-                      <Select value={form.size} onValueChange={(v) => setForm({ ...form, size: v })}>
-                        <SelectTrigger aria-label={t('الحجم', 'Size')}><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          {Object.entries(SIZE).map(([k, s]) => (
-                            <SelectItem key={k} value={k}>{isAr ? s.ar : s.en}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="lg:col-span-1">
-                      <Button type="submit" disabled={saving} className="w-full">
-                        {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : (<><Plus className="h-4 w-4 ms-1" />{t('حفظ', 'Save')}</>)}
-                      </Button>
-                    </div>
-                  </div>
-                  <button type="button" className="text-xs text-muted-foreground inline-flex items-center gap-1 hover:text-foreground" onClick={() => setShowAdvanced(!showAdvanced)}>
-                    {showAdvanced ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-                    {t('خيارات إضافية (تصنيف، تفاصيل، تكرار) — اختيارية', 'More options (category, details, recurrence) — optional')}
-                  </button>
-                  {showAdvanced && (
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-2.5 pt-1">
-                      <Input placeholder={t('القسم / نوع المهمة', 'Category / type')} value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} />
-                      <Select value={form.recurring || 'none'} onValueChange={(v) => setForm({ ...form, recurring: v === 'none' ? '' : v })}>
-                        <SelectTrigger><SelectValue placeholder={t('التكرار', 'Recurrence')} /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">{t('بدون تكرار', 'No recurrence')}</SelectItem>
-                          {Object.entries(RECURRING).map(([k, r]) => (
-                            <SelectItem key={k} value={k}>{isAr ? r.ar : r.en}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <Input placeholder={t('تفاصيل (اختياري)', 'Details (optional)')} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
-                    </div>
-                  )}
-                </form>
-              </CardContent>
-            </Card>
-          )}
+          {/* نموذج الإضافة السريع استُبدل بنافذة إنشاء كاملة تُفتح من زر الرأس */}
 
           {/* شريط الفلاتر */}
           <div className="flex flex-wrap items-center gap-2">
@@ -830,6 +767,83 @@ export default function TasksPage() {
         </div>
       )}
 
+      {/* ── نافذة إنشاء مهمة جديدة (للإدارة ومدير النظام فقط) ── */}
+      <Dialog open={showCreate} onOpenChange={(o) => { if (!o) setShowCreate(false) }}>
+        <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-start flex items-center gap-2">
+              <Plus className="h-4 w-4" /> {t('إنشاء مهمة جديدة', 'Create New Task')}
+            </DialogTitle>
+            <DialogDescription className="text-start">
+              {t('يُسجَّل تلقائياً عند الحفظ: رقم المهمة، المُنشئ، وقت الإنشاء، والحالة «جديدة». التفاصيل والمرفقات اختيارية ويمكن إضافتها لاحقاً من تفاصيل المهمة.', 'Auto-recorded on save: task number, creator, creation time and status "New". Details and attachments are optional and can be added later from the task details.')}
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={submitNew} className="space-y-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs">{t('عنوان المهمة *', 'Task title *')}</Label>
+              <Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder={t('اكتب عنواناً واضحاً ومختصراً', 'Clear, short title')} />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <div className="space-y-1.5">
+                <Label className="text-xs">{t('الموظف المسؤول *', 'Assignee *')}</Label>
+                <Select value={form.assigneeId} onValueChange={(v) => setForm({ ...form, assigneeId: v })}>
+                  <SelectTrigger><SelectValue placeholder={t('اختر الموظف', 'Choose employee')} /></SelectTrigger>
+                  <SelectContent>
+                    {users.map((u) => (<SelectItem key={u.id} value={u.id}>{userName(u)}</SelectItem>))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">{t('موعد الإنجاز المطلوب *', 'Due date & time *')}</Label>
+                <Input type="datetime-local" value={form.dueDate} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">{t('الأولوية', 'Priority')}</Label>
+                <Select value={form.priority} onValueChange={(v) => setForm({ ...form, priority: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(PRIORITY).map(([k, p]) => (<SelectItem key={k} value={k}>{isAr ? p.ar : p.en}</SelectItem>))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">{t('حجم المهمة', 'Task size')}</Label>
+                <Select value={form.size} onValueChange={(v) => setForm({ ...form, size: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(SIZE).map(([k, s]) => (<SelectItem key={k} value={k}>{isAr ? s.ar : s.en}</SelectItem>))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">{t('القسم / نوع المهمة (اختياري)', 'Category / type (optional)')}</Label>
+                <Input value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} placeholder={t('مثال: متابعات، مستندات', 'e.g. follow-ups, documents')} />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">{t('مهمة دورية (اختياري)', 'Recurrence (optional)')}</Label>
+                <Select value={form.recurring || 'none'} onValueChange={(v) => setForm({ ...form, recurring: v === 'none' ? '' : v })}>
+                  <SelectTrigger><SelectValue placeholder={t('بدون تكرار', 'No recurrence')} /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">{t('بدون تكرار', 'No recurrence')}</SelectItem>
+                    {Object.entries(RECURRING).map(([k, r]) => (<SelectItem key={k} value={k}>{isAr ? r.ar : r.en}</SelectItem>))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">{t('التفاصيل (اختياري)', 'Details (optional)')}</Label>
+              <Textarea rows={3} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder={t('شرح المطلوب من الموظف...', 'Describe what is required...')} />
+            </div>
+            <DialogFooter className="gap-2">
+              <Button type="button" variant="outline" onClick={() => setShowCreate(false)}>{t('إلغاء', 'Cancel')}</Button>
+              <Button type="submit" disabled={saving}>
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : (<><Plus className="h-4 w-4 ms-1" />{t('حفظ المهمة', 'Save Task')}</>)}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
       {/* ── نافذة التفاصيل ── */}
       <Dialog open={!!detailId} onOpenChange={(o) => { if (!o) { setDetailId(null); setDetail(null); setEdit(null) } }}>
         <DialogContent className="sm:max-w-[760px] max-h-[90vh] overflow-y-auto">
@@ -1050,3 +1064,4 @@ export default function TasksPage() {
     </div>
   )
 }
+
