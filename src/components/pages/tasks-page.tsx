@@ -451,7 +451,10 @@ export default function TasksPage() {
             <ListChecks className="h-5 w-5" />
           </div>
           <div>
-            <h1 className="text-xl lg:text-2xl font-bold">{t('إدارة المهام', 'Task Management')}</h1>
+            <h1 className="text-xl lg:text-2xl font-bold">
+              {t('إدارة المهام', 'Task Management')}
+              <span className="ms-2 align-middle text-[10px] font-mono font-normal text-muted-foreground border border-border rounded px-1.5 py-0.5" title="Build version marker">v12.1</span>
+            </h1>
             <p className="text-xs text-muted-foreground">{t('تنظيم مهام الموظفين ومتابعة الإنجاز والتأخير', 'Assign, track and evaluate employee tasks')}</p>
           </div>
         </div>
