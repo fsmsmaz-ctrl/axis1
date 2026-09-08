@@ -119,6 +119,8 @@ export default function TasksPage() {
   const [tasks, setTasks] = useState<any[]>([])
   const [users, setUsers] = useState<any[]>([])
   const [viewer, setViewer] = useState<{ isManager: boolean; userId: string; email?: string; role?: string }>({ isManager: false, userId: '' })
+  // خطأ طلب /api/tasks نفسه — إن وُجد فالشريط الكهرماني عن الهوية ليس ذا صلة إطلاقاً
+  const [apiError, setApiError] = useState<{ status: number | string; message: string } | null>(null)
   const [loading, setLoading] = useState(true)
 
   // فلاتر العرض (تُطبَّق محلياً على القائمة المجلوبة)
@@ -157,13 +159,23 @@ export default function TasksPage() {
 
   async function fetchTasks() {
     setLoading(true)
+    setApiError(null)
     try {
       // noCache: منع أي استجابة قديمة مخزنة من نشر سابق
       const res = await authedFetch('/api/tasks', { noCache: true })
-      const data = await res.json()
-      setTasks(data.tasks || [])
-      if (data.viewer) setViewer(data.viewer)
+      const data = await res.json().catch(() => ({} as any))
+      if (!res.ok) {
+        // الخطأ الحقيقي من الخادم — كان يُبتلع سابقاً وتظهر قائمة فارغة صامتة
+        setApiError({ status: res.status, message: String(data?.message || data?.error || 'خطأ غير معروف') })
+        setTasks([])
+        setViewer({ isManager: false, userId: '' })
+      } else {
+        setTasks(data.tasks || [])
+        if (data.viewer) setViewer(data.viewer)
+        else setViewer({ isManager: false, userId: '' })
+      }
     } catch {
+      setApiError({ status: 'شبكة', message: 'تعذر الوصول إلى الخادم إطلاقاً' })
       toast.error(isAr ? 'فشل جلب المهام' : 'Failed to load tasks')
     }
     setLoading(false)
@@ -454,7 +466,7 @@ export default function TasksPage() {
           <div>
             <h1 className="text-xl lg:text-2xl font-bold">
               {t('إدارة المهام', 'Task Management')}
-              <span className="ms-2 align-middle text-[10px] font-mono font-normal text-muted-foreground border border-border rounded px-1.5 py-0.5" title="Build version marker">v12.3</span>
+              <span className="ms-2 align-middle text-[10px] font-mono font-normal text-muted-foreground border border-border rounded px-1.5 py-0.5" title="Build version marker">v12.4</span>
             </h1>
             <p className="text-xs text-muted-foreground">{t('تنظيم مهام الموظفين ومتابعة الإنجاز والتأخير', 'Assign, track and evaluate employee tasks')}</p>
           </div>
@@ -474,24 +486,46 @@ export default function TasksPage() {
         )}
       </div>
 
-      {/* شريط تشخيصي: يظهر فقط لمن لا يراه الخادم كمدير — يوضح هوية الحساب الفعلية وسبب غياب زر الإنشاء */}
-      {!viewer.isManager && !loading && (
+      {/* شريط تشخيصي ثلاثي الحالات: خطأ الطلب / هوية الخادم / route قديم */}
+      {!viewer.isManager && !loading && (apiError ? (
+        <div className="flex items-start gap-2.5 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2.5 text-xs leading-relaxed text-red-700 dark:text-red-400">
+          <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <p className="font-semibold">{t('طلب جلب المهام فشل — هذا هو السبب الحقيقي لغياب الزر', 'Tasks request failed — this is the real reason the button is missing')}</p>
+            <p>
+              {t('الحالة', 'Status')}{': '}
+              <span className="font-mono font-semibold" dir="ltr">HTTP {apiError.status}</span>
+              {' — '}{t('رسالة الخادم', 'Server message')}{': '}
+              <span className="font-mono" dir="ltr">{apiError.message}</span>
+            </p>
+            <p>{t('انسخ هذه الرسالة وأرسلها للدعم. إن ذكرت الجدول Task أو table does not exist فالترحيلات غير مطبقة على قاعدة الإنتاج', 'Copy this message to support. If it mentions the Task table or “table does not exist”, migrations were never applied to production')}</p>
+          </div>
+        </div>
+      ) : !viewer.email ? (
         <div className="flex items-start gap-2.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-xs leading-relaxed text-amber-700 dark:text-amber-400">
           <Info className="h-4 w-4 shrink-0 mt-0.5" />
           <div className="space-y-1">
-            <p className="font-semibold">{t('زر «إنشاء مهمة جديدة» يظهر للإدارة فقط', '“New Task” button is for management accounts only')}</p>
-            <p>
-              {t('الزر متاح لحساب مدير النظام admin@axis.om أو دوري الإدارة العليا / مدير المشروع. أنت مسجّل حالياً بـ:', 'The button requires admin@axis.om or a Top Management / Project Manager role. You are currently signed in as:')}{': '}
-              <span className="font-mono font-semibold" dir="ltr">{viewer.email || user?.email || '—'}</span>
-              {' — '}{t('الدور', 'Role')}{': '}
-              <span className="font-mono" dir="ltr">{viewer.role || user?.role || '—'}</span>
-            </p>
-            <p>
-              {t('إذا كان هذا الحساب هو admin@axis.om فأخبر الدعم — وإلا سجّل الخروج وادخل بالحساب الصحيح، أو اطلب ترقية دور هذا الحساب من صفحة المستخدمين', 'If this IS admin@axis.om contact support — otherwise sign out and use the correct account, or have your role upgraded from the Users page')}
-            </p>
+            <p className="font-semibold">{t('الخادم لم يرسل هوية الحساب في الاستجابة', 'Server did not send account identity in the response')}</p>
+            <p>{t('هذا يعني أن ملف src/app/api/tasks/route.ts القديم ما زال يعمل — أعد رفع الحزمة كاملة (الملفان معاً) وتأكد من نجاح النشر', 'This means the old src/app/api/tasks/route.ts is still live — re-upload the full package (both files) and confirm the deploy succeeds')}</p>
           </div>
         </div>
-      )}
+      ) : (
+        <div className="flex items-start gap-2.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-xs leading-relaxed text-amber-700 dark:text-amber-400">
+          <Info className="h-4 w-4 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <p className="font-semibold">{t('هوية حسابك كما يراها الخادم مباشرة من استجابة /api/tasks', 'Your account identity straight from the /api/tasks response')}</p>
+            <p>
+              {t('البريد', 'Email')}{': '}
+              <span className="font-mono font-semibold" dir="ltr">«{viewer.email}»</span>
+              <span className="font-mono" dir="ltr"> ({viewer.email.length})</span>
+              {' — '}{t('الدور', 'Role')}{': '}
+              <span className="font-mono font-semibold" dir="ltr">«{viewer.role}»</span>
+              <span className="font-mono" dir="ltr"> ({viewer.role?.length ?? 0})</span>
+            </p>
+            <p>{t('الطول الصحيح: البريد 13 والدور 14 — إن زاد أحدهما فتوجد محارف خفية في قاعدة البيانات. أرسل لي الرقمين', 'Expected length: email 13, role 14 — if larger there are hidden characters in the DB. Send me both numbers')}</p>
+          </div>
+        </div>
+      ))}
 
       {tab === 'tasks' && (
         <>
