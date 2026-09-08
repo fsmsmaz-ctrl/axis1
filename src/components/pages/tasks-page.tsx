@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/dialog'
 import {
   ListChecks, Plus, Paperclip, History, Play, PauseCircle, Send, CheckCircle2,
-  Undo2, XCircle, Loader2, Clock, AlertTriangle, Filter, BarChart3, Download
+  Undo2, XCircle, Loader2, Clock, AlertTriangle, Filter, BarChart3, Download, Info
 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
@@ -118,7 +118,7 @@ export default function TasksPage() {
   const [tab, setTab] = useState<'tasks' | 'perf'>('tasks')
   const [tasks, setTasks] = useState<any[]>([])
   const [users, setUsers] = useState<any[]>([])
-  const [viewer, setViewer] = useState<{ isManager: boolean; userId: string }>({ isManager: false, userId: '' })
+  const [viewer, setViewer] = useState<{ isManager: boolean; userId: string; email?: string; role?: string }>({ isManager: false, userId: '' })
   const [loading, setLoading] = useState(true)
 
   // فلاتر العرض (تُطبَّق محلياً على القائمة المجلوبة)
@@ -454,7 +454,7 @@ export default function TasksPage() {
           <div>
             <h1 className="text-xl lg:text-2xl font-bold">
               {t('إدارة المهام', 'Task Management')}
-              <span className="ms-2 align-middle text-[10px] font-mono font-normal text-muted-foreground border border-border rounded px-1.5 py-0.5" title="Build version marker">v12.2</span>
+              <span className="ms-2 align-middle text-[10px] font-mono font-normal text-muted-foreground border border-border rounded px-1.5 py-0.5" title="Build version marker">v12.3</span>
             </h1>
             <p className="text-xs text-muted-foreground">{t('تنظيم مهام الموظفين ومتابعة الإنجاز والتأخير', 'Assign, track and evaluate employee tasks')}</p>
           </div>
@@ -473,6 +473,25 @@ export default function TasksPage() {
           </div>
         )}
       </div>
+
+      {/* شريط تشخيصي: يظهر فقط لمن لا يراه الخادم كمدير — يوضح هوية الحساب الفعلية وسبب غياب زر الإنشاء */}
+      {!viewer.isManager && !loading && (
+        <div className="flex items-start gap-2.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-xs leading-relaxed text-amber-700 dark:text-amber-400">
+          <Info className="h-4 w-4 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <p className="font-semibold">{t('زر «إنشاء مهمة جديدة» يظهر للإدارة فقط', '“New Task” button is for management accounts only')}</p>
+            <p>
+              {t('الزر متاح لحساب مدير النظام admin@axis.om أو دوري الإدارة العليا / مدير المشروع. أنت مسجّل حالياً بـ:', 'The button requires admin@axis.om or a Top Management / Project Manager role. You are currently signed in as:')}{': '}
+              <span className="font-mono font-semibold" dir="ltr">{viewer.email || user?.email || '—'}</span>
+              {' — '}{t('الدور', 'Role')}{': '}
+              <span className="font-mono" dir="ltr">{viewer.role || user?.role || '—'}</span>
+            </p>
+            <p>
+              {t('إذا كان هذا الحساب هو admin@axis.om فأخبر الدعم — وإلا سجّل الخروج وادخل بالحساب الصحيح، أو اطلب ترقية دور هذا الحساب من صفحة المستخدمين', 'If this IS admin@axis.om contact support — otherwise sign out and use the correct account, or have your role upgraded from the Users page')}
+            </p>
+          </div>
+        </div>
+      )}
 
       {tab === 'tasks' && (
         <>
