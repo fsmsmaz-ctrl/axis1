@@ -146,7 +146,17 @@ export function canWrite(userRole: string, resource: string, userPermissions?: R
   return allowed.includes(userRole)
 }
 
-export function hasPermission(role: string, resource: string, userPermissions?: Record<string, boolean> | null): boolean {
+export function hasPermission(
+  role: string,
+  resource: string,
+  userPermissions?: Record<string, boolean> | null,
+  email?: string | null
+): boolean {
+  // مدير النظام (admin@axis.om) يتجاوز كل فحوصات الصلاحيات دائماً —
+  // يضمن ظهور كل الأقسام له حتى لو تضرر سجل الصلاحيات المخصص في قاعدة البيانات
+  // (نفس نمط canAccessDashboard و isTaskManager)
+  if (email && email.toLowerCase().trim() === SYSTEM_ADMIN_EMAIL) return true
+
   const isTogglable = (MODULE_PERMISSIONS as readonly string[]).includes(resource) ||
     (REPORT_PERMISSIONS as readonly string[]).includes(resource)
 
