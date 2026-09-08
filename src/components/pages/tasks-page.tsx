@@ -158,7 +158,8 @@ export default function TasksPage() {
   async function fetchTasks() {
     setLoading(true)
     try {
-      const res = await authedFetch('/api/tasks')
+      // noCache: منع أي استجابة قديمة مخزنة من نشر سابق
+      const res = await authedFetch('/api/tasks', { noCache: true })
       const data = await res.json()
       setTasks(data.tasks || [])
       if (data.viewer) setViewer(data.viewer)
@@ -186,7 +187,7 @@ export default function TasksPage() {
   async function fetchPerf(month: string) {
     setPerfLoading(true)
     try {
-      const res = await authedFetch('/api/tasks/performance?month=' + month)
+      const res = await authedFetch('/api/tasks/performance?month=' + month, { noCache: true })
       const data = await res.json()
       setPerf(data.report || null)
     } catch {
@@ -275,7 +276,7 @@ export default function TasksPage() {
     setDetail(null)
     setEdit(null)
     try {
-      const res = await authedFetch('/api/tasks/' + id)
+      const res = await authedFetch('/api/tasks/' + id, { noCache: true })
       const data = await res.json()
       if (!res.ok) {
         toast.error(data.message || (isAr ? 'فشل جلب التفاصيل' : 'Failed to load details'))
@@ -297,7 +298,7 @@ export default function TasksPage() {
   }
 
   async function refreshDetail(id: string) {
-    const res = await authedFetch('/api/tasks/' + id)
+    const res = await authedFetch('/api/tasks/' + id, { noCache: true })
     const data = await res.json()
     if (res.ok) {
       setDetail(data.task)
@@ -453,7 +454,7 @@ export default function TasksPage() {
           <div>
             <h1 className="text-xl lg:text-2xl font-bold">
               {t('إدارة المهام', 'Task Management')}
-              <span className="ms-2 align-middle text-[10px] font-mono font-normal text-muted-foreground border border-border rounded px-1.5 py-0.5" title="Build version marker">v12.1</span>
+              <span className="ms-2 align-middle text-[10px] font-mono font-normal text-muted-foreground border border-border rounded px-1.5 py-0.5" title="Build version marker">v12.2</span>
             </h1>
             <p className="text-xs text-muted-foreground">{t('تنظيم مهام الموظفين ومتابعة الإنجاز والتأخير', 'Assign, track and evaluate employee tasks')}</p>
           </div>
