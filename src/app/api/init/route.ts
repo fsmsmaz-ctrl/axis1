@@ -54,9 +54,12 @@ export async function POST(req: NextRequest) {
     var createdUsers: string[] = []
 
     try {
+      var adminUpdate: Record<string, any> = { role: 'top_management', active: true, permissions: null }
       await db.user.upsert({
         where: { email: ADMIN_EMAIL },
-        update: {},
+        // شفاء حساب مدير النظام عند كل تشغيل: دور صحيح + حساب نشط + إزالة
+        // أي سجل صلاحيات مخصص تالف (الأدمن يتجاوز الصلاحيات عبر بريده دائماً)
+        update: adminUpdate,
         create: {
           email: ADMIN_EMAIL, password: passwordHash,
           name: 'مدير النظام',
@@ -115,3 +118,4 @@ export async function GET() {
     return NextResponse.json({ needsInit: true })
   }
 }
+
