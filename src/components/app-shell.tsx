@@ -193,7 +193,8 @@ export default function AppShell() {
 
   if (!user) return null
 
-  const allowedItems = navItems.filter(item => hasPermission(user.role, item.resource, user.permissions))
+  // تمرير بريد المستخدم ليتجاوز مدير النظام (admin@axis.om) كل فحوصات الصلاحيات
+  const allowedItems = navItems.filter(item => hasPermission(user.role, item.resource, user.permissions, user.email))
   // لوحة التحكم لمدير النظام والإدارة العليا فقط — الموظفون يُوجّهون لأول صفحة مخوّلة
   const canSeeDashboard = canAccessDashboard(user)
   const landingPage: PageId = allowedItems.find(i => i.id !== 'dashboard')?.id ?? 'notifications'
