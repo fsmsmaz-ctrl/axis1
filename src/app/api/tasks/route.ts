@@ -56,7 +56,8 @@ export async function GET(req: NextRequest) {
     if (!user) return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
 
     // صلاحية الوصول للوحدة (مع تجاوزات المستخدم)
-    if (!hasPermission(user.role, 'tasks', user.permissions)) {
+    // مدير النظام يتجاوز فحص الصلاحيات (حماية من سجل صلاحيات تالف في قاعدة البيانات)
+    if (!hasPermission(user.role, 'tasks', user.permissions, user.email) && !isTaskManager(user)) {
       return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية الوصول لإدارة المهام' }, { status: 403 })
     }
 
@@ -113,10 +114,10 @@ export async function GET(req: NextRequest) {
     )
     if (!result.success) return result.response
 
-    return NextResponse.json({
-      tasks: result.data,
-      viewer: { isManager: manager, userId: user.id },
-    })
+    return NextResponse.json(
+      { tasks: result.data, viewer: { isManager: manager, userId: user.id } },
+      { headers: { 'Cache-Control': 'no-store' } } // منع تخزين قائمة المهام مؤقتاً — بيانات حية
+    )
   } catch (error: any) {
     return handleDbError(error, 'جلب المهام')
   }
@@ -211,3 +212,4 @@ export async function POST(req: NextRequest) {
     return handleDbError(error, 'إنشاء المهمة')
   }
 }
+
