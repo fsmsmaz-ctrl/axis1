@@ -31,7 +31,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const { id } = await params
     const user = await getAuthUser(req)
     if (!user) return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
-    if (!hasPermission(user.role, 'tasks', user.permissions)) {
+    // مدير النظام يتجاوز فحص الصلاحيات (حماية من سجل صلاحيات تالف)
+    if (!hasPermission(user.role, 'tasks', user.permissions, user.email) && !isTaskManager(user)) {
       return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية الوصول' }, { status: 403 })
     }
 
@@ -48,7 +49,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: 'forbidden', message: 'يمكنك عرض مهامك المسندة فقط' }, { status: 403 })
     }
 
-    return NextResponse.json({ task, viewer: { isManager: isTaskManager(user), userId: user.id } })
+    return NextResponse.json(
+      { task, viewer: { isManager: isTaskManager(user), userId: user.id } },
+      { headers: { 'Cache-Control': 'no-store' } }
+    )
   } catch (error: any) {
     return handleDbError(error, 'جلب تفاصيل المهمة')
   }
