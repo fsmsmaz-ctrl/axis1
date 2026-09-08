@@ -114,8 +114,10 @@ export async function GET(req: NextRequest) {
     )
     if (!result.success) return result.response
 
+    // email + role في الـ viewer: تشخيص مباشر لما يراه الخادم عن الحساب
+    // (تفيد في حال تسجيل الدخول بحساب يُعتقد أنه الأدمن وهو ليس كذلك)
     return NextResponse.json(
-      { tasks: result.data, viewer: { isManager: manager, userId: user.id } },
+      { tasks: result.data, viewer: { isManager: manager, userId: user.id, email: user.email, role: user.role } },
       { headers: { 'Cache-Control': 'no-store' } } // منع تخزين قائمة المهام مؤقتاً — بيانات حية
     )
   } catch (error: any) {
@@ -212,4 +214,5 @@ export async function POST(req: NextRequest) {
     return handleDbError(error, 'إنشاء المهمة')
   }
 }
+
 
