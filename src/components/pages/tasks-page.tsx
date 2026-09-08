@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/dialog'
 import {
   ListChecks, Plus, Paperclip, History, Play, PauseCircle, Send, CheckCircle2,
-  Undo2, XCircle, Loader2, Clock, AlertTriangle, Filter, BarChart3, Download, Info
+  Undo2, XCircle, Loader2, Clock, AlertTriangle, Filter, BarChart3, Download
 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
@@ -119,7 +119,7 @@ export default function TasksPage() {
   const [tasks, setTasks] = useState<any[]>([])
   const [users, setUsers] = useState<any[]>([])
   const [viewer, setViewer] = useState<{ isManager: boolean; userId: string; email?: string; role?: string }>({ isManager: false, userId: '' })
-  // خطأ طلب /api/tasks نفسه — إن وُجد فالشريط الكهرماني عن الهوية ليس ذا صلة إطلاقاً
+  // خطأ تحميل المهام (يُعرض كإشعار عادي عند فشل الطلب فقط)
   const [apiError, setApiError] = useState<{ status: number | string; message: string } | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -466,7 +466,7 @@ export default function TasksPage() {
           <div>
             <h1 className="text-xl lg:text-2xl font-bold">
               {t('إدارة المهام', 'Task Management')}
-              <span className="ms-2 align-middle text-[10px] font-mono font-normal text-muted-foreground border border-border rounded px-1.5 py-0.5" title="Build version marker">v12.4</span>
+              <span className="ms-2 align-middle text-[10px] font-mono font-normal text-muted-foreground border border-border rounded px-1.5 py-0.5" title="Build version marker">v12.5</span>
             </h1>
             <p className="text-xs text-muted-foreground">{t('تنظيم مهام الموظفين ومتابعة الإنجاز والتأخير', 'Assign, track and evaluate employee tasks')}</p>
           </div>
@@ -486,46 +486,22 @@ export default function TasksPage() {
         )}
       </div>
 
-      {/* شريط تشخيصي ثلاثي الحالات: خطأ الطلب / هوية الخادم / route قديم */}
-      {!viewer.isManager && !loading && (apiError ? (
+      {/* إشعار خطأ تحميل المهام — يظهر فقط عند فشل الطلب (لا عناصر تشخيصية في الوضع الطبيعي) */}
+      {!loading && apiError && (
         <div className="flex items-start gap-2.5 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2.5 text-xs leading-relaxed text-red-700 dark:text-red-400">
           <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
           <div className="space-y-1">
-            <p className="font-semibold">{t('طلب جلب المهام فشل — هذا هو السبب الحقيقي لغياب الزر', 'Tasks request failed — this is the real reason the button is missing')}</p>
+            <p className="font-semibold">{t('تعذر تحميل المهام', 'Failed to load tasks')}</p>
             <p>
               {t('الحالة', 'Status')}{': '}
               <span className="font-mono font-semibold" dir="ltr">HTTP {apiError.status}</span>
               {' — '}{t('رسالة الخادم', 'Server message')}{': '}
               <span className="font-mono" dir="ltr">{apiError.message}</span>
             </p>
-            <p>{t('انسخ هذه الرسالة وأرسلها للدعم. إن ذكرت الجدول Task أو table does not exist فالترحيلات غير مطبقة على قاعدة الإنتاج', 'Copy this message to support. If it mentions the Task table or “table does not exist”, migrations were never applied to production')}</p>
+            <p>{t('حاول تحديث الصفحة، وإن تكرر الخطأ تواصل مع مسؤول النظام', 'Try refreshing the page; if the error persists contact the system administrator')}</p>
           </div>
         </div>
-      ) : !viewer.email ? (
-        <div className="flex items-start gap-2.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-xs leading-relaxed text-amber-700 dark:text-amber-400">
-          <Info className="h-4 w-4 shrink-0 mt-0.5" />
-          <div className="space-y-1">
-            <p className="font-semibold">{t('الخادم لم يرسل هوية الحساب في الاستجابة', 'Server did not send account identity in the response')}</p>
-            <p>{t('هذا يعني أن ملف src/app/api/tasks/route.ts القديم ما زال يعمل — أعد رفع الحزمة كاملة (الملفان معاً) وتأكد من نجاح النشر', 'This means the old src/app/api/tasks/route.ts is still live — re-upload the full package (both files) and confirm the deploy succeeds')}</p>
-          </div>
-        </div>
-      ) : (
-        <div className="flex items-start gap-2.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-xs leading-relaxed text-amber-700 dark:text-amber-400">
-          <Info className="h-4 w-4 shrink-0 mt-0.5" />
-          <div className="space-y-1">
-            <p className="font-semibold">{t('هوية حسابك كما يراها الخادم مباشرة من استجابة /api/tasks', 'Your account identity straight from the /api/tasks response')}</p>
-            <p>
-              {t('البريد', 'Email')}{': '}
-              <span className="font-mono font-semibold" dir="ltr">«{viewer.email}»</span>
-              <span className="font-mono" dir="ltr"> ({viewer.email.length})</span>
-              {' — '}{t('الدور', 'Role')}{': '}
-              <span className="font-mono font-semibold" dir="ltr">«{viewer.role}»</span>
-              <span className="font-mono" dir="ltr"> ({viewer.role?.length ?? 0})</span>
-            </p>
-            <p>{t('الطول الصحيح: البريد 13 والدور 14 — إن زاد أحدهما فتوجد محارف خفية في قاعدة البيانات. أرسل لي الرقمين', 'Expected length: email 13, role 14 — if larger there are hidden characters in the DB. Send me both numbers')}</p>
-          </div>
-        </div>
-      ))}
+      )}
 
       {tab === 'tasks' && (
         <>
