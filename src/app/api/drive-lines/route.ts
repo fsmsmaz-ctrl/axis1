@@ -83,6 +83,10 @@ export async function POST(req: NextRequest) {
           totalLength: parseNumber(body.totalLength, 0), diameter: String(body.diameter),
           pipeType: String(body.pipeType), soilType: String(body.soilType),
           depth: parseNumber(body.depth, 0), status: String(body.status || 'not_started'),
+          // v13: سعر المتر الخاص بهذا الخط (فارغ = بدون سعر حتى إدخاله)
+          pricePerMeter: (body.pricePerMeter !== undefined && body.pricePerMeter !== null && String(body.pricePerMeter) !== '')
+            ? parseNumber(body.pricePerMeter, 0)
+            : null,
           completedLength: 0, progress: 0, problems: body.problems ? String(body.problems) : null,
         },
       }), 'إنشاء خط الحفر'
