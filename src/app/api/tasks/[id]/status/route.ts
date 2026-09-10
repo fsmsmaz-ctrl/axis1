@@ -42,7 +42,10 @@ function buildTransitionData(current: { waitingSince: Date | null; waitingMinute
   }
   if (toStatus === 'waiting') {
     data.waitingSince = now
-    // نُبقي waitingMinutes التراكمية كما هي (تُكمل عند المغادرة)
+    // v12.6: الانتظار → انتظار جديد (سبب مختلف) يجب أن يحفظ المدة المتراكمة سابقاً
+    // قبل تصفير waitingSince — وإلا تُفقد مدة الانتظار الأول وتُحسب ظلماً على الموظف
+    if (current.waitingSince) data.waitingMinutes = waitingMinutes
+    // الدخول الأول للانتظار: تبقى التراكمية كما هي (تُكمل عند المغادرة)
   } else {
     data.waitingSince = null
     data.waitingMinutes = waitingMinutes
@@ -225,7 +228,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       // ── المهام الدورية: عند الإغلاق تُنشأ المهمة التالية تلقائياً ──
       let spawned: any = null
       if (task.recurring && (VALID_RECURRING as readonly string[]).includes(task.recurring)) {
-        const nd = nextDueDate(new Date(task.dueDate), task.recurring)
+        // v12.6: إذا أُغلقت المهمة متأخرة أكثر من دورة كاملة، كرر الدورة حتى يكون
+        // موعد المهمة التالية في المستقبل — لا تُولد مهمة «متأخرة منذ ولادتها»
+        let nd = nextDueDate(new Date(task.dueDate), task.recurring)
+        let guard = 0
+        while (nd.getTime() <= Date.now() && guard < 1000) {
+          nd = nextDueDate(nd, task.recurring)
+          guard += 1
+        }
         const createdNext = await safeDbOp(
           () => db.task.create({
             data: {
