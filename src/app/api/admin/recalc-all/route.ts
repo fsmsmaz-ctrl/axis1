@@ -30,10 +30,15 @@ export async function POST(req: NextRequest) {
       errors: [] as string[],
     }
 
-    // Step 1: Get ALL projects (with price per meter for revenue calculation)
+    // Step 1: Get ALL projects (pricePerMeter is fallback only after v13)
     const projects = await db.project.findMany({
       select: { id: true, totalLength: true, pricePerMeter: true },
     })
+
+    // v13: Build map of drive-line prices — each report is priced by ITS line
+    const allLines = await db.driveLine.findMany({ select: { id: true, pricePerMeter: true } })
+    const linePriceMap: Record<string, number | null> = {}
+    for (const l of allLines) linePriceMap[l.id] = l.pricePerMeter
 
     // Process projects sequentially to avoid connection pool exhaustion.
     for (const project of projects) {
@@ -53,13 +58,15 @@ export async function POST(req: NextRequest) {
         })
 
         // Step 3: Fix each report's dailyMeters AND dailyRevenue.
-        // dailyRevenue = dailyMeters × project pricePerMeter (fixes reports stuck at 0).
+        // v13: dailyRevenue = dailyMeters × (سعر خط الحفر || سعر المشروع احتياطياً)
         const projectPrice = project.pricePerMeter || 0
         for (const r of reports) {
           const startReading = r.startReading || 0
           const endReading = r.endReading || 0
           const correctDailyMeters = Math.max(0, endReading - startReading)
-          const correctDailyRevenue = correctDailyMeters * projectPrice
+          const linePrice = r.driveLineId ? linePriceMap[r.driveLineId] : null
+          const effectivePrice = linePrice != null ? linePrice : projectPrice
+          const correctDailyRevenue = correctDailyMeters * effectivePrice
 
           const needsUpdate =
             Math.abs((r.dailyMeters || 0) - correctDailyMeters) > 0.001 ||
