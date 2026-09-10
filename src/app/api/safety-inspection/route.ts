@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
+import { hasPermission, canWrite } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { handleDbError, validateRequired, safeDbOp } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
@@ -9,6 +10,13 @@ export async function GET(req: NextRequest) {
 
   if (!user) {
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
+  }
+
+  // v13.1 SECURITY: قسم السلامة لمن يملك صلاحيتها أو تقرير السلامة في صفحة التقارير
+  var canRead = hasPermission(user.role, 'safety', user.permissions, user.email)
+    || hasPermission(user.role, 'rpt_safety', user.permissions, user.email)
+  if (!canRead) {
+    return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية الوصول لقسم السلامة' }, { status: 403 })
   }
 
   var searchParams = new URL(req.url).searchParams
@@ -51,6 +59,12 @@ export async function POST(req: NextRequest) {
 
   if (!user) {
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
+  }
+
+  // v13.1 SECURITY: إنشاء التقارير اليومية عبر السلامة لمن يملك كتابة السلامة فقط
+  // (كان يمكن لأي مستخدم مسجل إنشاء/استبدال تقارير عبر هذا المسار)
+  if (!canWrite(user.role, 'safety', user.permissions)) {
+    return NextResponse.json({ error: 'forbidden', message: 'إنشاء تقارير السلامة متاح للإدارة والمهندسين ومسؤول السلامة فقط' }, { status: 403 })
   }
 
   // Extract user info after null check to satisfy TypeScript inside callbacks
@@ -333,5 +347,6 @@ export async function DELETE(req: NextRequest) {
     return handleDbError(error, 'حذف تقرير السلامة')
   }
 }
+
 
 
