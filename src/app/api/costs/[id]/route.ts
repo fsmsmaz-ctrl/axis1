@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { handleDbError, validateRequired, parseNumber, safeDbOp } from '@/lib/api-helpers'
+import { canWrite } from '@/lib/auth'
 
 export async function PUT(
   req: NextRequest,
@@ -11,6 +12,11 @@ export async function PUT(
 
   if (!user) {
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
+  }
+
+  // v13.1 SECURITY: تعديل التكاليف للإدارة والمحاسب فقط
+  if (!canWrite(user.role, 'costs', user.permissions)) {
+    return NextResponse.json({ error: 'forbidden', message: 'تعديل التكاليف متاح للإدارة والمحاسب فقط' }, { status: 403 })
   }
 
   try {
@@ -52,6 +58,11 @@ export async function DELETE(
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
   }
 
+  // v13.1 SECURITY: حذف التكاليف للإدارة والمحاسب فقط
+  if (!canWrite(user.role, 'costs', user.permissions)) {
+    return NextResponse.json({ error: 'forbidden', message: 'حذف التكاليف متاح للإدارة والمحاسب فقط' }, { status: 403 })
+  }
+
   try {
     const { id } = await params
 
@@ -66,4 +77,5 @@ export async function DELETE(
     return handleDbError(error, 'حذف التكلفة')
   }
 }
+
 
