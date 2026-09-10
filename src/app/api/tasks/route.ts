@@ -150,10 +150,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'invalid_value', message: 'تاريخ الإنجاز المطلوب غير صالح' }, { status: 400 })
     }
 
-    // التأكد من وجود الموظف المستهدف
+    // التأكد من وجود الموظف المستهدف ومن أنه حساب نشط
     const assignee = await db.user.findUnique({ where: { id: String(body.assigneeId) }, select: { id: true, name: true, active: true } })
     if (!assignee) {
       return NextResponse.json({ error: 'invalid_reference', message: 'الموظف المسؤول غير موجود' }, { status: 400 })
+    }
+    if (assignee.active === false) {
+      return NextResponse.json({ error: 'invalid_reference', message: 'لا يمكن إسناد مهمة لموظف مُعطَّل الحساب' }, { status: 400 })
     }
 
     const createResult = await safeDbOp(
