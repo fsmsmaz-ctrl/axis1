@@ -3,12 +3,23 @@ import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { handleDbError, validateRequired, parseNumber, safeDbOp, parseDateRange } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
+import { hasPermission, canWrite } from '@/lib/auth'
 
 export async function GET(req: NextRequest) {
   var user = await getAuthUser(req)
 
   if (!user) {
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
+  }
+
+  // v13.1 SECURITY: فرض صلاحية التكاليف على الخادم — كانت القراءة متاحة لأي مستخدم مسجل
+  // (المحاسب/التقارير المالية rpt_costs و rpt_revenue و rpt_profit مسموحة أيضاً لصفحة التقارير)
+  var canReadCosts = hasPermission(user.role, 'costs', user.permissions, user.email)
+    || hasPermission(user.role, 'rpt_costs', user.permissions, user.email)
+    || hasPermission(user.role, 'rpt_revenue', user.permissions, user.email)
+    || hasPermission(user.role, 'rpt_profit', user.permissions, user.email)
+  if (!canReadCosts) {
+    return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية عرض التكاليف والإيرادات' }, { status: 403 })
   }
 
   var searchParams = new URL(req.url).searchParams
@@ -146,6 +157,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
   }
 
+  // v13.1 SECURITY: كتابة التكاليف للإدارة والمحاسب فقط (كانت مفتوحة لأي مستخدم)
+  if (!canWrite(user.role, 'costs', user.permissions)) {
+    return NextResponse.json({ error: 'forbidden', message: 'إضافة التكاليف متاحة للإدارة والمحاسب فقط' }, { status: 403 })
+  }
+
   // Rate limit write operations
   var rl = checkRateLimit(req, RateLimitPresets.write)
   if (rl.limited) {
@@ -214,3 +230,4 @@ export async function POST(req: NextRequest) {
     return handleDbError(error, 'إنشاء التكلفة')
   }
 }
+
