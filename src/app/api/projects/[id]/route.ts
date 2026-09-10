@@ -45,8 +45,26 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     )
 
     const totalMeters = aggResult.success ? (aggResult.data._sum.dailyMeters || 0) : 0
-    // DYNAMIC: Calculate revenue from dailyMeters x current pricePerMeter
-    const totalRevenue = totalMeters * (result.data.pricePerMeter || 0)
+    // v13: الإيراد = مجموع (أمتار كل خط × سعر ذلك الخط) + تقارير بلا خط × سعر المشروع احتياطياً
+    var totalRevenue = 0
+    try {
+      const revenueLines = await db.driveLine.findMany({ where: { projectId: id }, select: { id: true, pricePerMeter: true } })
+      const revenueLineMap: Record<string, number | null> = {}
+      for (const rl of revenueLines) revenueLineMap[rl.id] = rl.pricePerMeter
+      const fallbackProjectPrice = result.data.pricePerMeter || 0
+      const metersByLine = await db.dailyReport.groupBy({
+        by: ['driveLineId'],
+        where: { projectId: id },
+        _sum: { dailyMeters: true },
+      })
+      for (const g of metersByLine) {
+        const meters = g._sum.dailyMeters || 0
+        const linePrice = g.driveLineId && revenueLineMap[g.driveLineId] != null ? revenueLineMap[String(g.driveLineId)] : null
+        totalRevenue += meters * (linePrice != null ? linePrice : fallbackProjectPrice)
+      }
+    } catch (e) {
+      totalRevenue = 0
+    }
     const totalCost = costAggResult.success ? (costAggResult.data._sum.amount || 0) : 0
 
     return NextResponse.json({
@@ -85,7 +103,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     if (!oldResult.data) return NextResponse.json({ error: 'not_found', message: 'المشروع غير موجود' }, { status: 404 })
 
     var totalLength = parseNumber(body.totalLength, 0)
-    var pricePerMeter = parseNumber(body.pricePerMeter, 0)
+    // v13: سعر المشروع أصبح احتياطياً — لا نصفره إذا لم يُرسل النموذج
+    var pricePerMeter = (body.pricePerMeter !== undefined && body.pricePerMeter !== null && String(body.pricePerMeter) !== '')
+      ? parseNumber(body.pricePerMeter, 0)
+      : (body.pricePerMeter === undefined ? undefined : null)
     var startDate = body.startDate ? new Date(body.startDate) : oldResult.data.startDate
     var expectedEnd = body.expectedEnd ? new Date(body.expectedEnd) : oldResult.data.expectedEnd
 
@@ -106,7 +127,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       workType: String(body.workType),
       pipeDiameter: String(body.pipeDiameter),
       totalLength,
-      pricePerMeter,
+      ...(pricePerMeter !== undefined ? { pricePerMeter } : {}),
       soilType: String(body.soilType),
       startDate,
       expectedEnd,
@@ -121,7 +142,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     if (!updateResult.success) return updateResult.response
 
     // FIX: Use buildAuditDetails for proper change tracking
-    var newData = { ...updateData, totalLength, pricePerMeter }
+    var newData = { ...updateData, totalLength, ...(pricePerMeter !== undefined ? { pricePerMeter } : {}) }
     var details = buildAuditDetails(
       oldResult.data as Record<string, any>,
       newData,
@@ -187,3 +208,4 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     return handleDbError(error, 'حذف المشروع')
   }
 }
+
