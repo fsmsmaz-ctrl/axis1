@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
-import { SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
+import { canWrite, SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { safeDbOp, handleDbError, recalcProgress } from '@/lib/api-helpers'
 
@@ -44,6 +44,12 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  // v13.1 SECURITY: تعديل التقارير لمن يملك كتابة التقارير اليومية فقط
+  // (المشرف فورمان يعدّل المسودات — كان التعديل مفتوحاً لأي مستخدم مسجل)
+  if (!canWrite(user.role, 'daily_reports', user.permissions)) {
+    return NextResponse.json({ error: 'forbidden', message: 'تعديل التقارير اليومية متاح للمشرفين والإدارة فقط' }, { status: 403 })
   }
 
   // Rate limit write operations
@@ -215,6 +221,12 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
 
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  // v13.1 SECURITY: حذف تقرير يومي = إتلاف سجل مالي — للإدارة العليا ومدير النظام فقط
+  var isSystemAdmin = (user.email || '').toLowerCase().trim() === SYSTEM_ADMIN_EMAIL
+  if (!isSystemAdmin && user.role !== 'top_management') {
+    return NextResponse.json({ error: 'forbidden', message: 'حذف التقارير اليومية متاح للإدارة العليا فقط' }, { status: 403 })
   }
 
   // Rate limit write operations
