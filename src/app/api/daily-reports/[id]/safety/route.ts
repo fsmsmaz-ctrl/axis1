@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
+import { hasPermission, canWrite } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { handleDbError } from '@/lib/api-helpers'
 
@@ -9,6 +10,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  // v13.1 SECURITY: قراءة بيانات السلامة لمستخدمي التقارير اليومية أو قسم السلامة فقط
+  const canRead = hasPermission(user.role, 'daily_reports', user.permissions, user.email)
+    || hasPermission(user.role, 'safety', user.permissions, user.email)
+  if (!canRead) {
+    return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية عرض بيانات السلامة' }, { status: 403 })
   }
 
   const { id } = await params
@@ -30,6 +38,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  // v13.1 SECURITY: حفظ قائمة فحص السلامة مرتبط بإنشاء التقارير — لمن يملك كتابتها فقط
+  if (!canWrite(user.role, 'daily_reports', user.permissions)) {
+    return NextResponse.json({ error: 'forbidden', message: 'حفظ فحوصات السلامة متاح لمقدمي التقارير فقط' }, { status: 403 })
   }
 
   try {
@@ -107,3 +120,4 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return handleDbError(error, 'حفظ تقرير السلامة')
   }
 }
+
