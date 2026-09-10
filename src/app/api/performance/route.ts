@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
+import { hasPermission } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { handleDbError, safeDbOp } from '@/lib/api-helpers'
 
@@ -7,6 +8,12 @@ export async function GET(req: NextRequest) {
   const user = await getAuthUser(req)
   if (!user) {
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
+  }
+
+  // v13.1 SECURITY: تقرير الأداء يجمع إيرادات وتكاليف وسلامة — للإدارة فقط
+  // (كان متاحاً لأي مستخدم مسجل رغم إخفاء الصفحة في الواجهة)
+  if (!hasPermission(user.role, 'performance', user.permissions, user.email)) {
+    return NextResponse.json({ error: 'forbidden', message: 'تقرير الأداء متاح للإدارة فقط' }, { status: 403 })
   }
 
   try {
@@ -121,3 +128,4 @@ export async function GET(req: NextRequest) {
     return handleDbError(error, 'جلب بيانات الأداء')
   }
 }
+
