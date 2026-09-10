@@ -162,9 +162,11 @@ export async function POST(req: NextRequest) {
     const remainingMeters = Math.max(0, totalLength - totalMeters)
     const progressPercent = totalLength > 0 ? (totalMeters / totalLength) * 100 : 0
 
-    // الإيراد = الأمتار المحفورة اليوم × سعر المتر للمشروع
-    const projectPrice = projResult.success && projResult.data ? (projResult.data.pricePerMeter || 0) : 0
-    const dailyRevenue = dailyMeters * projectPrice
+    // v13: الإيراد = الأمتار المحفورة اليوم × سعر متر خط الحفر (أو سعر المشروع احتياطياً للتقارير بلا خط)
+    const driveLinePrice = dlResult.success && dlResult.data && dlResult.data.pricePerMeter != null ? dlResult.data.pricePerMeter : null
+    const projectPrice = projResult.success && projResult.data && projResult.data.pricePerMeter != null ? projResult.data.pricePerMeter : 0
+    const effectivePrice = driveLinePrice != null ? driveLinePrice : projectPrice
+    const dailyRevenue = dailyMeters * effectivePrice
 
     const createResult = await safeDbOp(
       () => db.dailyReport.create({
