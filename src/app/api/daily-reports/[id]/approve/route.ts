@@ -46,13 +46,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       )
     }
 
-    // لحظة الاعتماد: إعادة حساب الإيراد = الأمتار المحفورة × سعر المتر الحالي للمشروع
+    // v13: لحظة الاعتماد: الإيراد = الأمتار المحفورة × سعر متر خط الحفر (أو سعر المشروع احتياطياً)
     var priceResult = await safeDbOp(
       () => db.project.findUnique({ where: { id: existingReport.projectId }, select: { pricePerMeter: true } }),
       'جلب سعر المتر'
     )
-    var pricePerMeter = priceResult.success && priceResult.data ? (priceResult.data.pricePerMeter || 0) : 0
-    var finalRevenue = (existingReport.dailyMeters || 0) * pricePerMeter
+    var projectPrice = priceResult.success && priceResult.data && priceResult.data.pricePerMeter != null ? priceResult.data.pricePerMeter : 0
+    var linePriceResult = existingReport.driveLineId
+      ? await safeDbOp(
+          () => db.driveLine.findUnique({ where: { id: existingReport.driveLineId }, select: { pricePerMeter: true } }),
+          'جلب سعر خط الحفر'
+        )
+      : { success: false as const, response: null as any }
+    var linePrice = linePriceResult.success && linePriceResult.data && linePriceResult.data.pricePerMeter != null ? linePriceResult.data.pricePerMeter : null
+    var finalRevenue = (existingReport.dailyMeters || 0) * (linePrice != null ? linePrice : projectPrice)
 
     var updateResult = await safeDbOp(
       () => db.dailyReport.update({
