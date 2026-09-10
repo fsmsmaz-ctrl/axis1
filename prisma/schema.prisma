@@ -61,7 +61,7 @@ model Project {
   workType       String   // pipe_jacking, microtunneling, hdd, auger_boring
   pipeDiameter   String   // 800mm, 1000mm, 1200mm, other
   totalLength    Float    // meters
-  pricePerMeter  Float    // OMR
+  pricePerMeter  Float?   // OMR — v13: احتياطي فقط للتقارير القديمة بلا خط حفر؛ السعر الأساسي أصبح على مستوى خط الحفر
   soilType       String   // soft, hard, rocky, mixed
   startDate      DateTime
   expectedEnd    DateTime
@@ -102,6 +102,7 @@ model DriveLine {
   pipeType      String   // pipe, sleeve
   soilType      String
   depth         Float    // meters
+  pricePerMeter Float?   // OMR — v13: سعر المتر الخاص بهذا الخط؛ التقارير اليومية تُحسب به
   status        String   @default("not_started") // not_started, in_progress, completed, suspended
   completedLength Float  @default(0)
   progress      Float    @default(0) // 0-100
