@@ -105,6 +105,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (body.assigneeId !== undefined && String(body.assigneeId) !== existing.assigneeId) {
       const newAssignee = await db.user.findUnique({ where: { id: String(body.assigneeId) }, select: { id: true, name: true, active: true } })
       if (!newAssignee) return NextResponse.json({ error: 'invalid_reference', message: 'الموظف الجديد غير موجود' }, { status: 400 })
+      // v12.6: لا إسناد لموظف مُعطَّل الحساب
+      if (newAssignee.active === false) return NextResponse.json({ error: 'invalid_reference', message: 'لا يمكن إسناد المهمة لموظف مُعطَّل الحساب' }, { status: 400 })
       data.assigneeId = String(body.assigneeId)
       events.push({ type: 'assignee_change', oldAssigneeId: existing.assigneeId, newAssigneeId: String(body.assigneeId) })
     }
@@ -162,8 +164,27 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       }).catch(() => {})
     }
 
+    // v12.6: تنبيه الموظف المسؤول عند تغيير موعد الإنجاز (تأجيل أو تقديم)
+    const dueEvent = events.find((e: any) => e.type === 'due_date_change')
+    if (dueEvent && existing.assigneeId !== user.id) {
+      const newDue = data.dueDate instanceof Date ? data.dueDate : new Date(existing.dueDate)
+      await db.notification.create({
+        data: {
+          userId: existing.assigneeId,
+          type: 'task_due_changed',
+          title: 'تم تعديل موعد إنجاز مهمة مسندة إليك',
+          message: 'المهمة #' + existing.taskNumber + ': ' + updateResult.data.title + ' — صار موعد الإنجاز المطلوب ' + newDue.toISOString().split('T')[0] + ' (بواسطة ' + user.name + ').',
+          severity: 'info',
+          link: 'tasks',
+          entityType: 'task',
+          entityId: 'due:' + id,
+        },
+      }).catch(() => {})
+    }
+
     return NextResponse.json({ task: updateResult.data, success: true })
   } catch (error: any) {
     return handleDbError(error, 'تعديل المهمة')
   }
 }
+
