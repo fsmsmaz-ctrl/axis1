@@ -17,7 +17,7 @@ import {
   AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
   AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { Plus, GitBranch, MapPin, Ruler, Layers, AlertCircle, Pencil, Trash2, Loader2 } from 'lucide-react'
+import { Plus, GitBranch, MapPin, Ruler, Layers, AlertCircle, Pencil, Trash2, Loader2, Coins } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
 import { toast } from 'sonner'
@@ -32,7 +32,7 @@ const statusLabels: Record<string, { ar: string; en: string; color: string }> = 
 
 const emptyForm = {
   projectId: '', lineNumber: '', startPoint: '', endPoint: '',
-  totalLength: '', diameter: '1200mm', pipeType: 'pipe', soilType: 'mixed',
+  totalLength: '', pricePerMeter: '', diameter: '1200mm', pipeType: 'pipe', soilType: 'mixed',
   depth: '', status: 'not_started', problems: '',
 }
 
@@ -95,7 +95,11 @@ export default function DriveLinesPage() {
         throw new Error(body?.message || body?.error || ('Error ' + res.status))
       }
       toast.success(isRtl
-        ? (isEditing ? 'تم تحديث خط الحفر' : 'تم إنشاء خط الحفر')
+        ? (isEditing
+          ? (body?.recalculatedReports > 0
+            ? `تم تحديث خط الحفر وإعادة حساب ${body.recalculatedReports} تقرير يومي بالسعر الجديد`
+            : 'تم تحديث خط الحفر')
+          : 'تم إنشاء خط الحفر')
         : (isEditing ? 'Drive line updated' : 'Drive line created'))
       setDialogOpen(false)
       setEditingId(null)
@@ -111,9 +115,12 @@ export default function DriveLinesPage() {
   // ── Open dialog for creating a new drive line ──
   function openCreate() {
     setEditingId(null)
+    const firstProject = projects[0]
     setFormData({
       ...emptyForm,
-      projectId: projects[0]?.id || '',
+      projectId: firstProject?.id || '',
+      // v13: تعبئة مبدئية لسعر المتر من سعر المشروع (يمكن تغييره)
+      pricePerMeter: firstProject?.pricePerMeter != null ? String(firstProject.pricePerMeter) : '',
     })
     setDialogOpen(true)
   }
@@ -127,6 +134,7 @@ export default function DriveLinesPage() {
       startPoint: line.startPoint || '',
       endPoint: line.endPoint || '',
       totalLength: line.totalLength != null ? String(line.totalLength) : '',
+      pricePerMeter: line.pricePerMeter != null ? String(line.pricePerMeter) : (line.project?.pricePerMeter != null ? String(line.project.pricePerMeter) : ''),
       diameter: line.diameter || '1200mm',
       pipeType: line.pipeType || 'pipe',
       soilType: line.soilType || 'mixed',
@@ -258,6 +266,15 @@ export default function DriveLinesPage() {
                             <Layers className="h-3.5 w-3.5 shrink-0" />
                             <span className="text-xs">{isRtl ? 'العمق' : 'Depth'}: {line.depth} {isRtl ? 'م' : 'm'} • {line.soilType}</span>
                           </div>
+                          <div className="flex items-center gap-2 text-muted-foreground">
+                            <Coins className="h-3.5 w-3.5 shrink-0" />
+                            <span className="text-xs">
+                              {isRtl ? 'سعر المتر' : 'Price/m'}:{' '}
+                              <span className={line.pricePerMeter != null ? 'font-semibold text-foreground' : 'text-orange-600'}>
+                                {line.pricePerMeter != null ? `${line.pricePerMeter} ${isRtl ? 'ر.ع' : 'OMR'}` : (isRtl ? 'غير محدد — عدّل الخط لإدخال السعر' : 'Not set — edit line to add price')}
+                              </span>
+                            </span>
+                          </div>
                         </div>
 
                         <div>
@@ -339,7 +356,12 @@ export default function DriveLinesPage() {
               <Label>{isRtl ? 'المشروع' : 'Project'} *</Label>
               <Select
                 value={formData.projectId}
-                onValueChange={(v) => setFormData({ ...formData, projectId: v })}
+                onValueChange={(v) => {
+                  // v13: عند تغيير المشروع — عبّئ سعر المتر من سعر المشروع المختار إن كان الحقل فارغاً
+                  const proj = projects.find((p) => p.id === v)
+                  const inheritedPrice = proj?.pricePerMeter != null ? String(proj.pricePerMeter) : ''
+                  setFormData({ ...formData, projectId: v, pricePerMeter: formData.pricePerMeter || inheritedPrice })
+                }}
                 required
               >
                 <SelectTrigger><SelectValue placeholder={isRtl ? 'اختر المشروع' : 'Select project'} /></SelectTrigger>
@@ -366,6 +388,13 @@ export default function DriveLinesPage() {
               <div className="space-y-1.5">
                 <Label>{isRtl ? 'نقطة النهاية' : 'End Point'} *</Label>
                 <Input value={formData.endPoint} onChange={(e) => setFormData({ ...formData, endPoint: e.target.value })} required />
+              </div>
+              <div className="space-y-1.5">
+                <Label>{isRtl ? 'سعر المتر (ر.ع) *' : 'Price per Meter (OMR) *'}</Label>
+                <Input type="number" step="0.001" min="0" value={formData.pricePerMeter} onChange={(e) => setFormData({ ...formData, pricePerMeter: e.target.value })} required />
+                <p className="text-[11px] text-muted-foreground">
+                  {isRtl ? 'تُحسب التقارير اليومية لهذا الخط بهذا السعر — تغييره يعيد حساب التقارير القديمة تلقائياً' : 'Daily reports of this line are priced by this rate — changing it recalculates old reports'}
+                </p>
               </div>
               <div className="space-y-1.5">
                 <Label>{isRtl ? 'القطر' : 'Diameter'}</Label>
