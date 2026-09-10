@@ -103,21 +103,30 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     var endReading = parseFloat(body.endReading) || 0
     var dailyMeters = Math.max(0, endReading - startReading)
 
-    // إعادة حساب الإيراد عند التعديل = الأمتار الجديدة × سعر المتر الحالي للمشروع
+    // إعادة حساب الإيراد عند التعديل = الأمتار الجديدة × سعر متر خط الحفر (أو سعر المشروع احتياطياً)
+    // v13: نستخدم الخط الفعلي النهائي للتقرير (الموجود حالياً إن لم يُرسل خط جديد)
+    var finalDriveLineId = fromSafety ? existingReport.driveLineId : (body.driveLineId !== undefined ? (body.driveLineId || null) : existingReport.driveLineId)
     var projectPriceResult = await safeDbOp(
       () => db.project.findUnique({ where: { id: existingReport.projectId }, select: { pricePerMeter: true } }),
       'جلب سعر المتر'
     )
-    var projectPrice = projectPriceResult.success && projectPriceResult.data ? (projectPriceResult.data.pricePerMeter || 0) : 0
-    var dailyRevenue = dailyMeters * projectPrice
+    var projectPrice = projectPriceResult.success && projectPriceResult.data && projectPriceResult.data.pricePerMeter != null ? projectPriceResult.data.pricePerMeter : 0
+    var linePriceResult = finalDriveLineId
+      ? await safeDbOp(
+          () => db.driveLine.findUnique({ where: { id: finalDriveLineId }, select: { pricePerMeter: true } }),
+          'جلب سعر خط الحفر'
+        )
+      : { success: false as const }
+    var linePrice = linePriceResult.success && linePriceResult.data && linePriceResult.data.pricePerMeter != null ? linePriceResult.data.pricePerMeter : null
+    var dailyRevenue = dailyMeters * (linePrice != null ? linePrice : projectPrice)
 
     // Look up drive line (safe)
-    var driveLineResult = body.driveLineId
+    var driveLineResult = finalDriveLineId
       ? await safeDbOp(
-          () => db.driveLine.findUnique({ where: { id: body.driveLineId } }),
+          () => db.driveLine.findUnique({ where: { id: finalDriveLineId } }),
           'جلب خط الحفر'
         )
-      : { success: false }
+      : { success: false as const }
 
     var driveLine = driveLineResult.success ? driveLineResult.data : null
     var totalLength = driveLine ? driveLine.totalLength : 0
@@ -131,7 +140,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         where: { id },
         data: {
           projectId: existingReport.projectId,
-          driveLineId: fromSafety ? existingReport.driveLineId : (body.driveLineId || null),
+          driveLineId: finalDriveLineId,
           reportDate: existingReport.reportDate,
           weather: fromSafety ? existingReport.weather : (body.weather || null),
           workStartTime: body.workStartTime || null,
@@ -164,7 +173,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
     // CRITICAL: Recalculate progress after editing a report
     // Determine which drive line(s) to recalculate
-    var newDriveLineId = fromSafety ? existingReport.driveLineId : (body.driveLineId || null)
+    var newDriveLineId = finalDriveLineId
     if (newDriveLineId) {
       // If drive line changed, also recalc the old one
       if (existingReport.driveLineId && existingReport.driveLineId !== newDriveLineId) {
