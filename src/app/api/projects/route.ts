@@ -21,7 +21,10 @@ export async function POST(req: NextRequest) {
     if (validationError) return validationError
 
     const totalLength = parseNumber(body.totalLength, 0)
-    const pricePerMeter = parseNumber(body.pricePerMeter, 0)
+    // v13: سعر المتر لم يعد مطلوباً عند إنشاء المشروع — الأسعار على مستوى خطوط الحفر
+    const pricePerMeter = (body.pricePerMeter !== undefined && body.pricePerMeter !== null && String(body.pricePerMeter) !== '')
+      ? parseNumber(body.pricePerMeter, 0)
+      : null
     const startDate = parseDate(body.startDate, 0)
     const expectedEnd = parseDate(body.expectedEnd, 90)
 
