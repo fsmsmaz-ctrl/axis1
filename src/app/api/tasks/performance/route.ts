@@ -102,6 +102,8 @@ export async function GET(req: NextRequest) {
     const completionSamples = new Map<string, number[]>()
 
     for (const t of tasks) {
+      // v12.6: حماية — مهمة بلا موظف مسؤول (حساب محذوف) لا تُفشل التقرير كله
+      if (!t.assignee) continue
       const e = ensure(t.assignee)
       const dueInMonth = new Date(t.dueDate) >= startUTC && new Date(t.dueDate) < endUTC
       const closedInMonth = t.closedAt && new Date(t.closedAt) >= startUTC && new Date(t.closedAt) < endUTC
@@ -195,3 +197,4 @@ export async function GET(req: NextRequest) {
     return handleDbError(error, 'توليد تقرير الأداء')
   }
 }
+
