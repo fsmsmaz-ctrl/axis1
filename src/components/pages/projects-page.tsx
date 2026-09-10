@@ -58,7 +58,7 @@ export default function ProjectsPage() {
   const [formData, setFormData] = useState({
     code: '', name: '', client: '', location: '', contractNumber: '',
     workType: 'pipe_jacking', pipeDiameter: '1200mm', totalLength: '',
-    pricePerMeter: '', soilType: 'mixed', startDate: '', expectedEnd: '',
+    soilType: 'mixed', startDate: '', expectedEnd: '',
     status: 'not_started', notes: '',
   })
 
@@ -83,7 +83,7 @@ export default function ProjectsPage() {
       code: 'AXIS-' + Date.now().toString().slice(-6),
       name: '', client: '', location: '', contractNumber: '',
       workType: 'pipe_jacking', pipeDiameter: '1200mm', totalLength: '',
-      pricePerMeter: '', soilType: 'mixed',
+      soilType: 'mixed',
       startDate: today.toISOString().split('T')[0],
       expectedEnd: defaultEnd.toISOString().split('T')[0],
       status: 'not_started', notes: '',
@@ -97,7 +97,7 @@ export default function ProjectsPage() {
       code: p.code, name: p.name, client: p.client, location: p.location,
       contractNumber: p.contractNumber || '', workType: p.workType,
       pipeDiameter: p.pipeDiameter, totalLength: String(p.totalLength),
-      pricePerMeter: String(p.pricePerMeter), soilType: p.soilType,
+      soilType: p.soilType,
       startDate: p.startDate.split('T')[0], expectedEnd: p.expectedEnd.split('T')[0],
       status: p.status, notes: p.notes || '',
     })
@@ -112,8 +112,8 @@ export default function ProjectsPage() {
       toast.error(isRtl ? 'يرجى ملء جميع الحقول المطلوبة' : 'Please fill all required fields')
       return
     }
-    if (!formData.totalLength || !formData.pricePerMeter) {
-      toast.error(isRtl ? 'يرجى إدخال الطول والسعر' : 'Please enter length and price')
+    if (!formData.totalLength) {
+      toast.error(isRtl ? 'يرجى إدخال الطول الكلي' : 'Please enter total length')
       return
     }
 
@@ -256,7 +256,7 @@ export default function ProjectsPage() {
                     </div>
                     <div className="flex items-center gap-2 text-muted-foreground">
                       <DollarSign className="h-4 w-4 shrink-0" />
-                      <span>{p.pricePerMeter} {isRtl ? 'ر.ع/م' : 'OMR/m'} • {p.totalLength} {isRtl ? 'م' : 'm'}</span>
+                      <span>{p.totalLength} {isRtl ? 'م' : 'm'} • {isRtl ? 'الأسعار على مستوى خطوط الحفر' : 'pricing per drive line'}</span>
                     </div>
                     <div className="flex items-center gap-2 text-muted-foreground">
                       <Users className="h-4 w-4 shrink-0" />
@@ -366,10 +366,6 @@ export default function ProjectsPage() {
                 <Input type="number" step="0.1" value={formData.totalLength} onChange={(e) => setFormData({ ...formData, totalLength: e.target.value })} required />
               </div>
               <div className="space-y-1.5">
-                <Label>{isRtl ? 'سعر المتر (ر.ع)' : 'Price per Meter (OMR)'} *</Label>
-                <Input type="number" step="0.01" value={formData.pricePerMeter} onChange={(e) => setFormData({ ...formData, pricePerMeter: e.target.value })} required />
-              </div>
-              <div className="space-y-1.5">
                 <Label>{isRtl ? 'تاريخ البداية' : 'Start Date'}</Label>
                 <Input type="date" value={formData.startDate} onChange={(e) => setFormData({ ...formData, startDate: e.target.value })} required />
               </div>
@@ -465,7 +461,7 @@ function ProjectDetails({ id }: { id: string | null }) {
         <Detail label={isRtl ? 'نوع العمل' : 'Work Type'} value={project.workType} />
         <Detail label={isRtl ? 'القطر' : 'Diameter'} value={project.pipeDiameter} />
         <Detail label={isRtl ? 'الطول الكلي' : 'Total Length'} value={`${project.totalLength} م`} />
-        <Detail label={isRtl ? 'سعر المتر' : 'Price/m'} value={`${project.pricePerMeter} ر.ع`} />
+        <Detail label={isRtl ? 'الإيراد المحقق' : 'Revenue'} value={project.totalRevenue != null ? `${Number(project.totalRevenue).toFixed(3)} ${isRtl ? 'ر.ع' : 'OMR'} ${isRtl ? '(من أسعار خطوط الحفر)' : '(per drive line prices)'}` : '-'} />
         <Detail label={isRtl ? 'مدير المشروع' : 'Manager'} value={project.manager?.name || '-'} />
         <Detail label={isRtl ? 'مهندس الموقع' : 'Engineer'} value={project.engineer?.name || '-'} />
       </div>
