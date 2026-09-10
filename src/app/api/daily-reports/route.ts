@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
-import { SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
+import { hasPermission, canWrite, SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { handleDbError, validateRequired, parseNumber, safeDbOp, parseDateRange } from '@/lib/api-helpers'
 import { notifyUsers } from '@/lib/notify'
@@ -10,6 +10,15 @@ export async function GET(req: NextRequest) {
 
   if (!user) {
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
+  }
+
+  // v13.1 SECURITY: فرض صلاحية قراءة التقارير اليومية (أو تقارير الموقع/الإنتاج/الحضور لصفحة التقارير)
+  const canReadReports = hasPermission(user.role, 'daily_reports', user.permissions, user.email)
+    || hasPermission(user.role, 'rpt_daily_site', user.permissions, user.email)
+    || hasPermission(user.role, 'rpt_production', user.permissions, user.email)
+    || hasPermission(user.role, 'rpt_attendance', user.permissions, user.email)
+  if (!canReadReports) {
+    return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية عرض التقارير اليومية' }, { status: 403 })
   }
 
   const { searchParams } = new URL(req.url)
