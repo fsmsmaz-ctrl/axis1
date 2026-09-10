@@ -276,6 +276,8 @@ export default function TasksPage() {
       setForm(emptyTaskForm())
       setShowCreate(false)
       fetchTasks()
+    } catch (err: any) {
+      toast.error(isAr ? 'تعذر الوصول للخادم — تحقق من الاتصال' : 'Network error — check connection')
     } finally {
       setSaving(false)
     }
@@ -353,6 +355,8 @@ export default function TasksPage() {
       toast.success(isAr ? (okMsgs[action]?.ar || 'تم') : (okMsgs[action]?.en || 'Done'))
       setAct({ mode: null, note: '' })
       refreshDetail(detailId)
+    } catch (err: any) {
+      toast.error(isAr ? 'تعذر الوصول للخادم — تحقق من الاتصال' : 'Network error — check connection')
     } finally {
       setBusy(false)
     }
@@ -383,6 +387,8 @@ export default function TasksPage() {
       }
       toast.success(isAr ? 'تم حفظ التعديلات (مسجلة في سجل المهمة)' : 'Changes saved (logged in task history)')
       refreshDetail(detailId)
+    } catch (err: any) {
+      toast.error(isAr ? 'تعذر الوصول للخادم — تحقق من الاتصال' : 'Network error — check connection')
     } finally {
       setBusy(false)
     }
@@ -417,6 +423,8 @@ export default function TasksPage() {
       }
       toast.success(isAr ? 'تم إرفاق الملف' : 'File attached')
       refreshDetail(detailId)
+    } catch (err: any) {
+      toast.error(isAr ? 'تعذر الوصول للخادم — تحقق من الاتصال' : 'Network error — check connection')
     } finally {
       setUploading(false)
     }
@@ -466,7 +474,7 @@ export default function TasksPage() {
           <div>
             <h1 className="text-xl lg:text-2xl font-bold">
               {t('إدارة المهام', 'Task Management')}
-              <span className="ms-2 align-middle text-[10px] font-mono font-normal text-muted-foreground border border-border rounded px-1.5 py-0.5" title="Build version marker">v12.5</span>
+              <span className="ms-2 align-middle text-[10px] font-mono font-normal text-muted-foreground border border-border rounded px-1.5 py-0.5" title="Build version marker">v12.6</span>
             </h1>
             <p className="text-xs text-muted-foreground">{t('تنظيم مهام الموظفين ومتابعة الإنجاز والتأخير', 'Assign, track and evaluate employee tasks')}</p>
           </div>
@@ -1097,4 +1105,5 @@ export default function TasksPage() {
     </div>
   )
 }
+
 
