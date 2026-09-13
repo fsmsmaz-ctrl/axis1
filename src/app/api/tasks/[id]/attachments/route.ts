@@ -25,12 +25,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const task = await db.task.findUnique({ where: { id }, select: { id: true, assigneeId: true, status: true, taskNumber: true } })
     if (!task) return NextResponse.json({ error: 'not_found', message: 'المهمة غير موجودة' }, { status: 404 })
 
-    // الموظف يرفق على مهامه فقط؛ المدير على الجميع. الملغاة تُغلق أمام المرفقات.
+    // الموظف يرفق على مهامه فقط؛ المدير على الجميع. الملغاة والمغلقة تُغلق أمام المرفقات.
     if (!isTaskManager(user) && task.assigneeId !== user.id) {
       return NextResponse.json({ error: 'forbidden', message: 'يمكنك إضافة مرفقات لمهامك المسندة فقط' }, { status: 403 })
     }
-    if (task.status === 'cancelled') {
-      return NextResponse.json({ error: 'locked', message: 'لا يمكن إضافة مرفقات لمهمة ملغاة' }, { status: 409 })
+    // SECURITY FIX: المرفقات كانت مسموحة على المهمة المغلقة نهائياً (مخالفة منطق
+    // "لا حركة على مهمة مغلقة" في مسار الحالة)
+    if (task.status === 'cancelled' || task.status === 'closed') {
+      return NextResponse.json({ error: 'locked', message: 'لا يمكن إضافة مرفقات لمهمة مغلقة أو ملغاة' }, { status: 409 })
+    }
+
+    // SECURITY FIX: حد أقصى لعدد المرفقات لكل مهمة — كانت بلا سقف فيمكن
+    // تضخيم صفوف قاعدة البيانات بمئات الميغابايتات
+    var attachmentCount = await db.taskAttachment.count({ where: { taskId: id } })
+    if (attachmentCount >= 20) {
+      return NextResponse.json({ error: 'too_many_attachments', message: 'بلغ المهمة الحد الأقصى للمرفقات (20)' }, { status: 400 })
     }
 
     const body = await req.json()
@@ -43,6 +52,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: 'too_large', message: 'حجم المرفق يتجاوز الحد الأقصى (4 ميغابايت)' }, { status: 413 })
     }
 
+    // SECURITY FIX: قائمة سماح لصيغة المرفق — كان يقبل أي نص (روابط خارجية
+    // لتصيّد مخزّن / data:text/html بسكربتات) وتُعرض في الواجهة كرابط قابل للنقر
+    var isAllowedDataUrl = /^data:(image\/(png|jpe?g|gif|webp)|application\/pdf|application\/(vnd\.openxmlformats-officedocument\.wordprocessingml\.document|msword));base64,[A-Za-z0-9+/=]+$/.test(url)
+    var isAllowedHttpsUrl = /^https:\/\/[A-Za-z0-9.-]+(\/[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]*)?$/.test(url)
+    if (!isAllowedDataUrl && !isAllowedHttpsUrl) {
+      return NextResponse.json(
+        { error: 'invalid_url', message: 'المرفق يجب أن يكون ملفاً (صورة/PDF/Word) بصيغة data أو رابط https آمن' },
+        { status: 400 }
+      )
+    }
+
     const fileType = VALID_FILE_TYPES.includes(String(body.fileType)) ? String(body.fileType) : 'doc'
 
     const result = await safeDbOp(
@@ -53,7 +73,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           fileName: String(body.fileName).slice(0, 255),
           fileType,
           url,
-          size: typeof body.size === 'number' ? body.size : url.length,
+          // SECURITY FIX: الحجم يُحسب من الخادم دائماً — كان يُقبل من العميل (قيم مزورة)
+          size: Buffer.byteLength(url, 'utf8'),
         },
         include: { uploader: { select: { id: true, name: true, nameEn: true } } },
       }),
