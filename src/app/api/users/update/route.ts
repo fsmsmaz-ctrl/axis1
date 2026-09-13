@@ -88,6 +88,9 @@ export async function PATCH(req: NextRequest) {
         return NextResponse.json({ error: 'invalid_value', message: 'كلمة المرور قصيرة جداً (6 أحرف على الأقل)' }, { status: 400 })
       }
       updateData.password = await bcrypt.hash(password.trim(), 12)
+      // SECURITY: رفع إصدار الجلسة يبطل فوراً كل التوكنات القديمة للمستخدم
+      // (جلسة مهاجم سرق التوكن تنقطع لحظة تغيير كلمة المرور)
+      updateData.tokenVersion = { increment: 1 }
     }
 
     if (Object.keys(updateData).length === 0) {
@@ -107,6 +110,22 @@ export async function PATCH(req: NextRequest) {
     )
     if (!updateResult.success) return updateResult.response
 
+    // SECURITY FIX: تعديل المستخدمين (دور/صلاحيات/كلمة مرور) لم يكن يُوثق إطلاقاً —
+    // الآن يُسجل في سجل التدقيق (بدون أي بيانات كلمات مرور)
+    var changedFields = Object.keys(updateData).filter(function(f) { return f !== 'password' && f !== 'tokenVersion' })
+    await safeDbOp(
+      () => db.auditLog.create({
+        data: {
+          userId: authUser!.id,
+          action: 'update',
+          entity: 'user',
+          entityId: userId,
+          details: 'تعديل مستخدم (' + targetResult.data.email + '): ' + changedFields.join(', ') + (updateData.password ? ' + إعادة تعيين كلمة المرور (أُبطلت الجلسات القديمة)' : ''),
+        },
+      }),
+      'سجل التدقيق'
+    )
+
     return NextResponse.json({
       message: 'تم تحديث المستخدم بنجاح',
       user: { ...updateResult.data, permissions: updateResult.data.permissions ?? {} }
@@ -116,3 +135,4 @@ export async function PATCH(req: NextRequest) {
     return handleDbError(error, 'تحديث المستخدم')
   }
 }
+
