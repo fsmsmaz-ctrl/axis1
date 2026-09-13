@@ -4,6 +4,9 @@ import { db } from '@/lib/db'
 import { handleDbError, validateRequired, parseNumber, safeDbOp, parseDateRange } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 import { hasPermission, canWrite } from '@/lib/auth'
+import { notifyUsers } from '@/lib/notify'
+
+var COST_CATEGORIES = ['labor', 'housing', 'transport', 'fuel', 'maintenance', 'parts', 'oil', 'safety', 'rental', 'other']
 
 export async function GET(req: NextRequest) {
   var user = await getAuthUser(req)
@@ -177,6 +180,21 @@ export async function POST(req: NextRequest) {
     var validationError = validateRequired(body, ['projectId', 'date', 'category', 'description', 'amount'])
     if (validationError) return validationError
 
+    // SECURITY FIX: التحقق من صحة المبلغ المالي — منع القيم السالبة/الصفرية/العملاقة
+    var amount = parseNumber(body.amount, NaN)
+    if (!Number.isFinite(amount) || amount <= 0 || amount > 10000000) {
+      return NextResponse.json(
+        { error: 'invalid_amount', message: 'المبلغ يجب أن يكون رقماً موجباً ومعقولاً (أقل من 10,000,000)' },
+        { status: 400 }
+      )
+    }
+
+    // SECURITY FIX: قائمة سماح لتصنيف التكلفة
+    var category = String(body.category)
+    if (COST_CATEGORIES.indexOf(category) === -1) {
+      category = 'other'
+    }
+
     var userId = user.id
 
     var createResult = await safeDbOp(
@@ -185,10 +203,10 @@ export async function POST(req: NextRequest) {
           projectId: String(body.projectId),
           dailyReportId: body.dailyReportId || null,
           date: new Date(body.date),
-          category: String(body.category),
-          description: String(body.description),
-          amount: parseNumber(body.amount, 0),
-          notes: body.notes ? String(body.notes) : null,
+          category: category,
+          description: String(body.description).slice(0, 1000),
+          amount: amount,
+          notes: body.notes ? String(body.notes).slice(0, 2000) : null,
           recordedById: userId,
         },
       }),
@@ -197,6 +215,8 @@ export async function POST(req: NextRequest) {
     if (!createResult.success) return createResult.response
 
     // Audit log + notification (non-critical, fire-and-forget)
+    // SECURITY FIX: كان الإشعار بثاً عاماً (userId:null) يكشف المبالغ المالية لكل
+    // المستخدمين متجاوزاً بوابة صلاحيات التكاليف — أصبح موجهاً لذوي صلاحية costs فقط
     Promise.all([
       safeDbOp(
         () => db.auditLog.create({
@@ -206,23 +226,25 @@ export async function POST(req: NextRequest) {
             action: 'create',
             entity: 'cost',
             entityId: createResult.data.id,
-            details: 'Created cost: ' + body.category + ' - ' + body.description + ' (' + body.amount + ' OMR)',
+            details: 'Created cost: ' + category + ' - ' + body.description + ' (' + amount + ' OMR)',
           },
         }),
         'سجل التدقيق'
       ),
-      safeDbOp(
-        () => db.notification.create({
-          data: {
-            projectId: String(body.projectId),
-            type: 'cost_overrun',
-            title: 'تكلفة جديدة',
-            message: 'تم إضافة تكلفة: ' + body.category + ' - ' + body.description + ' بمبلغ ' + body.amount + ' ريال عماني',
-            severity: 'info',
-          },
-        }),
-        'إشعار التكلفة'
-      ),
+      notifyUsers({
+        type: 'cost_overrun',
+        title: 'تكلفة جديدة',
+        message: 'تم إضافة تكلفة: ' + category + ' - ' + body.description + ' بمبلغ ' + amount + ' ريال عماني',
+        severity: 'info',
+        projectId: String(body.projectId),
+        entityType: 'cost',
+        entityId: createResult.data.id,
+        permissions: ['costs'],
+        roles: ['top_management', 'project_manager', 'accountant'],
+        excludeUserIds: [userId],
+        includeSystemAdmin: true,
+        link: 'costs',
+      }),
     ]).catch(function() {})
 
     return NextResponse.json({ cost: createResult.data, success: true })
@@ -230,4 +252,3 @@ export async function POST(req: NextRequest) {
     return handleDbError(error, 'إنشاء التكلفة')
   }
 }
-
