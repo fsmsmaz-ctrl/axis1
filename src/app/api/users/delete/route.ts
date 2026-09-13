@@ -48,14 +48,29 @@ export async function DELETE(req: NextRequest) {
     }
 
     // Soft delete — prevents orphaned records and DB constraint errors
+    // SECURITY: رفع tokenVersion يبطل كل جلسات المستخدم المحذوف فوراً
     var deleteResult = await safeDbOp(
       () => db.user.update({
         where: { id: userId as string },
-        data: { active: false, email: 'deleted_' + userId, role: 'deleted' },
+        data: { active: false, email: 'deleted_' + userId, role: 'deleted', tokenVersion: { increment: 1 } },
       }),
       'حذف المستخدم'
     )
     if (!deleteResult.success) return deleteResult.response
+
+    // SECURITY FIX: حذف المستخدمين لم يكن يُوثق — الآن يُسجل
+    await safeDbOp(
+      () => db.auditLog.create({
+        data: {
+          userId: authUser!.id,
+          action: 'delete',
+          entity: 'user',
+          entityId: userId as string,
+          details: 'تعطيل مستخدم (حذف ناعم) — معرف: ' + userId,
+        },
+      }),
+      'سجل التدقيق'
+    )
 
     var remainingResult = await safeDbOp(
       () => db.user.count({ where: { active: true } }),
@@ -72,3 +87,4 @@ export async function DELETE(req: NextRequest) {
     return handleDbError(error, 'حذف المستخدم')
   }
 }
+
