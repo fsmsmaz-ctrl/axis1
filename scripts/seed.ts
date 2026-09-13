@@ -1,12 +1,25 @@
 // AXIS Pipe Jacking Management System - Seed Data
+// SECURITY: This script is for LOCAL DEVELOPMENT ONLY.
+// - Refuses to run in production unless SEED_ALLOW_PRODUCTION=true
+// - Password must be provided via SEED_PASSWORD env var (min 12 chars)
 import { db } from '../src/lib/db'
 import bcrypt from 'bcryptjs'
 
 async function main() {
   console.log('🌱 Seeding AXIS Pipe Jacking Management System...')
 
+  // ==================== Security Guards ====================
+  if (process.env.NODE_ENV === 'production' && process.env.SEED_ALLOW_PRODUCTION !== 'true') {
+    throw new Error(' seed refused: NODE_ENV=production. Set SEED_ALLOW_PRODUCTION=true to override (not recommended).')
+  }
+
+  const seedPassword = process.env.SEED_PASSWORD
+  if (!seedPassword || seedPassword.length < 12) {
+    throw new Error(' seed refused: provide SEED_PASSWORD env var (min 12 chars). Example: SEED_PASSWORD="..." npx tsx scripts/seed.ts')
+  }
+
   // ==================== Create Users ====================
-  const passwordHash = await bcrypt.hash('axis123', 10)
+  const passwordHash = await bcrypt.hash(seedPassword, 10)
 
   const topManager = await db.user.upsert({
     where: { email: 'ceo@axis.om' },
@@ -616,13 +629,14 @@ async function main() {
   console.log('✅ Finishing record created')
 
   console.log('\n🎉 Seeding completed successfully!')
-  console.log('\n📋 Login credentials (password: axis123):')
+  console.log('\n📋 Login credentials (password: from SEED_PASSWORD env var):')
   console.log('  • Top Management:    ceo@axis.om')
   console.log('  • Project Manager:   pm@axis.om')
   console.log('  • Site Engineer:     engineer@axis.om')
   console.log('  • HSE Officer:       hse@axis.om')
   console.log('  • Foreman:           foreman@axis.om')
   console.log('  • Accountant:        finance@axis.om')
+  console.log('\n🔒 SECURITY: Change all seeded passwords before any real use.')
 }
 
 main()
@@ -633,3 +647,4 @@ main()
   .finally(async () => {
     await db.$disconnect()
   })
+
