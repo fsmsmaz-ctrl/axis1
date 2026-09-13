@@ -2,12 +2,17 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { handleDbError, validateRequired, parseNumber, safeDbOp } from '@/lib/api-helpers'
-import { canWrite } from '@/lib/auth'
+import { canWrite, hasPermission } from '@/lib/auth'
 
 export async function GET(req: NextRequest) {
   try {
     const user = await getAuthUser(req)
     if (!user) return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
+
+    // SECURITY FIX: قائمة المعدات تتضمن سجلات الصيانة وتكاليفها — بوابة قراءة
+    if (!hasPermission(user.role, 'equipment', user.permissions, user.email)) {
+      return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية عرض المعدات' }, { status: 403 })
+    }
 
     const { searchParams } = new URL(req.url)
     const projectId = searchParams.get('projectId')
@@ -64,3 +69,4 @@ export async function POST(req: NextRequest) {
     return handleDbError(error, 'إنشاء المعدة')
   }
 }
+
