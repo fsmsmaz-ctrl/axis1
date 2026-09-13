@@ -23,6 +23,8 @@ model User {
   active       Boolean  @default(true)
   language     String   @default("ar") // ar, en
   permissions  Json?    // Custom per-user permission overrides: { drive_lines: true, rpt_daily_site: false, ... }
+  // SECURITY: إصدار الجلسة — يُرفع عند تغيير كلمة المرور لإبطال كل التوكنات القديمة فوراً
+  tokenVersion Int      @default(0)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -496,5 +498,6 @@ model CompanyAsset {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 }
+
 
 
