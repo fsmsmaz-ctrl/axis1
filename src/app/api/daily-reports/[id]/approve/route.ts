@@ -109,5 +109,3 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return handleDbError(error, 'اعتماد التقرير')
   }
 }
-
-
