@@ -3,11 +3,18 @@ import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { handleDbError, validateRequired, parseNumber, safeDbOp } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
-import { canWrite } from '@/lib/auth'
+import { canWrite, hasPermission } from '@/lib/auth'
 
 export async function GET(req: NextRequest) {
   const user = await getAuthUser(req)
   if (!user) return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
+
+  // SECURITY FIX: القائمة تتضمن تكاليف الإيجار والموردين (بيانات مالية) — بوابة قراءة
+  var canRead = hasPermission(user.role, 'equipment', user.permissions, user.email)
+    || hasPermission(user.role, 'costs', user.permissions, user.email)
+  if (!canRead) {
+    return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية عرض أصول الشركة' }, { status: 403 })
+  }
 
   const searchParams = new URL(req.url).searchParams
   const projectId = searchParams.get('projectId')
@@ -63,3 +70,4 @@ export async function POST(req: NextRequest) {
     return handleDbError(error, 'إنشاء الأصل')
   }
 }
+
