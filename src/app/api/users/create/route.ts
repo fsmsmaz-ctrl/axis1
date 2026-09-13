@@ -94,6 +94,21 @@ export async function POST(req: NextRequest) {
     )
     if (!createResult.success) return createResult.response
 
+    // SECURITY FIX: إنشاء المستخدمين أخطر عمليات النظام — لم يكن يُسجل إطلاقاً
+    // في سجل التدقيق (من أنشأ من؟ بأي دور؟) — الآن يُوثق
+    await safeDbOp(
+      () => db.auditLog.create({
+        data: {
+          userId: authUser!.id,
+          action: 'create',
+          entity: 'user',
+          entityId: createResult.data.id,
+          details: 'إنشاء مستخدم جديد: ' + createResult.data.email + ' بالدور ' + role,
+        },
+      }),
+      'سجل التدقيق'
+    )
+
     var totalResult = await safeDbOp(() => db.user.count(), 'عد المستخدمين')
     var total = totalResult.success ? totalResult.data : 0
     var remainingSlots = Math.max(0, 50 - total)
@@ -104,3 +119,4 @@ export async function POST(req: NextRequest) {
     return handleDbError(error, 'إنشاء المستخدم')
   }
 }
+
