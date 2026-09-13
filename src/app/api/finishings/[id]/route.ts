@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
-import { SYSTEM_ADMIN_EMAIL, canWrite } from '@/lib/auth'
+import { SYSTEM_ADMIN_EMAIL, canWrite, hasPermission } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { handleDbError, safeDbOp } from '@/lib/api-helpers'
 
@@ -8,6 +8,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   try {
     const user = await getAuthUser(req)
     if (!user) return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
+    // SECURITY FIX: بوابة قراءة — سجل التسليم يتضمن ملاحظات العميل
+    if (!hasPermission(user.role, 'finishings', user.permissions, user.email)) {
+      return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية عرض التشطيبات' }, { status: 403 })
+    }
     const { id } = await params
     const result = await safeDbOp(
       () => db.finishing.findUnique({
@@ -63,13 +67,22 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     }
 
     const body = await req.json()
+
+    // SECURITY FIX: قائمة سماح لحالة التسليم — كانت تُكتب خاماً فيمكن تزوير
+    // حالة "مقبول من العميل" قبل أي قبول فعلي
+    var VALID_HANDOVER = ['pending', 'accepted', 'needs_revision', 'rejected']
+    var safeHandoverStatus = VALID_HANDOVER.includes(String(body.handoverStatus))
+      ? String(body.handoverStatus)
+      : 'pending'
+
     const result = await safeDbOp(
       () => db.finishing.update({
         where: { id },
         data: {
           siteCleaned: !!body.siteCleaned, wasteRemoved: !!body.wasteRemoved, shaftClosed: !!body.shaftClosed,
           siteRestored: !!body.siteRestored, lineHandover: !!body.lineHandover, casingSpacer: !!body.casingSpacer,
-          clientNotes: body.clientNotes, handoverStatus: body.handoverStatus,
+          clientNotes: body.clientNotes ? String(body.clientNotes).slice(0, 5000) : null,
+          handoverStatus: safeHandoverStatus,
           // التشطيب المرفوض يعود مسودة لدى المشرف بعد التعديل — يرفعه مجدداً بقرار الإدارة لاحقاً
           status: existing.status === 'rejected' ? 'draft' : existing.status,
         },
@@ -82,4 +95,3 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     return handleDbError(error, 'تحديث التشطيب')
   }
 }
-
