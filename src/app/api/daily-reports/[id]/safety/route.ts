@@ -40,9 +40,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  // v13.1 SECURITY: حفظ قائمة فحص السلامة مرتبط بإنشاء التقارير — لمن يملك كتابتها فقط
-  if (!canWrite(user.role, 'daily_reports', user.permissions)) {
-    return NextResponse.json({ error: 'forbidden', message: 'حفظ فحوصات السلامة متاح لمقدمي التقارير فقط' }, { status: 403 })
+  // SECURITY FIX: كان الفحص canWrite('daily_reports') يتيح حفظ السلامة للمشرف (foreman)
+  // ويستثني مسؤول السلامة (hse_officer) — الفحص الصحيح بوحدة safety
+  if (!canWrite(user.role, 'safety', user.permissions)) {
+    return NextResponse.json({ error: 'forbidden', message: 'حفظ فحوصات السلامة متاح لمسؤولي السلامة ومقدمي التقارير المصرّح لهم' }, { status: 403 })
   }
 
   try {
@@ -52,12 +53,25 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // Get daily report to find projectId
     const dailyReport = await db.dailyReport.findUnique({
       where: { id: dailyReportId },
-      select: { projectId: true, reportDate: true },
+      select: { projectId: true, reportDate: true, status: true },
     })
 
     if (!dailyReport) {
       return NextResponse.json({ error: 'Daily report not found', details: `No daily report with id: ${dailyReportId}` }, { status: 404 })
     }
+
+    // SECURITY FIX: كان جسم التقرير اليومي مقفولاً بعد التسليم بينما بيانات السلامة
+    // المرتبطة به قابلة للتعديل — حتى محو الحوادث من تقرير معتمد! الآن تُقفل معه
+    if (dailyReport.status !== 'draft') {
+      return NextResponse.json(
+        { error: 'report_locked', message: 'لا يمكن تعديل بيانات السلامة لتقرير تم تسليمه أو اعتماده' },
+        { status: 409 }
+      )
+    }
+
+    // SECURITY FIX: قائمة سماح لنوع الحادث
+    var VALID_INCIDENT_TYPES = ['none', 'near_miss', 'incident', 'accident']
+    var incidentType = VALID_INCIDENT_TYPES.includes(String(body.incidentType)) ? String(body.incidentType) : 'none'
 
     const existing = await db.safetyReport.findUnique({
       where: { dailyReportId },
@@ -83,11 +97,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       workPermit: !!body.workPermit,
       toolboxTalk: !!body.toolboxTalk,
       hazards: body.hazards || '[]',
-      observations: body.observations || null,
-      violations: body.violations || null,
-      incidentType: body.incidentType || 'none',
-      incidentDescription: body.incidentDescription || null,
-      signedBy: body.signedBy || user.name,
+      observations: body.observations ? String(body.observations).slice(0, 5000) : null,
+      violations: body.violations ? String(body.violations).slice(0, 5000) : null,
+      incidentType: incidentType,
+      incidentDescription: body.incidentDescription ? String(body.incidentDescription).slice(0, 5000) : null,
+      // SECURITY FIX: كان signedBy يُقبل من الطلب فيمكن التوقيع باسم أي شخص —
+      // الآن يُفرض اسم المستخدم المصادق دائماً (signedById يبقى المرجع الرسمي)
+      signedBy: user.name,
       signedById: user.id,
       signedAt: new Date(),
     }
@@ -120,4 +136,3 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return handleDbError(error, 'حفظ تقرير السلامة')
   }
 }
-
