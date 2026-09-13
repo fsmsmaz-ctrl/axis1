@@ -128,4 +128,3 @@ export async function GET(req: NextRequest) {
     return handleDbError(error, 'جلب بيانات الأداء')
   }
 }
-
