@@ -2,13 +2,18 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { safeDbOp, handleDbError, validateRequired, parseNumber, parseDate, buildAuditDetails } from '@/lib/api-helpers'
-import { canWrite } from '@/lib/auth'
+import { canWrite, hasPermission } from '@/lib/auth'
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = await getAuthUser(req)
     if (!user) {
       return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
+    }
+
+    // SECURITY FIX: تفاصيل المشروع تتضمن أرقاماً مالية (إيراد/تكلفة/ربح) — بوابة قراءة
+    if (!hasPermission(user.role, 'projects', user.permissions, user.email)) {
+      return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية عرض المشاريع' }, { status: 403 })
     }
 
     const { id } = await params
@@ -208,4 +213,3 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     return handleDbError(error, 'حذف المشروع')
   }
 }
-
