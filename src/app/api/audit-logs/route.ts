@@ -14,6 +14,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'forbidden', message: 'سجل المراقبة متاح فقط للإدارة' }, { status: 403 })
   }
 
+  var isTopManagement = user.role === 'top_management'
+
   var searchParams = new URL(req.url).searchParams
   var entity = searchParams.get('entity')
   var action = searchParams.get('action')
@@ -21,10 +23,8 @@ export async function GET(req: NextRequest) {
   var userId = searchParams.get('userId')
   var dateFrom = searchParams.get('dateFrom')
   var dateTo = searchParams.get('dateTo')
-  var page = parseInt(searchParams.get('page') || '1')
-  var limit = parseInt(searchParams.get('limit') || '50')
-
-  if (limit > 200) limit = 200
+  var page = Math.max(1, parseInt(searchParams.get('page') || '1') || 1)
+  var limit = Math.min(Math.max(1, parseInt(searchParams.get('limit') || '50') || 50), 200)
 
   var where: any = {}
   if (entity) where.entity = entity
@@ -33,9 +33,22 @@ export async function GET(req: NextRequest) {
   if (userId) where.userId = userId
 
   // FIX: Non-top_management can only see their own project's logs
-  if (user.role !== 'top_management' && !projectId) {
-    // PM without projectId filter — return empty to avoid leaking other projects
-    return NextResponse.json({ logs: [], total: 0, page, totalPages: 0, entityStats: [], actionStats: [], users: [] })
+  // SECURITY FIX: كان الفحص شكلياً — يطلب projectId فقط دون التحقق أن المشروع
+  // مُسند لهذا المدير فعلاً، فكان يستطيع قراءة سجلات أي مشروع بمعرفة معرفه
+  if (!isTopManagement) {
+    if (!projectId) {
+      // PM without projectId filter — return empty to avoid leaking other projects
+      return NextResponse.json({ logs: [], total: 0, page, totalPages: 0, entityStats: [], actionStats: [], users: [] })
+    }
+    var ownedProject = await safeDbOp(
+      () => db.project.findUnique({ where: { id: String(projectId) }, select: { managerId: true, engineerId: true } }),
+      'التحقق من ملكية المشروع'
+    )
+    var isProjectOwner = ownedProject.success && ownedProject.data &&
+      (ownedProject.data.managerId === user.id || ownedProject.data.engineerId === user.id)
+    if (!isProjectOwner) {
+      return NextResponse.json({ logs: [], total: 0, page, totalPages: 0, entityStats: [], actionStats: [], users: [] })
+    }
   }
 
   if (dateFrom || dateTo) {
@@ -63,7 +76,8 @@ export async function GET(req: NextRequest) {
     ),
     safeDbOp(function() { return db.auditLog.count({ where }) }, 'عد سجلات المراقبة'),
     safeDbOp(
-      () => db.user.findMany({ where: { active: true }, select: { id: true, name: true, nameEn: true, email: true }, orderBy: { name: 'asc' } }),
+      // SECURITY FIX: البريد الإلكتروني لأعضاء الفريق لا يُكشف لغير الإدارة العليا
+      () => db.user.findMany({ where: { active: true }, select: { id: true, name: true, nameEn: true, email: isTopManagement }, orderBy: { name: 'asc' } }),
       'جلب قائمة المستخدمين'
     ),
   ])
@@ -97,3 +111,4 @@ export async function GET(req: NextRequest) {
     entityStats, actionStats, users,
   })
 }
+
