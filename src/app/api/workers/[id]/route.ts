@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
+import { canWrite } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { handleDbError, safeDbOp } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
@@ -9,6 +10,11 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
   if (!user) {
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
+  }
+
+  // SECURITY FIX: كان المسار مكشوفاً لأي مستخدم مصادق
+  if (!canWrite(user.role, 'workers', user.permissions)) {
+    return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية تعديل العمال' }, { status: 403 })
   }
 
   var userId = user.id
@@ -83,6 +89,11 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
   }
 
+  // SECURITY FIX: كان المسار مكشوفاً لأي مستخدم مصادق
+  if (!canWrite(user.role, 'workers', user.permissions)) {
+    return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية حذف العمال' }, { status: 403 })
+  }
+
   var userId = user.id
 
   var rl = checkRateLimit(req, RateLimitPresets.write)
@@ -133,3 +144,4 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     return handleDbError(error, 'حذف العامل')
   }
 }
+
