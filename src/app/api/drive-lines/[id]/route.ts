@@ -4,6 +4,11 @@ import { db } from '@/lib/db'
 import { handleDbError, parseNumber, safeDbOp } from '@/lib/api-helpers'
 import { canWrite } from '@/lib/auth'
 import { notifyUsers } from '@/lib/notify'
+import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
+
+// أدوار مسموح لها بتغيير الأسعار — SECURITY FIX: كان مهندس الموقع ومسؤول السلامة
+// يستطيعان تغيير سعر المتر فيُعاد حساب إيرادات التقارير المعتمدة بصمت
+var PRICING_ROLES = ['top_management', 'project_manager']
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -13,6 +18,13 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية لتعديل خطوط الحفر' }, { status: 403 })
     }
 
+    var rl = checkRateLimit(req, RateLimitPresets.write)
+    if (rl.limited) {
+      return NextResponse.json(
+        { error: 'too_many_requests', message: 'طلبات كثيرة جداً، يرجى الانتظار قليلاً' },
+        { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } }
+      )
+    }
     var { id } = await params
     var body = await req.json()
 
@@ -35,11 +47,27 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     if (body.soilType !== undefined) updateData.soilType = String(body.soilType)
     if (body.depth !== undefined) updateData.depth = parseNumber(body.depth, 0)
     // v13: سعر المتر الخاص بالخط — تغييره يعيد حساب كل تقارير هذا الخط بدقة
+    // SECURITY FIX: تغيير السعر مقيّد بالإدارة العليا ومدير المشروع فقط لأنه يعيد
+    // كتابة الإيرادات التاريخية (بما فيها التقارير المعتمدة) — وهو فعل مالي إداري
     var priceChanged = false
     if (body.pricePerMeter !== undefined) {
+      var isPricingRole = PRICING_ROLES.includes(user.role) || user.email === 'admin@axis.om'
+      if (!isPricingRole) {
+        return NextResponse.json(
+          { error: 'forbidden', message: 'تغيير سعر المتر متاح للإدارة العليا ومدير المشروع فقط' },
+          { status: 403 }
+        )
+      }
       var newPrice = (body.pricePerMeter === null || String(body.pricePerMeter) === '')
         ? null
         : parseNumber(body.pricePerMeter, 0)
+      // SECURITY FIX: منع الأسعار السالبة أو العملاقة
+      if (newPrice !== null && (!Number.isFinite(newPrice) || newPrice < 0 || newPrice > 100000)) {
+        return NextResponse.json(
+          { error: 'invalid_price', message: 'سعر المتر يجب أن يكون رقماً موجباً ومعقولاً' },
+          { status: 400 }
+        )
+      }
       if (newPrice !== existing.pricePerMeter) priceChanged = true
       updateData.pricePerMeter = newPrice
     }
@@ -90,7 +118,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
           action: 'update',
           entity: 'drive_line',
           entityId: id,
-          details: 'تعديل خط الحفر: ' + existing.lineNumber + ' (' + existing.startPoint + ' → ' + existing.endPoint + ')',
+          // SECURITY FIX: توثيق تغيير السعر صراحة (القديمة → الجديدة) + عدد التقارير المتأثرة
+          details: priceChanged
+            ? 'تعديل خط الحفر: ' + existing.lineNumber + ' (' + existing.startPoint + ' → ' + existing.endPoint + ') — تغيير سعر المتر من ' + (existing.pricePerMeter ?? 'بدون') + ' إلى ' + (updateResult.data.pricePerMeter ?? 'بدون') + ' — أعيد حساب ' + recalculatedReports + ' تقرير'
+            : 'تعديل خط الحفر: ' + existing.lineNumber + ' (' + existing.startPoint + ' → ' + existing.endPoint + ')',
         },
       }), 'سجل التدقيق'),
     ]).catch(function() {})
