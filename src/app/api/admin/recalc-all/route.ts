@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db, invalidateCachePrefix } from '@/lib/db'
+import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
+import { safeDbOp } from '@/lib/api-helpers'
 
 // Admin/Manager endpoint to recalculate ALL progress data.
 // Call via: POST /api/admin/recalc-all
@@ -16,10 +18,23 @@ export async function POST(req: NextRequest) {
     if (!user) {
       return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
     }
-    if (user.role !== 'top_management' && user.role !== 'project_manager') {
+    // SECURITY FIX: كان مدير المشروع مسموحاً — عملية عالمية تعيد كتابة المبالغ
+    // المالية لكل التقارير (بما فيها المعتمدة) أصبحت للإدارة العليا ومدير النظام فقط
+    var isSystemAdmin = (user.email || '').toLowerCase().trim() === 'admin@axis.om'
+    if (user.role !== 'top_management' && !isSystemAdmin) {
       return NextResponse.json(
-        { error: 'forbidden', message: 'صلاحية المدير مطلوبة' },
+        { error: 'forbidden', message: 'إعادة الحساب الشاملة متاحة للإدارة العليا فقط' },
         { status: 403 }
+      )
+    }
+
+    // SECURITY FIX: حد معدل — العملية ثقيلة على قاعدة البيانات وكانت قابلة
+    // للاستدعاء المتكرر بلا قيود (إرهاق Postgres)
+    var rl = checkRateLimit(req, { maxRequests: 3, windowSeconds: 300, keyPrefix: 'recalc' })
+    if (rl.limited) {
+      return NextResponse.json(
+        { error: 'too_many_requests', message: 'طلبات كثيرة جداً — إعادة الحساب الشاملة مسموحة 3 مرات كل 5 دقائق' },
+        { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } }
       )
     }
 
@@ -151,6 +166,20 @@ export async function POST(req: NextRequest) {
     // Invalidate dashboard cache so fresh data shows up immediately.
     invalidateCachePrefix('dashboard:')
 
+    // SECURITY FIX: العملية تعيد كتابة مبلغات مالية — تُوثق الآن في سجل التدقيق
+    await safeDbOp(
+      () => db.auditLog.create({
+        data: {
+          userId: user.id,
+          action: 'update',
+          entity: 'system',
+          entityId: 'recalc-all',
+          details: 'إعادة حساب شاملة: ' + results.projectsFixed + ' مشروع، ' + results.driveLinesFixed + ' خط، ' + results.reportsFixed + ' تقرير' + (results.errors.length > 0 ? ' (' + results.errors.length + ' خطأ)' : ''),
+        },
+      }),
+      'سجل التدقيق'
+    )
+
     return NextResponse.json({
       success: true,
       message: 'اكتملت إعادة الحساب. تحديث لوحة التحكم الآن.',
@@ -158,7 +187,8 @@ export async function POST(req: NextRequest) {
     })
   } catch (error: any) {
     console.error('[recalc-all] Error:', error)
-    return NextResponse.json({ error: 'server_error', message: error.message }, { status: 500 })
+    // SECURITY FIX: كان يُعيد error.message الخام للعميل (تسريب تفاصيل داخلية)
+    return NextResponse.json({ error: 'server_error', message: 'فشلت إعادة الحساب. حاول مرة أخرى.' }, { status: 500 })
   }
 }
 
