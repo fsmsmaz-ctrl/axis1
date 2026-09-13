@@ -9,6 +9,7 @@ export interface SessionUser {
   phone?: string | null
   language: string
   permissions?: Record<string, boolean> | null
+  tokenVersion?: number
 }
 
 export const SESSION_COOKIE = 'axis_session'
@@ -134,6 +135,8 @@ export const WRITE_ROLES: Record<string, string[]> = {
   // (مدير النظام admin@axis.om يتجاوز الفحص عبر isTaskManager)
   tasks: ['top_management', 'project_manager'],
   company_assets: ['top_management', 'project_manager', 'site_engineer', 'accountant'],
+  // العمال يُدارون من وحدة السلامة — نفس أدوار safety
+  workers: ['top_management', 'project_manager', 'site_engineer', 'hse_officer'],
 }
 
 export function canWrite(userRole: string, resource: string, userPermissions?: Record<string, boolean> | null): boolean {
