@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
-import { canWrite, SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
+import { canWrite, hasPermission, SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { safeDbOp, handleDbError, recalcProgress } from '@/lib/api-helpers'
 
@@ -11,6 +11,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  // SECURITY FIX: كانت القراءة متاحة لأي مستخدم مصادق متجاوزة صلاحيات التقارير المخصصة
+  var canRead = hasPermission(user.role, 'daily_reports', user.permissions, user.email)
+    || hasPermission(user.role, 'safety', user.permissions, user.email)
+    || hasPermission(user.role, 'rpt_daily_site', user.permissions, user.email)
+  if (!canRead) {
+    return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية عرض التقارير اليومية' }, { status: 403 })
   }
 
   var { id } = await params
@@ -105,13 +113,62 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: 'forbidden', message: 'تعديل التقارير اليومية متاح للمشرف ومدير النظام فقط' }, { status: 403 })
     }
 
+    // SECURITY FIX: فحص ملكية المسودة — كان أي مشرف يستطيع تعديل مسودات مشرف آخر
+    // وتسليمها باسمه بمعرفة المعرف فقط (المتغير createdById كان يُجلب ولا يُستخدم)
+    if (!isSystemAdmin && isSupervisor && existingReport.createdById !== user!.id) {
+      return NextResponse.json(
+        { error: 'forbidden', message: 'لا يمكنك تعديل مسودة أنشأها مشرف آخر' },
+        { status: 403 }
+      )
+    }
+
+    // SECURITY FIX: حدود القراءات (نفس قواعد الإنشاء) — منع القيم السالبة/العملاقة
     var startReading = parseFloat(body.startReading) || 0
     var endReading = parseFloat(body.endReading) || 0
+    if (startReading < 0 || endReading < 0) {
+      return NextResponse.json(
+        { error: 'invalid_reading', message: 'قراءات العدّاد يجب أن تكون أرقاماً غير سالبة' },
+        { status: 400 }
+      )
+    }
+    if (endReading < startReading) {
+      return NextResponse.json(
+        { error: 'invalid_reading', message: 'قراءة النهاية يجب أن تكون أكبر من أو تساوي قراءة البداية' },
+        { status: 400 }
+      )
+    }
+    if (endReading > 1000000) {
+      return NextResponse.json(
+        { error: 'invalid_reading', message: 'قيمة قراءة غير معقولة (الحد الأقصى 1,000,000 متر)' },
+        { status: 400 }
+      )
+    }
     var dailyMeters = Math.max(0, endReading - startReading)
 
     // إعادة حساب الإيراد عند التعديل = الأمتار الجديدة × سعر متر خط الحفر (أو سعر المشروع احتياطياً)
     // v13: نستخدم الخط الفعلي النهائي للتقرير (الموجود حالياً إن لم يُرسل خط جديد)
     var finalDriveLineId = fromSafety ? existingReport.driveLineId : (body.driveLineId !== undefined ? (body.driveLineId || null) : existingReport.driveLineId)
+
+    // SECURITY FIX: فحص انتماء خط الحفر للمشروع عند التعديل — كان POST يفحص و PUT لا
+    // يفحص، فمكن ربط تقرير المشروع (أ) بخط من مشروع (ب) بسعر أعلى (تلوث مالي وتقدم)
+    if (finalDriveLineId && finalDriveLineId !== existingReport.driveLineId) {
+      var lineCheckResult = await safeDbOp(
+        () => db.driveLine.findUnique({ where: { id: String(finalDriveLineId) }, select: { projectId: true } }),
+        'التحقق من خط الحفر'
+      )
+      if (!lineCheckResult.success || !lineCheckResult.data) {
+        return NextResponse.json(
+          { error: 'invalid_drive_line', message: 'خط الحفر المحدد غير موجود' },
+          { status: 400 }
+        )
+      }
+      if (lineCheckResult.data.projectId !== existingReport.projectId) {
+        return NextResponse.json(
+          { error: 'invalid_drive_line', message: 'خط الحفر المحدد لا ينتمي إلى مشروع هذا التقرير' },
+          { status: 400 }
+        )
+      }
+    }
     var projectPriceResult = await safeDbOp(
       () => db.project.findUnique({ where: { id: existingReport.projectId }, select: { pricePerMeter: true } }),
       'جلب سعر المتر'
@@ -138,7 +195,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     var totalLength = driveLine ? driveLine.totalLength : 0
     var totalMeters = endReading
     var remainingMeters = Math.max(0, totalLength - totalMeters)
-    var progressPercent = totalLength > 0 ? (totalMeters / totalLength) * 100 : 0
+    // SECURITY FIX: حصر نسبة التقدم بـ 100% + منع القيم السالبة للساعات والعمال
+    var progressPercent = totalLength > 0 ? Math.min((totalMeters / totalLength) * 100, 100) : 0
 
     // Update the report (safe)
     var updateResult = await safeDbOp(
@@ -151,10 +209,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
           weather: fromSafety ? existingReport.weather : (body.weather || null),
           workStartTime: body.workStartTime || null,
           workEndTime: body.workEndTime || null,
-          operatingHours: parseFloat(body.operatingHours) || 0,
-          stoppageHours: parseFloat(body.stoppageHours) || 0,
+          operatingHours: Math.max(0, parseFloat(body.operatingHours) || 0),
+          stoppageHours: Math.max(0, parseFloat(body.stoppageHours) || 0),
           stoppageReason: body.stoppageReason || null,
-          workersCount: parseInt(body.workersCount) || 0,
+          workersCount: Math.max(0, parseInt(body.workersCount) || 0),
           attendees: body.attendees || null,
           startReading: startReading,
           endReading: endReading,
@@ -164,12 +222,12 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
           remainingMeters: remainingMeters,
           progressPercent: progressPercent,
           soilExcavated: body.soilExcavated || null,
-          pipesInstalled: parseInt(body.pipesInstalled) || 0,
+          pipesInstalled: Math.max(0, parseInt(body.pipesInstalled) || 0),
           productionNotes: body.productionNotes || null,
           problems: body.problems || null,
-          // الحالة: تُحفظ الحالية إلا إذا طُلب صراحة draft/submitted —
-          // لا يمكن تعيين approved/rejected إلا عبر مسار الاعتماد المخصص
-          status: (body.status === 'draft' || body.status === 'submitted') ? body.status : existingReport.status,
+          // SECURITY FIX: التسليم حصراً عبر المسار المخصص /submit — كان قبول
+          // status:'submitted' هنا يتخطى إشعار المعتمدين وسجل تدقيق التسليم
+          status: body.status === 'draft' ? 'draft' : existingReport.status,
         },
       }),
       'تحديث التقرير اليومي'
@@ -312,4 +370,3 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     return handleDbError(error, 'حذف التقرير اليومي')
   }
 }
-
