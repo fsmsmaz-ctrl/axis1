@@ -90,8 +90,9 @@ export async function GET(req: NextRequest) {
     )
   } catch (error: any) {
     console.error('[Dashboard API] Fatal error:', error)
+    // SECURITY FIX: كان يُعيد details: error.message للعميل (تسريب تفاصيل داخلية)
     return NextResponse.json(
-      { error: 'dashboard_error', details: error?.message || 'Unknown error' },
+      { error: 'dashboard_error', message: 'حدث خطأ غير متوقع أثناء تحميل لوحة التحكم' },
       { status: 500 }
     )
   }
@@ -339,4 +340,6 @@ async function buildDashboard() {
   }
 }
 
-                                                  
+
+
+                                                
