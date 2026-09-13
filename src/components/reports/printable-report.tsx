@@ -481,4 +481,3 @@ export function PrintableReport({ data, generatedBy }: { data: PrintableData; ge
     </div>
   )
 }
-
