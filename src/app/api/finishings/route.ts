@@ -3,13 +3,18 @@ import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { handleDbError, validateRequired, safeDbOp, parseDateRange } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
-import { canWrite } from '@/lib/auth'
+import { canWrite, hasPermission } from '@/lib/auth'
 import { notifyUsers } from '@/lib/notify'
 
 export async function GET(req: NextRequest) {
   try {
     const user = await getAuthUser(req)
     if (!user) return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
+
+    // SECURITY FIX: سجلات التسليم تتضمن ملاحظات العميل وحالات القبول — بوابة قراءة
+    if (!hasPermission(user.role, 'finishings', user.permissions, user.email)) {
+      return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية عرض التشطيبات' }, { status: 403 })
+    }
 
     const searchParams = new URL(req.url).searchParams
     const projectId = searchParams.get('projectId')
@@ -97,5 +102,3 @@ export async function POST(req: NextRequest) {
     return handleDbError(error, 'إنشاء التشطيب')
   }
 }
-
-
