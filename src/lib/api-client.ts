@@ -1,12 +1,10 @@
 // Centralized API client with session management
-// Uses localStorage directly (synchronous) for maximum reliability
-// Falls back to cookie-based auth if token is missing
+// SECURITY: المصادقة تعتمد حصراً على كوكي httpOnly (credentials:'include') —
+// أُزيل مسار تخزين التوكن في localStorage لأنه يجعل الجلسة سرقة عبر أي XSS
 
 'use client'
 
 import { useAppStore } from '@/lib/store'
-
-const TOKEN_KEY = 'axis_token'
 
 interface ApiOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'DELETE'
@@ -23,45 +21,15 @@ interface ApiResult<T = any> {
 }
 
 /**
- * Get the JWT token from localStorage (synchronous, always available)
- * This is more reliable than reading from Zustand store because
- * localStorage is synchronously available on every render
- */
-function getStoredToken(): string | null {
-  if (typeof window === 'undefined') return null
-  try {
-    return localStorage.getItem(TOKEN_KEY)
-  } catch {
-    return null
-  }
-}
-
-/**
- * Save the JWT token to localStorage AND Zustand store
- */
-export function saveStoredToken(token: string): void {
-  if (typeof window !== 'undefined') {
-    try {
-      localStorage.setItem(TOKEN_KEY, token)
-    } catch {
-      // ignore
-    }
-  }
-  // Also save to Zustand for UI state
-  try {
-    useAppStore.getState().setToken(token)
-  } catch {
-    // ignore
-  }
-}
-
-/**
- * Remove the JWT token from localStorage AND Zustand store
+ * SECURITY FIX: حُذفت دوال تخزين التوكن في localStorage (getStoredToken / saveStoredToken)
+ * — كانت فخاً كامناً: أي استخدام مستقبلي لها يُسقط JWT في localStorage قابل للسرقة.
+ * clearStoredToken أبقيتها للتوافق مع الاستدعاءات القائمة عند الخروج — تنظف أي توكن قديم
+ * متبقٍ من نسخ سابقة ثم تمسح حالة الواجهة.
  */
 export function clearStoredToken(): void {
   if (typeof window !== 'undefined') {
     try {
-      localStorage.removeItem(TOKEN_KEY)
+      localStorage.removeItem('axis_token')
     } catch {
       // ignore
     }
@@ -75,7 +43,7 @@ export function clearStoredToken(): void {
 
 /**
  * Authenticated fetch - drop-in replacement for fetch()
- * Automatically adds Authorization header with JWT token from localStorage
+ * المصادقة عبر كوكي httpOnly تلقائياً (credentials:'include')
  * Use this for ALL API requests to ensure authentication works
  *
  * NOTE: 401 responses are returned to the caller — they are NOT silently
@@ -88,9 +56,6 @@ export async function authedFetch(
   url: string,
   options: RequestInit & { noCache?: boolean } = {}
 ): Promise<Response> {
-  // Read token synchronously from localStorage
-  const token = getStoredToken()
-
   const headers: Record<string, string> = {
     ...(options.headers as Record<string, string>),
   }
@@ -101,10 +66,7 @@ export async function authedFetch(
     headers['Pragma'] = 'no-cache'
   }
 
-  // Add Authorization header if we have a token
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`
-  }
+  // SECURITY: لا يوجد Authorization header — الكوكي httpOnly وحده هو مصدر الجلسة
 
   // Set Content-Type for requests with body
   if (options.body && !headers['Content-Type']) {
@@ -268,3 +230,4 @@ export function getErrorMessage(error: string, isRtl: boolean, customMessage?: s
   // Default error message
   return isRtl ? 'حدث خطأ، يرجى المحاولة مرة أخرى' : 'An error occurred, please try again'
 }
+
