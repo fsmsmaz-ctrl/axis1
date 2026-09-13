@@ -28,7 +28,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       () => db.dailyReport.findUnique({
         where: { id },
         select: {
-          status: true, projectId: true, reportDate: true,
+          status: true, projectId: true, reportDate: true, createdById: true,
           project: { select: { name: true, code: true } },
         },
       }),
@@ -50,6 +50,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     var isSystemAdmin = (user!.email || '').toLowerCase().trim() === SYSTEM_ADMIN_EMAIL
     if (!isSupervisor && !isSystemAdmin) {
       return NextResponse.json({ error: 'forbidden', message: 'تسليم التقارير اليومية متاح للمشرف ومدير النظام فقط' }, { status: 403 })
+    }
+
+    // SECURITY FIX: فحص ملكية المسودة — منع تسليم مسودات المشرفين الآخرين باسمك
+    if (!isSystemAdmin && isSupervisor && existingReport.createdById !== user!.id) {
+      return NextResponse.json(
+        { error: 'forbidden', message: 'لا يمكنك تسليم مسودة أنشأها مشرف آخر' },
+        { status: 403 }
+      )
     }
 
     var updateResult = await safeDbOp(
@@ -94,5 +102,3 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return handleDbError(error, 'تسليم التقرير')
   }
 }
-
-
