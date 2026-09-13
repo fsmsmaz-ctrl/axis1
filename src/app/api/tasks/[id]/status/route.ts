@@ -96,7 +96,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         return NextResponse.json({ error: 'invalid_transition', message: 'بدء التنفيذ متاح فقط للمهام الجديدة أو المعادة للتعديل' }, { status: 409 })
       }
       const data = { ...buildTransitionData(task, 'in_progress', now), startedAt: task.startedAt || now, lastUpdatedById: user.id }
-      const updated = await safeDbOp(() => db.task.update({ where: { id }, data }), 'بدء التنفيذ')
+      // SECURITY FIX: تحديث مشروط بالحالة السابقة — يمنع سباق الحالات (طلبان متوازيان)
+      const condRes = await safeDbOp(() => db.task.updateMany({ where: { id, status: task.status }, data }), 'بدء التنفيذ')
+      if (!condRes.success) return condRes.response
+      if (condRes.data.count !== 1) return NextResponse.json({ error: 'conflict', message: 'تغيّرت حالة المهمة لحظة التنفيذ — أعد تحميل الصفحة' }, { status: 409 })
+      const updated = await safeDbOp(() => db.task.findUnique({ where: { id } }), 'بدء التنفيذ')
       if (!updated.success) return updated.response
       await db.taskEvent.create({ data: { taskId: id, actorId: user.id, type: 'status_change', fromStatus: task.status, toStatus: 'in_progress' } })
       return NextResponse.json({ task: updated.data, success: true })
@@ -109,7 +113,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       }
       if (!reason) return NextResponse.json({ error: 'missing_fields', message: 'سبب الانتظار مطلوب' }, { status: 400 })
       const data = { ...buildTransitionData(task, 'waiting', now), waitingReason: reason, lastUpdatedById: user.id }
-      const updated = await safeDbOp(() => db.task.update({ where: { id }, data }), 'تحديث حالة الانتظار')
+      const condRes = await safeDbOp(() => db.task.updateMany({ where: { id, status: task.status }, data }), 'تحديث حالة الانتظار')
+      if (!condRes.success) return condRes.response
+      if (condRes.data.count !== 1) return NextResponse.json({ error: 'conflict', message: 'تغيّرت حالة المهمة لحظة التنفيذ — أعد تحميل الصفحة' }, { status: 409 })
+      const updated = await safeDbOp(() => db.task.findUnique({ where: { id } }), 'تحديث حالة الانتظار')
       if (!updated.success) return updated.response
       await db.taskEvent.create({ data: { taskId: id, actorId: user.id, type: 'status_change', fromStatus: task.status, toStatus: 'waiting', note: reason } })
       // إعلام الإدارة أن المهمة متوقفة بسبب جهة خارجية
@@ -135,7 +142,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         return NextResponse.json({ error: 'invalid_transition', message: 'الاستئناف متاح فقط للمهام في حالة الانتظار' }, { status: 409 })
       }
       const data = { ...buildTransitionData(task, 'in_progress', now), lastUpdatedById: user.id }
-      const updated = await safeDbOp(() => db.task.update({ where: { id }, data }), 'استئناف المهمة')
+      const condRes = await safeDbOp(() => db.task.updateMany({ where: { id, status: task.status }, data }), 'استئناف المهمة')
+      if (!condRes.success) return condRes.response
+      if (condRes.data.count !== 1) return NextResponse.json({ error: 'conflict', message: 'تغيّرت حالة المهمة لحظة التنفيذ — أعد تحميل الصفحة' }, { status: 409 })
+      const updated = await safeDbOp(() => db.task.findUnique({ where: { id } }), 'استئناف المهمة')
       if (!updated.success) return updated.response
       await db.taskEvent.create({ data: { taskId: id, actorId: user.id, type: 'status_change', fromStatus: 'waiting', toStatus: 'in_progress', note: 'استئناف التنفيذ' } })
       return NextResponse.json({ task: updated.data, success: true })
@@ -144,12 +154,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (action === 'ready') {
       // جاهزة للمراجعة — من الموظف، مع ملاحظة إلزامية عن الإجراء المنفذ
       if (manager === false && !isAssignee) { /* unreachable — محمي أعلاه */ }
-      if (!['in_progress', 'returned', 'waiting', 'new'].includes(task.status)) {
-        return NextResponse.json({ error: 'invalid_transition', message: 'الإرسال للمراجعة غير متاح من الحالة الحالية' }, { status: 409 })
+      // SECURITY FIX: حذف 'new' — كان يمكن تخطي مرحلة بدء التنفيذ كلياً
+      // (الإرسال للمراجعة مباشرة بعد الإسناد دون تسجيل بدء العمل)
+      if (!['in_progress', 'returned', 'waiting'].includes(task.status)) {
+        return NextResponse.json({ error: 'invalid_transition', message: 'الإرسال للمراجعة متاح فقط بعد بدء التنفيذ (ابدأ أولاً)' }, { status: 409 })
       }
       if (!note) return NextResponse.json({ error: 'missing_fields', message: 'ملاحظة الإجراء المنفذ مطلوبة عند الإرسال للمراجعة' }, { status: 400 })
-      const data = { ...buildTransitionData(task, 'ready_review', now), reviewRequestedAt: now, reviewNote: note, lastUpdatedById: user.id }
-      const updated = await safeDbOp(() => db.task.update({ where: { id }, data }), 'الإرسال للمراجعة')
+      // طابع زمني احتياطي للبدء إن فُقد (توافق مع السجلات القديمة)
+      const data = { ...buildTransitionData(task, 'ready_review', now), startedAt: task.startedAt || now, reviewRequestedAt: now, reviewNote: note, lastUpdatedById: user.id }
+      const condRes = await safeDbOp(() => db.task.updateMany({ where: { id, status: task.status }, data }), 'الإرسال للمراجعة')
+      if (!condRes.success) return condRes.response
+      if (condRes.data.count !== 1) return NextResponse.json({ error: 'conflict', message: 'تغيّرت حالة المهمة لحظة التنفيذ — أعد تحميل الصفحة' }, { status: 409 })
+      const updated = await safeDbOp(() => db.task.findUnique({ where: { id } }), 'الإرسال للمراجعة')
       if (!updated.success) return updated.response
       await db.taskEvent.create({ data: { taskId: id, actorId: user.id, type: 'review', fromStatus: task.status, toStatus: 'ready_review', note } })
       // إشعار المديرين أن المهمة جاهزة للمراجعة
@@ -172,12 +188,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // ─────────────────── انتقالات المدير فقط ───────────────────
     if (action === 'return') {
       if (!manager) return NextResponse.json({ error: 'forbidden', message: 'إعادة المهمة للتعديل متاحة للإدارة فقط' }, { status: 403 })
+      // SECURITY FIX: منع الإدارة الذاتية للمهام المسندة للمدير نفسه
+      var sysAdminReturner = (user.email || '').toLowerCase().trim() === 'admin@axis.om'
+      if (task.assigneeId === user.id && !sysAdminReturner) {
+        return NextResponse.json({ error: 'forbidden', message: 'لا يمكنك إعادة مهمة مسندة إليك — اطلب من مدير آخر مراجعتها' }, { status: 403 })
+      }
       if (task.status !== 'ready_review') {
         return NextResponse.json({ error: 'invalid_transition', message: 'الإعادة للتعديل متاحة فقط للمهام الجاهزة للمراجعة' }, { status: 409 })
       }
       if (!reason) return NextResponse.json({ error: 'missing_fields', message: 'سبب الإعادة للتعديل مطلوب' }, { status: 400 })
-      const data = { ...buildTransitionData(task, 'returned', now), returnCount: task.returnCount + 1, lastUpdatedById: user.id }
-      const updated = await safeDbOp(() => db.task.update({ where: { id }, data }), 'إعادة المهمة للتعديل')
+      const data = { ...buildTransitionData(task, 'returned', now), lastUpdatedById: user.id }
+      // SECURITY FIX: زيادة returnCount بشكل ذرّي + شرط الحالة (سباق الحالات)
+      const condRes = await safeDbOp(() => db.task.updateMany({ where: { id, status: 'ready_review' }, data: { ...data, returnCount: { increment: 1 } } }), 'إعادة المهمة للتعديل')
+      if (!condRes.success) return condRes.response
+      if (condRes.data.count !== 1) return NextResponse.json({ error: 'conflict', message: 'تغيّرت حالة المهمة لحظة التنفيذ — أعد تحميل الصفحة' }, { status: 409 })
+      const updated = await safeDbOp(() => db.task.findUnique({ where: { id } }), 'إعادة المهمة للتعديل')
       if (!updated.success) return updated.response
       await db.taskEvent.create({ data: { taskId: id, actorId: user.id, type: 'returned', fromStatus: 'ready_review', toStatus: 'returned', note: reason } })
       // إشعار الموظف بإعادة المهمة
@@ -198,6 +223,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     if (action === 'approve') {
       if (!manager) return NextResponse.json({ error: 'forbidden', message: 'اعتماد المهمة متاح للإدارة فقط' }, { status: 403 })
+      // SECURITY FIX: منع الاعتماد الذاتي — المدير يعتمد مهمته المسندة نفسه فيضخم
+      // مؤشر closedOnFirstReview في تقرير الأداء (فصل المهام)
+      var sysAdminApprover = (user.email || '').toLowerCase().trim() === 'admin@axis.om'
+      if (task.assigneeId === user.id && !sysAdminApprover) {
+        return NextResponse.json({ error: 'forbidden', message: 'لا يمكنك اعتماد مهمة مسندة إليك — اطلب من مدير آخر اعتمادها' }, { status: 403 })
+      }
       if (task.status !== 'ready_review') {
         return NextResponse.json({ error: 'invalid_transition', message: 'الاعتماد متاح فقط للمهام الجاهزة للمراجعة' }, { status: 409 })
       }
@@ -208,7 +239,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         closedOnFirstReview: task.returnCount === 0,
         lastUpdatedById: user.id,
       }
-      const updated = await safeDbOp(() => db.task.update({ where: { id }, data }), 'اعتماد المهمة')
+      // SECURITY FIX: تحديث مشروط بـ ready_review — طلبان متوازيان كانا يعتمدان
+      // المهمة مرتين ويولدان مهمتين دوريتين بدل واحدة
+      const condRes = await safeDbOp(() => db.task.updateMany({ where: { id, status: 'ready_review' }, data }), 'اعتماد المهمة')
+      if (!condRes.success) return condRes.response
+      if (condRes.data.count !== 1) return NextResponse.json({ error: 'conflict', message: 'تغيّرت حالة المهمة لحظة التنفيذ — أعد تحميل الصفحة' }, { status: 409 })
+      const updated = await safeDbOp(() => db.task.findUnique({ where: { id } }), 'اعتماد المهمة')
       if (!updated.success) return updated.response
       await db.taskEvent.create({ data: { taskId: id, actorId: user.id, type: 'approved', fromStatus: 'ready_review', toStatus: 'closed', note: note || 'تم الاعتماد والإغلاق النهائي' } })
       // إشعار الموظف بالاعتماد
@@ -295,7 +331,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         cancelReason: reason,
         lastUpdatedById: user.id,
       }
-      const updated = await safeDbOp(() => db.task.update({ where: { id }, data }), 'إلغاء المهمة')
+      const condRes = await safeDbOp(() => db.task.updateMany({ where: { id, status: task.status }, data }), 'إلغاء المهمة')
+      if (!condRes.success) return condRes.response
+      if (condRes.data.count !== 1) return NextResponse.json({ error: 'conflict', message: 'تغيّرت حالة المهمة لحظة التنفيذ — أعد تحميل الصفحة' }, { status: 409 })
+      const updated = await safeDbOp(() => db.task.findUnique({ where: { id } }), 'إلغاء المهمة')
       if (!updated.success) return updated.response
       await db.taskEvent.create({ data: { taskId: id, actorId: user.id, type: 'cancelled', fromStatus: task.status, toStatus: 'cancelled', note: reason } })
       // إشعار الموظف بالإلغاء (ما لم يكن هو الملغي)
@@ -322,4 +361,4 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 }
 
-                                         
+                                      
