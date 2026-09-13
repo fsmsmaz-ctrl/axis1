@@ -5,7 +5,24 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import bcrypt from 'bcryptjs'
+import { timingSafeEqual } from 'crypto'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
+
+// مقارنة سلاسل بزمن ثابت — تمنع قياس التوقيت لكشف السر بايتاً بايتاً
+function timingSafeCompare(a: string, b: string): boolean {
+  try {
+    var bufA = Buffer.from(String(a))
+    var bufB = Buffer.from(String(b))
+    if (bufA.length !== bufB.length) {
+      // مقارنة وهمية لتسوية الزمن قبل الرفض
+      timingSafeEqual(bufA, bufA)
+      return false
+    }
+    return timingSafeEqual(bufA, bufB)
+  } catch {
+    return false
+  }
+}
 
 var ADMIN_EMAIL = 'admin@axis.om'
 
@@ -27,7 +44,8 @@ export async function POST(req: NextRequest) {
     if (!expectedKey) {
       return NextResponse.json({ error: 'INIT_SECRET_KEY not configured' }, { status: 500 })
     }
-    if (initKey !== expectedKey) {
+    // SECURITY FIX: مقارنة بزمن ثابت بدلاً من === القابلة لقياس التوقيت
+    if (!timingSafeCompare(initKey, expectedKey)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
