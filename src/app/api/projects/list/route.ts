@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
+import { hasPermission } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { handleDbError, safeDbOp } from '@/lib/api-helpers'
 
@@ -8,6 +9,12 @@ export async function GET(req: NextRequest) {
     const user = await getAuthUser(req)
     if (!user) {
       return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
+    }
+
+    // SECURITY FIX: بوابة قراءة — كانت القائمة (بأسعارها وحقولها المالية) متاحة
+    // لأي مستخدم مصادق حتى لو أُلغيت صلاحية projects الخاصة به
+    if (!hasPermission(user.role, 'projects', user.permissions, user.email)) {
+      return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية عرض المشاريع' }, { status: 403 })
     }
 
     const { searchParams } = new URL(req.url)
@@ -72,3 +79,4 @@ export async function GET(req: NextRequest) {
     return handleDbError(error, 'جلب قائمة المشاريع')
   }
 }
+
