@@ -96,10 +96,35 @@ export async function POST(req: NextRequest) {
     const validationError = validateRequired(body, ['projectId', 'reportDate'])
     if (validationError) return validationError
 
-    // Calculate production data
+    // SECURITY FIX: حدود القراءات — كانت تقبل أي قيمة (سالبة/عملاقة) مما يسمح
+    // بتضخيم الإيراد أو إكمال الخط وهمياً. الآن: قراءات غير سالبة ومنطقية الترتيب
     const startReading = parseNumber(body.startReading, 0)
     const endReading = parseNumber(body.endReading, 0)
+    if (startReading < 0 || endReading < 0) {
+      return NextResponse.json(
+        { error: 'invalid_reading', message: 'قراءات العدّاد يجب أن تكون أرقاماً غير سالبة' },
+        { status: 400 }
+      )
+    }
+    if (endReading < startReading) {
+      return NextResponse.json(
+        { error: 'invalid_reading', message: 'قراءة النهاية يجب أن تكون أكبر من أو تساوي قراءة البداية' },
+        { status: 400 }
+      )
+    }
+    if (endReading > 1000000) {
+      return NextResponse.json(
+        { error: 'invalid_reading', message: 'قيمة قراءة غير معقولة (الحد الأقصى 1,000,000 متر)' },
+        { status: 400 }
+      )
+    }
     const dailyMeters = Math.max(0, endReading - startReading)
+
+    // SECURITY FIX: منع القيم السالبة لساعات العمل/التوقف وعدد العمال والأنابيب
+    var operatingHours = Math.max(0, parseNumber(body.operatingHours, 0))
+    var stoppageHours = Math.max(0, parseNumber(body.stoppageHours, 0))
+    var workersCount = Math.max(0, parseInt(body.workersCount) || 0)
+    var pipesInstalled = Math.max(0, parseInt(body.pipesInstalled) || 0)
 
     // IMPORTANT: store reportDate as UTC midnight of the calendar date
     // the user picked. If body.reportDate is "2026-09-02" we want to store
@@ -169,7 +194,8 @@ export async function POST(req: NextRequest) {
     const totalLength = dlResult.success && dlResult.data ? dlResult.data.totalLength : 0
     const totalMeters = endReading
     const remainingMeters = Math.max(0, totalLength - totalMeters)
-    const progressPercent = totalLength > 0 ? (totalMeters / totalLength) * 100 : 0
+    // SECURITY FIX: حصر نسبة التقدم بـ 100% كحد أعلى
+    const progressPercent = totalLength > 0 ? Math.min((totalMeters / totalLength) * 100, 100) : 0
 
     // v13: الإيراد = الأمتار المحفورة اليوم × سعر متر خط الحفر (أو سعر المشروع احتياطياً للتقارير بلا خط)
     const driveLinePrice = dlResult.success && dlResult.data && dlResult.data.pricePerMeter != null ? dlResult.data.pricePerMeter : null
@@ -186,10 +212,10 @@ export async function POST(req: NextRequest) {
           weather: body.weather || null,
           workStartTime: body.workStartTime || null,
           workEndTime: body.workEndTime || null,
-          operatingHours: parseNumber(body.operatingHours, 0),
-          stoppageHours: parseNumber(body.stoppageHours, 0),
+          operatingHours: operatingHours,
+          stoppageHours: stoppageHours,
           stoppageReason: body.stoppageReason || null,
-          workersCount: parseInt(body.workersCount) || 0,
+          workersCount: workersCount,
           attendees: body.attendees || null,
           startReading,
           endReading,
@@ -199,10 +225,12 @@ export async function POST(req: NextRequest) {
           remainingMeters,
           progressPercent,
           soilExcavated: body.soilExcavated || null,
-          pipesInstalled: parseInt(body.pipesInstalled) || 0,
+          pipesInstalled: pipesInstalled,
           productionNotes: body.productionNotes || null,
           problems: body.problems || null,
-          status: body.status || 'draft',
+          // SECURITY FIX: قائمة سماح للحالة — كان يقبل 'approved'/'rejected' مباشرة
+          // عند الإنشاء بدون معتمِد مسجل
+          status: ['draft', 'submitted'].includes(body.status) ? body.status : 'draft',
           createdById: user.id,
         },
       }),
@@ -326,6 +354,3 @@ export async function POST(req: NextRequest) {
     return handleDbError(error, 'إنشاء التقرير اليومي')
   }
 }
-
-
-
