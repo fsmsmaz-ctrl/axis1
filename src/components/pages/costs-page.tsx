@@ -593,5 +593,4 @@ export default function CostsPage() {
     </div>
   )
 }
-
-                                                       
+                                                  
