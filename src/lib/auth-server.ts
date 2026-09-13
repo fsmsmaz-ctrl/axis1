@@ -15,11 +15,24 @@ function getSecretKey(): Uint8Array {
   return new TextEncoder().encode(secret)
 }
 
+// Dummy hash for timing equalization — same bcrypt cost as real hashes.
+// SECURITY: يمنع تعداد البريدات المسجلة عبر فرق التوقيت (المستخدم غير موجود
+// كان يرد فوراً بدون bcrypt بينما الموجود يستغرق ~100ms)
+var DUMMY_HASH_PREFIX = '$2a$12$C6UzMDM.H6dfI/f/IKcEe.'
+var DUMMY_HASH = DUMMY_HASH_PREFIX + 'O9Z0wFf0C4VK8qVLjI9BLuBUvtFkZKSlRjSCdPmOGVUFQI6jPilJe'
+
 export async function verifyCredentials(email: string, password: string): Promise<SessionUser | null> {
   try {
     const user = await db.user.findUnique({ where: { email: email.toLowerCase().trim() } })
-    if (!user) return null
-    if (!user.active) return null
+    if (!user) {
+      // نفس عمل bcrypt.compare لتسوية زمن الاستجابة
+      await bcrypt.compare(password, DUMMY_HASH).catch(() => false)
+      return null
+    }
+    if (!user.active) {
+      await bcrypt.compare(password, DUMMY_HASH).catch(() => false)
+      return null
+    }
 
     const valid = await bcrypt.compare(password, user.password)
     if (!valid) return null
@@ -37,6 +50,7 @@ export async function verifyCredentials(email: string, password: string): Promis
       phone: user.phone,
       language: user.language,
       permissions,
+      tokenVersion: user.tokenVersion,
     }
   } catch (error) {
     console.error('verifyCredentials error:', error)
@@ -55,6 +69,8 @@ export async function createSession(user: SessionUser): Promise<string> {
       phone: user.phone || null,
       language: user.language,
       permissions: user.permissions || null,
+      // SECURITY: إصدار الجلسة — تغييره يبطل كل التوكنات القديمة فوراً
+      tv: user.tokenVersion ?? 0,
     })
       .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
       .setIssuedAt()
@@ -87,6 +103,12 @@ export async function getSessionUser(token: string | undefined): Promise<Session
     const user = await db.user.findUnique({ where: { id: userId } })
     if (!user || !user.active) return null
 
+    // SECURITY: التحقق من إصدار الجلسة — عند تغيير كلمة المرور يُرفع tokenVersion
+    // فيبطل كل التوكنات القديمة فوراً حتى لو كانت لم تنته صلاحيتها (24 ساعة)
+    // التوكنات القديمة بلا tv تُقبل فقط إذا كان الإصدار الحالي 0 (توافق خلفي)
+    var tokenVersion = typeof payload.tv === 'number' ? payload.tv : 0
+    if (user.tokenVersion !== tokenVersion) return null
+
     // FIX: الصلاحيات يجب أن تُقرأ من سجل قاعدة البيانات (الحالي) وليس من لقطة JWT
     // القديمة لحظة الدخول. الكود السابق كان يقرأ payload.permissions مع فحص
     // Array.isArray — وبما أن الجلسة تخزن الصلاحيات ككائن (أو null) كان الفحص
@@ -104,6 +126,7 @@ export async function getSessionUser(token: string | undefined): Promise<Session
       phone: user.phone,
       language: user.language,
       permissions,
+      tokenVersion: user.tokenVersion,
     }
   } catch (error) {
     return null
