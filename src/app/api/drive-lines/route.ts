@@ -2,13 +2,18 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { handleDbError, validateRequired, parseNumber, safeDbOp } from '@/lib/api-helpers'
-import { canWrite } from '@/lib/auth'
+import { canWrite, hasPermission } from '@/lib/auth'
 import { notifyUsers } from '@/lib/notify'
 
 export async function GET(req: NextRequest) {
   try {
     const user = await getAuthUser(req)
     if (!user) return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
+
+    // SECURITY FIX: خطوط الحفر تحمل أسعار المتر — بوابة قراءة بالصلاحية
+    if (!hasPermission(user.role, 'drive_lines', user.permissions, user.email)) {
+      return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية عرض خطوط الحفر' }, { status: 403 })
+    }
 
     const { searchParams } = new URL(req.url)
     const projectId = searchParams.get('projectId')
