@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
+import { canWrite, hasPermission } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { handleDbError, safeDbOp } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
@@ -9,6 +10,11 @@ export async function GET(req: NextRequest) {
 
   if (!user) {
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
+  }
+
+  // SECURITY FIX: بوابة قراءة — قائمة العمال تُستخدم من وحدة السلامة فقط
+  if (!hasPermission(user.role, 'safety', user.permissions, user.email)) {
+    return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية الوصول لهذه البيانات' }, { status: 403 })
   }
 
   var searchParams = new URL(req.url).searchParams
@@ -39,6 +45,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
   }
 
+  // SECURITY FIX: كان المسار مكشوفاً لأي مستخدم مصادق — الآن يتطلب صلاحية كتابة
+  if (!canWrite(user.role, 'workers', user.permissions)) {
+    return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية إضافة العمال' }, { status: 403 })
+  }
+
   var userId = user.id
 
   var rl = checkRateLimit(req, RateLimitPresets.write)
@@ -59,14 +70,24 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    // Input bounds
+    var workerName = String(body.name).trim()
+    var workerPhone = String(body.phone).trim()
+    if (!workerName || workerName.length > 200 || !workerPhone || workerPhone.length > 30) {
+      return NextResponse.json(
+        { error: 'invalid_input', message: 'الاسم أو رقم التواصل غير صالح (طول مفرط)' },
+        { status: 400 }
+      )
+    }
+
     var createResult = await safeDbOp(
       () => db.worker.create({
         data: {
-          name: body.name,
-          phone: body.phone,
-          contractorName: body.contractorName || null,
+          name: workerName,
+          phone: workerPhone,
+          contractorName: body.contractorName ? String(body.contractorName).slice(0, 200) : null,
           projectId: body.projectId || null,
-          notes: body.notes || null,
+          notes: body.notes ? String(body.notes).slice(0, 2000) : null,
           createdById: userId,
         },
         include: {
@@ -98,3 +119,4 @@ export async function POST(req: NextRequest) {
     return handleDbError(error, 'إضافة عامل')
   }
 }
+
