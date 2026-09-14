@@ -1,14 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
-import { handleDbError, parseNumber, safeDbOp } from '@/lib/api-helpers'
+import { handleDbError, parseNumber, safeDbOp, sanitizeDriveLine } from '@/lib/api-helpers'
 import { canWrite } from '@/lib/auth'
 import { notifyUsers } from '@/lib/notify'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 
 // أدوار مسموح لها بتغيير الأسعار — SECURITY FIX: كان مهندس الموقع ومسؤول السلامة
 // يستطيعان تغيير سعر المتر فيُعاد حساب إيرادات التقارير المعتمدة بصمت
-var PRICING_ROLES = ['top_management', 'project_manager']
+// v14.2: الحكم النهائي عبر canViewPricing — تستثني المشرف العام (admin@axis.om)
+// صراحةً حتى لو كان دوره top_management، فتغيير السعر فعل مالي إداري محصور
+// بالإدارة العليا ومدير المشروع حصراً.
+import { canViewPricing as canChangePricing } from '@/lib/auth'
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -51,25 +54,26 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     // كتابة الإيرادات التاريخية (بما فيها التقارير المعتمدة) — وهو فعل مالي إداري
     var priceChanged = false
     if (body.pricePerMeter !== undefined) {
-      var isPricingRole = PRICING_ROLES.includes(user.role) || user.email === 'admin@axis.om'
-      if (!isPricingRole) {
-        return NextResponse.json(
-          { error: 'forbidden', message: 'تغيير سعر المتر متاح للإدارة العليا ومدير المشروع فقط' },
-          { status: 403 }
-        )
+      // v14.2 SECURITY FIX: كان الكود يمنح المشرف العام صراحةً حق تغيير السعر
+      // (|| user.email === 'admin@axis.om') — أُلغي الاستثناء. الآن:
+      // 1) غير المصرح له (بما فيهم المشرف) يُتجاهل طلبه للسعر بصمت مع بقاء بقية التعديلات
+      // 2) المصرح له فقط (الإدارة العليا + مدير المشروع) يمرّ عبر فحوصات التحقق
+      if (!canChangePricing(user)) {
+        delete body.pricePerMeter
+      } else {
+        var newPrice = (body.pricePerMeter === null || String(body.pricePerMeter) === '')
+          ? null
+          : parseNumber(body.pricePerMeter, 0)
+        // SECURITY FIX: منع الأسعار السالبة أو العملاقة
+        if (newPrice !== null && (!Number.isFinite(newPrice) || newPrice < 0 || newPrice > 100000)) {
+          return NextResponse.json(
+            { error: 'invalid_price', message: 'سعر المتر يجب أن يكون رقماً موجباً ومعقولاً' },
+            { status: 400 }
+          )
+        }
+        if (newPrice !== existing.pricePerMeter) priceChanged = true
+        updateData.pricePerMeter = newPrice
       }
-      var newPrice = (body.pricePerMeter === null || String(body.pricePerMeter) === '')
-        ? null
-        : parseNumber(body.pricePerMeter, 0)
-      // SECURITY FIX: منع الأسعار السالبة أو العملاقة
-      if (newPrice !== null && (!Number.isFinite(newPrice) || newPrice < 0 || newPrice > 100000)) {
-        return NextResponse.json(
-          { error: 'invalid_price', message: 'سعر المتر يجب أن يكون رقماً موجباً ومعقولاً' },
-          { status: 400 }
-        )
-      }
-      if (newPrice !== existing.pricePerMeter) priceChanged = true
-      updateData.pricePerMeter = newPrice
     }
     if (body.status !== undefined) updateData.status = String(body.status)
     if (body.problems !== undefined) updateData.problems = body.problems ? String(body.problems) : null
@@ -144,7 +148,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       }).catch(function() {})
     }
 
-    return NextResponse.json({ driveLine: updateResult.data, success: true, recalculatedReports })
+    // v14.2 SECURITY: الرد مُعقّم — المستخدم غير المصرح له لا يتلقى السعر حتى لو عدّل حقلاً آخر
+    return NextResponse.json({ driveLine: sanitizeDriveLine(updateResult.data, canChangePricing(user)), success: true, recalculatedReports })
   } catch (error: any) {
     return handleDbError(error, 'تحديث خط الحفر')
   }
