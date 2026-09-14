@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
-import { hasPermission } from '@/lib/auth'
+import { hasPermission, canViewPricing } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { handleDbError, safeDbOp } from '@/lib/api-helpers'
+import { handleDbError, safeDbOp, sanitizeProject } from '@/lib/api-helpers'
 
 export async function GET(req: NextRequest) {
   try {
@@ -72,6 +72,13 @@ export async function GET(req: NextRequest) {
       } else {
         p.progress = 0
       }
+    }
+
+    // v14.2 SECURITY: سعر المتر بيانات سرية — يُحذف من كل مشروع في القائمة
+    // إلا للإدارة العليا ومدير المشروع (canViewPricing يستثني admin@axis.om صراحةً)
+    var canSeePrice = canViewPricing(user)
+    for (var i = 0; i < projects.length; i++) {
+      sanitizeProject(projects[i], canSeePrice)
     }
 
     return NextResponse.json({ projects: projects })
