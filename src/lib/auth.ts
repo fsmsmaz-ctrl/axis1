@@ -10,6 +10,8 @@ export interface SessionUser {
   language: string
   permissions?: Record<string, boolean> | null
   tokenVersion?: number
+  // v15: علم مدير النظام من قاعدة البيانات (يُقرأ في كل طلب — لا يعتمد على التوكن)
+  isSystemAdmin?: boolean
 }
 
 export const SESSION_COOKIE = 'axis_session'
@@ -189,10 +191,16 @@ export const hasReportPermission = hasPermission
 // فحتى لو مُنحت صلاحية drive_lines أو costs لمستخدم آخر يبقى السعر مخفياً.
 export const PRICING_ALLOWED_ROLES = ['top_management', 'project_manager'] as const
 
-export function canViewPricing(user: { role?: string; email?: string } | null | undefined): boolean {
+export function canViewPricing(user: { role?: string; email?: string; isSystemAdmin?: boolean } | null | undefined): boolean {
   if (!user) return false
-  // المشرف العام مستثنى صراحةً — يمنع رؤية الأسعار أولاً وقبل أي فحص دور
-  if (user.email && user.email.toLowerCase().trim() === SYSTEM_ADMIN_EMAIL) return false
+  // v15 HARDENING (الطبقة الأولى): علم قاعدة البيانات — لا علاقة له بالبريد ولا التوكن.
+  // الحساب المعلَّم كمدير نظام لا يرى الأسعار مهما كان دوره أو بريده.
+  if (user.isSystemAdmin === true) return false
+  var email = (user.email || '').toLowerCase().trim()
+  // الطبقة الثانية: رفض صريح ببريد مدير النظام
+  if (email === SYSTEM_ADMIN_EMAIL) return false
+  // v15 HARDENING (الطبقة الثالثة): جلسة بلا بريد = لا أسعار أبداً
+  if (!email) return false
   return (PRICING_ALLOWED_ROLES as readonly string[]).includes(user.role || '')
 }
 
@@ -206,3 +214,5 @@ export function isTaskManager(user: { role?: string; email?: string } | null | u
   if (user.email && user.email.toLowerCase().trim() === SYSTEM_ADMIN_EMAIL) return true
   return (TASK_MANAGE_ROLES as readonly string[]).includes(user.role || '')
 }
+
+
