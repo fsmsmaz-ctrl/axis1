@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
-import { SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
+import { SYSTEM_ADMIN_EMAIL, canViewPricing } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
-import { safeDbOp, handleDbError } from '@/lib/api-helpers'
+import { safeDbOp, handleDbError, sanitizeDailyReport } from '@/lib/api-helpers'
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   var user = await getAuthUser(req)
@@ -104,8 +104,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       }).catch(function() {})
     }
 
-    return NextResponse.json({ report: updateResult.data })
+    // v14.2 SECURITY: الرد مُعقّم — الاعتماد قد يشمل مستخدمين غير مصرح لهم مالياً
+    return NextResponse.json({ report: sanitizeDailyReport(updateResult.data, canViewPricing(user)) })
   } catch (error) {
     return handleDbError(error, 'اعتماد التقرير')
   }
 }
+
