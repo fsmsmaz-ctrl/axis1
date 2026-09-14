@@ -421,4 +421,3 @@ export function buildAuditDetails(
   if (diff.changes.length === 0) return summary
   return JSON.stringify(diff)
 }
-
