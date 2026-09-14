@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
-import { safeDbOp, handleDbError, validateRequired, parseNumber, parseDate, buildAuditDetails } from '@/lib/api-helpers'
-import { canWrite, hasPermission } from '@/lib/auth'
+import { safeDbOp, handleDbError, validateRequired, parseNumber, parseDate, buildAuditDetails, sanitizeProject } from '@/lib/api-helpers'
+import { canWrite, hasPermission, canViewPricing } from '@/lib/auth'
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -72,8 +72,22 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     }
     const totalCost = costAggResult.success ? (costAggResult.data._sum.amount || 0) : 0
 
+    // v14.2 SECURITY: سعر المتر والإيراد المشتق وصافي الربح أرقام سرية —
+    // تُحذف/تُصفّر لكل من ليس من الإدارة العليا أو مدير المشروع
+    // (canViewPricing يستثني المشرف العام admin@axis.om صراحةً)
+    var canSeePrice = canViewPricing(user)
+    if (!canSeePrice) {
+      if (project.pricePerMeter !== undefined) delete project.pricePerMeter
+      if (Array.isArray(project.driveLines)) {
+        for (var i = 0; i < project.driveLines.length; i++) {
+          if (project.driveLines[i].pricePerMeter !== undefined) delete project.driveLines[i].pricePerMeter
+        }
+      }
+      totalRevenue = 0
+    }
+
     return NextResponse.json({
-      project: { ...project, totalMetersDrilled: totalMeters, totalRevenue, totalCost, netProfit: totalRevenue - totalCost },
+      project: { ...project, totalMetersDrilled: totalMeters, totalRevenue: canSeePrice ? totalRevenue : null, totalCost, netProfit: canSeePrice ? (totalRevenue - totalCost) : null },
     })
   } catch (error) {
     return handleDbError(error, 'جلب المشروع')
@@ -109,9 +123,14 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
     var totalLength = parseNumber(body.totalLength, 0)
     // v13: سعر المشروع أصبح احتياطياً — لا نصفره إذا لم يُرسل النموذج
-    var pricePerMeter = (body.pricePerMeter !== undefined && body.pricePerMeter !== null && String(body.pricePerMeter) !== '')
-      ? parseNumber(body.pricePerMeter, 0)
-      : (body.pricePerMeter === undefined ? undefined : null)
+    // v14.2 SECURITY: السعر يُقبل فقط من الإدارة العليا ومدير المشروع
+    // (canViewPricing يستثني المشرف العام admin@axis.om) — غيرهم يُتجاهل طلبه للسعر بصمت
+    var pricePerMeter: number | null | undefined = undefined
+    if (canViewPricing(user) && body.pricePerMeter !== undefined) {
+      pricePerMeter = (body.pricePerMeter !== null && String(body.pricePerMeter) !== '')
+        ? parseNumber(body.pricePerMeter, 0)
+        : null
+    }
     var startDate = body.startDate ? new Date(body.startDate) : oldResult.data.startDate
     var expectedEnd = body.expectedEnd ? new Date(body.expectedEnd) : oldResult.data.expectedEnd
 
@@ -161,7 +180,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       'سجل التدقيق'
     ).catch(function() {})
 
-    return NextResponse.json({ project: updateResult.data })
+    // v14.2 SECURITY: الرد مُعقّم — لا سعر لمستخدم غير مصرح له
+    return NextResponse.json({ project: sanitizeProject(updateResult.data, canViewPricing(user)) })
   } catch (error) {
     return handleDbError(error, 'تحديث المشروع')
   }
