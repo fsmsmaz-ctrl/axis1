@@ -27,7 +27,7 @@ interface PrintableData {
   toDate: string
 }
 
-export function PrintableReport({ data, generatedBy }: { data: PrintableData; generatedBy?: string | null }) {
+export function PrintableReport({ data, generatedBy, showRevenue = true }: { data: PrintableData; generatedBy?: string | null; showRevenue?: boolean }) {
   const language = useAppStore((s) => s.language)
   const isRtl = language === 'ar'
   const d = data.data || {}
@@ -180,7 +180,7 @@ export function PrintableReport({ data, generatedBy }: { data: PrintableData; ge
         </>
       )}
 
-      {data.type === 'revenue' && (
+      {data.type === 'revenue' && showRevenue && (
         <>
           <div className="pr-section-title">{isRtl ? `سجل الإيرادات (${reports.length})` : `Revenue Log (${reports.length})`}</div>
           <p className="pr-note">{isRtl ? 'يُحسب الإيراد من التقارير المعتمدة فقط (الأمتار المحفورة × سعر المتر)' : 'Revenue is calculated from approved reports only (meters × price per meter)'}</p>
@@ -327,7 +327,7 @@ export function PrintableReport({ data, generatedBy }: { data: PrintableData; ge
         )
       })()}
 
-      {data.type === 'profit' && (
+      {data.type === 'profit' && showRevenue && (
         <>
           <div className="pr-section-title">{isRtl ? 'ملخص الربحية' : 'Profitability Summary'}</div>
           <div className="pr-kv-grid">
@@ -405,10 +405,12 @@ export function PrintableReport({ data, generatedBy }: { data: PrintableData; ge
               <p className="k">{isRtl ? 'أمتار الفترة' : 'Period Meters'}</p>
               <p className="v">{fmtNum(d.totalMeters)}</p>
             </div>
+            {showRevenue && (
             <div className="pr-kv">
               <p className="k">{isRtl ? 'إيرادات الفترة' : 'Period Revenue'}</p>
               <p className="v" style={{ color: '#047857' }}>{fmtNum(d.totalRevenue)} {cur}</p>
             </div>
+            )}
             <div className="pr-kv">
               <p className="k">{isRtl ? 'تكاليف الفترة' : 'Period Costs'}</p>
               <p className="v" style={{ color: '#b91c1c' }}>{fmtNum(d.totalCosts)} {cur}</p>
@@ -481,3 +483,4 @@ export function PrintableReport({ data, generatedBy }: { data: PrintableData; ge
     </div>
   )
 }
+
