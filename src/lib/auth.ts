@@ -135,8 +135,8 @@ export const WRITE_ROLES: Record<string, string[]> = {
   // (مدير النظام admin@axis.om يتجاوز الفحص عبر isTaskManager)
   tasks: ['top_management', 'project_manager'],
   company_assets: ['top_management', 'project_manager', 'site_engineer', 'accountant'],
-  // العمال يُدارون من وحدة السلامة — نفس أدوار safety
-  workers: ['top_management', 'project_manager', 'site_engineer', 'hse_officer'],
+  // v14: سجلات العمال — الإدارة ومهندسو الموقع والمشرفون
+  workers: ['top_management', 'project_manager', 'site_engineer', 'foreman'],
 }
 
 export function canWrite(userRole: string, resource: string, userPermissions?: Record<string, boolean> | null): boolean {
@@ -177,6 +177,25 @@ export function hasPermission(
 
 export const hasReportPermission = hasPermission
 
+// ─── Pricing confidentiality (v14.1) ───────────────────────────
+// سعر خط الحفر (pricePerMeter) وسعر المشروع الاحتياطي والإيرادات المشتقة
+// (dailyRevenue) بيانات مالية سرية — تظهر فقط لدورين حصرياً:
+//   1) الإدارة العليا (top_management)
+//   2) مدير المشروع (project_manager)
+// ⚠️ استثناء صريح: المشرف العام (admin@axis.om) لا يرى الأسعار إطلاقاً —
+// حتى لو كان دوره الرسمي top_management (قرار صاحب الموقع: الفصل التام
+// بين إدارة النظام والبيانات المالية).
+// هذا حظر سرية صارم — لا تخضع الصلاحيات المخصصة (permissions) هنا،
+// فحتى لو مُنحت صلاحية drive_lines أو costs لمستخدم آخر يبقى السعر مخفياً.
+export const PRICING_ALLOWED_ROLES = ['top_management', 'project_manager'] as const
+
+export function canViewPricing(user: { role?: string; email?: string } | null | undefined): boolean {
+  if (!user) return false
+  // المشرف العام مستثنى صراحةً — يمنع رؤية الأسعار أولاً وقبل أي فحص دور
+  if (user.email && user.email.toLowerCase().trim() === SYSTEM_ADMIN_EMAIL) return false
+  return (PRICING_ALLOWED_ROLES as readonly string[]).includes(user.role || '')
+}
+
 // ─── Task Management helpers ───────────────────────────────────
 // مدير المهام: ينشئ ويعدّل ويعيد ويعتمد ويغلق ويرى الكل
 // (الإدارة العليا + مدير المشروع + مدير النظام admin@axis.om)
@@ -187,5 +206,4 @@ export function isTaskManager(user: { role?: string; email?: string } | null | u
   if (user.email && user.email.toLowerCase().trim() === SYSTEM_ADMIN_EMAIL) return true
   return (TASK_MANAGE_ROLES as readonly string[]).includes(user.role || '')
 }
-
 
