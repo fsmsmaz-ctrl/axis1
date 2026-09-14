@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
-import { handleDbError, validateRequired, parseNumber, safeDbOp } from '@/lib/api-helpers'
-import { canWrite, hasPermission } from '@/lib/auth'
+import { handleDbError, validateRequired, parseNumber, safeDbOp, sanitizeDriveLine } from '@/lib/api-helpers'
+import { canWrite, hasPermission, canViewPricing } from '@/lib/auth'
 import { notifyUsers } from '@/lib/notify'
 
 export async function GET(req: NextRequest) {
@@ -31,6 +31,15 @@ export async function GET(req: NextRequest) {
     if (!result.success) return result.response
 
     var driveLines = result.data
+
+    // v14.2 SECURITY FIX (الثغرة الرئيسية): كان هذا المسار يُرجع سعر المتر لكل من
+    // يفتح صفحة خطوط الحفر — بما في ذلك المشرف العام. التعقيم هنا يحذف
+    // pricePerMeter من كل خط ومن المشروع المضمّن فيه قبل الإرسال،
+    // إلا للإدارة العليا ومدير المشروع فقط (canViewPricing يستثني admin@axis.om صراحةً).
+    var canSeePrice = canViewPricing(user)
+    for (var k = 0; k < driveLines.length; k++) {
+      sanitizeDriveLine(driveLines[k], canSeePrice)
+    }
 
     // Dynamic progress: calculate from MAX endReading of daily reports (single query)
     if (driveLines.length > 0) {
@@ -89,7 +98,9 @@ export async function POST(req: NextRequest) {
           pipeType: String(body.pipeType), soilType: String(body.soilType),
           depth: parseNumber(body.depth, 0), status: String(body.status || 'not_started'),
           // v13: سعر المتر الخاص بهذا الخط (فارغ = بدون سعر حتى إدخاله)
-          pricePerMeter: (body.pricePerMeter !== undefined && body.pricePerMeter !== null && String(body.pricePerMeter) !== '')
+          // v14.2 SECURITY: السعر يُقبل فقط من الإدارة العليا ومدير المشروع
+          // (canViewPricing يستثني المشرف العام) — غيرهم يُنشأ الخط بلا سعر
+          pricePerMeter: canViewPricing(user) && (body.pricePerMeter !== undefined && body.pricePerMeter !== null && String(body.pricePerMeter) !== '')
             ? parseNumber(body.pricePerMeter, 0)
             : null,
           completedLength: 0, progress: 0, problems: body.problems ? String(body.problems) : null,
@@ -125,7 +136,8 @@ export async function POST(req: NextRequest) {
       }).catch(function() {})
     }
 
-    return NextResponse.json({ driveLine: createResult.data, success: true })
+    // v14.2 SECURITY: الرد مُعقّم — لا سعر مالي لمستخدم غير مصرح له
+    return NextResponse.json({ driveLine: sanitizeDriveLine(createResult.data, canViewPricing(user)), success: true })
   } catch (error: any) {
     return handleDbError(error, 'إنشاء خط الحفر')
   }
