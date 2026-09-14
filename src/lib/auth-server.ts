@@ -7,6 +7,9 @@ import { SignJWT, jwtVerify } from 'jose'
 import { db } from './db'
 import { SessionUser, SESSION_COOKIE, getSessionMaxAge, getCookieOptions } from './auth'
 
+// v14 SECURITY: hash وهمي لمقارنات مستخدم غير موجود — تسوية زمن الدخول (منع timing enumeration)
+const DUMMY_HASH = '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy'
+
 function getSecretKey(): Uint8Array {
   const secret = process.env.JWT_SECRET
   if (!secret || secret.length < 32) {
@@ -15,17 +18,11 @@ function getSecretKey(): Uint8Array {
   return new TextEncoder().encode(secret)
 }
 
-// Dummy hash for timing equalization — same bcrypt cost as real hashes.
-// SECURITY: يمنع تعداد البريدات المسجلة عبر فرق التوقيت (المستخدم غير موجود
-// كان يرد فوراً بدون bcrypt بينما الموجود يستغرق ~100ms)
-var DUMMY_HASH_PREFIX = '$2a$12$C6UzMDM.H6dfI/f/IKcEe.'
-var DUMMY_HASH = DUMMY_HASH_PREFIX + 'O9Z0wFf0C4VK8qVLjI9BLuBUvtFkZKSlRjSCdPmOGVUFQI6jPilJe'
-
 export async function verifyCredentials(email: string, password: string): Promise<SessionUser | null> {
   try {
     const user = await db.user.findUnique({ where: { email: email.toLowerCase().trim() } })
     if (!user) {
-      // نفس عمل bcrypt.compare لتسوية زمن الاستجابة
+      // v14: نفس زمن المقارنة حتى لو لم يوجد المستخدم (منع تعداد البريدات بالتوقيت)
       await bcrypt.compare(password, DUMMY_HASH).catch(() => false)
       return null
     }
@@ -50,7 +47,7 @@ export async function verifyCredentials(email: string, password: string): Promis
       phone: user.phone,
       language: user.language,
       permissions,
-      tokenVersion: user.tokenVersion,
+      tokenVersion: user.tokenVersion || 0,
     }
   } catch (error) {
     console.error('verifyCredentials error:', error)
@@ -69,7 +66,6 @@ export async function createSession(user: SessionUser): Promise<string> {
       phone: user.phone || null,
       language: user.language,
       permissions: user.permissions || null,
-      // SECURITY: إصدار الجلسة — تغييره يبطل كل التوكنات القديمة فوراً
       tv: user.tokenVersion ?? 0,
     })
       .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
@@ -103,11 +99,10 @@ export async function getSessionUser(token: string | undefined): Promise<Session
     const user = await db.user.findUnique({ where: { id: userId } })
     if (!user || !user.active) return null
 
-    // SECURITY: التحقق من إصدار الجلسة — عند تغيير كلمة المرور يُرفع tokenVersion
-    // فيبطل كل التوكنات القديمة فوراً حتى لو كانت لم تنته صلاحيتها (24 ساعة)
-    // التوكنات القديمة بلا tv تُقبل فقط إذا كان الإصدار الحالي 0 (توافق خلفي)
-    var tokenVersion = typeof payload.tv === 'number' ? payload.tv : 0
-    if (user.tokenVersion !== tokenVersion) return null
+    // v14 SECURITY: إبطال الجلسات — إذا رُفعت tokenVersion في قاعدة البيانات
+    // (تغيير كلمة مرور/تعطيل) فإن كل التوكنات القديمة تصبح غير صالحة فوراً.
+    var tokenTv = typeof payload.tv === 'number' ? payload.tv : 0
+    if (tokenTv !== (user.tokenVersion || 0)) return null
 
     // FIX: الصلاحيات يجب أن تُقرأ من سجل قاعدة البيانات (الحالي) وليس من لقطة JWT
     // القديمة لحظة الدخول. الكود السابق كان يقرأ payload.permissions مع فحص
@@ -126,7 +121,7 @@ export async function getSessionUser(token: string | undefined): Promise<Session
       phone: user.phone,
       language: user.language,
       permissions,
-      tokenVersion: user.tokenVersion,
+      tokenVersion: user.tokenVersion || 0,
     }
   } catch (error) {
     return null
