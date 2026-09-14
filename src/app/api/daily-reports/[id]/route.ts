@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
-import { canWrite, hasPermission, SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
+import { canWrite, hasPermission, canViewPricing, SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { safeDbOp, handleDbError, recalcProgress } from '@/lib/api-helpers'
+import { safeDbOp, handleDbError, recalcProgress, sanitizeDailyReport } from '@/lib/api-helpers'
 
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 
@@ -44,7 +44,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     return NextResponse.json({ error: 'Report not found' }, { status: 404 })
   }
 
-  return NextResponse.json({ report: result.data })
+  // v14.2 SECURITY: الإيراد اليومي مشتق من سعر المتر السري — يُحذف لغير المصرح لهم
+  return NextResponse.json({ report: sanitizeDailyReport(result.data, canViewPricing(user)) })
 }
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -268,7 +269,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       'سجل التدقيق'
     ).catch(function() {})
 
-    return NextResponse.json({ report: updateResult.data })
+    // v14.2 SECURITY: الرد مُعقّم — لا إيراد لمستخدم غير مصرح له
+    return NextResponse.json({ report: sanitizeDailyReport(updateResult.data, canViewPricing(user)) })
   } catch (error) {
     return handleDbError(error, 'تحديث التقرير اليومي')
   }
@@ -370,3 +372,4 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     return handleDbError(error, 'حذف التقرير اليومي')
   }
 }
+
