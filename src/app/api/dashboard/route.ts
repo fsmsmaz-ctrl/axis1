@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
-import { canAccessDashboard } from '@/lib/auth'
+import { canAccessDashboard, canViewPricing } from '@/lib/auth'
 import { db, cached } from '@/lib/db'
 
 // ────────────────────────────────────────────────────────────────
@@ -74,7 +74,9 @@ export async function GET(req: NextRequest) {
     // showing stale data for long. Cache key is user-scoped so permissions
     // are respected.
     const cacheKey = `dashboard:${user.id}`
-    const payload = await cached(cacheKey, 30_000, () => buildDashboard())
+    // v14.2: قرار سرية الأسعار يُحسب هنا من جلسة المستخدم ويُمرر للباني
+    const canSeePrice = canViewPricing(user)
+    const payload = await cached(cacheKey, 30_000, () => buildDashboard(canSeePrice))
 
     // Helpful for debugging latency issues from the client.
     const duration = Date.now() - startedAt
@@ -102,7 +104,7 @@ export async function GET(req: NextRequest) {
 // Dashboard builder — all queries run concurrently
 // ────────────────────────────────────────────────────────────────
 
-async function buildDashboard() {
+async function buildDashboard(canSeePrice: boolean) {
   const todayRange = getDateRange(0)
   const monthRange = getMonthRange()
   const fourteenDaysAgo = new Date(todayRange.gte.getTime() - 14 * 24 * 60 * 60 * 1000)
@@ -306,18 +308,38 @@ async function buildDashboard() {
   // ── Build response ──
   const netProfit = totalRevenueSum - totalCostsSum
 
+  // v14.2 SECURITY: البيانات المالية سرية — الإيرادات وصافي الربح وأسعار المشاريع
+  // وإيراد المنحنى وإيراد التقارير الأخيرة تُصفّر/تُحذف لكل من ليس من الإدارة العليا
+  // أو مدير المشروع (canSeePrice يُمرر من GET محسوباً عبر canViewPricing التي
+  // تستثني المشرف العام admin@axis.om صراحةً).
+  // التكاليف تبقى ظاهرة لغير المصرح لهم (قرار صاحب الموقع) — لكن صافي الربح مُخفى
+  // لأنه كونه (إيراد − تكلفة) يكشف الإيراد بالطرح.
+  if (!canSeePrice) {
+    for (const p of projects as any[]) {
+      if (p && p.pricePerMeter !== undefined) delete p.pricePerMeter
+    }
+    for (const rr of recentReports as any[]) {
+      if (rr && rr.dailyRevenue !== undefined) delete rr.dailyRevenue
+      if (rr && rr.driveLine && rr.driveLine.pricePerMeter !== undefined) delete rr.driveLine.pricePerMeter
+      if (rr && rr.project && rr.project.pricePerMeter !== undefined) delete rr.project.pricePerMeter
+    }
+    for (const t of trend) {
+      t.revenue = 0
+    }
+  }
+
   return {
     stats: {
       activeProjects,
       totalProjects: projects.length,
       metersToday,
       metersThisMonth,
-      revenueToday,
-      revenueThisMonth,
-      totalRevenue: totalRevenueSum,
+      revenueToday: canSeePrice ? revenueToday : 0,
+      revenueThisMonth: canSeePrice ? revenueThisMonth : 0,
+      totalRevenue: canSeePrice ? totalRevenueSum : 0,
       totalCosts: totalCostsSum,
       monthCosts: monthCostsSum,
-      netProfit,
+      netProfit: canSeePrice ? netProfit : 0,
       stoppedEquipment,
       presentWorkers,
       unreadNotifications,
