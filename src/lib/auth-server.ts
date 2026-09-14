@@ -48,6 +48,8 @@ export async function verifyCredentials(email: string, password: string): Promis
       language: user.language,
       permissions,
       tokenVersion: user.tokenVersion || 0,
+      // v15: علم مدير النظام من قاعدة البيانات — مصدر الحقيقة الوحيد
+      isSystemAdmin: (user as { isSystemAdmin?: boolean }).isSystemAdmin === true,
     }
   } catch (error) {
     console.error('verifyCredentials error:', error)
@@ -122,6 +124,9 @@ export async function getSessionUser(token: string | undefined): Promise<Session
       language: user.language,
       permissions,
       tokenVersion: user.tokenVersion || 0,
+      // v15: علم مدير النظام يُقرأ من قاعدة البيانات في كل طلب —
+      // يسري فوراً حتى على الجلسات القديمة دون إعادة تسجيل دخول
+      isSystemAdmin: (user as { isSystemAdmin?: boolean }).isSystemAdmin === true,
     }
   } catch (error) {
     return null
@@ -157,4 +162,5 @@ export async function getAuthUser(req: NextRequest): Promise<SessionUser | null>
   const token = extractToken(req)
   return await getSessionUser(token)
 }
+
 
