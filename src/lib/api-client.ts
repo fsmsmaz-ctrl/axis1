@@ -1,10 +1,13 @@
 // Centralized API client with session management
-// SECURITY: المصادقة تعتمد حصراً على كوكي httpOnly (credentials:'include') —
-// أُزيل مسار تخزين التوكن في localStorage لأنه يجعل الجلسة سرقة عبر أي XSS
+// v14 SECURITY: الجلسة تعتمد حصرياً على كوكي httpOnly (axis_session) —
+// لا يُخزن أي توكن في localStorage (XSS لا يستطيع قراءته أصلاً).
 
 'use client'
 
 import { useAppStore } from '@/lib/store'
+
+// مفتاح قديم كان يُستخدم قبل v14 — يُنظف تلقائياً عند الخروج
+const LEGACY_TOKEN_KEY = 'axis_token'
 
 interface ApiOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'DELETE'
@@ -21,15 +24,14 @@ interface ApiResult<T = any> {
 }
 
 /**
- * SECURITY FIX: حُذفت دوال تخزين التوكن في localStorage (getStoredToken / saveStoredToken)
- * — كانت فخاً كامناً: أي استخدام مستقبلي لها يُسقط JWT في localStorage قابل للسرقة.
- * clearStoredToken أبقيتها للتوافق مع الاستدعاءات القائمة عند الخروج — تنظف أي توكن قديم
- * متبقٍ من نسخ سابقة ثم تمسح حالة الواجهة.
+ * v14: لا يوجد توكن محلي — المصادقة عبر كوكي httpOnly تلقائياً مع كل طلب
+ * (credentials: 'include'). بقيت الدالة للتوافق مع الاستدعاءات القديمة.
  */
 export function clearStoredToken(): void {
   if (typeof window !== 'undefined') {
     try {
-      localStorage.removeItem('axis_token')
+      // تنظيف مفتاح قديم من أجهزة المستخدمين السابقة (إن وُجد)
+      localStorage.removeItem(LEGACY_TOKEN_KEY)
     } catch {
       // ignore
     }
@@ -43,7 +45,7 @@ export function clearStoredToken(): void {
 
 /**
  * Authenticated fetch - drop-in replacement for fetch()
- * المصادقة عبر كوكي httpOnly تلقائياً (credentials:'include')
+ * v14: المصادقة عبر كوكي httpOnly فقط (credentials: 'include') — لا توكن في headers
  * Use this for ALL API requests to ensure authentication works
  *
  * NOTE: 401 responses are returned to the caller — they are NOT silently
@@ -66,8 +68,6 @@ export async function authedFetch(
     headers['Pragma'] = 'no-cache'
   }
 
-  // SECURITY: لا يوجد Authorization header — الكوكي httpOnly وحده هو مصدر الجلسة
-
   // Set Content-Type for requests with body
   if (options.body && !headers['Content-Type']) {
     headers['Content-Type'] = 'application/json'
@@ -88,7 +88,7 @@ export async function authedFetch(
 
 /**
  * Make an authenticated API request.
- * Sends token via BOTH cookie AND Authorization header for maximum compatibility.
+ * v14: يرسل الطلب بالكوكي httpOnly تلقائياً.
  * Automatically handles 401 errors by clearing the session.
  */
 export async function apiRequest<T = any>(
