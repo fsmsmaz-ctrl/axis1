@@ -16,6 +16,7 @@ import {
 } from 'recharts'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
+import { canViewPricing } from '@/lib/auth'
 
 interface DashboardData {
   stats: {
@@ -75,6 +76,9 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
   const language = useAppStore((s) => s.language)
   const token = useAppStore((s) => s.token)
   const user = useAppStore((s) => s.user)
+  // v14.2: البيانات المالية (الإيراد/صافي الربح) تظهر فقط للإدارة العليا ومدير المشروع
+  // المشرف العام (admin@axis.om) مستثنى صراحةً — يرى التكاليف والأمتار فقط
+  const seePricing = !!(user && canViewPricing(user))
   const isRtl = language === 'ar'
 
   async function fetchDashboard() {
@@ -278,6 +282,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
           color="text-blue-600"
           bgColor="bg-blue-50"
         />
+        {seePricing ? (
         <StatCard
           icon={DollarSign}
           label={isRtl ? 'الإيرادات' : 'Revenue'}
@@ -286,6 +291,18 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
           color="text-emerald-600"
           bgColor="bg-emerald-50"
         />
+        ) : (
+        // v14.2: بدل الإيرادات — التكاليف الكلية (الإيرادات سرية للمشرف وغيره)
+        <StatCard
+          icon={Wallet}
+          label={isRtl ? 'التكاليف' : 'Costs'}
+          value={fmtCurrency(stats.totalCosts)}
+          subtext={fmtCurrency(stats.monthCosts) + ' ' + (isRtl ? 'هذا الشهر' : 'this month')}
+          color="text-purple-600"
+          bgColor="bg-purple-50"
+        />
+        )}
+        {seePricing && (
         <StatCard
           icon={Wallet}
           label={isRtl ? 'صافي الربح' : 'Net Profit'}
@@ -294,13 +311,16 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
           color={stats.netProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}
           bgColor={stats.netProfit >= 0 ? 'bg-emerald-50' : 'bg-red-50'}
         />
+        )}
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         <MiniStat icon={Users} label={isRtl ? 'العمال اليوم' : 'Workers Today'} value={'' + stats.presentWorkers} color="text-blue-600" />
         <MiniStat icon={Wrench} label={isRtl ? 'معدات متوقفة' : 'Stopped Eq.'} value={'' + stats.stoppedEquipment} color="text-red-600" />
         <MiniStat icon={AlertTriangle} label={isRtl ? 'تنبيهات' : 'Alerts'} value={'' + stats.unreadNotifications} color="text-orange-600" />
+        {seePricing && (
         <MiniStat icon={TrendingUp} label={isRtl ? 'الإيراد اليوم' : "Today's Rev."} value={fmtCurrency(stats.revenueToday)} color="text-emerald-600" />
+        )}
         <MiniStat icon={TrendingDown} label={isRtl ? 'تكاليف الشهر' : 'Month Costs'} value={fmtCurrency(stats.monthCosts)} color="text-purple-600" />
         <MiniStat icon={Activity} label={isRtl ? 'أمتار الشهر' : 'Month Meters'} value={fmt(stats.metersThisMonth) + ' م'} color="text-cyan-600" />
       </div>
@@ -313,7 +333,9 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
               {isRtl ? 'اتجاه الإنتاج (آخر 14 يوم)' : 'Production Trend (Last 14 days)'}
             </CardTitle>
             <CardDescription>
-              {isRtl ? 'الأمتار المنجزة والإيرادات اليومية' : 'Daily meters drilled and revenue'}
+              {seePricing
+                ? (isRtl ? 'الأمتار المنجزة والإيرادات اليومية' : 'Daily meters drilled and revenue')
+                : (isRtl ? 'الأمتار المنجزة يومياً' : 'Daily meters drilled')}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -342,7 +364,9 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
                   }}
                 />
                 <Area type="monotone" dataKey="meters" stroke="#f97316" fillOpacity={1} fill="url(#colorMeters)" strokeWidth={2} />
+                {seePricing && (
                 <Area type="monotone" dataKey="revenue" stroke="#10b981" fillOpacity={1} fill="url(#colorRevenue)" strokeWidth={2} />
+                )}
               </AreaChart>
             </ResponsiveContainer>
           </CardContent>
