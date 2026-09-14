@@ -19,6 +19,7 @@ import {
 import { Plus, Search, FolderKanban, MapPin, Calendar, DollarSign, Edit, Trash2, Eye, Users } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch, apiRequest, getErrorMessage } from '@/lib/api-client'
+import { canViewPricing } from '@/lib/auth'
 import { toast } from 'sonner'
 
 const workTypeLabels: Record<string, { ar: string; en: string }> = {
@@ -438,6 +439,9 @@ function ProjectDetails({ id }: { id: string | null }) {
   const [loading, setLoading] = useState(true)
   const language = useAppStore((s) => s.language)
   const token = useAppStore((s) => s.token)
+  const user = useAppStore((s) => s.user)
+  // v14.2: الإيراد وصافي الربح وسعر المتر — أسرار مالية (المشرف العام مستثنى)
+  const seePricing = !!(user && canViewPricing(user))
   const isRtl = language === 'ar'
 
   useEffect(() => {
@@ -461,16 +465,22 @@ function ProjectDetails({ id }: { id: string | null }) {
         <Detail label={isRtl ? 'نوع العمل' : 'Work Type'} value={project.workType} />
         <Detail label={isRtl ? 'القطر' : 'Diameter'} value={project.pipeDiameter} />
         <Detail label={isRtl ? 'الطول الكلي' : 'Total Length'} value={`${project.totalLength} م`} />
+        {seePricing && (
         <Detail label={isRtl ? 'الإيراد المحقق' : 'Revenue'} value={project.totalRevenue != null ? `${Number(project.totalRevenue).toFixed(3)} ${isRtl ? 'ر.ع' : 'OMR'} ${isRtl ? '(من أسعار خطوط الحفر)' : '(per drive line prices)'}` : '-'} />
+        )}
         <Detail label={isRtl ? 'مدير المشروع' : 'Manager'} value={project.manager?.name || '-'} />
         <Detail label={isRtl ? 'مهندس الموقع' : 'Engineer'} value={project.engineer?.name || '-'} />
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
         <Stat label={isRtl ? 'الأمتار المنجزة' : 'Meters Drilled'} value={`${project.totalMetersDrilled?.toFixed(1) || 0} م`} />
+        {seePricing && (
         <Stat label={isRtl ? 'الإيرادات' : 'Revenue'} value={`${project.totalRevenue?.toFixed(0) || 0} ر.ع`} />
+        )}
         <Stat label={isRtl ? 'التكاليف' : 'Costs'} value={`${project.totalCost?.toFixed(0) || 0} ر.ع`} />
+        {seePricing && (
         <Stat label={isRtl ? 'صافي الربح' : 'Net Profit'} value={`${project.netProfit?.toFixed(0) || 0} ر.ع`} />
+        )}
       </div>
 
       {project.driveLines?.length > 0 && (
@@ -516,3 +526,4 @@ function Stat({ label, value }: { label: string; value: string }) {
     </div>
   )
 }
+
