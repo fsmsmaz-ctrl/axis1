@@ -72,7 +72,7 @@ export async function POST(req: NextRequest) {
     var createdUsers: string[] = []
 
     try {
-      var adminUpdate: Record<string, any> = { role: 'top_management', active: true, permissions: null }
+      var adminUpdate: Record<string, any> = { role: 'top_management', active: true, permissions: null, isSystemAdmin: true }
       await db.user.upsert({
         where: { email: ADMIN_EMAIL },
         // شفاء حساب مدير النظام عند كل تشغيل: دور صحيح + حساب نشط + إزالة
@@ -83,6 +83,7 @@ export async function POST(req: NextRequest) {
           name: 'مدير النظام',
           nameEn: 'System Admin', phone: '+96891234567',
           role: 'top_management', language: 'ar', active: true,
+          isSystemAdmin: true,
         },
       })
       createdUsers.push(ADMIN_EMAIL)
