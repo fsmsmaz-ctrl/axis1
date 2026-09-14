@@ -21,7 +21,7 @@ import { Plus, GitBranch, MapPin, Ruler, Layers, AlertCircle, Pencil, Trash2, Lo
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
 import { toast } from 'sonner'
-import { canWrite } from '@/lib/auth'
+import { canWrite, canViewPricing } from '@/lib/auth'
 
 const statusLabels: Record<string, { ar: string; en: string; color: string }> = {
   not_started: { ar: 'لم يبدأ', en: 'Not Started', color: 'secondary' },
@@ -56,6 +56,10 @@ export default function DriveLinesPage() {
   // Permission check — server also enforces this, but we hide the buttons
   // for users without write access to drive_lines for a cleaner UI.
   const canEdit = !!(user && canWrite(user.role, 'drive_lines', user.permissions))
+  // v14.2: سعر المتر سري — يظهر فقط للإدارة العليا ومدير المشروع.
+  // المشرف العام (admin@axis.om) مستثنى صراحةً داخل canViewPricing — لا يرى أي سعر
+  // ولا حقل إدخال السعر (الخادم أيضاً يحذف السعر من الردود — حماية مزدوجة).
+  const seePricing = !!(user && canViewPricing(user))
 
   const [formData, setFormData] = useState(emptyForm)
 
@@ -85,10 +89,13 @@ export default function DriveLinesPage() {
       const isEditing = !!editingId
       const url = isEditing ? `/api/drive-lines/${editingId}` : '/api/drive-lines'
       const method = isEditing ? 'PUT' : 'POST'
+      // v14.2: من غير المصرح لهم مالياً — لا يُرسل السعر أصلاً (مخفي عنهم)
+      const payload: any = { ...formData }
+      if (!seePricing) delete payload.pricePerMeter
       const res = await authedFetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(payload),
       })
       const body = await res.json().catch(() => ({}))
       if (!res.ok) {
@@ -120,7 +127,8 @@ export default function DriveLinesPage() {
       ...emptyForm,
       projectId: firstProject?.id || '',
       // v13: تعبئة مبدئية لسعر المتر من سعر المشروع (يمكن تغييره)
-      pricePerMeter: firstProject?.pricePerMeter != null ? String(firstProject.pricePerMeter) : '',
+      // v14.2: فقط لمن يُسمح له برؤية الأسعار
+      pricePerMeter: seePricing && firstProject?.pricePerMeter != null ? String(firstProject.pricePerMeter) : '',
     })
     setDialogOpen(true)
   }
@@ -134,7 +142,8 @@ export default function DriveLinesPage() {
       startPoint: line.startPoint || '',
       endPoint: line.endPoint || '',
       totalLength: line.totalLength != null ? String(line.totalLength) : '',
-      pricePerMeter: line.pricePerMeter != null ? String(line.pricePerMeter) : (line.project?.pricePerMeter != null ? String(line.project.pricePerMeter) : ''),
+      // v14.2: السعر لا يُعبّأ لمن لا يُسمح له برؤيته (الخادم أصلاً لا يرسله لهم)
+      pricePerMeter: seePricing ? (line.pricePerMeter != null ? String(line.pricePerMeter) : (line.project?.pricePerMeter != null ? String(line.project.pricePerMeter) : '')) : '',
       diameter: line.diameter || '1200mm',
       pipeType: line.pipeType || 'pipe',
       soilType: line.soilType || 'mixed',
@@ -266,6 +275,7 @@ export default function DriveLinesPage() {
                             <Layers className="h-3.5 w-3.5 shrink-0" />
                             <span className="text-xs">{isRtl ? 'العمق' : 'Depth'}: {line.depth} {isRtl ? 'م' : 'm'} • {line.soilType}</span>
                           </div>
+                          {seePricing && (
                           <div className="flex items-center gap-2 text-muted-foreground">
                             <Coins className="h-3.5 w-3.5 shrink-0" />
                             <span className="text-xs">
@@ -275,6 +285,7 @@ export default function DriveLinesPage() {
                               </span>
                             </span>
                           </div>
+                          )}
                         </div>
 
                         <div>
@@ -358,8 +369,9 @@ export default function DriveLinesPage() {
                 value={formData.projectId}
                 onValueChange={(v) => {
                   // v13: عند تغيير المشروع — عبّئ سعر المتر من سعر المشروع المختار إن كان الحقل فارغاً
+                  // v14.2: التعبئة فقط لمن يُسمح له برؤية الأسعار
                   const proj = projects.find((p) => p.id === v)
-                  const inheritedPrice = proj?.pricePerMeter != null ? String(proj.pricePerMeter) : ''
+                  const inheritedPrice = seePricing && proj?.pricePerMeter != null ? String(proj.pricePerMeter) : ''
                   setFormData({ ...formData, projectId: v, pricePerMeter: formData.pricePerMeter || inheritedPrice })
                 }}
                 required
@@ -389,6 +401,7 @@ export default function DriveLinesPage() {
                 <Label>{isRtl ? 'نقطة النهاية' : 'End Point'} *</Label>
                 <Input value={formData.endPoint} onChange={(e) => setFormData({ ...formData, endPoint: e.target.value })} required />
               </div>
+              {seePricing && (
               <div className="space-y-1.5">
                 <Label>{isRtl ? 'سعر المتر (ر.ع) *' : 'Price per Meter (OMR) *'}</Label>
                 <Input type="number" step="0.001" min="0" value={formData.pricePerMeter} onChange={(e) => setFormData({ ...formData, pricePerMeter: e.target.value })} required />
@@ -396,6 +409,7 @@ export default function DriveLinesPage() {
                   {isRtl ? 'تُحسب التقارير اليومية لهذا الخط بهذا السعر — تغييره يعيد حساب التقارير القديمة تلقائياً' : 'Daily reports of this line are priced by this rate — changing it recalculates old reports'}
                 </p>
               </div>
+              )}
               <div className="space-y-1.5">
                 <Label>{isRtl ? 'القطر' : 'Diameter'}</Label>
                 <Select value={formData.diameter} onValueChange={(v) => setFormData({ ...formData, diameter: v })}>
@@ -492,3 +506,4 @@ export default function DriveLinesPage() {
     </div>
   )
 }
+
