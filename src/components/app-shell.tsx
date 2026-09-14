@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { useAppStore } from '@/lib/store'
-import { hasPermission, MODULE_PERMISSIONS, MODULE_PERMISSION_LABELS, REPORT_PERMISSIONS, REPORT_LABELS, ROLE_PERMISSIONS, canAccessDashboard, SYSTEM_ADMIN_EMAIL, type SessionUser } from '@/lib/auth'
+import { hasPermission, MODULE_PERMISSIONS, MODULE_PERMISSION_LABELS, REPORT_PERMISSIONS, REPORT_LABELS, ROLE_PERMISSIONS, canAccessDashboard, canViewPricing, SYSTEM_ADMIN_EMAIL, type SessionUser } from '@/lib/auth'
 import { clearStoredToken, authedFetch } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -194,7 +194,11 @@ export default function AppShell() {
   if (!user) return null
 
   // تمرير بريد المستخدم ليتجاوز مدير النظام (admin@axis.om) كل فحوصات الصلاحيات
-  const allowedItems = navItems.filter(item => hasPermission(user.role, item.resource, user.permissions, user.email))
+  // v14.1: قسم "تقييم الأداء" مالي (إيرادات وأرباح) — يُخفى من القائمة عن كل من لا يرى الأسعار
+  const allowedItems = navItems.filter(item => {
+    if (item.id === 'performance' && !canViewPricing(user)) return false
+    return hasPermission(user.role, item.resource, user.permissions, user.email)
+  })
   // لوحة التحكم لمدير النظام والإدارة العليا فقط — الموظفون يُوجّهون لأول صفحة مخوّلة
   const canSeeDashboard = canAccessDashboard(user)
   const landingPage: PageId = allowedItems.find(i => i.id !== 'dashboard')?.id ?? 'notifications'
@@ -799,3 +803,9 @@ export default function AppShell() {
   )
 }
 
+
+   
+
+      
+
+  
