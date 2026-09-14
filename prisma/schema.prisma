@@ -25,6 +25,9 @@ model User {
   permissions  Json?    // Custom per-user permission overrides: { drive_lines: true, rpt_daily_site: false, ... }
   // SECURITY: إصدار الجلسة — يُرفع عند تغيير كلمة المرور لإبطال كل التوكنات القديمة فوراً
   tokenVersion Int      @default(0)
+  // SECURITY v15: علم مدير النظام — مصدر الحقيقة قاعدة البيانات نفسها لا الإيميل ولا التوكن.
+  // صاحب هذا العلم مستثنى نهائياً من رؤية الأسعار (canViewPricing) مهما كان دوره أو بريده.
+  isSystemAdmin Boolean @default(false)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -498,6 +501,3 @@ model CompanyAsset {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 }
-
-
-
