@@ -13,7 +13,7 @@ import {
 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
-import { hasReportPermission } from '@/lib/auth'
+import { hasReportPermission, canViewPricing } from '@/lib/auth'
 import { toast } from 'sonner'
 import {
   reportTypes, reportStatusLabels, incidentLabels, handoverStatusLabels,
@@ -26,6 +26,8 @@ export default function ReportsPage() {
   const [selectedReport, setSelectedReport] = useState<string>('')
   const [selectedProject, setSelectedProject] = useState<string>('all')
   const user = useAppStore((s) => s.user)
+  // v14.2: تقارير الإيراد والربح وأرقامها — سرية مالية (المشرف العام مستثنى داخل canViewPricing)
+  const seePricing = !!(user && canViewPricing(user))
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
   const [reportData, setReportData] = useState<any>(null)
@@ -325,6 +327,8 @@ export default function ReportsPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {reportTypes
             .filter((r) => user && hasReportPermission(user.role, 'rpt_' + r.id, user.permissions))
+            // v14.2 SECURITY: تقريرا الإيراد وصافي الربح مخفيان عن غير المصرح لهم مالياً
+            .filter((r) => seePricing || (r.id !== 'revenue' && r.id !== 'profit'))
             .map((r) => {
             const Icon = r.icon
             const isSelected = selectedReport === r.id
@@ -423,7 +427,7 @@ export default function ReportsPage() {
           shown ONLY during printing (see @media print in globals.css) */}
       {mounted && reportData && createPortal(
         <div className="print-root">
-          <PrintableReport data={reportData} generatedBy={user?.name || null} />
+          <PrintableReport data={reportData} generatedBy={user?.name || null} showRevenue={seePricing} />
         </div>,
         document.body
       )}
