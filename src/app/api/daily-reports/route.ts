@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
-import { hasPermission, canWrite, SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
+import { hasPermission, canWrite, canViewPricing, SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { handleDbError, validateRequired, parseNumber, safeDbOp, parseDateRange } from '@/lib/api-helpers'
+import { handleDbError, validateRequired, parseNumber, safeDbOp, parseDateRange, sanitizeDailyReport } from '@/lib/api-helpers'
 import { notifyUsers } from '@/lib/notify'
 
 export async function GET(req: NextRequest) {
@@ -71,7 +71,11 @@ export async function GET(req: NextRequest) {
   )
 
   if (!result.success) return result.response
-  return NextResponse.json({ reports: result.data })
+  return NextResponse.json({
+    // v14.2 SECURITY: الإيراد اليومي مشتق من سعر المتر السري — يُحذف من كل تقرير
+    // إلا للإدارة العليا ومدير المشروع (canViewPricing يستثني admin@axis.om صراحةً)
+    reports: (result.data || []).map(function(r: any) { return sanitizeDailyReport(r, canViewPricing(user)) }),
+  })
 }
 
 export async function POST(req: NextRequest) {
@@ -349,8 +353,10 @@ export async function POST(req: NextRequest) {
     // Fire all non-critical updates in parallel (don't await - let them run in background)
     Promise.all(updatePromises).catch(() => {})
 
-    return NextResponse.json({ report: createResult.data, success: true })
+    // v14.2 SECURITY: الرد مُعقّم — لا إيراد لمستخدم غير مصرح له
+    return NextResponse.json({ report: sanitizeDailyReport(createResult.data, canViewPricing(user)), success: true })
   } catch (error: any) {
     return handleDbError(error, 'إنشاء التقرير اليومي')
   }
 }
+
