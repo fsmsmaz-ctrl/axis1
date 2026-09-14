@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
-import { handleDbError, validateRequired, parseNumber, parseDate, safeDbOp } from '@/lib/api-helpers'
-import { canWrite } from '@/lib/auth'
+import { handleDbError, validateRequired, parseNumber, parseDate, safeDbOp, sanitizeProject } from '@/lib/api-helpers'
+import { canWrite, canViewPricing } from '@/lib/auth'
 
 export async function POST(req: NextRequest) {
   const user = await getAuthUser(req)
@@ -22,9 +22,7 @@ export async function POST(req: NextRequest) {
 
     const totalLength = parseNumber(body.totalLength, 0)
     // v13: سعر المتر لم يعد مطلوباً عند إنشاء المشروع — الأسعار على مستوى خطوط الحفر
-    const pricePerMeter = (body.pricePerMeter !== undefined && body.pricePerMeter !== null && String(body.pricePerMeter) !== '')
-      ? parseNumber(body.pricePerMeter, 0)
-      : null
+    // (v14.2: السعر يُعالج مباشرة في data مع فحص canViewPricing)
     const startDate = parseDate(body.startDate, 0)
     const expectedEnd = parseDate(body.expectedEnd, 90)
 
@@ -40,7 +38,13 @@ export async function POST(req: NextRequest) {
           code: String(body.code).trim(), name: String(body.name).trim(), client: String(body.client).trim(),
           location: String(body.location || '').trim(), contractNumber: body.contractNumber ? String(body.contractNumber) : null,
           workType: String(body.workType), pipeDiameter: String(body.pipeDiameter),
-          totalLength, pricePerMeter, soilType: String(body.soilType),
+          totalLength, 
+          // v14.2 SECURITY: سعر المشروع يُقبل فقط من الإدارة العليا ومدير المشروع
+          // (canViewPricing يستثني المشرف العام admin@axis.om) — غيرهم يُنشأ المشروع بلا سعر
+          pricePerMeter: canViewPricing(user) && (body.pricePerMeter !== undefined && body.pricePerMeter !== null && String(body.pricePerMeter) !== '')
+            ? parseNumber(body.pricePerMeter, 0)
+            : null, 
+          soilType: String(body.soilType),
           startDate, expectedEnd, status: String(body.status || 'not_started'),
           progress: 0, managerId: user.role === 'project_manager' ? user.id : (body.managerId || null),
           engineerId: body.engineerId || null, notes: body.notes ? String(body.notes) : null,
@@ -56,7 +60,8 @@ export async function POST(req: NextRequest) {
       safeDbOp(() => db.notification.create({ data: { projectId: createResult.data.id, type: 'project_created', title: 'مشروع جديد', message: 'تم إنشاء مشروع جديد: ' + createResult.data.code + ' بواسطة ' + user.name, severity: 'info' } }), 'إشعار'),
     ]).catch(() => {})
 
-    return NextResponse.json({ project: createResult.data, success: true })
+    // v14.2 SECURITY: الرد مُعقّم — لا سعر لمستخدم غير مصرح له
+    return NextResponse.json({ project: sanitizeProject(createResult.data, canViewPricing(user)), success: true })
   } catch (error: any) {
     return handleDbError(error, 'إنشاء المشروع')
   }
