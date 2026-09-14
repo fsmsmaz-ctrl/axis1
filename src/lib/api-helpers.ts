@@ -150,6 +150,69 @@ export async function safeDbOp(
   }
 }
 
+// ==================== Pricing Confidentiality (v14) ====================
+// سعر خط الحفر/المشروع والإيرادات المشتقة بيانات سرية تظهر فقط للإدارة العليا
+// ومدير المشروع (ومدير النظام). تُطبق هذه الدوال على كل ردود الـ API قبل إرسالها
+// حتى لا يتسرب أي مبلغ مالي لمستخدم غير مصرح له — بغض النظر عن الصلاحيات المخصصة.
+
+/** إزالة الحقول المالية من كائن خط حفر (والمشروع المضمّن فيه). */
+export function sanitizeDriveLine<T extends Record<string, any>>(dl: T | null, canSeePrice: boolean): T | null {
+  if (!dl || canSeePrice) return dl
+  try {
+    delete dl.pricePerMeter
+    if (dl.project) delete dl.project.pricePerMeter
+  } catch {}
+  return dl
+}
+
+/** إزالة الحقول المالية من كائن تقرير يومي (والخط/المشروع المضمّنان فيه). */
+export function sanitizeDailyReport<T extends Record<string, any>>(r: T | null, canSeePrice: boolean): T | null {
+  if (!r || canSeePrice) return r
+  try {
+    delete r.dailyRevenue
+    if (r.driveLine) delete r.driveLine.pricePerMeter
+    if (r.project) delete r.project.pricePerMeter
+  } catch {}
+  return r
+}
+
+/** إزالة سعر المتر من كائن مشروع. */
+export function sanitizeProject<T extends Record<string, any>>(p: T | null, canSeePrice: boolean): T | null {
+  if (!p || canSeePrice) return p
+  try {
+    delete p.pricePerMeter
+  } catch {}
+  return p
+}
+
+// ==================== Input Bounds Validation ====================
+
+/** فحص قراءات العدادات: لا قيم سالبة ولا قيم عملاقة (حد أقصى 1,000,000 متر). */
+export function validateReadingBounds(values: { startReading?: number; endReading?: number; dailyMeters?: number }): NextResponse | null {
+  const MAX_READING = 1_000_000
+  const entries: Array<[string, number | undefined]> = [
+    ['startReading', values.startReading],
+    ['endReading', values.endReading],
+    ['dailyMeters', values.dailyMeters],
+  ]
+  for (const [name, val] of entries) {
+    if (val === undefined || val === null) continue
+    if (!isFinite(val) || val < 0) {
+      return NextResponse.json({
+        error: 'invalid_reading',
+        message: 'القراءات يجب أن تكون أرقاماً غير سالبة.',
+      }, { status: 400 })
+    }
+    if (val > MAX_READING) {
+      return NextResponse.json({
+        error: 'invalid_reading',
+        message: 'قيمة القراءة أكبر من الحد المسموح.',
+      }, { status: 400 })
+    }
+  }
+  return null
+}
+
 // ==================== Progress Recalculation ====================
 // SIMPLE approach: sum of ALL dailyMeters per project / project.totalLength
 // Works regardless of driveLineId, report status, or drive line existence.
@@ -358,3 +421,4 @@ export function buildAuditDetails(
   if (diff.changes.length === 0) return summary
   return JSON.stringify(diff)
 }
+
