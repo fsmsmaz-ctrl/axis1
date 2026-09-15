@@ -2,8 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { handleDbError, safeDbOp } from '@/lib/api-helpers'
-import { runScanThrottled } from '@/lib/report-watch'
-import { runTaskScanThrottled } from '@/lib/task-watch'
 import { OVERSIGHT_NOTIFICATION_TYPES } from '@/lib/oversight'
 
 export async function GET(req: NextRequest) {
@@ -15,19 +13,13 @@ export async function GET(req: NextRequest) {
   var searchParams = new URL(req.url).searchParams
   var unreadOnly = searchParams.get('unreadOnly') === 'true'
 
-  // ── فحص التأخيرات الدوري: يُنفَّذ مرة واحدة كحد أقصى كل 10 دقائق ──
-  // يرصد: تقارير لم تُسلَّم/لم تُعتمد، سلامة ناقصة، تشطيب غير مكتمل،
-  // جاهزية تقييم الأداء — ويُصدر التنبيهات لأصحاب الصلاحيات.
-  // لا يُنفَّع عند طلب غير المقروءة فقط (polling الجرس الخفيف).
-  if (!unreadOnly) {
-    try {
-      await runScanThrottled(false)
-      // مراقب المهام: مواعيد خلال 24 ساعة / تأخيرات / بانتظار مراجعة
-      await runTaskScanThrottled(false)
-    } catch (e) {
-      // الفحص غير حرج — الاستمرار في جلب التنبيهات
-    }
-  }
+  // ── v20: لم يعد هذا المسار يشغّل فحص التأخيرات الدوري ──
+  // انتظار الفحص الثقيل داخل مسار الطلب كان يتجاوز حد مهلة Netlify
+  // (10 ثوانٍ) فيُعيد الخادم صفحة خطأ غير JSON فتفشل الواجهة صامتة
+  // (قائمة فارغة بلا رسالة). القراءة الآن مباشرة وسريعة دائماً،
+  // والفحص له مساره الخاص: POST /api/notifications/scan — تشغّله
+  // الواجهة عند الفتح بشكل غير معترَض عليه (fire-and-forget) مع
+  // throttle داخلي (مرة كل 10 دقائق كحد أقصى).
 
   // ── قاعدة الظهور: التنبيه يظهر فقط لمن وُجِّه إليه ──
   // 1) تنبيهات موجهة للمستخدم نفسه (userId = user.id)
