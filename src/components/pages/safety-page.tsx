@@ -71,6 +71,9 @@ const emptyForm = {
 export default function SafetyPage() {
   const [reports, setReports] = useState<any[]>([])
   const [projects, setProjects] = useState<any[]>([])
+  // v18 FIX: حالة تحميل/خطأ قائمة المشاريع — كانت الفشل تُبتلع بصمت فتبدو القائمة فارغة بلا سبب ظاهر
+  const [projectsLoading, setProjectsLoading] = useState(true)
+  const [projectsError, setProjectsError] = useState(false)
   const [driveLines, setDriveLines] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedProject, setSelectedProject] = useState<string>('all')
@@ -129,14 +132,29 @@ export default function SafetyPage() {
     }
   }
 
+  // v18 FIX: كان الجلب صامتاً تماماً — أي فشل (403/500/شبكة) يترك القائمة فارغة
+  // إلى الأبد بلا رسالة ولا إعادة محاولة، فيبدو نموذج السلامة "بلا مشاريع".
+  // الآن: رسالة خطأ واضحة تعرض سبب الخادم + حالة تحميل مرئية.
   async function fetchProjects() {
+    setProjectsLoading(true)
     try {
       var res = await authedFetch('/api/projects/list?_t=' + Date.now())
-      if (!res.ok) { setProjects([]); return }
+      if (!res.ok) {
+        setProjects([])
+        setProjectsError(true)
+        var errData = await res.json().catch(function() { return {} })
+        toast.error(errData.message || (isRtl ? 'فشل تحميل قائمة المشاريع' : 'Failed to load projects'))
+        return
+      }
       var data = await res.json()
       setProjects(data.projects || [])
+      setProjectsError(false)
     } catch {
       setProjects([])
+      setProjectsError(true)
+      toast.error(isRtl ? 'فشل تحميل قائمة المشاريع' : 'Failed to load projects')
+    } finally {
+      setProjectsLoading(false)
     }
   }
 
@@ -195,6 +213,14 @@ export default function SafetyPage() {
     fetchWorkers()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // v18 FIX: كانت المشاريع تُجلب مرة واحدة عند فتح الصفحة فقط — أي فشل عابر
+  // وقتها يعني قائمة فارغة إلى الأبد. نعيد المحاولة تلقائياً عند كل فتح
+  // لنموذج التقرير أو نافذة العمال.
+  useEffect(() => {
+    if (sheetOpen || workerDialogOpen) fetchProjects()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sheetOpen, workerDialogOpen])
 
   useEffect(() => {
     fetchReports()
@@ -610,6 +636,19 @@ export default function SafetyPage() {
                   })}
                 </SelectContent>
               </Select>
+              {/* v18 FIX: تنبيه فارغة أيضاً في نافذة العمال بنفس آلية الإصلاح */}
+              {!projectsLoading && projects.length === 0 && (
+                <p className="mt-1 text-xs leading-5 text-amber-700 dark:text-amber-400">
+                  {projectsError
+                    ? (isRtl ? 'لم تُحمّل قائمة المشاريع — ' : 'Projects list failed to load — ')
+                    : (isRtl ? 'لا توجد مشاريع مسجّلة بعد. ' : 'No projects registered yet. ')}
+                  {projectsError && (
+                    <button type="button" onClick={fetchProjects} className="font-medium underline">
+                      {isRtl ? 'إعادة المحاولة' : 'Retry'}
+                    </button>
+                  )}
+                </p>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label>{isRtl ? 'ملاحظات' : 'Notes'}</Label>
@@ -646,6 +685,26 @@ export default function SafetyPage() {
                     })}
                   </SelectContent>
                 </Select>
+                {/* v18 FIX: حالة فارغة مرئية مع إعادة محاولة — بدل قائمة صامتة فارغة */}
+                {!projectsLoading && projects.length === 0 && (
+                  <div className="mt-2 space-y-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3">
+                    <p className="text-xs leading-5 text-amber-700 dark:text-amber-400">
+                      {projectsError
+                        ? (isRtl
+                            ? 'لم تُحمّل قائمة المشاريع — قد يكون السبب خطأ مؤقتاً أو نقص صلاحية.'
+                            : 'Projects list failed to load — this may be a temporary error or a missing permission.')
+                        : (isRtl
+                            ? 'لا توجد مشاريع مسجّلة في النظام بعد.'
+                            : 'No projects registered in the system yet.')}
+                    </p>
+                    {projectsError && (
+                      <Button type="button" variant="outline" size="sm" onClick={fetchProjects} className="h-8 w-full gap-1.5">
+                        <Loader2 className="h-3.5 w-3.5" />
+                        {isRtl ? 'إعادة المحاولة' : 'Retry'}
+                      </Button>
+                    )}
+                  </div>
+                )}
               </div>
               <div className="space-y-1.5">
                 <Label>{isRtl ? 'التاريخ' : 'Date'} *</Label>
