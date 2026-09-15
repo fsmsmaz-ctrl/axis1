@@ -13,7 +13,12 @@ export async function GET(req: NextRequest) {
 
     // SECURITY FIX: بوابة قراءة — كانت القائمة (بأسعارها وحقولها المالية) متاحة
     // لأي مستخدم مصادق حتى لو أُلغيت صلاحية projects الخاصة به
-    if (!hasPermission(user.role, 'projects', user.permissions, user.email)) {
+    // v18 FIX: من يملك صلاحية safety يحتاج قائمة المشاريع (الاسم فقط) لاختيار
+    // المشروع عند إنشاء تقرير سلامة — كان يصمت عليه 403 فتظهر قائمة المشاريع
+    // فارغة في نموذج السلامة بلا أي رسالة. الأسعار تبقى محمية بـ canViewPricing كما هي.
+    var canReadProjects = hasPermission(user.role, 'projects', user.permissions, user.email) ||
+      hasPermission(user.role, 'safety', user.permissions, user.email)
+    if (!canReadProjects) {
       return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية عرض المشاريع' }, { status: 403 })
     }
 
@@ -37,7 +42,8 @@ export async function GET(req: NextRequest) {
           },
         },
         orderBy: { createdAt: 'desc' },
-        take: 50,
+        // v18 FIX: كان الحد 50 يُسقط المشاريع الأقدم عند تجاوز العدد — فلا تظهر في النماذج
+        take: 200,
       }),
       'جلب قائمة المشاريع'
     )
