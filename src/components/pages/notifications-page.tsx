@@ -61,6 +61,7 @@ type FilterKey = 'all' | 'unread' | 'warning' | 'critical'
 export default function NotificationsPage() {
   const [notifications, setNotifications] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
   const [filter, setFilter] = useState<FilterKey>('all')
   const language = useAppStore((s) => s.language)
   const token = useAppStore((s) => s.token)
@@ -71,16 +72,31 @@ export default function NotificationsPage() {
     try {
       const res = await authedFetch('/api/notifications')
       const data = await res.json()
-      setNotifications(data.notifications || [])
+      if (!res.ok) {
+        // v20: أخطاء الخادم تُعرض للمستخدم بدل قائمة فارغة صامتة
+        setError(data?.message || (isRtl ? 'تعذر تحميل التنبيهات' : 'Failed to load notifications'))
+        setNotifications([])
+      } else {
+        setNotifications(data.notifications || [])
+        setError('')
+      }
     } catch (e) {
-      // تجاهل أخطاء الشبكة المؤقتة
+      // v20: فشل الاتصال (مهلة/شبكة) يظهر برسالة واضحة وزر إعادة محاولة
+      setError(isRtl ? 'تعذر الاتصال بالخادم' : 'Connection failed')
+      setNotifications([])
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [isRtl])
 
   useEffect(() => {
     fetchNotifications()
+    // v20: الفحص الدوري صار في مساره الخاص (POST /api/notifications/scan)
+    // يُشغَّل عند فتح القسم بشكل غير معترَض عليه — ثم يُعاد الجلب مرة
+    // واحدة لعرض التنبيهات الجديدة إن أُنشئت أثناء الفحص.
+    authedFetch('/api/notifications/scan', { method: 'POST' })
+      .then((r) => { if (r.ok) fetchNotifications() })
+      .catch(() => {})
   }, [fetchNotifications])
 
   async function markAsRead(id: string) {
@@ -173,6 +189,17 @@ export default function NotificationsPage() {
           )}
         </div>
       </div>
+
+      {/* v20: لافتة الخطأ — فشل الجلب لم يعد صامتاً */}
+      {error && (
+        <div className="flex items-center justify-between gap-3 flex-wrap rounded-lg border border-destructive/40 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <span>{error}</span>
+          <Button variant="outline" size="sm" onClick={fetchNotifications} disabled={loading}>
+            <RefreshCw className={`h-4 w-4 ml-2 ${loading ? 'animate-spin' : ''}`} />
+            {isRtl ? 'إعادة المحاولة' : 'Retry'}
+          </Button>
+        </div>
+      )}
 
       {/* فلاتر التصنيف */}
       <div className="flex items-center gap-2 flex-wrap">
