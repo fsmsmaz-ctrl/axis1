@@ -1,5 +1,5 @@
 // ============================================================
-// الرقابة العملية — API تجميعي (v17)
+// الرقابة العملية — API تجميعي (v17، محدَّث v21)
 // يجمع في نداء واحد:
 //  1) التنبيهات الرقابية وإشعارات عمليات البيانات (إضافة/تعديل/حذف)
 //  2) تنبيهات متابعة المهام
@@ -11,8 +11,24 @@
 // الموجود مسبقاً — هذا القسم هو أول مستهلك له في الواجهة.
 // البوابة: الإدارة العليا + مديرو المشاريع + مدير النظام فقط.
 // ============================================================
+// v21 — إصلاح جذري لعطل «تعذر الاتصال بالخادم» في قسم الرقابة:
+//  1) السبب الجذري: بعد إخراج الفحصين من مسار الطلب في v20 نقص عدد
+//     عناصر Promise.all بينما بقيت فهارس g(i) في تجميع الاستجابة على
+//     القيم القديمة — g(18) كانت تقرأ عنصراً غير موجود (undefined)
+//     فانفجر TypeError في كل نداء → خطأ 500 → رسالة «تعذر الاتصال
+//     بالخادم» مهما كانت الشبكة سليمة. الآن تُفكَّك النتائج بالأسماء
+//     مباشرة بلا فهارس إطلاقاً فيستحيل انزياحها مستقبلاً.
+//  2) عدادات لوحة المؤشرات التسعة دُمجت في استعلام SQL واحد — القسم
+//     كان يطلق 18 استعلاماً متوازياً فيستنزف اتصالات قاعدة البيانات
+//     على Netlify (Cold Start) ويقترب من مهلة 10 ثوانٍ. الآن 10
+//     استعلامات فقط، وفشل استعلام العدادات يعطي أصفاراً دون إسقاط
+//     القسم (fallback آمن).
+//  3) الفحص الدوري يُشغَّل من الواجهة بعد اكتمال التحميل وليس بالتوازي
+//     معه (انظر oversight-page.tsx و notifications-page.tsx).
+// ============================================================
 
 import { NextRequest, NextResponse } from 'next/server'
+import { Prisma } from '@prisma/client'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { safeDbOp } from '@/lib/api-helpers'
@@ -54,12 +70,6 @@ export async function GET(req: NextRequest) {
     user.isSystemAdmin === true ||
     (user.email || '').toLowerCase().trim() === SYSTEM_ADMIN_EMAIL
 
-  // ── v20: الفحصان الدوريان خرجا من مسار الطلب ──
-  // انتظار الفحصين قبل القراءة كان يتجاوز مهلة Netlify (10 ثوانٍ)
-  // فيفشل النداء برسالة «تعذر الاتصال بالخادم». القراءة الآن مباشرة
-  // وسريعة، والفحص يُشغَّل من الواجهة عبر POST /api/notifications/scan
-  // بشكل غير معترَض عليه (fire-and-forget) مع throttle داخلي.
-
   var now = new Date()
   var startToday = new Date(now)
   startToday.setHours(0, 0, 0, 0)
@@ -70,12 +80,24 @@ export async function GET(req: NextRequest) {
   var visible = { OR: [{ userId: user.id }, { userId: null }] }
 
   // نطاق عدادات سجل العمليات: الإدارة العليا الكل — مدير المشروع مشاريعه فقط
-  var logScope = isTop
-    ? {}
-    : { project: { OR: [{ managerId: user.id }, { engineerId: user.id }] } }
+  var projectScopeSql = isTop
+    ? Prisma.empty
+    : Prisma.sql` AND "projectId" IN (SELECT "id" FROM "Project" WHERE "managerId" = ${uid} OR "engineerId" = ${uid})`
 
-  var results = await Promise.all([
-    // 0) التنبيهات الرقابية: الأنواع المنقولة + أي تنبيه حرج
+  // v21: تُفكَّك النتائج بالأسماء مباشرة — لا فهارس رقمية إطلاقاً
+  var [
+    supervisoryRes,
+    taskNotifsRes,
+    criticalRes,
+    countsRes,
+    lateRes,
+    dueSoonRes,
+    waitingRes,
+    readyReviewRes,
+    returnedRes,
+    projectsRes,
+  ] = await Promise.all([
+    // التنبيهات الرقابية: الأنواع المنقولة + أي تنبيه حرج
     safeDbOp(
       () => db.notification.findMany({
         where: {
@@ -95,7 +117,7 @@ export async function GET(req: NextRequest) {
       }),
       'جلب التنبيهات الرقابية'
     ),
-    // 1) تنبيهات متابعة المهام (كل أنواع task_ الموجهة للمستخدم)
+    // تنبيهات متابعة المهام (كل أنواع task_ الموجهة للمستخدم)
     safeDbOp(
       () => db.notification.findMany({
         where: { userId: uid, type: { startsWith: 'task_' } },
@@ -104,7 +126,7 @@ export async function GET(req: NextRequest) {
       }),
       'جلب تنبيهات المهام'
     ),
-    // 2) التحذيرات الحرجة (مرئية للمستخدم)
+    // التحذيرات الحرجة (مرئية للمستخدم)
     safeDbOp(
       () => db.notification.findMany({
         where: {
@@ -116,23 +138,40 @@ export async function GET(req: NextRequest) {
       }),
       'جلب التحذيرات الحرجة'
     ),
-    // عدادات غير المقروء
+    // v21: كل عدادات لوحة المؤشرات في استعلام واحد (كانت 9 استعلامات).
+    // COUNT(*)::int يعيد number وليس bigint — bigint يفشل في JSON.stringify
     safeDbOp(
-      () => db.notification.count({
-        where: { AND: [visible, { read: false, type: { in: OVERSIGHT_NOTIFICATION_TYPES.slice() } }] },
-      }),
-      'عد التحذيرات الرقابية غير المقروءة'
+      () => db.$queryRaw<Array<Record<string, number>>>`
+        SELECT
+          (SELECT COUNT(*)::int FROM "Notification"
+            WHERE "read" = false
+              AND ("userId" = ${uid} OR "userId" IS NULL)
+              AND "type" IN (${Prisma.raw(OVERSIGHT_NOTIFICATION_TYPES.slice().map((t) => "'" + t + "'").join(','))})
+          ) AS "supervisoryUnread",
+          (SELECT COUNT(*)::int FROM "Notification"
+            WHERE "read" = false
+              AND ("userId" = ${uid} OR "userId" IS NULL)
+              AND "severity" = 'critical'
+          ) AS "criticalUnread",
+          (SELECT COUNT(*)::int FROM "AuditLog"
+            WHERE "createdAt" >= ${startToday}${projectScopeSql}
+          ) AS "opsToday",
+          (SELECT COUNT(*)::int FROM "AuditLog"
+            WHERE "createdAt" >= ${weekAgo}${projectScopeSql}
+          ) AS "ops7d",
+          (SELECT COUNT(*)::int FROM "Task"
+            WHERE "dueDate" < ${now} AND "status" NOT IN ('closed', 'cancelled')
+          ) AS "lateTasks",
+          (SELECT COUNT(*)::int FROM "Task"
+            WHERE "dueDate" >= ${now} AND "dueDate" < ${in24h} AND "status" NOT IN ('closed', 'cancelled')
+          ) AS "dueSoonTasks",
+          (SELECT COUNT(*)::int FROM "Task" WHERE "status" = 'waiting') AS "waitingTasks",
+          (SELECT COUNT(*)::int FROM "Task" WHERE "status" = 'ready_review') AS "readyReviewTasks",
+          (SELECT COUNT(*)::int FROM "Task" WHERE "status" = 'returned') AS "returnedTasks"
+      `,
+      'عدادات لوحة الرقابة'
     ),
-    safeDbOp(
-      () => db.notification.count({
-        where: { AND: [visible, { read: false, severity: 'critical' }] },
-      }),
-      'عد التحذيرات الحرجة غير المقروءة'
-    ),
-    // عمليات البيانات — اليوم وآخر 7 أيام
-    safeDbOp(() => db.auditLog.count({ where: { createdAt: { gte: startToday }, ...logScope } }), 'عد عمليات اليوم'),
-    safeDbOp(() => db.auditLog.count({ where: { createdAt: { gte: weekAgo }, ...logScope } }), 'عد عمليات الأسبوع'),
-    // متابعة المهام الحية
+    // المهام المتأخرة
     safeDbOp(
       () => db.task.findMany({
         where: { dueDate: { lt: now }, ...OPEN_STATUS },
@@ -142,7 +181,7 @@ export async function GET(req: NextRequest) {
       }),
       'المهام المتأخرة'
     ),
-    safeDbOp(() => db.task.count({ where: { dueDate: { lt: now }, ...OPEN_STATUS } }), 'عد المهام المتأخرة'),
+    // مهام تستحق خلال 24 ساعة
     safeDbOp(
       () => db.task.findMany({
         where: { dueDate: { gte: now, lt: in24h }, ...OPEN_STATUS },
@@ -152,10 +191,7 @@ export async function GET(req: NextRequest) {
       }),
       'مهام تستحق خلال 24 ساعة'
     ),
-    safeDbOp(
-      () => db.task.count({ where: { dueDate: { gte: now, lt: in24h }, ...OPEN_STATUS } }),
-      'عد مهام 24 ساعة'
-    ),
+    // مهام بانتظار جهة أخرى
     safeDbOp(
       () => db.task.findMany({
         where: { status: 'waiting' },
@@ -165,7 +201,7 @@ export async function GET(req: NextRequest) {
       }),
       'مهام بانتظار جهة أخرى'
     ),
-    safeDbOp(() => db.task.count({ where: { status: 'waiting' } }), 'عد مهام الانتظار'),
+    // مهام بانتظار المراجعة
     safeDbOp(
       () => db.task.findMany({
         where: { status: 'ready_review' },
@@ -175,7 +211,7 @@ export async function GET(req: NextRequest) {
       }),
       'مهام بانتظار المراجعة'
     ),
-    safeDbOp(() => db.task.count({ where: { status: 'ready_review' } }), 'عد مهام المراجعة'),
+    // المهام المعادة
     safeDbOp(
       () => db.task.findMany({
         where: { status: 'returned' },
@@ -185,7 +221,6 @@ export async function GET(req: NextRequest) {
       }),
       'المهام المعادة'
     ),
-    safeDbOp(() => db.task.count({ where: { status: 'returned' } }), 'عد المهام المعادة'),
     // قائمة المشاريع لفلتر سجل العمليات (مدير المشروع: مشاريعه فقط)
     safeDbOp(
       () => db.project.findMany({
@@ -198,36 +233,40 @@ export async function GET(req: NextRequest) {
   ])
 
   // الاستعلام الأول حرج — إذا فشل أعد الخطأ، والبقية تعطي قيماً افتراضية آمنة
-  if (!results[0].success) return results[0].response
-
-  function g(i: number, fallback: any) {
-    return results[i].success ? results[i].data : fallback
+  if (!supervisoryRes.success) {
+    return supervisoryRes.response || NextResponse.json(
+      { error: 'database_error', message: 'تعذر جلب بيانات الرقابة' },
+      { status: 500 }
+    )
   }
+
+  // v21: استعلام العدادات المجمّع — فشله يعطي أصفاراً فقط دون إسقاط القسم
+  var c: Record<string, number> = countsRes.success ? ((countsRes.data as any) || {}) : {}
 
   return NextResponse.json(
     {
       stats: {
-        opsToday: g(5, 0),
-        ops7d: g(6, 0),
-        supervisoryUnread: g(3, 0),
-        criticalUnread: g(4, 0),
-        lateTasks: g(9, 0),
-        dueSoonTasks: g(11, 0),
-        waitingTasks: g(13, 0),
-        readyReviewTasks: g(15, 0),
-        returnedTasks: g(17, 0),
+        opsToday: c.opsToday || 0,
+        ops7d: c.ops7d || 0,
+        supervisoryUnread: c.supervisoryUnread || 0,
+        criticalUnread: c.criticalUnread || 0,
+        lateTasks: c.lateTasks || 0,
+        dueSoonTasks: c.dueSoonTasks || 0,
+        waitingTasks: c.waitingTasks || 0,
+        readyReviewTasks: c.readyReviewTasks || 0,
+        returnedTasks: c.returnedTasks || 0,
       },
-      notifications: results[0].data,
-      taskNotifications: g(1, []),
-      critical: g(2, []),
+      notifications: supervisoryRes.data || [],
+      taskNotifications: taskNotifsRes.success ? taskNotifsRes.data : [],
+      critical: criticalRes.success ? criticalRes.data : [],
       tasks: {
-        late: g(7, []),
-        dueSoon: g(10, []),
-        waiting: g(12, []),
-        readyReview: g(14, []),
-        returned: g(16, []),
+        late: lateRes.success ? lateRes.data : [],
+        dueSoon: dueSoonRes.success ? dueSoonRes.data : [],
+        waiting: waitingRes.success ? waitingRes.data : [],
+        readyReview: readyReviewRes.success ? readyReviewRes.data : [],
+        returned: returnedRes.success ? returnedRes.data : [],
       },
-      projects: g(18, []),
+      projects: projectsRes.success ? projectsRes.data : [],
       viewer: { isTopManagement: isTop },
     },
     { headers: { 'Cache-Control': 'no-store' } }
