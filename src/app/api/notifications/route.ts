@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 import { handleDbError, safeDbOp } from '@/lib/api-helpers'
 import { runScanThrottled } from '@/lib/report-watch'
 import { runTaskScanThrottled } from '@/lib/task-watch'
+import { OVERSIGHT_NOTIFICATION_TYPES, isOversightViewer } from '@/lib/oversight'
 
 export async function GET(req: NextRequest) {
   var user = await getAuthUser(req)
@@ -39,6 +40,20 @@ export async function GET(req: NextRequest) {
       { userId: null },
     ],
   }
+  // ── نقل الرقابة العملية (v17) ──
+  // لمشاهدي الإدارة (الإدارة العليا / مديرو المشاريع / مدير النظام) تُنقل
+  // هذه الفئات من قسم "التنبيهات" إلى قسم "الرقابة العملية":
+  //   • رسائل وإشعارات عمليات البيانات (إضافة / تعديل / حذف)
+  //   • التحذيرات الرقابية الموجهة للإدارة
+  //   • متابعة المهام (تأخير / اقتراب موعد / بانتظار مراجعة...)
+  //   • التحذيرات الحرجة
+  // لذا تُستبعد أنواعها هنا وتظهر حصراً في القسم الجديد (api/oversight).
+  // التنبيهات الشخصية (إسناد مهمة، اعتماد تقرير/تشطيب، إعادة مهمة...)
+  // تبقى في هذا القسم لجميع المستخدمين دون استثناء.
+  var excludeOversight = isOversightViewer(user)
+  if (excludeOversight) {
+    where.type = { notIn: OVERSIGHT_NOTIFICATION_TYPES.slice() }
+  }
   if (unreadOnly) where.read = false
 
   var result = await safeDbOp(
@@ -55,6 +70,9 @@ export async function GET(req: NextRequest) {
     read: false,
     OR: [{ userId: user.id }, { userId: null }],
   }
+  if (excludeOversight) {
+    countWhere.type = { notIn: OVERSIGHT_NOTIFICATION_TYPES.slice() }
+  }
 
   var countResult = await safeDbOp(
     () => db.notification.count({ where: countWhere }),
@@ -68,4 +86,3 @@ export async function GET(req: NextRequest) {
     unreadCount: countResult.success ? countResult.data : 0,
   })
 }
-
