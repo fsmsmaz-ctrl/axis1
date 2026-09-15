@@ -74,8 +74,12 @@ export async function GET(req: NextRequest) {
     // showing stale data for long. Cache key is user-scoped so permissions
     // are respected.
     const cacheKey = `dashboard:${user.id}`
-    // v14.2: قرار سرية الأسعار يُحسب هنا من جلسة المستخدم ويُمرر للباني
-    const canSeePrice = canViewPricing(user)
+    // v16 (قرار صاحب الموقع): لوحة التحكم تعود ببياناتها المالية الكاملة —
+    // كل من يملك صلاحية الوصول إلى اللوحة أصلاً (مدير النظام + الإدارة العليا)
+    // يرى الإيرادات وصافي الربح والرسوم البيانية كاملة.
+    // استثناء المشرف العام من الأسعار يبقى سارياً في بقية الأقسام عبر
+    // canViewPricing دون أي تغيير — هذا التعديل محصور بلوحة التحكم فقط.
+    const canSeePrice = canViewPricing(user) || canAccessDashboard(user)
     const payload = await cached(cacheKey, 30_000, () => buildDashboard(canSeePrice))
 
     // Helpful for debugging latency issues from the client.
@@ -308,12 +312,11 @@ async function buildDashboard(canSeePrice: boolean) {
   // ── Build response ──
   const netProfit = totalRevenueSum - totalCostsSum
 
-  // v14.2 SECURITY: البيانات المالية سرية — الإيرادات وصافي الربح وأسعار المشاريع
-  // وإيراد المنحنى وإيراد التقارير الأخيرة تُصفّر/تُحذف لكل من ليس من الإدارة العليا
-  // أو مدير المشروع (canSeePrice يُمرر من GET محسوباً عبر canViewPricing التي
-  // تستثني المشرف العام admin@axis.om صراحةً).
-  // التكاليف تبقى ظاهرة لغير المصرح لهم (قرار صاحب الموقع) — لكن صافي الربح مُخفى
-  // لأنه كونه (إيراد − تكلفة) يكشف الإيراد بالطرح.
+  // v16: البيانات المالية للوحة كاملة لمن يملك صلاحية الوصول إليها أصلاً
+  // (مدير النظام + الإدارة العليا — نفس بوابة canAccessDashboard في الأعلى،
+  // وأي دور آخر لا يصل إلى اللوحة أصلاً لأنه حُجب بـ 403 قبل هذه النقطة).
+  // ما يزال سارياً: استثناء المشرف العام من الأسعار في بقية الأقسام —
+  // عبر canViewPricing في مسارات drive-lines وcosts والتقارير دون تغيير.
   if (!canSeePrice) {
     for (const p of projects as any[]) {
       if (p && p.pricePerMeter !== undefined) delete p.pricePerMeter
