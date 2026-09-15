@@ -34,7 +34,7 @@ export function getCookieOptions() {
 }
 
 export const MODULE_PERMISSIONS = [
-  'projects', 'drive_lines', 'daily_reports', 'safety', 'equipment', 'costs', 'finishings', 'tasks', 'performance', 'notifications',
+  'projects', 'drive_lines', 'daily_reports', 'safety', 'equipment', 'costs', 'finishings', 'tasks', 'performance', 'notifications', 'oversight',
 ] as const
 
 export const MODULE_PERMISSION_LABELS: Record<string, { ar: string; en: string }> = {
@@ -48,6 +48,7 @@ export const MODULE_PERMISSION_LABELS: Record<string, { ar: string; en: string }
   tasks:          { ar: 'إدارة المهام',      en: 'Task Management' },
   performance:    { ar: 'تقييم الأداء',      en: 'Performance' },
   notifications:  { ar: 'التنبيهات وسجل المراقبة', en: 'Notifications & Monitor' },
+  oversight:      { ar: 'الرقابة العملية',   en: 'Operational Control' },
 }
 
 export const REPORT_PERMISSIONS = [
@@ -88,7 +89,7 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
   top_management: ['*'],
   project_manager: [
     'projects', 'drive_lines', 'daily_reports', 'safety',
-    'equipment', 'costs', 'finishings', 'tasks', 'reports', 'performance', 'notifications',
+    'equipment', 'costs', 'finishings', 'tasks', 'reports', 'performance', 'notifications', 'oversight',
   ],
   site_engineer: [
     'projects', 'drive_lines', 'daily_reports', 'safety',
