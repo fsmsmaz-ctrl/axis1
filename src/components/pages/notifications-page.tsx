@@ -36,6 +36,14 @@ const typeLabels: Record<string, { ar: string; en: string }> = {
   mass_absence: { ar: 'غياب جماعي', en: 'Mass absence' },
   cost_overrun: { ar: 'تجاوز التكاليف', en: 'Cost overrun' },
   deadline_near: { ar: 'اقتراب موعد التسليم', en: 'Deadline near' },
+  // تنبيهات المهام الشخصية — تبقى في هذا القسم لصاحبها (v19)
+  task_assigned: { ar: 'إسناد مهمة إليك', en: 'Task assigned to you' },
+  task_returned: { ar: 'مهمة معادة إليك', en: 'Task returned to you' },
+  task_approved: { ar: 'تم اعتماد مهمتك', en: 'Your task approved' },
+  task_cancelled: { ar: 'إلغاء مهمة مسندة إليك', en: 'Task cancelled' },
+  task_due_changed: { ar: 'تغيير موعد مهمة', en: 'Task due date changed' },
+  task_due_reminder: { ar: 'تذكير: مهمتك موعدها قريب', en: 'Task due soon reminder' },
+  task_overdue_reminder: { ar: 'تأخير في مهمة مسندة إليك', en: 'Your task is overdue' },
 }
 
 const typeIcons: Record<string, any> = {
@@ -145,6 +153,11 @@ export default function NotificationsPage() {
               ? (isRtl ? `${unreadCount} تنبيه غير مقروء` : `${unreadCount} unread`)
               : (isRtl ? 'لا توجد تنبيهات جديدة' : 'No new notifications')
             }
+          </p>
+          <p className="text-xs text-muted-foreground/80 mt-0.5">
+            {isRtl
+              ? 'يعرض هذا القسم تنبيهاتك الشخصية فقط — سجلات الرقابة العملية في قسمها المخصص.'
+              : 'Personal notifications only — operational control records live in their dedicated section.'}
           </p>
         </div>
         <div className="flex items-center gap-2">
