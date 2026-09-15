@@ -16,8 +16,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { safeDbOp } from '@/lib/api-helpers'
-import { runScanThrottled } from '@/lib/report-watch'
-import { runTaskScanThrottled } from '@/lib/task-watch'
 import { OVERSIGHT_NOTIFICATION_TYPES, isOversightViewer } from '@/lib/oversight'
 import { SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
 
@@ -56,14 +54,11 @@ export async function GET(req: NextRequest) {
     user.isSystemAdmin === true ||
     (user.email || '').toLowerCase().trim() === SYSTEM_ADMIN_EMAIL
 
-  // الفحصان الدوريان (مراقب التقارير + مراقب المهام) — مرة كل 10 دقائق كحد أقصى.
-  // فتح قسم الرقابة يضمن صدور التحذيرات الرقابية قبل عرضها.
-  try {
-    await runScanThrottled(false)
-    await runTaskScanThrottled(false)
-  } catch (e) {
-    // الفحص غير حرج — نكمل بجلب ما هو موجود
-  }
+  // ── v20: الفحصان الدوريان خرجا من مسار الطلب ──
+  // انتظار الفحصين قبل القراءة كان يتجاوز مهلة Netlify (10 ثوانٍ)
+  // فيفشل النداء برسالة «تعذر الاتصال بالخادم». القراءة الآن مباشرة
+  // وسريعة، والفحص يُشغَّل من الواجهة عبر POST /api/notifications/scan
+  // بشكل غير معترَض عليه (fire-and-forget) مع throttle داخلي.
 
   var now = new Date()
   var startToday = new Date(now)
