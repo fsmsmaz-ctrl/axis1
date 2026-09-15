@@ -172,6 +172,12 @@ export default function OversightPage() {
 
   useEffect(() => {
     fetchOverview()
+    // v20: الفحصان الدوريان خرجا من مسار api/oversight (كانا يتجاوزان
+    // مهلة Netlify فيفشل النداء). يُشغَّلان من هنا بشكل غير معترَض عليه
+    // عبر POST /api/notifications/scan ثم تُحدَّث البيانات إن أُنشئ جديد.
+    authedFetch('/api/notifications/scan', { method: 'POST' })
+      .then((r) => { if (r.ok) fetchOverview() })
+      .catch(() => {})
   }, [fetchOverview])
 
   useEffect(() => {
