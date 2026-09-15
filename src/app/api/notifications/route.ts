@@ -4,7 +4,7 @@ import { db } from '@/lib/db'
 import { handleDbError, safeDbOp } from '@/lib/api-helpers'
 import { runScanThrottled } from '@/lib/report-watch'
 import { runTaskScanThrottled } from '@/lib/task-watch'
-import { OVERSIGHT_NOTIFICATION_TYPES, isOversightViewer } from '@/lib/oversight'
+import { OVERSIGHT_NOTIFICATION_TYPES } from '@/lib/oversight'
 
 export async function GET(req: NextRequest) {
   var user = await getAuthUser(req)
@@ -40,20 +40,18 @@ export async function GET(req: NextRequest) {
       { userId: null },
     ],
   }
-  // ── نقل الرقابة العملية (v17) ──
-  // لمشاهدي الإدارة (الإدارة العليا / مديرو المشاريع / مدير النظام) تُنقل
-  // هذه الفئات من قسم "التنبيهات" إلى قسم "الرقابة العملية":
-  //   • رسائل وإشعارات عمليات البيانات (إضافة / تعديل / حذف)
+  // ── حذف سجلات الرقابة العملية من قسم التنبيهات (v17 ← v19) ──
+  // اعتباراً من v19: كل سجلات الرقابة تُحذف من قسم "التنبيهات" لجميع
+  // المستخدمين دون استثناء — لم يعد الاستبعاد حكراً على مشاهدي الإدارة:
+  //   • إشعارات عمليات البيانات (إضافة / تعديل / حذف)
   //   • التحذيرات الرقابية الموجهة للإدارة
-  //   • متابعة المهام (تأخير / اقتراب موعد / بانتظار مراجعة...)
-  //   • التحذيرات الحرجة
-  // لذا تُستبعد أنواعها هنا وتظهر حصراً في القسم الجديد (api/oversight).
-  // التنبيهات الشخصية (إسناد مهمة، اعتماد تقرير/تشطيب، إعادة مهمة...)
-  // تبقى في هذا القسم لجميع المستخدمين دون استثناء.
-  var excludeOversight = isOversightViewer(user)
-  if (excludeOversight) {
-    where.type = { notIn: OVERSIGHT_NOTIFICATION_TYPES.slice() }
-  }
+  //   • متابعة المهام الإدارية (تأخير / اقتراب موعد / بانتظار مراجعة...)
+  //   • الأنواع الرقابية القديمة (safety_alert, work_stopped, ...)
+  // موطنها الحصري قسم "الرقابة العملية" (api/oversight) — والسجلات
+  // القديمة الموجودة في قاعدة البيانات تظهر هناك تلقائياً.
+  // تبقى في هذا القسم التنبيهات الشخصية فقط: إسناد/إعادة/اعتماد/إلغاء
+  // مهمة، تغيير موعد، اعتماد تقريرك/تشطيبك، وتذكيرات مهمتك الشخصية.
+  where.type = { notIn: OVERSIGHT_NOTIFICATION_TYPES.slice() }
   if (unreadOnly) where.read = false
 
   var result = await safeDbOp(
@@ -69,9 +67,8 @@ export async function GET(req: NextRequest) {
   var countWhere: any = {
     read: false,
     OR: [{ userId: user.id }, { userId: null }],
-  }
-  if (excludeOversight) {
-    countWhere.type = { notIn: OVERSIGHT_NOTIFICATION_TYPES.slice() }
+    // v19: عدّاد الجرس يعدّ التنبيهات الشخصية فقط — سجلات الرقابة مستبعدة دائماً
+    type: { notIn: OVERSIGHT_NOTIFICATION_TYPES.slice() },
   }
 
   var countResult = await safeDbOp(
