@@ -122,7 +122,8 @@ export default function OversightPage() {
   const [fAction, setFAction] = useState('all')
   const [fProject, setFProject] = useState('all')
 
-  const fetchOverview = useCallback(async () => {
+  // v21: تُعيد true عند النجاح — تستخدمها اللافتة أدناه لإعادة المحاولة التلقائية
+  const fetchOverview = useCallback(async (): Promise<boolean> => {
     setLoading(true)
     setError('')
     try {
@@ -131,12 +132,15 @@ export default function OversightPage() {
       if (!res.ok) {
         setError(d.message || (isRtl ? 'تعذر تحميل بيانات الرقابة' : 'Failed to load oversight data'))
         setData(null)
+        return false
       } else {
         setData(d)
+        return true
       }
     } catch (e) {
       setError(isRtl ? 'تعذر الاتصال بالخادم' : 'Connection failed')
       setData(null)
+      return false
     } finally {
       setLoading(false)
     }
@@ -171,13 +175,29 @@ export default function OversightPage() {
   }, [fEntity, fAction, fProject])
 
   useEffect(() => {
-    fetchOverview()
-    // v20: الفحصان الدوريان خرجا من مسار api/oversight (كانا يتجاوزان
-    // مهلة Netlify فيفشل النداء). يُشغَّلان من هنا بشكل غير معترَض عليه
-    // عبر POST /api/notifications/scan ثم تُحدَّث البيانات إن أُنشئ جديد.
-    authedFetch('/api/notifications/scan', { method: 'POST' })
-      .then((r) => { if (r.ok) fetchOverview() })
-      .catch(() => {})
+    var cancelled = false
+    var timers: any[] = []
+    async function initial() {
+      // v21: جلب البيانات أولاً ثم الفحص الدوري بعدها بثوانٍ لا بالتوازي
+      // معه — التزامن بين نداء الرقابة (عشرات استعلامات DB) والفحص كان
+      // يستنزف اتصالات قاعدة البيانات على Netlify ويقترب من مهلة 10 ثوانٍ.
+      var ok = await fetchOverview()
+      if (cancelled) return
+      timers.push(setTimeout(() => {
+        if (cancelled) return
+        authedFetch('/api/notifications/scan', { method: 'POST' })
+          .then((r) => (r.ok ? r.json() : null))
+          .then((d) => { if (!cancelled && d && d.created > 0) fetchOverview() })
+          .catch(() => {})
+      }, ok ? 1500 : 4500))
+      // v21: إعادة محاولة تلقائية واحدة عند فشل أول جلب — أول طلب بعد
+      // إيقاظ الدالة الباردة قد يفشل وتنجح المحاولة التالية على نفس الدالة
+      if (!ok) {
+        timers.push(setTimeout(() => { if (!cancelled) fetchOverview() }, 2500))
+      }
+    }
+    initial()
+    return () => { cancelled = true; timers.forEach((x) => clearTimeout(x)) }
   }, [fetchOverview])
 
   useEffect(() => {
@@ -763,4 +783,5 @@ export default function OversightPage() {
     </div>
   )
 }
+
 
