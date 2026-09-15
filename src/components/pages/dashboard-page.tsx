@@ -16,7 +16,7 @@ import {
 } from 'recharts'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
-import { canViewPricing } from '@/lib/auth'
+import { canViewPricing, canAccessDashboard } from '@/lib/auth'
 
 interface DashboardData {
   stats: {
@@ -76,9 +76,11 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
   const language = useAppStore((s) => s.language)
   const token = useAppStore((s) => s.token)
   const user = useAppStore((s) => s.user)
-  // v14.2: البيانات المالية (الإيراد/صافي الربح) تظهر فقط للإدارة العليا ومدير المشروع
-  // المشرف العام (admin@axis.om) مستثنى صراحةً — يرى التكاليف والأمتار فقط
-  const seePricing = !!(user && canViewPricing(user))
+  // v16 (قرار صاحب الموقع): لوحة التحكم ببياناتها المالية الكاملة —
+  // الإيرادات وصافي الربح والرسوم تعود لكل من يملك صلاحية الوصول إلى
+  // اللوحة أصلاً: مدير النظام (admin@axis.om) والإدارة العليا.
+  // استثناء المشرف العام من الأسعار يبقى سارياً في بقية الأقسام كما هو.
+  const seePricing = !!(user && (canViewPricing(user) || canAccessDashboard(user)))
   const isRtl = language === 'ar'
 
   async function fetchDashboard() {
