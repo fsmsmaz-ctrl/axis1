@@ -7,9 +7,9 @@
 import { SYSTEM_ADMIN_EMAIL } from './auth'
 
 /**
- * أنواع التنبيهات التي تُنقل من قسم "التنبيهات" إلى قسم "الرقابة العملية"
- * لمشاهدي الإدارة (الإدارة العليا / مديرو المشاريع / مدير النظام) فقط —
- * الموظفون الآخرون يواصلون رؤية تنبيهاتهم الشخصية في قسم التنبيهات كالمعتاد.
+ * أنواع سجلات "الرقابة العملية" — محذوفة من قسم "التنبيهات" لجميع
+ * المستخدمين دون استثناء (v19)، وموطنها الحصري قسم "الرقابة العملية"
+ * (api/oversight) المتاح للإدارة العليا ومديري المشاريع ومدير النظام.
  *
  * تشمل هذه القائمة:
  *  1) إشعارات عمليات البيانات (إضافة / تعديل / حذف):
@@ -17,12 +17,18 @@ import { SYSTEM_ADMIN_EMAIL } from './auth'
  *  2) التحذيرات الرقابية الموجهة للإدارة:
  *     report_pending_approval, safety_missing, finishing_incomplete,
  *     finishing_pending_approval, performance_ready
- *  3) متابعة المهام:
+ *  3) متابعة المهام الإدارية (النسخ الموجهة للإدارة):
  *     task_overdue, task_due_soon, task_review_pending, task_waiting, task_ready_review
+ *  4) أنواع رقابية قديمة (سجلات سابقة في قاعدة البيانات تُنقل هي الأخرى):
+ *     safety_alert, work_stopped, low_production, equipment_breakdown,
+ *     mass_absence, deadline_near
  *
- * التنبيهات الشخصية (task_assigned, task_returned, task_approved, task_cancelled,
- * task_due_changed, report_approved, finishing_approved, finishing_rejected)
- * تبقى في قسم التنبيهات لجميع المستخدمين دون استثناء.
+ * التنبيهات الشخصية تبقى في قسم التنبيهات لجميع المستخدمين دون استثناء:
+ * task_assigned, task_returned, task_approved, task_cancelled,
+ * task_due_changed, report_approved, finishing_approved, finishing_rejected
+ * + تذكيرات المكلَّف الشخصية task_due_reminder / task_overdue_reminder
+ * (v19: فُصلت عن task_due_soon/task_overdue الرقابيتين حتى لا يفقد الموظف
+ * تذكير مهامه الخاصة بعد نقل النسخ الرقابية إلى قسم الرقابة).
  */
 export const OVERSIGHT_NOTIFICATION_TYPES = [
   'project_created',
@@ -39,6 +45,13 @@ export const OVERSIGHT_NOTIFICATION_TYPES = [
   'task_ready_review',
   'task_overdue',
   'task_due_soon',
+  // أنواع رقابية قديمة — سجلاتها التاريخية تظهر في قسم الرقابة فقط (v19)
+  'safety_alert',
+  'work_stopped',
+  'low_production',
+  'equipment_breakdown',
+  'mass_absence',
+  'deadline_near',
 ] as const
 
 /**
