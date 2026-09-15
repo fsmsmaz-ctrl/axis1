@@ -33,6 +33,7 @@ export async function runTaskScanNow(): Promise<{ created: number }> {
 
   // ─────────────────────────────────────────────────────────
   // 1) مهلة 24 ساعة قبل موعد الإنجاز — للموظف المسؤول
+  //    (v19: النوع task_due_reminder شخصي — يبقى في قسم التنبيهات)
   // ─────────────────────────────────────────────────────────
   try {
     const dueSoon = await db.task.findMany({
@@ -44,15 +45,16 @@ export async function runTaskScanNow(): Promise<{ created: number }> {
 
     for (const t of dueSoon) {
       // تنبيه موجه للموظف المسؤول مباشرة (صف مستقل + منع تكرار)
+      // v19: النوع شخصي (task_due_reminder) — النوع الرقابي محجوز لقسم الرقابة
       const dup = await db.notification.findFirst({
-        where: { type: 'task_due_soon', entityId: t.id + ':due24', userId: t.assigneeId },
+        where: { type: 'task_due_reminder', entityId: t.id + ':due24', userId: t.assigneeId },
         select: { id: true },
       })
       if (!dup) {
         await db.notification.create({
           data: {
             userId: t.assigneeId,
-            type: 'task_due_soon',
+            type: 'task_due_reminder',
             title: 'مهمة يقترب موعد إنجازها',
             message: 'المهمة #' + t.taskNumber + ' («' + t.title + '») موعدها المطلوب ' + fmtDate(new Date(t.dueDate)) + ' — خلال 24 ساعة. يرجى استكمالها أو تحديث حالتها.',
             severity: 'warning',
@@ -70,6 +72,7 @@ export async function runTaskScanNow(): Promise<{ created: number }> {
 
   // ─────────────────────────────────────────────────────────
   // 2) مهام متأخرة (تجاوزت موعد الإنجاز ولم تُغلق) — المسؤول + الإدارة
+  //    (v19: تذكير المكلَّف task_overdue_reminder شخصي — نسخة الإدارة task_overdue رقابية)
   // ─────────────────────────────────────────────────────────
   try {
     const overdue = await db.task.findMany({
@@ -81,16 +84,16 @@ export async function runTaskScanNow(): Promise<{ created: number }> {
 
     for (const t of overdue) {
       const msg = 'المهمة #' + t.taskNumber + ' («' + t.title + '») تجاوزت موعد الإنجاز المطلوب (' + fmtDate(new Date(t.dueDate)) + ') ولم تُغلق بعد.'
-      // أ) الموظف المسؤول — صف مباشر بمنع تكرار
+      // أ) الموظف المسؤول — صف مباشر بمنع تكرار (v19: نوع شخصي يبقى في التنبيهات)
       const dupAssignee = await db.notification.findFirst({
-        where: { type: 'task_overdue', entityId: t.id + ':late', userId: t.assigneeId },
+        where: { type: 'task_overdue_reminder', entityId: t.id + ':late', userId: t.assigneeId },
         select: { id: true },
       })
       if (!dupAssignee) {
         await db.notification.create({
           data: {
             userId: t.assigneeId,
-            type: 'task_overdue',
+            type: 'task_overdue_reminder',
             title: 'تأخير في مهمة مسندة إليك',
             message: msg + ' يرجى تحديث حالتها أو إرسالها للمراجعة فوراً.',
             severity: 'critical',
@@ -101,7 +104,7 @@ export async function runTaskScanNow(): Promise<{ created: number }> {
         })
         created += 1
       }
-      // ب) الإدارة (مدير المهام)
+      // ب) الإدارة (مدير المهام) — النسخة الرقابية task_overdue (تظهر في قسم الرقابة فقط)
       const count = await notifyUsers({
         type: 'task_overdue',
         title: 'مهمة متأخرة عن موعدها',
