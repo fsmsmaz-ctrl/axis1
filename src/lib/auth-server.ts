@@ -52,8 +52,11 @@ export async function verifyCredentials(email: string, password: string): Promis
       isSystemAdmin: (user as { isSystemAdmin?: boolean }).isSystemAdmin === true,
     }
   } catch (error) {
+    // v20: خطأ قاعدة البيانات لم يعد يتنكر كبيانات دخول خاطئة (401) —
+    // يُعاد رميه فيلتقطه المسار الخارجي لتسجيل الدخول ويعيد 500 برسالة
+    // «فشل الاتصال بقاعدة البيانات» بدل تضليل المستخدم.
     console.error('verifyCredentials error:', error)
-    return null
+    throw error
   }
 }
 
