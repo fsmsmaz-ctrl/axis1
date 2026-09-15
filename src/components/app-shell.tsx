@@ -27,7 +27,7 @@ import {
   Wrench, DollarSign, CheckCircle2, FileBarChart, TrendingUp, ListChecks,
   Bell, LogOut, Menu, X, Globe,
   AlertTriangle, ChevronLeft, UserPlus, Users, Loader2, Shield, Pencil, Trash2, Check,
-  ShieldAlert
+  ShieldAlert, Eye
 } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
@@ -37,6 +37,7 @@ import dynamic from 'next/dynamic'
 type PageId =
   | 'dashboard' | 'projects' | 'driveLines' | 'dailyReports' | 'safety'
   | 'equipment' | 'costs' | 'finishings' | 'tasks' | 'reports' | 'performance' | 'notifications'
+  | 'oversight'
 
 interface NavItem {
   id: PageId
@@ -58,6 +59,7 @@ const navItems: NavItem[] = [
   { id: 'tasks', labelAr: 'إدارة المهام', labelEn: 'Task Management', icon: ListChecks, resource: 'tasks' },
   { id: 'performance', labelAr: 'تقييم الأداء', labelEn: 'Performance', icon: TrendingUp, resource: 'performance' },
   { id: 'reports', labelAr: 'التقارير', labelEn: 'Reports', icon: FileBarChart, resource: 'reports' },
+  { id: 'oversight', labelAr: 'الرقابة العملية', labelEn: 'Operational Control', icon: Eye, resource: 'oversight' },
   { id: 'notifications', labelAr: 'التنبيهات', labelEn: 'Notifications', icon: Bell, resource: 'notifications' },
 ]
 
@@ -125,6 +127,7 @@ const TasksPage = dynamic(() => import('@/components/pages/tasks-page'), { ssr: 
 const PerformancePage = dynamic(() => import('@/components/pages/performance-page'), { ssr: false })
 const ReportsPage = dynamic(() => import('@/components/pages/reports-page'), { ssr: false })
 const NotificationsPage = dynamic(() => import('@/components/pages/notifications-page'), { ssr: false })
+const OversightPage = dynamic(() => import('@/components/pages/oversight-page'), { ssr: false })
 
 export default function AppShell() {
   const user = useAppStore((s) => s.user)
@@ -378,6 +381,7 @@ export default function AppShell() {
       case 'performance': return <PerformancePage />
       case 'reports': return <ReportsPage />
       case 'notifications': return <NotificationsPage />
+      case 'oversight': return <OversightPage />
       default: return canSeeDashboard ? <DashboardPage onNavigate={setCurrentPage} /> : <ProjectsPage />
     }
   }
@@ -803,9 +807,5 @@ export default function AppShell() {
   )
 }
 
-
-   
-
-      
 
   
