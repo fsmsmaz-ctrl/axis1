@@ -90,13 +90,25 @@ export default function NotificationsPage() {
   }, [isRtl])
 
   useEffect(() => {
-    fetchNotifications()
-    // v20: الفحص الدوري صار في مساره الخاص (POST /api/notifications/scan)
-    // يُشغَّل عند فتح القسم بشكل غير معترَض عليه — ثم يُعاد الجلب مرة
-    // واحدة لعرض التنبيهات الجديدة إن أُنشئت أثناء الفحص.
-    authedFetch('/api/notifications/scan', { method: 'POST' })
-      .then((r) => { if (r.ok) fetchNotifications() })
-      .catch(() => {})
+    var cancelled = false
+    var timer: any = null
+    async function initial() {
+      // v21: الفحص الدوري بعد اكتمال جلب التنبيهات لا بالتوازي معه —
+      // توحيداً مع قسم الرقابة (تجنّب استنزاف اتصالات DB على Netlify).
+      await fetchNotifications()
+      if (cancelled) return
+      timer = setTimeout(() => {
+        if (cancelled) return
+        // v20: الفحص في مساره الخاص (POST /api/notifications/scan) ثم
+        // يُعاد الجلب مرة واحدة لعرض التنبيهات الجديدة إن أُنشئت.
+        authedFetch('/api/notifications/scan', { method: 'POST' })
+          .then((r) => (r.ok ? r.json() : null))
+          .then((d) => { if (!cancelled && d && d.created > 0) fetchNotifications() })
+          .catch(() => {})
+      }, 1500)
+    }
+    initial()
+    return () => { cancelled = true; if (timer) clearTimeout(timer) }
   }, [fetchNotifications])
 
   async function markAsRead(id: string) {
