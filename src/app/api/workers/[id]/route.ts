@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { canWrite } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { handleDbError, safeDbOp } from '@/lib/api-helpers'
+import { buildAuditDetails, handleDbError, safeDbOp } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -70,7 +70,12 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
           action: 'update',
           entity: 'worker',
           entityId: id,
-          details: 'Updated worker: ' + (body.name || existingResult.data.name),
+          // v22: توثيق دقيق — القيمة قبل ← القيمة الآن
+          details: buildAuditDetails(
+            existingResult.data as unknown as Record<string, any>,
+            updateData,
+            'تعديل بيانات العامل: ' + (updateData.name || existingResult.data.name)
+          ),
         },
       }),
       'سجل التدقيق'
