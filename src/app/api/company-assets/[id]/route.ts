@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
-import { safeDbOp, handleDbError } from '@/lib/api-helpers'
+import { buildAuditDetails, safeDbOp, handleDbError } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 import { canWrite } from '@/lib/auth'
 
@@ -47,10 +47,15 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       updateData.image = body.image ? String(body.image) : null
     }
 
+    // v22: جلب القيم القديمة لتوثيق التغييرات قبل ← الآن
+    var oldAssetResult = await safeDbOp(() => db.companyAsset.findUnique({ where: { id } }), 'جلب الأصل قبل التعديل')
+    var oldAsset = oldAssetResult.success && oldAssetResult.data ? oldAssetResult.data : null
+
     var updateResult = await safeDbOp(() => db.companyAsset.update({ where: { id }, data: updateData }), 'تحديث الأصل')
     if (!updateResult.success) return updateResult.response
 
-    safeDbOp(() => db.auditLog.create({ data: { userId: user.id, projectId: updateResult.data.projectId, action: 'update', entity: 'company_asset', entityId: id, details: 'Updated: ' + updateResult.data.name } }), 'سجل التدقيق').catch(() => {})
+    // v22: توثيق دقيق — القيمة قبل ← القيمة الآن
+    safeDbOp(() => db.auditLog.create({ data: { userId: user.id, projectId: updateResult.data.projectId, action: 'update', entity: 'company_asset', entityId: id, details: oldAsset ? buildAuditDetails(oldAsset as unknown as Record<string, any>, updateData, 'تعديل أصل شركة: ' + updateResult.data.name, { skipFields: ['id', 'createdAt', 'updatedAt', 'projectId', 'cuid', 'image', 'responsibleId'] }) : ('تعديل أصل شركة: ' + updateResult.data.name) } }), 'سجل التدقيق').catch(() => {})
 
     return NextResponse.json({ asset: updateResult.data, success: true })
   } catch (error: any) {
@@ -78,3 +83,4 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     return handleDbError(error, 'حذف الأصل')
   }
 }
+
