@@ -271,15 +271,38 @@ export default function OversightPage() {
     return t(`متأخرة ${days} يوم`, `${days}d late`)
   }
 
-  function parseDetails(details: any): string {
-    if (!details || typeof details !== 'string') return ''
+  // v22: تحليل تفاصيل التغيير بدقة — JSON {summary, changes[]} + استخراج من النصوص القديمة
+  interface ParsedChange { field: string; fieldEn?: string; old: string; new: string }
+  function parseChanges(details: any): { summary: string; changes: ParsedChange[] } {
+    if (!details || typeof details !== 'string') return { summary: '', changes: [] }
     try {
       const obj = JSON.parse(details)
-      if (obj && typeof obj === 'object' && obj.summary) return String(obj.summary)
-      return details
+      if (obj && typeof obj === 'object') {
+        const changes: ParsedChange[] = Array.isArray(obj.changes)
+          ? obj.changes
+              .filter((ch: any) => ch && (ch.old !== undefined || ch.new !== undefined))
+              .map((ch: any) => ({
+                field: String(ch.field || ''),
+                fieldEn: ch.fieldEn ? String(ch.fieldEn) : undefined,
+                old: ch.old === null || ch.old === undefined ? '—' : String(ch.old),
+                new: ch.new === null || ch.new === undefined ? '—' : String(ch.new),
+              }))
+          : []
+        return { summary: obj.summary ? String(obj.summary) : '', changes }
+      }
     } catch {
-      return details
+      // سجلات قديمة بصيغة نصية — استخراج نمط «تغيير سعر المتر من X إلى Y»
+      const m = details.match(/سعر المتر من\s+(.+?)\s+إلى\s+(.+?)(?:\s+—|$)/)
+      if (m) {
+        let legacySummary = details.split('— تغيير سعر المتر')[0].replace(/\s+—\s*$/, '').trim()
+        const rc = details.match(/أعيد حساب\s+(\d+)\s+تقرير/)
+        if (rc) legacySummary += ' (أُعيد حساب ' + rc[1] + ' تقرير)'
+        return { summary: legacySummary, changes: [{ field: 'السعر/متر', fieldEn: 'Price/Meter', old: m[1].trim(), new: m[2].trim() }] }
+      }
+      return { summary: details, changes: [] }
     }
+    // v22: JSON صالح لكنه ليس كائناً (مثل رقم) — يُعامل كنص عادي
+    return { summary: details, changes: [] }
   }
 
   function userName(u: any): string {
@@ -558,19 +581,35 @@ export default function OversightPage() {
                     {logs.map((log: any) => {
                       const ac = actionConfig[log.action] || { ar: log.action, en: log.action, cls: 'bg-muted text-muted-foreground' }
                       const ent = entityLabels[log.entity] || { ar: log.entity, en: log.entity }
-                      const summary = parseDetails(log.details)
+                      const parsed = parseChanges(log.details)
                       return (
                         <div key={log.id} className="flex items-start gap-3 py-2.5 border-b last:border-0">
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
                               <Badge className={'text-xs ' + ac.cls}>{t(ac.ar, ac.en)}</Badge>
                               <Badge variant="outline" className="text-xs">{t(ent.ar, ent.en)}</Badge>
-                              {summary && (
+                              {parsed.summary && (
                                 <span className={`text-sm font-medium truncate ${log.action === 'delete' ? 'text-destructive' : ''}`}>
-                                  {summary}
+                                  {parsed.summary}
                                 </span>
                               )}
                             </div>
+                            {/* v22: تفاصيل ما تم تغييره — القيمة قبل ← القيمة الآن */}
+                            {parsed.changes.length > 0 && (
+                              <div className="mt-1.5 flex flex-col gap-1">
+                                <span className="text-[11px] font-semibold text-muted-foreground">{t('تفاصيل ما تم تغييره:', 'Change details:')}</span>
+                                {parsed.changes.map((ch: ParsedChange, ci: number) => (
+                                  <div key={ci} className="flex items-center gap-1.5 flex-wrap text-xs bg-muted/40 border rounded px-2 py-1 w-fit max-w-full">
+                                    <span className="font-semibold">{t(ch.field, ch.fieldEn || ch.field)}:</span>
+                                    <span className="text-muted-foreground">{t('قبل', 'Was')}</span>
+                                    <span className="px-1.5 py-0.5 rounded bg-muted line-through text-muted-foreground" dir="auto">{ch.old || '—'}</span>
+                                    <span className="text-primary font-bold">{isRtl ? '←' : '→'}</span>
+                                    <span className="text-muted-foreground">{t('الآن', 'Now')}</span>
+                                    <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary font-bold" dir="auto">{ch.new || '—'}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                             <p className="text-xs text-muted-foreground mt-1">
                               {userName(log.user)}
                               {log.project ? ' · ' + log.project.name : ''}
