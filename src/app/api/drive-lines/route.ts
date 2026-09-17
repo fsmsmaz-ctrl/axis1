@@ -11,7 +11,18 @@ export async function GET(req: NextRequest) {
     if (!user) return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
 
     // SECURITY FIX: خطوط الحفر تحمل أسعار المتر — بوابة قراءة بالصلاحية
-    if (!hasPermission(user.role, 'drive_lines', user.permissions, user.email)) {
+    // v24 FIX: قائمة خطوط الحفر المنسدلة تُستهلك في نماذج التقارير اليومية
+    // والسلامة والتشطيبات أيضاً — لذا يُسمح بالقراءة لمن يملك أي من هذه الصلاحيات.
+    // قبل هذا الإصلاح كان hse_officer (قسم السلامة) وforeman يحصلان على 403
+    // فتبقى قائمة خطوط الحفر فارغة بعد اختيار المشروع.
+    // الأسعار تبقى مخفية تماماً عبر canViewPricing (طبقة مستقلة عن هذه البوابة)،
+    // وظهور صفحة خطوط الحفر في القائمة الجانبية لا يتأثر بهذا التعديل.
+    var canReadDriveLines =
+      hasPermission(user.role, 'drive_lines', user.permissions, user.email) ||
+      hasPermission(user.role, 'daily_reports', user.permissions, user.email) ||
+      hasPermission(user.role, 'safety', user.permissions, user.email) ||
+      hasPermission(user.role, 'finishings', user.permissions, user.email)
+    if (!canReadDriveLines) {
       return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية عرض خطوط الحفر' }, { status: 403 })
     }
 
