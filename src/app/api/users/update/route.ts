@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import bcrypt from 'bcryptjs'
-import { handleDbError, safeDbOp } from '@/lib/api-helpers'
+import { buildAuditDetails, handleDbError, safeDbOp } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 import { VALID_ROLES } from '@/lib/auth'
 
@@ -113,6 +113,14 @@ export async function PATCH(req: NextRequest) {
     // SECURITY FIX: تعديل المستخدمين (دور/صلاحيات/كلمة مرور) لم يكن يُوثق إطلاقاً —
     // الآن يُسجل في سجل التدقيق (بدون أي بيانات كلمات مرور)
     var changedFields = Object.keys(updateData).filter(function(f) { return f !== 'password' && f !== 'tokenVersion' })
+    // v22: توثيق دقيق لقيم الحقول المعدّلة — القيمة قبل ← القيمة الآن
+    var userDiffOld: any = {}
+    var userDiffNew: any = {}
+    for (var uci = 0; uci < changedFields.length; uci++) {
+      var uf = changedFields[uci]
+      userDiffOld[uf] = (targetResult.data as any)[uf]
+      userDiffNew[uf] = (updateData as any)[uf]
+    }
     await safeDbOp(
       () => db.auditLog.create({
         data: {
@@ -120,7 +128,7 @@ export async function PATCH(req: NextRequest) {
           action: 'update',
           entity: 'user',
           entityId: userId,
-          details: 'تعديل مستخدم (' + targetResult.data.email + '): ' + changedFields.join(', ') + (updateData.password ? ' + إعادة تعيين كلمة المرور (أُبطلت الجلسات القديمة)' : ''),
+          details: buildAuditDetails(userDiffOld, userDiffNew, 'تعديل مستخدم (' + targetResult.data.email + ')' + (updateData.password ? ' + إعادة تعيين كلمة المرور (أُبطلت الجلسات القديمة)' : ''), { skipFields: ['id', 'createdAt', 'updatedAt', 'cuid', 'permissions'] }),
         },
       }),
       'سجل التدقيق'
