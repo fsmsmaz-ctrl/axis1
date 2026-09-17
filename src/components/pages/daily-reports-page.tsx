@@ -21,7 +21,7 @@ import {
 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
-import { canAccessDashboard, SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
+import { canWrite, SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
 import { toast } from 'sonner'
 
 const statusLabels: Record<string, { ar: string; en: string; color: string }> = {
@@ -405,11 +405,13 @@ export default function DailyReportsPage() {
 
   // مدير النظام (admin@axis.om) — يرى زر الحذف والتعديل دائماً
   const isAdmin = (user?.email || '').toLowerCase().trim() === SYSTEM_ADMIN_EMAIL
-  // المشرف (foreman) — هو الوحيد (مع مدير النظام) الذي يعدّل ويسلّم التقارير
-  // التقارير تأتي من قسم السلامة، والمشرف يراجع بياناتها ويسلّمها للاعتماد
-  const isSupervisor = user?.role === 'foreman'
-  // الاعتماد — مدير النظام أو من لديه صلاحية الوصول للوحة التحكم فقط
-  const canApprove = canAccessDashboard(user)
+  // v23: أي موظف مصرّح له (تقارير يومية أو سلامة) يعدّل ويحفظ ويسلّم التقرير
+  // قبل الاعتماد — حتى لو أنشأه موظف آخر (مثلاً تقرير قادم من قسم السلامة)
+  const canEditReports = isAdmin ||
+    canWrite(user?.role || '', 'daily_reports', user?.permissions) ||
+    canWrite(user?.role || '', 'safety', user?.permissions)
+  // v23: الاعتماد — مدير النظام (admin@axis.om) فقط
+  const canApprove = isAdmin
 
   // تسميات القراءة فقط لبيانات السلامة في وضع التعديل
   const editProjectName = projects.find((p) => p.id === formData.projectId)?.name || editProjectNameFallback
@@ -545,14 +547,14 @@ export default function DailyReportsPage() {
                       )}
                     </div>
                     <div className="flex gap-1">
-                      {/* التعديل: المشرف للمسودات فقط — وبعد التسليم/الاعتماد لمدير النظام فقط */}
-                      {(isAdmin || (isSupervisor && r.status === 'draft')) && (
-                        <Button variant="ghost" size="sm" title={isRtl ? 'تعديل — المشرف ومدير النظام فقط' : 'Edit — supervisor & admin only'} onClick={() => openEditReport(r)}>
+                      {/* v23 التعديل: أي موظف مصرّح له — للمسودة أو المُسلَّم قبل الاعتماد */}
+                      {(isAdmin || (canEditReports && (r.status === 'draft' || r.status === 'submitted'))) && (
+                        <Button variant="ghost" size="sm" title={isRtl ? 'تعديل — متاح قبل الاعتماد' : 'Edit — available before approval'} onClick={() => openEditReport(r)}>
                           <Pencil className="h-4 w-4" />
                         </Button>
                       )}
-                      {/* تسليم التقرير: المشرف ومدير النظام فقط — للمسودة بعد تعديل البيانات */}
-                      {(isSupervisor || isAdmin) && r.status === 'draft' && (
+                      {/* v23 تسليم التقرير: أي موظف مصرّح له — للمسودة بعد تعديل البيانات */}
+                      {(isAdmin || (canEditReports && r.status === 'draft')) && (
                         <Button variant="outline" size="sm" className="text-emerald-600" title={isRtl ? 'تسليم التقرير للاعتماد' : 'Submit for approval'} onClick={() => submitReport(r.id)}>
                           <Send className="h-4 w-4" />
                         </Button>
@@ -566,7 +568,7 @@ export default function DailyReportsPage() {
                       <Button variant="outline" size="sm" title={isRtl ? 'عرض التفاصيل' : 'View details'} onClick={() => viewReportDetails(r)}>
                         <Eye className="h-4 w-4" />
                       </Button>
-                      {/* الاعتماد/الرفض: بعد التسليم — لمدير النظام أو أصحاب صلاحية لوحة التحكم فقط */}
+                      {/* v23 الاعتماد/الرفض: بعد التسليم — لمدير النظام فقط */}
                       {canApprove && r.status === 'submitted' && (
                         <>
                           <Button variant="outline" size="sm" className="text-emerald-600" onClick={() => approveReport(r.id, 'approve')}>
@@ -999,4 +1001,3 @@ function Stat({ label, value, color }: { label: string; value: string; color: st
     </div>
   )
 }
-
