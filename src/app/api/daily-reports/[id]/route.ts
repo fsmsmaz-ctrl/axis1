@@ -102,25 +102,16 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       delete body.weather
     }
 
-    // بعد التسليم أو الاعتماد أو الرفض: التعديل لمدير النظام (admin@axis.om) فقط
+    // v23: أي موظف مصرّح له يعدّل ويحفظ التقرير قبل الاعتماد — حتى لو أنشأه موظف آخر
+    // (تقارير قسم السلامة تصل هنا ويكملها أي موظف دون قيود ملكية أو تسليم)
     var isSystemAdmin = (user!.email || '').toLowerCase().trim() === SYSTEM_ADMIN_EMAIL
-    if (existingReport.status !== 'draft' && !isSystemAdmin) {
-      return NextResponse.json({ error: 'forbidden', message: 'لا يمكن تعديل التقرير بعد تسليمه — التعديل متاح لمدير النظام فقط' }, { status: 403 })
+    var canEditReport = canWrite(user!.role, 'daily_reports', user!.permissions) || canWrite(user!.role, 'safety', user!.permissions)
+    if (!isSystemAdmin && !canEditReport) {
+      return NextResponse.json({ error: 'forbidden', message: 'تعديل التقارير اليومية متاح للموظفين المصرّح لهم فقط' }, { status: 403 })
     }
-
-    // التعديل: المشرف (foreman) أو مدير النظام فقط — لا يمكن لأي مستخدم آخر التعديل إطلاقاً
-    var isSupervisor = user!.role === 'foreman'
-    if (!isSystemAdmin && !isSupervisor) {
-      return NextResponse.json({ error: 'forbidden', message: 'تعديل التقارير اليومية متاح للمشرف ومدير النظام فقط' }, { status: 403 })
-    }
-
-    // SECURITY FIX: فحص ملكية المسودة — كان أي مشرف يستطيع تعديل مسودات مشرف آخر
-    // وتسليمها باسمه بمعرفة المعرف فقط (المتغير createdById كان يُجلب ولا يُستخدم)
-    if (!isSystemAdmin && isSupervisor && existingReport.createdById !== user!.id) {
-      return NextResponse.json(
-        { error: 'forbidden', message: 'لا يمكنك تعديل مسودة أنشأها مشرف آخر' },
-        { status: 403 }
-      )
+    // نقطة الإغلاق هي الاعتماد: المسودة والمُسلَّم قابلان للتعديل، المعتمد/المرفوض لمدير النظام فقط
+    if (!isSystemAdmin && (existingReport.status === 'approved' || existingReport.status === 'rejected')) {
+      return NextResponse.json({ error: 'forbidden', message: 'لا يمكن تعديل تقرير معتمد أو مرفوض — التعديل متاح لمدير النظام فقط' }, { status: 403 })
     }
 
     // SECURITY FIX: حدود القراءات (نفس قواعد الإنشاء) — منع القيم السالبة/العملاقة
@@ -395,4 +386,3 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     return handleDbError(error, 'حذف التقرير اليومي')
   }
 }
-
