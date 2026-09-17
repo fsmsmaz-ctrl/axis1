@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { canWrite, hasPermission, canViewPricing, SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { safeDbOp, handleDbError, recalcProgress, sanitizeDailyReport } from '@/lib/api-helpers'
+import { buildAuditDetails, safeDbOp, handleDbError, recalcProgress, sanitizeDailyReport } from '@/lib/api-helpers'
 
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 
@@ -77,7 +77,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     var existingResult = await safeDbOp(
       () => db.dailyReport.findUnique({
         where: { id },
-        select: { createdById: true, status: true, projectId: true, safetyLocked: true, driveLineId: true, reportDate: true, safety: { select: { id: true } } },
+        select: { createdById: true, status: true, projectId: true, safetyLocked: true, driveLineId: true, reportDate: true, weather: true, workStartTime: true, workEndTime: true, operatingHours: true, stoppageHours: true, stoppageReason: true, workersCount: true, attendees: true, startReading: true, endReading: true, dailyMeters: true, pipesInstalled: true, soilExcavated: true, productionNotes: true, problems: true, safety: { select: { id: true } } },
       }),
       'البحث عن التقرير'
     )
@@ -200,36 +200,38 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     var progressPercent = totalLength > 0 ? Math.min((totalMeters / totalLength) * 100, 100) : 0
 
     // Update the report (safe)
+    // v22: بناء بيانات التعديل مسبقاً لتوثيق فروق الحقول بدقة (قبل ← الآن)
+    var reportUpdateData: any = {
+      projectId: existingReport.projectId,
+      driveLineId: finalDriveLineId,
+      reportDate: existingReport.reportDate,
+      weather: fromSafety ? existingReport.weather : (body.weather || null),
+      workStartTime: body.workStartTime || null,
+      workEndTime: body.workEndTime || null,
+      operatingHours: Math.max(0, parseFloat(body.operatingHours) || 0),
+      stoppageHours: Math.max(0, parseFloat(body.stoppageHours) || 0),
+      stoppageReason: body.stoppageReason || null,
+      workersCount: Math.max(0, parseInt(body.workersCount) || 0),
+      attendees: body.attendees || null,
+      startReading: startReading,
+      endReading: endReading,
+      dailyMeters: dailyMeters,
+      dailyRevenue: dailyRevenue,
+      totalMeters: totalMeters,
+      remainingMeters: remainingMeters,
+      progressPercent: progressPercent,
+      soilExcavated: body.soilExcavated || null,
+      pipesInstalled: Math.max(0, parseInt(body.pipesInstalled) || 0),
+      productionNotes: body.productionNotes || null,
+      problems: body.problems || null,
+      // SECURITY FIX: التسليم حصراً عبر المسار المخصص /submit — كان قبول
+      // status:'submitted' هنا يتخطى إشعار المعتمدين وسجل تدقيق التسليم
+      status: body.status === 'draft' ? 'draft' : existingReport.status,
+    }
     var updateResult = await safeDbOp(
       () => db.dailyReport.update({
         where: { id },
-        data: {
-          projectId: existingReport.projectId,
-          driveLineId: finalDriveLineId,
-          reportDate: existingReport.reportDate,
-          weather: fromSafety ? existingReport.weather : (body.weather || null),
-          workStartTime: body.workStartTime || null,
-          workEndTime: body.workEndTime || null,
-          operatingHours: Math.max(0, parseFloat(body.operatingHours) || 0),
-          stoppageHours: Math.max(0, parseFloat(body.stoppageHours) || 0),
-          stoppageReason: body.stoppageReason || null,
-          workersCount: Math.max(0, parseInt(body.workersCount) || 0),
-          attendees: body.attendees || null,
-          startReading: startReading,
-          endReading: endReading,
-          dailyMeters: dailyMeters,
-          dailyRevenue: dailyRevenue,
-          totalMeters: totalMeters,
-          remainingMeters: remainingMeters,
-          progressPercent: progressPercent,
-          soilExcavated: body.soilExcavated || null,
-          pipesInstalled: Math.max(0, parseInt(body.pipesInstalled) || 0),
-          productionNotes: body.productionNotes || null,
-          problems: body.problems || null,
-          // SECURITY FIX: التسليم حصراً عبر المسار المخصص /submit — كان قبول
-          // status:'submitted' هنا يتخطى إشعار المعتمدين وسجل تدقيق التسليم
-          status: body.status === 'draft' ? 'draft' : existingReport.status,
-        },
+        data: reportUpdateData,
       }),
       'تحديث التقرير اليومي'
     )
@@ -254,6 +256,27 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     }
 
     // Audit log (non-critical)
+    // v22: توثيق دقيق للحقول المعدّلة في التقرير — القيمة قبل ← القيمة الآن
+    var reportOld: any = {
+      weather: existingReport.weather,
+      workStartTime: existingReport.workStartTime,
+      workEndTime: existingReport.workEndTime,
+      operatingHours: existingReport.operatingHours,
+      stoppageHours: existingReport.stoppageHours,
+      stoppageReason: existingReport.stoppageReason,
+      workersCount: existingReport.workersCount,
+      attendees: existingReport.attendees,
+      startReading: existingReport.startReading,
+      endReading: existingReport.endReading,
+      dailyMeters: existingReport.dailyMeters,
+      pipesInstalled: existingReport.pipesInstalled,
+      soilExcavated: existingReport.soilExcavated,
+      productionNotes: existingReport.productionNotes,
+      problems: existingReport.problems,
+    }
+    var reportDiff = buildAuditDetails(reportOld, reportUpdateData, 'تعديل تقرير يومي', {
+      skipFields: ['id', 'createdAt', 'updatedAt', 'cuid', 'projectId', 'reportDate', 'driveLineId', 'status', 'dailyRevenue', 'totalMeters', 'remainingMeters', 'progressPercent'],
+    })
     safeDbOp(
       () => db.auditLog.create({
         data: {
@@ -263,7 +286,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
           action: 'update',
           entity: 'daily_report',
           entityId: id,
-          details: 'Updated daily report',
+          details: reportDiff,
         },
       }),
       'سجل التدقيق'
