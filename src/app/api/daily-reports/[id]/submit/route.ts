@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
-import { SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
+import { canWrite, SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 import { safeDbOp, handleDbError } from '@/lib/api-helpers'
@@ -45,19 +45,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: 'invalid_status', message: 'التقرير مسلّم مسبقاً' }, { status: 400 })
     }
 
-    // التسليم: المشرف (foreman) أو مدير النظام فقط — لا يمكن لأي مستخدم آخر التسليم إطلاقاً
-    var isSupervisor = user!.role === 'foreman'
+    // v23: التسليم متاح لأي موظف مصرّح له — لأي مسودة (ولو أنشأها موظف آخر)
     var isSystemAdmin = (user!.email || '').toLowerCase().trim() === SYSTEM_ADMIN_EMAIL
-    if (!isSupervisor && !isSystemAdmin) {
-      return NextResponse.json({ error: 'forbidden', message: 'تسليم التقارير اليومية متاح للمشرف ومدير النظام فقط' }, { status: 403 })
-    }
-
-    // SECURITY FIX: فحص ملكية المسودة — منع تسليم مسودات المشرفين الآخرين باسمك
-    if (!isSystemAdmin && isSupervisor && existingReport.createdById !== user!.id) {
-      return NextResponse.json(
-        { error: 'forbidden', message: 'لا يمكنك تسليم مسودة أنشأها مشرف آخر' },
-        { status: 403 }
-      )
+    var canSubmitReport = canWrite(user!.role, 'daily_reports', user!.permissions) || canWrite(user!.role, 'safety', user!.permissions)
+    if (!isSystemAdmin && !canSubmitReport) {
+      return NextResponse.json({ error: 'forbidden', message: 'تسليم التقارير اليومية متاح للموظفين المصرّح لهم فقط' }, { status: 403 })
     }
 
     var updateResult = await safeDbOp(
