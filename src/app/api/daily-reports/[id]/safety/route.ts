@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
-import { hasPermission, canWrite } from '@/lib/auth'
+import { hasPermission, canWrite, SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { handleDbError } from '@/lib/api-helpers'
 
@@ -40,10 +40,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  // SECURITY FIX: كان الفحص canWrite('daily_reports') يتيح حفظ السلامة للمشرف (foreman)
-  // ويستثني مسؤول السلامة (hse_officer) — الفحص الصحيح بوحدة safety
-  if (!canWrite(user.role, 'safety', user.permissions)) {
-    return NextResponse.json({ error: 'forbidden', message: 'حفظ فحوصات السلامة متاح لمسؤولي السلامة ومقدمي التقارير المصرّح لهم' }, { status: 403 })
+  // v23: حفظ السلامة متاح لمسؤولي السلامة وأي موظف مصرّح له بتعديل التقارير اليومية
+  if (!canWrite(user.role, 'safety', user.permissions) && !canWrite(user.role, 'daily_reports', user.permissions)) {
+    return NextResponse.json({ error: 'forbidden', message: 'حفظ فحوصات السلامة متاح للموظفين المصرّح لهم فقط' }, { status: 403 })
   }
 
   try {
@@ -60,11 +59,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: 'Daily report not found', details: `No daily report with id: ${dailyReportId}` }, { status: 404 })
     }
 
-    // SECURITY FIX: كان جسم التقرير اليومي مقفولاً بعد التسليم بينما بيانات السلامة
-    // المرتبطة به قابلة للتعديل — حتى محو الحوادث من تقرير معتمد! الآن تُقفل معه
-    if (dailyReport.status !== 'draft') {
+    // v23: السلامة تُقفل عند الاعتماد — المسودة والمُسلَّم قابلان للحفظ من الموظفين المصرّح لهم
+    var isSystemAdminSafety = (user.email || '').toLowerCase().trim() === SYSTEM_ADMIN_EMAIL
+    if ((dailyReport.status === 'approved' || dailyReport.status === 'rejected') && !isSystemAdminSafety) {
       return NextResponse.json(
-        { error: 'report_locked', message: 'لا يمكن تعديل بيانات السلامة لتقرير تم تسليمه أو اعتماده' },
+        { error: 'report_locked', message: 'لا يمكن تعديل بيانات السلامة لتقرير معتمد أو مرفوض' },
         { status: 409 }
       )
     }
