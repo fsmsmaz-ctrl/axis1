@@ -11,10 +11,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
   }
 
-  // الاعتماد: مدير النظام (admin@axis.om) أو الإدارة العليا فقط — نفس مستخدمي لوحة التحكم
+  // v23: الاعتماد لمدير النظام (admin@axis.om) فقط
   var isSystemAdmin = (user.email || '').toLowerCase().trim() === SYSTEM_ADMIN_EMAIL
-  if (!isSystemAdmin && user.role !== 'top_management') {
-    return NextResponse.json({ error: 'forbidden', message: 'اعتماد التقارير متاح فقط لمدير النظام أو الإدارة العليا' }, { status: 403 })
+  if (!isSystemAdmin) {
+    return NextResponse.json({ error: 'forbidden', message: 'اعتماد التقارير متاح لمدير النظام فقط' }, { status: 403 })
   }
 
   var rl = checkRateLimit(req, RateLimitPresets.write)
@@ -110,4 +110,3 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return handleDbError(error, 'اعتماد التقرير')
   }
 }
-
