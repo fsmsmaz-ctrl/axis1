@@ -75,6 +75,8 @@ export default function SafetyPage() {
   const [projectsLoading, setProjectsLoading] = useState(true)
   const [projectsError, setProjectsError] = useState(false)
   const [driveLines, setDriveLines] = useState<any[]>([])
+  // v24: حالة فشل جلب خطوط الحفر — لعرض تنبيه وزر إعادة محاولة بدل قائمة صامتة فارغة
+  const [driveLinesError, setDriveLinesError] = useState(false)
   const [loading, setLoading] = useState(true)
   const [selectedProject, setSelectedProject] = useState<string>('all')
   const [sheetOpen, setSheetOpen] = useState(false)
@@ -228,18 +230,16 @@ export default function SafetyPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedProject])
 
-  // Load drive lines when project changes in the form
-  useEffect(() => {
-    if (!form.projectId) {
-      setDriveLines([])
-      driveLinesLoaded.current = null
-      return
-    }
-    if (driveLinesLoaded.current === form.projectId) return
-    driveLinesLoaded.current = form.projectId
-    authedFetch('/api/drive-lines?projectId=' + form.projectId)
+  // v24: جلب خطوط الحفر كدالة قابلة للاستدعاء — تسمح بإعادة المحاولة من الواجهة
+  function loadDriveLines(pid: string) {
+    if (!pid) return
+    driveLinesLoaded.current = pid
+    setDriveLinesError(false)
+    authedFetch('/api/drive-lines?projectId=' + pid)
       .then(function(r) { return r.json() })
       .then(function(d) {
+        // 401/403 أو أي خطأ من الخادم → مسار الخطأ المرئي بدل قائمة فارغة صامتة
+        if (d && d.error) throw new Error(String(d.error || 'failed'))
         // إخفاء خطوط الحفر التي لم تبدأ بعد — لا يمكن تسجيل سلامة لخط لم يبدأ العمل عليه
         var list = (d.driveLines || []).filter(function(l: any) { return l.status !== 'not_started' })
         setDriveLines(list)
@@ -251,7 +251,24 @@ export default function SafetyPage() {
           return f
         })
       })
-      .catch(function() { setDriveLines([]) })
+      .catch(function() {
+        // لا نحتجز الطلب الفاشل في المرجع — تتيح إعادة المحاولة عند النقر أو إعادة الاختيار
+        driveLinesLoaded.current = null
+        setDriveLines([])
+        setDriveLinesError(true)
+      })
+  }
+
+  // Load drive lines when project changes in the form
+  useEffect(() => {
+    if (!form.projectId) {
+      setDriveLines([])
+      setDriveLinesError(false)
+      driveLinesLoaded.current = null
+      return
+    }
+    if (driveLinesLoaded.current === form.projectId) return
+    loadDriveLines(form.projectId)
   }, [form.projectId])
 
   async function handleSave() {
@@ -345,6 +362,7 @@ export default function SafetyPage() {
         <Button onClick={function() {
           setForm({ ...emptyForm, reportDate: new Date().toISOString().split('T')[0] })
           setDriveLines([])
+          setDriveLinesError(false)
           driveLinesLoaded.current = null
           setSheetOpen(true)
         }} disabled={todayReportExists}>
@@ -727,11 +745,33 @@ export default function SafetyPage() {
                   return <option key={l.id} value={l.id}>{(l.lineNumber || '-') + ' - ' + (l.startPoint || '-') + ' \u2192 ' + (l.endPoint || '-')}</option>
                 })}
               </select>
-              <p className="text-xs text-muted-foreground mt-1">
-                {isRtl
-                  ? 'تظهر هنا فقط خطوط الحفر التي بدأ العمل عليها فعلياً'
-                  : 'Only drive lines that have actually started are listed'}
-              </p>
+              {driveLinesError ? (
+                <div className="mt-2 space-y-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3">
+                  <p className="text-xs leading-5 text-amber-700 dark:text-amber-400">
+                    {isRtl
+                      ? 'تعذّر تحميل خطوط الحفر لهذا المشروع — يرجى إعادة المحاولة.'
+                      : 'Failed to load drive lines for this project — please retry.'}
+                  </p>
+                  <Button type="button" variant="outline" size="sm" onClick={function() { if (form.projectId) loadDriveLines(form.projectId) }} className="h-8 w-full gap-1.5">
+                    <Loader2 className="h-3.5 w-3.5" />
+                    {isRtl ? 'إعادة المحاولة' : 'Retry'}
+                  </Button>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground mt-1">
+                  {!form.projectId
+                    ? (isRtl
+                        ? 'اختر المشروع أولاً لعرض خطوط الحفر الخاصة به'
+                        : 'Select a project first to list its drive lines')
+                    : driveLines.length === 0
+                      ? (isRtl
+                          ? 'لا توجد خطوط حفر بدأ العمل عليها في هذا المشروع بعد'
+                          : 'No started drive lines in this project yet')
+                      : (isRtl
+                          ? 'تظهر هنا فقط خطوط الحفر التي بدأ العمل عليها فعلياً'
+                          : 'Only drive lines that have actually started are listed')}
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">
