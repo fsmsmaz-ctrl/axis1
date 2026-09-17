@@ -332,6 +332,33 @@ const fieldLabels: Record<string, FieldLabel> = {
   clientNotes: { ar: 'ملاحظات العميل', en: 'Client Notes' },
   handoverStatus: { ar: 'حالة التسليم', en: 'Handover Status' },
   projectId: { ar: 'المشروع', en: 'Project' },
+  // v22: تسميات إضافية لتوثيق فروق الحقول (قبل ← الآن)
+  phone: { ar: 'الهاتف', en: 'Phone' },
+  nameEn: { ar: 'الاسم بالإنجليزية', en: 'Name (EN)' },
+  role: { ar: 'الدور', en: 'Role' },
+  active: { ar: 'الحالة الوظيفية', en: 'Active' },
+  contractorName: { ar: 'اسم المقاول', en: 'Contractor' },
+  lineNumber: { ar: 'رقم الخط', en: 'Line No.' },
+  startPoint: { ar: 'نقطة البداية', en: 'Start Point' },
+  endPoint: { ar: 'نقطة النهاية', en: 'End Point' },
+  diameter: { ar: 'القطر', en: 'Diameter' },
+  pipeType: { ar: 'نوع الأنبوب', en: 'Pipe Type' },
+  depth: { ar: 'العمق', en: 'Depth' },
+  problems: { ar: 'المشاكل', en: 'Problems' },
+  weather: { ar: 'الطقس', en: 'Weather' },
+  workStartTime: { ar: 'بداية العمل', en: 'Work Start' },
+  workEndTime: { ar: 'نهاية العمل', en: 'Work End' },
+  operatingHours: { ar: 'ساعات التشغيل', en: 'Operating Hours' },
+  stoppageHours: { ar: 'ساعات التوقف', en: 'Stoppage Hours' },
+  stoppageReason: { ar: 'سبب التوقف', en: 'Stoppage Reason' },
+  workersCount: { ar: 'عدد العمال', en: 'Workers Count' },
+  attendees: { ar: 'الحضور', en: 'Attendees' },
+  startReading: { ar: 'قراءة البداية', en: 'Start Reading' },
+  endReading: { ar: 'قراءة النهاية', en: 'End Reading' },
+  dailyMeters: { ar: 'الأمتار المحفورة', en: 'Meters Drilled' },
+  pipesInstalled: { ar: 'الأنابيب المركبة', en: 'Pipes Installed' },
+  soilExcavated: { ar: 'التربة المحفورة', en: 'Soil Excavated' },
+  productionNotes: { ar: 'ملاحظات الإنتاج', en: 'Production Notes' },
 }
 
 const valueLabels: Record<string, Record<string, string>> = {
@@ -347,6 +374,7 @@ const valueLabels: Record<string, Record<string, string>> = {
   handoverStatus: { pending: 'معلق', accepted: 'مقبول', needs_revision: 'يحتاج مراجعة', rejected: 'مرفوض' },
   workType: { pipe_jacking: 'Pipe Jacking', microtunneling: 'Microtunneling', hdd: 'HDD', auger_boring: 'Auger Boring' },
   priority: { urgent: 'عاجلة', high: 'عالية', normal: 'عادية', low: 'منخفضة' },
+  role: { top_management: 'الإدارة العليا', project_manager: 'مدير مشروع', site_engineer: 'مهندس موقع', hse_officer: 'مسؤول سلامة', foreman: 'مراقب موقع', accountant: 'محاسب' },
   size: { small: 'صغيرة', medium: 'متوسطة', large: 'كبيرة' },
   recurring: { daily: 'يومياً', weekly: 'أسبوعياً', monthly: 'شهرياً', yearly: 'سنوياً' },
   category: {
@@ -421,3 +449,4 @@ export function buildAuditDetails(
   if (diff.changes.length === 0) return summary
   return JSON.stringify(diff)
 }
+
