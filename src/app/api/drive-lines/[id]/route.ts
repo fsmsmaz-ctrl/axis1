@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
-import { handleDbError, parseNumber, safeDbOp, sanitizeDriveLine } from '@/lib/api-helpers'
+import { buildAuditDetails, handleDbError, parseNumber, safeDbOp, sanitizeDriveLine } from '@/lib/api-helpers'
 import { canWrite } from '@/lib/auth'
 import { notifyUsers } from '@/lib/notify'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
@@ -32,7 +32,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     var body = await req.json()
 
     var existingResult = await safeDbOp(
-      () => db.driveLine.findUnique({ where: { id }, select: { projectId: true, lineNumber: true, startPoint: true, endPoint: true, totalLength: true, status: true, pricePerMeter: true } }),
+      () => db.driveLine.findUnique({ where: { id }, select: { projectId: true, lineNumber: true, startPoint: true, endPoint: true, totalLength: true, status: true, pricePerMeter: true, diameter: true, pipeType: true, soilType: true, depth: true, problems: true } }),
       'البحث عن خط الحفر'
     )
     if (!existingResult.success) return existingResult.response
@@ -122,10 +122,13 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
           action: 'update',
           entity: 'drive_line',
           entityId: id,
-          // SECURITY FIX: توثيق تغيير السعر صراحة (القديمة → الجديدة) + عدد التقارير المتأثرة
-          details: priceChanged
-            ? 'تعديل خط الحفر: ' + existing.lineNumber + ' (' + existing.startPoint + ' → ' + existing.endPoint + ') — تغيير سعر المتر من ' + (existing.pricePerMeter ?? 'بدون') + ' إلى ' + (updateResult.data.pricePerMeter ?? 'بدون') + ' — أعيد حساب ' + recalculatedReports + ' تقرير'
-            : 'تعديل خط الحفر: ' + existing.lineNumber + ' (' + existing.startPoint + ' → ' + existing.endPoint + ')',
+          // v22: توثيق دقيق لكل حقل تغيّر — القيمة قبل ← القيمة الآن (JSON)
+          details: buildAuditDetails(
+            existing as unknown as Record<string, any>,
+            updateResult.data as unknown as Record<string, any>,
+            'تعديل خط الحفر: ' + existing.lineNumber + ' (' + existing.startPoint + ' → ' + existing.endPoint + ')' + (priceChanged ? ' — أعيد حساب ' + recalculatedReports + ' تقرير' : ''),
+            { skipFields: ['id', 'createdAt', 'updatedAt', 'projectId', 'cuid'] }
+          ),
         },
       }), 'سجل التدقيق'),
     ]).catch(function() {})
