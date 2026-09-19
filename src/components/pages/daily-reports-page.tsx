@@ -17,7 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   FileText, Calendar, Users, Ruler, AlertTriangle,
   ShieldCheck, CheckCircle2, Clock, DollarSign, Eye, Check, X, Pencil, Trash2,
-  AlertCircle, RefreshCw, Loader2, Send, Lock
+  AlertCircle, RefreshCw, Loader2, Send, Lock, GitBranch
 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
@@ -63,6 +63,14 @@ export default function DailyReportsPage() {
   const [viewReport, setViewReport] = useState<any | null>(null)
   const [viewDialogOpen, setViewDialogOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  // v27: حالة نافذة إعادة إسناد المشروع وخط الحفر
+  const [reassignReport, setReassignReport] = useState<any | null>(null)
+  const [reassignOpen, setReassignOpen] = useState(false)
+  const [reassignProjectId, setReassignProjectId] = useState('')
+  const [reassignLineId, setReassignLineId] = useState('')
+  const [reassignLines, setReassignLines] = useState<any[]>([])
+  const [reassignLinesLoading, setReassignLinesLoading] = useState(false)
+  const [reassignSaving, setReassignSaving] = useState(false)
   // حالة التقرير الجاري تعديله + نوع الحفظ (مسودة أم حفظ وتسليم)
   const [editingStatus, setEditingStatus] = useState<string>('draft')
   const [saveMode, setSaveMode] = useState<'draft' | 'submit'>('draft')
@@ -425,6 +433,83 @@ export default function DailyReportsPage() {
     canWrite(user?.role || '', 'safety', user?.permissions)
   // v23: الاعتماد — مدير النظام (admin@axis.om) فقط
   const canApprove = isAdmin
+  // v27: إعادة إسناد المشروع وخط الحفر — للمسودة/المُسلَّم: كل موظف مصرّح له،
+  // وللمعتمد/المرفوض: الإدارة العليا ومدير النظام فقط (تصحيح إداري موثّق في الرقابة)
+  const isTopManagement = (user?.role || '') === 'top_management'
+
+  function canReassignReport(r: any): boolean {
+    if (isAdmin || isTopManagement) return true
+    return canEditReports && (r.status === 'draft' || r.status === 'submitted')
+  }
+
+  function openReassignReport(r: any) {
+    setReassignReport(r)
+    setReassignProjectId(r.projectId || '')
+    setReassignLineId(r.driveLineId || '')
+    setReassignLines(r.driveLine ? [r.driveLine] : [])
+    setReassignOpen(true)
+    loadReassignLines(r.projectId || '')
+  }
+
+  // تحميل كل خطوط الحفر الخاصة بالمشروع (بلا تصفية «لم يبدأ») —
+  // إعادة الإسناد تصحيح إداري قد يستهدف خطاً لم تُسجَّل عليه قراءات بعد
+  async function loadReassignLines(pid: string) {
+    if (!pid) {
+      setReassignLines([])
+      return
+    }
+    setReassignLinesLoading(true)
+    try {
+      const res = await authedFetch('/api/drive-lines?projectId=' + encodeURIComponent(pid))
+      const data = await res.json().catch(() => ({}))
+      if (data && data.error) throw new Error(String(data.error))
+      const all: any[] = Array.isArray(data.driveLines) ? data.driveLines : []
+      setReassignLines(all)
+      setReassignLineId((prev: string) => (prev && all.some((l: any) => l.id === prev) ? prev : ''))
+    } catch {
+      setReassignLines([])
+      toast.error(isRtl ? 'تعذّر تحميل خطوط الحفر — أعد المحاولة' : 'Failed to load drive lines')
+    } finally {
+      setReassignLinesLoading(false)
+    }
+  }
+
+  async function saveReassign() {
+    if (!reassignReport) return
+    if (!reassignProjectId) {
+      toast.error(isRtl ? 'يرجى اختيار المشروع' : 'Please select a project')
+      return
+    }
+    const unchanged = reassignProjectId === reassignReport.projectId && (reassignLineId || '') === (reassignReport.driveLineId || '')
+    if (unchanged) {
+      toast.error(isRtl ? 'لا يوجد تغيير — اختر مشروعاً أو خطاً مختلفاً' : 'Nothing changed — pick a different project or line')
+      return
+    }
+    if (!window.confirm(isRtl
+      ? 'سيتم نقل التقرير إلى المشروع/خط الحفر المختار وإعادة حساب الإيراد والتقدم تلقائياً. متابعة؟'
+      : 'The report will be moved to the selected project/drive line and revenue & progress recalculated. Continue?')) return
+    setReassignSaving(true)
+    try {
+      const res = await authedFetch('/api/daily-reports/' + reassignReport.id + '/reassign', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId: reassignProjectId, driveLineId: reassignLineId || null }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        toast.error(data?.message || data?.error || (isRtl ? 'فشل تعديل الإسناد' : 'Failed to reassign'))
+        return
+      }
+      toast.success(isRtl ? 'تم تعديل المشروع وخط الحفر وإعادة الحساب' : 'Project & drive line updated and recalculated')
+      setReassignOpen(false)
+      setReassignReport(null)
+      fetchReports()
+    } catch (e: any) {
+      toast.error(e?.message || (isRtl ? 'فشل الاتصال' : 'Network error'))
+    } finally {
+      setReassignSaving(false)
+    }
+  }
 
   // تسميات القراءة فقط لبيانات السلامة في وضع التعديل
   const editProjectName = projects.find((p) => p.id === formData.projectId)?.name || editProjectNameFallback
@@ -571,6 +656,12 @@ export default function DailyReportsPage() {
                       {(isAdmin || (canEditReports && (r.status === 'draft' || r.status === 'submitted'))) && (
                         <Button variant="ghost" size="sm" title={isRtl ? 'تعديل — متاح قبل الاعتماد' : 'Edit — available before approval'} onClick={() => openEditReport(r)}>
                           <Pencil className="h-4 w-4" />
+                        </Button>
+                      )}
+                      {/* v27: تعديل المشروع وخط الحفر — متاح حسب الحالة والصلاحية */}
+                      {canReassignReport(r) && (
+                        <Button variant="ghost" size="sm" title={isRtl ? 'تعديل المشروع وخط الحفر' : 'Change project & drive line'} onClick={() => openReassignReport(r)}>
+                          <GitBranch className="h-4 w-4" />
                         </Button>
                       )}
                       {/* v23 تسليم التقرير: أي موظف مصرّح له — للمسودة بعد تعديل البيانات */}
@@ -891,6 +982,83 @@ export default function DailyReportsPage() {
             <DialogTitle>{isRtl ? 'تفاصيل التقرير' : 'Report Details'}</DialogTitle>
           </DialogHeader>
           {viewReport && <ReportDetails report={viewReport} />}
+        </DialogContent>
+      </Dialog>
+
+      {/* v27: نافذة تعديل المشروع وخط الحفر — تعمل على كل الحالات بما فيها المعتمد (للإدارة) */}
+      <Dialog open={reassignOpen} onOpenChange={(open) => { setReassignOpen(open); if (!open) setReassignReport(null) }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <GitBranch className="h-4 w-4 text-primary" />
+              {isRtl ? 'تعديل المشروع وخط الحفر' : 'Change Project & Drive Line'}
+            </DialogTitle>
+            <DialogDescription>
+              {isRtl
+                ? 'انقل التقرير إلى مشروع أو خط حفر آخر — يُعاد حساب الإيراد والتقدم تلقائياً وتُوثَّق التغييرات في الرقابة'
+                : 'Move the report to another project or drive line — revenue and progress are recalculated and logged'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="p-3 rounded-lg bg-muted/50 text-sm space-y-1">
+              <p className="text-xs text-muted-foreground">{isRtl ? 'الإسناد الحالي' : 'Current assignment'}</p>
+              <p className="font-medium">{reassignReport?.project?.name || '-'}</p>
+              <p className="text-xs text-muted-foreground">
+                {reassignReport?.driveLine ? driveLineLabel(reassignReport.driveLine, isRtl) : (isRtl ? 'بدون خط حفر' : 'No drive line')}
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <Label>{isRtl ? 'المشروع الجديد' : 'New Project'} *</Label>
+              <Select value={reassignProjectId} onValueChange={(v) => { setReassignProjectId(v); setReassignLineId(''); loadReassignLines(v) }}>
+                <SelectTrigger><SelectValue placeholder={isRtl ? 'اختر' : 'Select'} /></SelectTrigger>
+                <SelectContent>
+                  {projects.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>{isRtl ? 'خط الحفر الجديد' : 'New Drive Line'}</Label>
+              {reassignLinesLoading ? (
+                <div className="h-10 flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  {isRtl ? 'جارٍ التحميل...' : 'Loading...'}
+                </div>
+              ) : (
+                <Select value={reassignLineId || 'none'} onValueChange={(v) => setReassignLineId(v === 'none' ? '' : v)}>
+                  <SelectTrigger><SelectValue placeholder={isRtl ? 'اختر' : 'Select'} /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">{isRtl ? 'بدون خط حفر' : 'No drive line'}</SelectItem>
+                    {reassignLines.map((l) => (
+                      <SelectItem key={l.id} value={l.id}>{driveLineLabel(l, isRtl)}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              <p className="text-[11px] text-muted-foreground">
+                {isRtl
+                  ? 'تُعرض هنا كل خطوط المشروع (حتى غير المبدوءة) — إعادة الإسناد تصحيح إداري'
+                  : 'All project lines are listed (even not started) — reassignment is an administrative correction'}
+              </p>
+            </div>
+            {reassignReport && (reassignReport.status === 'approved' || reassignReport.status === 'rejected') && (
+              <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-700">
+                {isRtl
+                  ? 'هذا التقرير معتمد/مرفوض — تعديل الإسناد متاح للإدارة العليا ومدير النظام فقط ويُوثَّق في سجل الرقابة.'
+                  : 'This report is approved/rejected — reassignment is restricted to top management & system admin and is fully audited.'}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setReassignOpen(false); setReassignReport(null) }} disabled={reassignSaving}>
+              {isRtl ? 'إلغاء' : 'Cancel'}
+            </Button>
+            <Button onClick={saveReassign} disabled={reassignSaving || !reassignProjectId}>
+              {reassignSaving && <Loader2 className="h-4 w-4 ml-2 animate-spin" />}
+              {isRtl ? 'حفظ الإسناد الجديد' : 'Save New Assignment'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
