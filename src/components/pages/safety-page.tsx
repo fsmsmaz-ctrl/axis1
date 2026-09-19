@@ -44,6 +44,18 @@ const checklistItems = [
   { key: 'toolboxTalk', ar: 'Toolbox Talk', en: 'Toolbox Talk' },
 ]
 
+// v27: تنسيق خط الحفر «خط N: بداية → نهاية» — نفس صيغة صفحة التقارير اليومية
+function reassignLineLabel(dl: any, isRtl: boolean): string {
+  if (!dl) return ''
+  var num = dl.lineNumber != null && String(dl.lineNumber) !== '' ? String(dl.lineNumber) : '-'
+  var label = isRtl ? 'خط ' + num : 'Line ' + num
+  var sp = dl.startPoint ? String(dl.startPoint) : ''
+  var ep = dl.endPoint ? String(dl.endPoint) : ''
+  if (sp && ep) return label + ': ' + sp + ' \u2192 ' + ep
+  if (sp || ep) return label + ': ' + (sp || ep)
+  return label
+}
+
 const emptyForm = {
   projectId: '',
   driveLineId: '',
@@ -86,6 +98,15 @@ export default function SafetyPage() {
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState({ ...emptyForm })
 
+  // v27: نافذة تعديل المشروع وخط الحفر — تنقل تقرير السلامة والتقرير اليومي المرتبط معاً
+  const [reassignSafety, setReassignSafety] = useState<any>(null)
+  const [reassignOpen, setReassignOpen] = useState(false)
+  const [reassignProjectId, setReassignProjectId] = useState('')
+  const [reassignLineId, setReassignLineId] = useState('')
+  const [reassignLines, setReassignLines] = useState<any[]>([])
+  const [reassignLinesLoading, setReassignLinesLoading] = useState(false)
+  const [reassignSaving, setReassignSaving] = useState(false)
+
   // Workers state
   const [workers, setWorkers] = useState<any[]>([])
   const [workersLoading, setWorkersLoading] = useState(false)
@@ -99,6 +120,96 @@ export default function SafetyPage() {
   // v26: صلاحية تعديل تقارير السلامة — لكل من يملك صلاحية قسم السلامة (مع تجاوز مدير النظام)
   const storeUser = useAppStore((s) => s.user)
   const canEditSafety = isAdmin || canWrite(storeUser?.role || '', 'safety', storeUser?.permissions)
+
+  // v27: إعادة إسناد المشروع وخط الحفر — نفس صلاحيات القسم للمسودة/المُسلَّم،
+  // والمعتمد/المرفوض للإدارة العليا ومدير النظام فقط
+  const isTopManagement = (storeUser?.role || '') === 'top_management'
+
+  function canReassignSafety(r: any): boolean {
+    var st = (r.dailyReport && r.dailyReport.status) || 'draft'
+    if (isAdmin || isTopManagement) return true
+    return canEditSafety && (st === 'draft' || st === 'submitted')
+  }
+
+  function openReassignSafety(r: any) {
+    setReassignSafety(r)
+    setReassignProjectId(r.projectId || '')
+    setReassignLineId(r.dailyReport && r.dailyReport.driveLine ? r.dailyReport.driveLine.id : '')
+    setReassignLines(r.dailyReport && r.dailyReport.driveLine ? [r.dailyReport.driveLine] : [])
+    setReassignOpen(true)
+    loadReassignLines(r.projectId || '')
+  }
+
+  // تحميل كل خطوط الحفر الخاصة بالمشروع (بلا تصفية «لم يبدأ») — إعادة الإسناد تصحيح إداري
+  function loadReassignLines(pid: string) {
+    if (!pid) {
+      setReassignLines([])
+      return
+    }
+    setReassignLinesLoading(true)
+    authedFetch('/api/drive-lines?projectId=' + encodeURIComponent(pid))
+      .then(function(res) { return res.json().catch(function() { return {} }) })
+      .then(function(d) {
+        if (d && d.error) throw new Error(String(d.error))
+        var all: any[] = Array.isArray(d.driveLines) ? d.driveLines : []
+        setReassignLines(all)
+        setReassignLineId(function(prev: string) {
+          return prev && all.some(function(l) { return l.id === prev }) ? prev : ''
+        })
+        setReassignLinesLoading(false)
+      })
+      .catch(function() {
+        setReassignLines([])
+        setReassignLinesLoading(false)
+        toast.error(isRtl ? 'تعذّر تحميل خطوط الحفر — أعد المحاولة' : 'Failed to load drive lines')
+      })
+  }
+
+  function saveReassignSafety() {
+    if (!reassignSafety) return
+    if (!reassignProjectId) {
+      toast.error(isRtl ? 'يرجى اختيار المشروع' : 'Please select a project')
+      return
+    }
+    var dailyId = reassignSafety.dailyReport ? reassignSafety.dailyReport.id : null
+    if (!dailyId) {
+      toast.error(isRtl ? 'لا يوجد تقرير يومي مرتبط بهذا التقرير' : 'No linked daily report')
+      return
+    }
+    var currentLineId = reassignSafety.dailyReport && reassignSafety.dailyReport.driveLine ? reassignSafety.dailyReport.driveLine.id : ''
+    var unchanged = reassignProjectId === reassignSafety.projectId && (reassignLineId || '') === (currentLineId || '')
+    if (unchanged) {
+      toast.error(isRtl ? 'لا يوجد تغيير — اختر مشروعاً أو خطاً مختلفاً' : 'Nothing changed — pick a different project or line')
+      return
+    }
+    var msg = isRtl
+      ? 'سيتم نقل تقرير السلامة والتقرير اليومي المرتبط به إلى المشروع/خط الحفر المختار وإعادة حساب الإيراد والتقدم تلقائياً. متابعة؟'
+      : 'The safety report and its linked daily report will be moved to the selected project/drive line and revenue & progress recalculated. Continue?'
+    if (!confirm(msg)) return
+    setReassignSaving(true)
+    authedFetch('/api/daily-reports/' + dailyId + '/reassign', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectId: reassignProjectId, driveLineId: reassignLineId || null }),
+    })
+      .then(function(res) {
+        return res.json().catch(function() { return {} }).then(function(d) { return { ok: res.ok, data: d } })
+      })
+      .then(function(out) {
+        if (!out.ok) {
+          toast.error(out.data.message || out.data.error || (isRtl ? 'فشل تعديل الإسناد' : 'Failed to reassign'))
+          return
+        }
+        toast.success(isRtl ? 'تم تعديل المشروع وخط الحفر وإعادة الحساب' : 'Project & drive line updated and recalculated')
+        setReassignOpen(false)
+        setReassignSafety(null)
+        fetchReports()
+      })
+      .catch(function() {
+        toast.error(isRtl ? 'فشل الاتصال' : 'Network error')
+      })
+      .finally(function() { setReassignSaving(false) })
+  }
 
   async function deleteReport(reportId: string) {
     var msg = isRtl
@@ -553,6 +664,18 @@ export default function SafetyPage() {
                         <Pencil className="h-4 w-4" />
                       </Button>
                     )}
+                    {/* v27: تعديل المشروع وخط الحفر — نقل التقرير مع التقرير اليومي المرتبط */}
+                    {canReassignSafety(r) && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0 shrink-0"
+                        title={isRtl ? 'تعديل المشروع وخط الحفر' : 'Change project & drive line'}
+                        onClick={function() { openReassignSafety(r) }}
+                      >
+                        <GitBranch className="h-4 w-4" />
+                      </Button>
+                    )}
                     {isAdmin && (
                       <Button
                         variant="ghost"
@@ -932,6 +1055,85 @@ export default function SafetyPage() {
           </div>
         </SheetContent>
       </Sheet>
+
+      {/* v27: نافذة تعديل المشروع وخط الحفر — تنقل تقرير السلامة والتقرير اليومي المرتبط معاً */}
+      <Dialog open={reassignOpen} onOpenChange={function(open) { setReassignOpen(open); if (!open) setReassignSafety(null) }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <GitBranch className="h-4 w-4 text-primary" />
+              {isRtl ? 'تعديل المشروع وخط الحفر' : 'Change Project & Drive Line'}
+            </DialogTitle>
+            <DialogDescription>
+              {isRtl
+                ? 'انقل تقرير السلامة والتقرير اليومي المرتبط به إلى مشروع أو خط حفر آخر — يُعاد حساب الإيراد والتقدم تلقائياً وتُوثَّق التغييرات في الرقابة'
+                : 'Move the safety report and its linked daily report to another project or drive line — revenue and progress are recalculated and logged'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="p-3 rounded-lg bg-muted/50 text-sm space-y-1">
+              <p className="text-xs text-muted-foreground">{isRtl ? 'الإسناد الحالي' : 'Current assignment'}</p>
+              <p className="font-medium">{reassignSafety && reassignSafety.project ? reassignSafety.project.name : '-'}</p>
+              <p className="text-xs text-muted-foreground">
+                {reassignSafety && reassignSafety.dailyReport && reassignSafety.dailyReport.driveLine
+                  ? reassignLineLabel(reassignSafety.dailyReport.driveLine, isRtl)
+                  : (isRtl ? 'بدون خط حفر' : 'No drive line')}
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <Label>{isRtl ? 'المشروع الجديد' : 'New Project'} *</Label>
+              <Select value={reassignProjectId} onValueChange={function(v) { setReassignProjectId(v); setReassignLineId(''); loadReassignLines(v) }}>
+                <SelectTrigger><SelectValue placeholder={isRtl ? 'اختر' : 'Select'} /></SelectTrigger>
+                <SelectContent>
+                  {projects.map(function(p) {
+                    return <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                  })}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>{isRtl ? 'خط الحفر الجديد' : 'New Drive Line'}</Label>
+              {reassignLinesLoading ? (
+                <div className="h-10 flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  {isRtl ? 'جارٍ التحميل...' : 'Loading...'}
+                </div>
+              ) : (
+                <Select value={reassignLineId || 'none'} onValueChange={function(v) { setReassignLineId(v === 'none' ? '' : v) }}>
+                  <SelectTrigger><SelectValue placeholder={isRtl ? 'اختر' : 'Select'} /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">{isRtl ? 'بدون خط حفر' : 'No drive line'}</SelectItem>
+                    {reassignLines.map(function(l) {
+                      return <SelectItem key={l.id} value={l.id}>{reassignLineLabel(l, isRtl)}</SelectItem>
+                    })}
+                  </SelectContent>
+                </Select>
+              )}
+              <p className="text-[11px] text-muted-foreground">
+                {isRtl
+                  ? 'تُعرض هنا كل خطوط المشروع (حتى غير المبدوءة) — إعادة الإسناد تصحيح إداري'
+                  : 'All project lines are listed (even not started) — reassignment is an administrative correction'}
+              </p>
+            </div>
+            {reassignSafety && reassignSafety.dailyReport && reassignSafety.dailyReport.status !== 'draft' && reassignSafety.dailyReport.status !== 'submitted' && (
+              <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-700">
+                {isRtl
+                  ? 'هذا التقرير معتمد/مرفوض — تعديل الإسناد متاح للإدارة العليا ومدير النظام فقط ويُوثَّق في سجل الرقابة.'
+                  : 'This report is approved/rejected — reassignment is restricted to top management & system admin and is fully audited.'}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={function() { setReassignOpen(false); setReassignSafety(null) }} disabled={reassignSaving}>
+              {isRtl ? 'إلغاء' : 'Cancel'}
+            </Button>
+            <Button onClick={saveReassignSafety} disabled={reassignSaving || !reassignProjectId}>
+              {reassignSaving && <Loader2 className="h-4 w-4 ml-2 animate-spin" />}
+              {isRtl ? 'حفظ الإسناد الجديد' : 'Save New Assignment'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
