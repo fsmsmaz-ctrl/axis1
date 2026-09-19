@@ -38,6 +38,19 @@ const weatherLabels: Record<string, { ar: string; en: string }> = {
   windy: { ar: 'عاصف', en: 'Windy' },
 }
 
+// v25: تنسيق خط الحفر بصيغة خطوط الحفر الكاملة — «خط N: بداية → نهاية»
+// يتعامل بأمان مع رقم أو نقاط ناقصة، ويُستخدم في عنوان البطاقة ونافذة التفاصيل
+function driveLineLabel(dl: any, isRtl: boolean): string {
+  if (!dl) return ''
+  var num = dl.lineNumber != null && String(dl.lineNumber) !== '' ? String(dl.lineNumber) : '-'
+  var label = isRtl ? 'خط ' + num : 'Line ' + num
+  var sp = dl.startPoint ? String(dl.startPoint) : ''
+  var ep = dl.endPoint ? String(dl.endPoint) : ''
+  if (sp && ep) return label + ': ' + sp + ' \u2192 ' + ep
+  if (sp || ep) return label + ': ' + (sp || ep)
+  return label
+}
+
 export default function DailyReportsPage() {
   const [reports, setReports] = useState<any[]>([])
   const [projects, setProjects] = useState<any[]>([])
@@ -520,8 +533,15 @@ export default function DailyReportsPage() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <p className="font-semibold text-sm truncate">{r.project?.name}</p>
-                        <Badge variant="outline" className="text-xs">{r.driveLine?.lineNumber || '-'}</Badge>
+                        {/* v25: العنوان هو خط الحفر بصيغته الكاملة — واسم المشروع يصبح شارة ثانوية */}
+                        <p className="font-semibold text-sm truncate">
+                          {r.driveLine ? driveLineLabel(r.driveLine, isRtl) : (r.project?.name || '-')}
+                        </p>
+                        {r.driveLine && (
+                          <Badge variant="outline" className="text-xs max-w-[180px] truncate">
+                            {r.project?.name || '-'}
+                          </Badge>
+                        )}
                         <Badge variant={status.color as any} className="text-xs">
                           {isRtl ? status.ar : status.en}
                         </Badge>
@@ -904,7 +924,8 @@ function ReportDetails({ report }: { report: any }) {
     <div className="space-y-4">
       <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-3 text-sm">
         <Detail label={isRtl ? 'المشروع' : 'Project'} value={report.project?.name || '-'} />
-        <Detail label={isRtl ? 'خط الحفر' : 'Drive Line'} value={report.driveLine?.lineNumber || '-'} />
+        {/* v25: الصيغة الكاملة لخط الحفر بدل رقم الخط فقط */}
+        <Detail label={isRtl ? 'خط الحفر' : 'Drive Line'} value={report.driveLine ? driveLineLabel(report.driveLine, isRtl) : '-'} />
         <Detail label={isRtl ? 'التاريخ' : 'Date'} value={new Date(report.reportDate).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')} />
         <Detail label={isRtl ? 'الطقس' : 'Weather'} value={report.weather || '-'} />
         <Detail label={isRtl ? 'بداية العمل' : 'Start'} value={report.workStartTime || '-'} />
