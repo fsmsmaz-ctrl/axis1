@@ -284,6 +284,26 @@ export interface FieldLabel {
 }
 
 const fieldLabels: Record<string, FieldLabel> = {
+  // v26: تسميات حقول تقرير السلامة — لتفاصيل التغيير «قبل ← الآن» في الرقابة
+  ppeAvailable: { ar: 'معدات الحماية متوفرة', en: 'PPE Available' },
+  helmetCheck: { ar: 'خوذات السلامة', en: 'Safety Helmets' },
+  bootsCheck: { ar: 'أحذية السلامة', en: 'Safety Boots' },
+  glovesCheck: { ar: 'القفازات', en: 'Gloves' },
+  glassesCheck: { ar: 'النظارات الواقية', en: 'Safety Glasses' },
+  workAreaCheck: { ar: 'تنظيم منطقة العمل', en: 'Work Area Organized' },
+  barriersCheck: { ar: 'الحواجز والتحذيرات', en: 'Barriers & Warnings' },
+  shaftCheck: { ar: 'سلامة البئر', en: 'Shaft Safety' },
+  ventilationCheck: { ar: 'التهوية', en: 'Ventilation' },
+  electricalCheck: { ar: 'السلامة الكهربائية', en: 'Electrical Safety' },
+  craneCheck: { ar: 'سلامة الرافعة', en: 'Crane Safety' },
+  hydraulicCheck: { ar: 'سلامة النظام الهيدروليكي', en: 'Hydraulic Safety' },
+  fireExtinguishers: { ar: 'طفايات الحريق', en: 'Fire Extinguishers' },
+  workPermit: { ar: 'تصريح العمل', en: 'Work Permit' },
+  toolboxTalk: { ar: 'Toolbox Talk', en: 'Toolbox Talk' },
+  observations: { ar: 'الملاحظات', en: 'Observations' },
+  violations: { ar: 'المخالفات', en: 'Violations' },
+  incidentType: { ar: 'نوع الحادث', en: 'Incident Type' },
+  incidentDescription: { ar: 'وصف الحادث', en: 'Incident Description' },
   code: { ar: 'رقم المشروع', en: 'Project Code' },
   name: { ar: 'الاسم', en: 'Name' },
   client: { ar: 'العميل', en: 'Client' },
@@ -362,6 +382,8 @@ const fieldLabels: Record<string, FieldLabel> = {
 }
 
 const valueLabels: Record<string, Record<string, string>> = {
+  // v26: تسميات نوع الحادث في تفاصيل التغيير
+  incidentType: { none: 'لا يوجد', near_miss: 'Near miss', incident: 'حادث', accident: 'إصابة' },
   ownership: { owned: 'ملك الشركة', rented: 'مستأجر', borrowed: 'معار' },
   status: {
     not_started: 'لم يبدأ', in_progress: 'قيد التنفيذ', suspended: 'معلق', completed: 'مكتمل',
