@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
-import { hasPermission, canWrite, SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
+import { hasPermission, canWrite } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { handleDbError } from '@/lib/api-helpers'
 
@@ -59,11 +59,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: 'Daily report not found', details: `No daily report with id: ${dailyReportId}` }, { status: 404 })
     }
 
-    // v23: السلامة تُقفل عند الاعتماد — المسودة والمُسلَّم قابلان للحفظ من الموظفين المصرّح لهم
-    var isSystemAdminSafety = (user.email || '').toLowerCase().trim() === SYSTEM_ADMIN_EMAIL
-    if ((dailyReport.status === 'approved' || dailyReport.status === 'rejected') && !isSystemAdminSafety) {
+    // v26: السلامة تُقفل نهائياً بعد إرسال التقرير اليومي للاعتماد —
+    // المسودة فقط هي القابلة للحفظ (بعد الإرسال لا يُقبل تعديل السلامة أبداً)
+    if (dailyReport.status !== 'draft') {
       return NextResponse.json(
-        { error: 'report_locked', message: 'لا يمكن تعديل بيانات السلامة لتقرير معتمد أو مرفوض' },
+        { error: 'report_locked', message: 'لا يمكن تعديل بيانات السلامة بعد إرسال التقرير اليومي للاعتماد' },
         { status: 409 }
       )
     }
@@ -135,3 +135,4 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return handleDbError(error, 'حفظ تقرير السلامة')
   }
 }
+
