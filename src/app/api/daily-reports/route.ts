@@ -61,7 +61,8 @@ export async function GET(req: NextRequest) {
       orderBy: [{ reportDate: 'desc' }, { createdAt: 'desc' }],
       include: {
         project: { select: { id: true, name: true, code: true } },
-        driveLine: { select: { id: true, lineNumber: true, totalLength: true } },
+        // v25: نقاط البداية والنهاية لعرض خط الحفر بصيغته الكاملة في عنوان التقرير
+        driveLine: { select: { id: true, lineNumber: true, totalLength: true, startPoint: true, endPoint: true } },
         safety: true,
         createdBy: { select: { name: true, nameEn: true } },
         approver: { select: { name: true, nameEn: true } },
