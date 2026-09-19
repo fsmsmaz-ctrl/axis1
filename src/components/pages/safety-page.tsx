@@ -12,9 +12,10 @@ import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { ShieldCheck, ShieldAlert, AlertTriangle, CheckCircle2, XCircle, Calendar, Plus, Loader2, Trash2, GitBranch, Users, Phone, Building2, Pencil } from 'lucide-react'
+import { ShieldCheck, ShieldAlert, AlertTriangle, CheckCircle2, XCircle, Calendar, Plus, Loader2, Trash2, GitBranch, Users, Phone, Building2, Pencil, Lock } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
+import { canWrite } from '@/lib/auth'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 
@@ -77,6 +78,8 @@ export default function SafetyPage() {
   const [driveLines, setDriveLines] = useState<any[]>([])
   // v24: حالة فشل جلب خطوط الحفر — لعرض تنبيه وزر إعادة محاولة بدل قائمة صامتة فارغة
   const [driveLinesError, setDriveLinesError] = useState(false)
+  // v26: التقرير قيد التعديل (null = وضع الإنشاء)
+  const [editingSafety, setEditingSafety] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [selectedProject, setSelectedProject] = useState<string>('all')
   const [sheetOpen, setSheetOpen] = useState(false)
@@ -93,6 +96,9 @@ export default function SafetyPage() {
   const language = useAppStore((s) => s.language)
   const isRtl = language === 'ar'
   const isAdmin = useAppStore((s) => s.user)?.email?.toLowerCase().trim() === 'admin@axis.om'
+  // v26: صلاحية تعديل تقارير السلامة — لكل من يملك صلاحية قسم السلامة (مع تجاوز مدير النظام)
+  const storeUser = useAppStore((s) => s.user)
+  const canEditSafety = isAdmin || canWrite(storeUser?.role || '', 'safety', storeUser?.permissions)
 
   async function deleteReport(reportId: string) {
     var msg = isRtl
@@ -271,6 +277,25 @@ export default function SafetyPage() {
     loadDriveLines(form.projectId)
   }, [form.projectId])
 
+  // v26: فتح نموذج تعديل تقرير السلامة — تعبئة المحتوى وبيانات التعريف تبقى للقراءة فقط
+  function openEditSafety(r: any) {
+    var f: any = { ...emptyForm }
+    f.projectId = r.projectId || ''
+    f.reportDate = r.reportDate ? String(r.reportDate).split('T')[0] : f.reportDate
+    if (r.dailyReport && r.dailyReport.driveLine) f.driveLineId = r.dailyReport.driveLine.id
+    for (var i = 0; i < checklistItems.length; i++) {
+      var item = checklistItems[i]
+      f[item.key] = !!r[item.key]
+    }
+    f.observations = r.observations || ''
+    f.violations = r.violations || ''
+    f.incidentType = r.incidentType || 'none'
+    f.incidentDescription = r.incidentDescription || ''
+    setForm(f)
+    setEditingSafety(r)
+    setSheetOpen(true)
+  }
+
   async function handleSave() {
     if (!form.projectId || !form.reportDate) {
       toast.error(isRtl ? 'يرجى اختيار المشروع والتاريخ' : 'Please select project and date')
@@ -293,8 +318,10 @@ export default function SafetyPage() {
       safetyData.incidentType = form.incidentType
       safetyData.incidentDescription = form.incidentType !== 'none' ? (form.incidentDescription || null) : null
 
-      var safetyRes = await authedFetch('/api/safety-inspection', {
-        method: 'POST',
+      // v26: وضع التعديل — PUT إلى مسار تقرير السلامة نفسه، والخادم يقفل التعديل بعد إرسال التقرير اليومي
+      var isEdit = !!editingSafety
+      var safetyRes = await authedFetch(isEdit ? ('/api/safety-inspection/' + editingSafety.id) : '/api/safety-inspection', {
+        method: isEdit ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(safetyData),
       })
@@ -308,8 +335,11 @@ export default function SafetyPage() {
 
       if (!safetyRes.ok) throw new Error('Failed to save safety report')
 
-      toast.success(isRtl ? 'تم حفظ تقرير السلامة بنجاح' : 'Safety report saved successfully')
+      toast.success(isRtl
+        ? (isEdit ? 'تم حفظ التعديلات — ستظهر في قسم التقارير اليومية وقسم الرقابة' : 'تم حفظ تقرير السلامة بنجاح')
+        : (isEdit ? 'Changes saved — visible in Daily Reports and Oversight' : 'Safety report saved successfully'))
       setSheetOpen(false)
+      setEditingSafety(null)
       setForm({ ...emptyForm, reportDate: new Date().toISOString().split('T')[0] })
       fetchReports()
     } catch (e: any) {
@@ -364,6 +394,7 @@ export default function SafetyPage() {
           setDriveLines([])
           setDriveLinesError(false)
           driveLinesLoaded.current = null
+          setEditingSafety(null)
           setSheetOpen(true)
         }} disabled={todayReportExists}>
           <Plus className="h-4 w-4 ml-2" />
@@ -510,6 +541,18 @@ export default function SafetyPage() {
                         </Button>
                       )}
                     </div>
+                    {/* v26: تعديل تقرير السلامة — للموظفين المصرّح لهم وقبل إرسال التقرير اليومي فقط */}
+                    {canEditSafety && isDraft && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0 shrink-0"
+                        title={isRtl ? 'تعديل تقرير السلامة — متاح قبل إرسال التقرير اليومي فقط' : 'Edit safety report — available before submission only'}
+                        onClick={function() { openEditSafety(r) }}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                    )}
                     {isAdmin && (
                       <Button
                         variant="ghost"
@@ -681,12 +724,14 @@ export default function SafetyPage() {
       </Dialog>
 
       {/* Add Safety Report Sheet */}
-      <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
+      <Sheet open={sheetOpen} onOpenChange={function(open) { setSheetOpen(open); if (!open) setEditingSafety(null) }}>
         <SheetContent side={isRtl ? 'left' : 'right'} className="overflow-y-auto w-full sm:max-w-lg pb-[max(0px,env(safe-area-inset-bottom))]">
           <SheetHeader>
-            <SheetTitle>{isRtl ? 'إضافة تقرير سلامة جديد' : 'New Safety Report'}</SheetTitle>
+            <SheetTitle>{editingSafety ? (isRtl ? 'تعديل تقرير السلامة' : 'Edit Safety Report') : (isRtl ? 'إضافة تقرير سلامة جديد' : 'New Safety Report')}</SheetTitle>
             <SheetDescription>
-              {isRtl ? 'بعد حفظ تقرير السلامة، يمكنك إكمال باقي البيانات من قسم التقارير اليومية' : 'After saving, complete the rest in Daily Reports section'}
+              {editingSafety
+                ? (isRtl ? 'عدّل قائمة التحقق والملاحظات — تُطبَّق التغييرات على التقرير اليومي المرتبط وتظهر تفاصيلها في الرقابة' : 'Edit the checklist and notes — changes apply to the linked daily report and are logged in Oversight')
+                : (isRtl ? 'بعد حفظ تقرير السلامة، يمكنك إكمال باقي البيانات من قسم التقارير اليومية' : 'After saving, complete the rest in Daily Reports section')}
             </SheetDescription>
           </SheetHeader>
 
@@ -695,8 +740,8 @@ export default function SafetyPage() {
             <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>{isRtl ? 'المشروع' : 'Project'} *</Label>
-                <Select value={form.projectId} onValueChange={function(v) { setForm({ ...form, projectId: v, driveLineId: '' }) }}>
-                  <SelectTrigger><SelectValue placeholder={isRtl ? 'اختر' : 'Select'} /></SelectTrigger>
+                <Select value={form.projectId} onValueChange={function(v) { setForm({ ...form, projectId: v, driveLineId: '' }) }} disabled={!!editingSafety}>
+                  <SelectTrigger disabled={!!editingSafety}><SelectValue placeholder={isRtl ? 'اختر' : 'Select'} /></SelectTrigger>
                   <SelectContent>
                     {projects.map(function(p) {
                       return <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
@@ -726,7 +771,7 @@ export default function SafetyPage() {
               </div>
               <div className="space-y-1.5">
                 <Label>{isRtl ? 'التاريخ' : 'Date'} *</Label>
-                <Input type="date" value={form.reportDate} onChange={function(e) { setForm({ ...form, reportDate: e.target.value }) }} />
+                <Input type="date" value={form.reportDate} onChange={function(e) { setForm({ ...form, reportDate: e.target.value }) }} disabled={!!editingSafety} />
               </div>
             </div>
 
@@ -738,9 +783,14 @@ export default function SafetyPage() {
               <select
                 value={form.driveLineId}
                 onChange={function(e) { setForm({ ...form, driveLineId: e.target.value }) }}
-                className={"w-full h-11 rounded-md border border-input bg-transparent px-3 py-2 text-[15px] outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:border-ring transition-[color,box-shadow] " + (isRtl ? 'dir-rtl' : '')}
+                disabled={!!editingSafety}
+                className={"w-full h-11 rounded-md border border-input bg-transparent px-3 py-2 text-[15px] outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:border-ring transition-[color,box-shadow] " + (isRtl ? 'dir-rtl' : '') + (editingSafety ? ' opacity-70' : '')}
               >
                 <option value="">{isRtl ? 'اختر' : 'Select'}</option>
+                {/* v26: في وضع التعديل — خط الحفر الحالي للقراءة فقط إن لم يكن ضمن القائمة المحمّلة */}
+                {editingSafety && editingSafety.dailyReport && editingSafety.dailyReport.driveLine && !driveLines.some(function(l) { return l.id === editingSafety.dailyReport.driveLine.id }) && (
+                  <option key="editing-line" value={editingSafety.dailyReport.driveLine.id}>{'خط ' + (editingSafety.dailyReport.driveLine.lineNumber || '-') + ' - ' + (editingSafety.dailyReport.driveLine.startPoint || '-') + ' \u2192 ' + (editingSafety.dailyReport.driveLine.endPoint || '-')}</option>
+                )}
                 {driveLines.map(function(l) {
                   return <option key={l.id} value={l.id}>{(l.lineNumber || '-') + ' - ' + (l.startPoint || '-') + ' \u2192 ' + (l.endPoint || '-')}</option>
                 })}
@@ -770,6 +820,12 @@ export default function SafetyPage() {
                       : (isRtl
                           ? 'تظهر هنا فقط خطوط الحفر التي بدأ العمل عليها فعلياً'
                           : 'Only drive lines that have actually started are listed')}
+                </p>
+              )}
+              {editingSafety && (
+                <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                  <Lock className="h-3 w-3 shrink-0" />
+                  {isRtl ? 'بيانات التعريف (المشروع/التاريخ/خط الحفر) للقراءة فقط في وضع التعديل' : 'Identity fields (project/date/drive line) are read-only when editing'}
                 </p>
               )}
             </div>
@@ -868,7 +924,7 @@ export default function SafetyPage() {
                 ) : (
                   <>
                     <ShieldCheck className="h-5 w-5 ml-2" />
-                    {isRtl ? 'حفظ تقرير السلامة' : 'Save Safety Report'}
+                    {editingSafety ? (isRtl ? 'حفظ التعديلات' : 'Save Changes') : (isRtl ? 'حفظ تقرير السلامة' : 'Save Safety Report')}
                   </>
                 )}
               </Button>
