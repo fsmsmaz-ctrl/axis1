@@ -43,7 +43,8 @@ export async function GET(req: NextRequest) {
       orderBy: { createdAt: 'desc' },
       include: {
         project: { select: { id: true, name: true, code: true } },
-        dailyReport: { select: { id: true, reportDate: true, status: true } },
+        // v26: خط الحفر المرتبط لعرضه مقفلاً في وضع تعديل تقرير السلامة
+        dailyReport: { select: { id: true, reportDate: true, status: true, driveLine: { select: { id: true, lineNumber: true, startPoint: true, endPoint: true } } } },
         signedByUser: { select: { name: true, nameEn: true } },
       },
     }),
