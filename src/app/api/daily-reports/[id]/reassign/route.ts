@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { canWrite, canViewPricing, SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
-import { db } from '@/lib/db'
+import { db, invalidateCachePrefix } from '@/lib/db'
 import { buildAuditDetails, safeDbOp, handleDbError, recalcProgress, sanitizeDailyReport } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 
@@ -11,6 +11,9 @@ import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 // - يُزامن تقرير السلامة المرتبط (إن وجد) ليبقى على نفس المشروع
 // - يعيد حساب الإيراد (سعر خط الحفر الجديد أو سعر المشروع احتياطاً) وتقدم الخط/المشروع القديم والجديد
 // - كل تغيير يُوثَّق في الرقابة بصيغة «قبل ← الآن» بأسماء مقروءة لا معرفات
+// v29: إعادة تثبيت قراءات التقرير المنقول على الخط الجديد (نقطة الارتكاز =
+// اكتمال الخط الجديد من تقاريره الأخرى) حتى لا يتضخم تقدم الخط/المشروع الجديد،
+// وينخفض تقدم الخط/المشروع القديم تلقائياً بإخراج أمتار التقرير من حساباته
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   var user = await getAuthUser(req)
 
@@ -57,6 +60,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
           projectId: true,
           driveLineId: true,
           status: true,
+          startReading: true,
           endReading: true,
           dailyMeters: true,
           dailyRevenue: true,
@@ -121,7 +125,35 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     var projectPrice = newProject.pricePerMeter != null ? newProject.pricePerMeter : 0
     var dailyRevenue = existing.dailyMeters * (linePrice != null ? linePrice : projectPrice)
     var totalLength = newLine ? newLine.totalLength : 0
-    var totalMeters = existing.endReading
+
+    // v29: إعادة تثبيت القراءات على الخط الجديد — قراءات التقرير القديمة كانت
+    // مقيسة على خط الحفر القديم، وتركها كما هي يلوّث حساب اكتمال الخط الجديد
+    // (MAX قراءة النهاية) فيظهر تقدم المشروع الجديد مضخّماً بقيمة من مشروع آخر.
+    // القاعدة: نقطة الارتكاز = اكتمال الخط الجديد من تقاريره الأخرى
+    // (الأعلى بين MAX قراءة النهاية ومجموع الأمتار، مستثنياً التقرير المنقول نفسه)،
+    // ثم تُثبَّت قراءات التقرير فوقه: البداية = الارتكاز، النهاية = الارتكاز + الأمتار.
+    // الأمتار اليومية والإيراد لا يتغيران — فقط موقع القراءات على السلسلة الجديدة.
+    var movedMeters = existing.dailyMeters || 0
+    var reanchored = false
+    var newStartReading = existing.startReading || 0
+    var newEndReading = existing.endReading || 0
+    if (newLine && lineChanged && movedMeters > 0) {
+      var anchorAgg = await safeDbOp(
+        () => Promise.all([
+          db.dailyReport.aggregate({ where: { driveLineId: newLine.id, NOT: { id: String(id) } }, _max: { endReading: true } }),
+          db.dailyReport.aggregate({ where: { driveLineId: newLine.id, NOT: { id: String(id) } }, _sum: { dailyMeters: true } }),
+        ]),
+        'حساب نقطة الارتكاز على الخط الجديد'
+      )
+      if (!anchorAgg.success) return anchorAgg.response
+      var maxEnd = (anchorAgg.data && anchorAgg.data[0] && anchorAgg.data[0]._max && anchorAgg.data[0]._max.endReading) || 0
+      var sumMeters = (anchorAgg.data && anchorAgg.data[1] && anchorAgg.data[1]._sum && anchorAgg.data[1]._sum.dailyMeters) || 0
+      var anchor = Math.max(maxEnd, sumMeters)
+      newStartReading = anchor
+      newEndReading = anchor + movedMeters
+      reanchored = true
+    }
+    var totalMeters = newEndReading
     var remainingMeters = Math.max(0, totalLength - totalMeters)
     var progressPercent = totalLength > 0 ? Math.min((totalMeters / totalLength) * 100, 100) : 0
 
@@ -132,6 +164,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
           projectId: newProjectId,
           driveLineId: newDriveLineId,
           dailyRevenue: dailyRevenue,
+          startReading: newStartReading,
+          endReading: newEndReading,
           totalMeters: totalMeters,
           remainingMeters: remainingMeters,
           progressPercent: progressPercent,
@@ -154,6 +188,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     await recalcProgress(db, existing.projectId, existing.driveLineId || null)
     await recalcProgress(db, newProjectId, newDriveLineId || null)
 
+    // v29: إبطال كاش لوحة التحكم حتى تظهر النسب المحدثة فوراً بعد النقل
+    invalidateCachePrefix('dashboard:')
+
     // توثيق التغيير في الرقابة بصيغة «قبل ← الآن» بأسماء مقروءة
     var oldProjectName = existing.project ? existing.project.name : String(existing.projectId)
     var newProjectName = newProject.name
@@ -165,13 +202,22 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       : 'بدون خط حفر'
     var summary = 'تعديل إسناد التقرير اليومي — بتاريخ ' + new Date(updateResult.data.reportDate).toISOString().split('T')[0]
     var details = buildAuditDetails(
-      { assignment: oldProjectName + ' — ' + oldLineLabel, revenue: existing.dailyRevenue },
-      { assignment: newProjectName + ' — ' + newLineLabel, revenue: dailyRevenue },
+      {
+        assignment: oldProjectName + ' — ' + oldLineLabel,
+        revenue: existing.dailyRevenue,
+        readings: (existing.startReading || 0) + ' \u2192 ' + (existing.endReading || 0) + ' م',
+      },
+      {
+        assignment: newProjectName + ' — ' + newLineLabel,
+        revenue: dailyRevenue,
+        readings: newStartReading + ' \u2192 ' + newEndReading + ' م' + (reanchored ? ' (أُعيد تثبيتها على الخط الجديد)' : ''),
+      },
       summary,
       {
         labelOverrides: {
           assignment: { ar: 'المشروع وخط الحفر', en: 'Project & Drive Line' },
           revenue: { ar: 'الإيراد (أُعيد حسابه)', en: 'Revenue (recalculated)' },
+          readings: { ar: 'القراءات (البداية \u2192 النهاية)', en: 'Readings (start \u2192 end)' },
         },
       }
     )
@@ -231,3 +277,4 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     return handleDbError(error, 'تعديل إسناد التقرير اليومي')
   }
 }
+
