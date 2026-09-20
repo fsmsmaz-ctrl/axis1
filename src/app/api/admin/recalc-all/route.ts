@@ -11,6 +11,9 @@ import { safeDbOp } from '@/lib/api-helpers'
 // 2. DriveLine completedLength and progress
 // 3. Project progress
 // 4. Invalidates the dashboard cache so the new numbers show up immediately.
+// v29: التصحيح الرجعي الشامل لنقل التقارير — يعيد تثبيت قراءات كل خط زمنياً
+// (سلسلة تراكمية متصلة لكل خط) ويصلح مشتقات كل تقرير نسبةً إلى خطه الحالي:
+// totalMeters/remainingMeters/progressPercent + dailyMeters/dailyRevenue.
 
 export async function POST(req: NextRequest) {
   try {
@@ -42,6 +45,7 @@ export async function POST(req: NextRequest) {
       projectsFixed: 0,
       driveLinesFixed: 0,
       reportsFixed: 0,
+      reportsReanchored: 0,
       errors: [] as string[],
     }
 
@@ -69,24 +73,88 @@ export async function POST(req: NextRequest) {
             dailyRevenue: true,
             driveLineId: true,
             status: true,
+            totalMeters: true,
+            remainingMeters: true,
+            progressPercent: true,
+            reportDate: true,
+            createdAt: true,
           },
         })
 
-        // Step 3: Fix each report's dailyMeters AND dailyRevenue.
+        // Step 3: Fix each report's dailyMeters, dailyRevenue AND assignment-derived fields.
         // v13: dailyRevenue = dailyMeters × (سعر خط الحفر || سعر المشروع احتياطياً)
+        // v29: تُجلب خطوط المشروع أولاً ثم تُعالج تقارير كل خط كسلسلة تراكمية
+        // زمنية متصلة — هذا يصلح رجعياً التقارير المنقولة سابقاً بين المشاريع/الخطوط:
+        // نقطة ارتكاز كل تقرير = نهاية التقرير السابق زمنياً على نفس الخط،
+        // والأمتار اليومية الحقيقية (endReading - startReading) تُحفظ كما هي،
+        // فتصبح MAX(endReading) = SUM(dailyMeters) لكل خط وتختفي التلوثات.
         const projectPrice = project.pricePerMeter || 0
+
+        const driveLines = await db.driveLine.findMany({
+          where: { projectId: project.id },
+          select: { id: true, totalLength: true },
+        })
+        const lineLenMap: Record<string, number> = {}
+        for (const dl of driveLines) lineLenMap[dl.id] = dl.totalLength || 0
+
+        // v29: تجميع تقارير المشروع حسب الخط وترتيبها زمنياً لبناء السلسلة
+        const reportsByLine: Record<string, any[]> = {}
+        const noLineReports: any[] = []
         for (const r of reports) {
-          const startReading = r.startReading || 0
-          const endReading = r.endReading || 0
-          const correctDailyMeters = Math.max(0, endReading - startReading)
+          if (r.driveLineId) {
+            if (!reportsByLine[r.driveLineId]) reportsByLine[r.driveLineId] = []
+            reportsByLine[r.driveLineId].push(r)
+          } else {
+            noLineReports.push(r)
+          }
+        }
+
+        // القيم المصححة لكل تقرير: قراءات مُثبَّتة على السلسلة + المشتقات نسبةً للخط الحالي
+        const corrections = new Map<string, any>()
+        for (const lineIdStr of Object.keys(reportsByLine)) {
+          const lineReports = reportsByLine[lineIdStr].slice().sort(function(a: any, b: any) {
+            const da = new Date(a.reportDate).getTime()
+            const dbb = new Date(b.reportDate).getTime()
+            if (da !== dbb) return da - dbb
+            return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+          })
+          let anchor = 0
+          for (const r of lineReports) {
+            const increment = Math.max(0, (r.endReading || 0) - (r.startReading || 0))
+            if (increment <= 0) continue // تقارير بلا حفر (سلامة فقط) — لا تُثبَّت
+            const corrStart = anchor
+            const corrEnd = anchor + increment
+            anchor = corrEnd
+            corrections.set(r.id, { corrStart: corrStart, corrEnd: corrEnd, increment: increment })
+          }
+        }
+
+        for (const r of reports) {
           const linePrice = r.driveLineId ? linePriceMap[r.driveLineId] : null
           const effectivePrice = linePrice != null ? linePrice : projectPrice
+
+          // v29: القراءات المصححة من السلسلة الزمنية إن وجدت وإلا القراءات المخزنة
+          const corr = corrections.get(r.id)
+          const correctStartReading = corr ? corr.corrStart : (r.startReading || 0)
+          const correctEndReading = corr ? corr.corrEnd : (r.endReading || 0)
+          const correctDailyMeters = corr ? corr.increment : Math.max(0, (r.endReading || 0) - (r.startReading || 0))
           const correctDailyRevenue = correctDailyMeters * effectivePrice
+
+          // v29: المشتقات نسبةً إلى الخط الحالي للتقرير (وليس الخط القديم)
+          const lineLen = r.driveLineId ? (lineLenMap[r.driveLineId] || 0) : 0
+          const correctTotalMeters = correctEndReading
+          const correctRemainingMeters = Math.max(0, lineLen - correctEndReading)
+          const correctProgressPercent = lineLen > 0 ? Math.min((correctEndReading / lineLen) * 100, 100) : 0
 
           const needsUpdate =
             Math.abs((r.dailyMeters || 0) - correctDailyMeters) > 0.001 ||
             r.dailyMeters === null ||
-            Math.abs((r.dailyRevenue || 0) - correctDailyRevenue) > 0.001
+            Math.abs((r.dailyRevenue || 0) - correctDailyRevenue) > 0.001 ||
+            Math.abs((r.startReading || 0) - correctStartReading) > 0.001 ||
+            Math.abs((r.endReading || 0) - correctEndReading) > 0.001 ||
+            Math.abs((r.totalMeters || 0) - correctTotalMeters) > 0.001 ||
+            Math.abs((r.remainingMeters || 0) - correctRemainingMeters) > 0.001 ||
+            Math.abs((r.progressPercent || 0) - correctProgressPercent) > 0.001
 
           if (needsUpdate) {
             await db.dailyReport.update({
@@ -94,17 +162,17 @@ export async function POST(req: NextRequest) {
               data: {
                 dailyMeters: correctDailyMeters,
                 dailyRevenue: correctDailyRevenue,
+                startReading: correctStartReading,
+                endReading: correctEndReading,
+                totalMeters: correctTotalMeters,
+                remainingMeters: correctRemainingMeters,
+                progressPercent: correctProgressPercent,
               },
             })
             results.reportsFixed++
+            if (corr) results.reportsReanchored++
           }
         }
-
-        // Step 4: Recalculate drive line progress
-        const driveLines = await db.driveLine.findMany({
-          where: { projectId: project.id },
-          select: { id: true, totalLength: true },
-        })
 
         for (const dl of driveLines) {
           // Use MAX endReading (cumulative progress) as the canonical
@@ -174,7 +242,7 @@ export async function POST(req: NextRequest) {
           action: 'update',
           entity: 'system',
           entityId: 'recalc-all',
-          details: 'إعادة حساب شاملة: ' + results.projectsFixed + ' مشروع، ' + results.driveLinesFixed + ' خط، ' + results.reportsFixed + ' تقرير' + (results.errors.length > 0 ? ' (' + results.errors.length + ' خطأ)' : ''),
+          details: 'إعادة حساب شاملة: ' + results.projectsFixed + ' مشروع، ' + results.driveLinesFixed + ' خط، ' + results.reportsFixed + ' تقرير، ' + results.reportsReanchored + ' تقرير أُعيد تثبيت قراءاته' + (results.errors.length > 0 ? ' (' + results.errors.length + ' خطأ)' : ''),
         },
       }),
       'سجل التدقيق'
