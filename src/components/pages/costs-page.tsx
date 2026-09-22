@@ -691,6 +691,12 @@ export default function CostsPage() {
                 {restoreScan.coverage && restoreScan.coverage.oldest && (
                   <p className="text-muted-foreground">{isRtl ? 'تغطية السجل' : 'Log coverage'}: {new Date(restoreScan.coverage.oldest).toLocaleDateString()} {isRtl ? 'إلى' : 'to'} {new Date(restoreScan.coverage.newest).toLocaleDateString()}</p>
                 )}
+                {restoreScan.scan.notifLogs > 0 && (
+                  <p className="text-muted-foreground">
+                    {isRtl ? 'سجلات الإشعارات (مصدر إضافي)' : 'Notification records (extra source)'}: <b>{restoreScan.scan.notifLogs}</b>
+                    {restoreScan.scan.notifNoEntityId > 0 ? ' — ' + (isRtl ? 'منها ' + restoreScan.scan.notifNoEntityId + ' بلا معرف أصلي (تُسترجع بمعرف جديد)' : restoreScan.scan.notifNoEntityId + ' without original id (new ids)') : ''}
+                  </p>
+                )}
               </div>
             )}
             {restoreScan && restoreScan.migrationApplied === false && (
