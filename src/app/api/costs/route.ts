@@ -1,254 +1,179 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
-import { db } from '@/lib/db'
-import { handleDbError, validateRequired, parseNumber, safeDbOp, parseDateRange } from '@/lib/api-helpers'
-import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
-import { hasPermission, canWrite } from '@/lib/auth'
-import { notifyUsers } from '@/lib/notify'
+import { db, invalidateCachePrefix } from '@/lib/db'
+import { checkRateLimit } from '@/lib/rate-limit'
+
+// v32: استرجاع الفواتير الممسوحة بحذف المشروع (Cascade) من سجل التدقيق — اليتيمة تُسترجع «بدون مشروع»
+// ---------------------------------------------------------------------
+// الجذر: حذف مشروع يحتوي فواتير يمسحها نهائياً عبر onDelete: Cascade دون أي
+// سجل حذف فردي. لكن سجلات التدقيق الخاصة بإنشاء الفواتير (entity='cost',
+// action='create') تنجو دائماً (علاقتها بالمشروع اختيارية → SetNull)، وتحمل:
+//   entityId = معرف الفاتورة الأصلي
+//   details  = 'Created cost: <category> - <description> (<amount> OMR)'
+//   createdAt = لحظة التسجيل الأصلية
+//   projectId = المشروع (يصبح null إذا حُذف المشروع نفسه)
+// POST /api/admin/restore-costs  { dryRun?: boolean, defaultProjectId?: string }
+// - يعيد إنشاء الفواتير المفقودة بنفس المعرف الأصلي (idempotent).
+// - الفواتير المحذوفة عمداً (لها سجل delete فردي) لا تُسترجع احتراماً للقصد.
+// - الفواتير اليتيمة (مشروعها الأصلي محذوف) تُسترجع بلا مشروع (v32) أو تُسند إلى defaultProjectId إن أُرسل.
 
 var COST_CATEGORIES = ['labor', 'housing', 'transport', 'fuel', 'maintenance', 'parts', 'oil', 'safety', 'rental', 'other']
 
-export async function GET(req: NextRequest) {
-  var user = await getAuthUser(req)
-
-  if (!user) {
-    return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
-  }
-
-  // v13.1 SECURITY: فرض صلاحية التكاليف على الخادم — كانت القراءة متاحة لأي مستخدم مسجل
-  // (المحاسب/التقارير المالية rpt_costs و rpt_revenue و rpt_profit مسموحة أيضاً لصفحة التقارير)
-  var canReadCosts = hasPermission(user.role, 'costs', user.permissions, user.email)
-    || hasPermission(user.role, 'rpt_costs', user.permissions, user.email)
-    || hasPermission(user.role, 'rpt_revenue', user.permissions, user.email)
-    || hasPermission(user.role, 'rpt_profit', user.permissions, user.email)
-  if (!canReadCosts) {
-    return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية عرض التكاليف والإيرادات' }, { status: 403 })
-  }
-
-  var searchParams = new URL(req.url).searchParams
-  var projectId = searchParams.get('projectId')
-
-  var where: any = {}
-  if (projectId) where.projectId = projectId
-
-  // Period range filter (from/to) — used by the Reports section so cost,
-  // revenue and profit reports respect the selected period.
-  var dateRange = parseDateRange(searchParams.get('from'), searchParams.get('to'))
-  if (dateRange.gte || dateRange.lt) where.date = dateRange
-
-  // Try full query with includes first
-  var costsResult = await safeDbOp(
-    () => db.cost.findMany({
-      where,
-      orderBy: { date: 'desc' },
-      include: {
-        project: { select: { id: true, name: true, code: true } },
-        dailyReport: { select: { id: true, reportDate: true } },
-        recordedBy: { select: { name: true, nameEn: true } },
-      },
-    }),
-    'جلب التكاليف'
-  )
-
-  // Fallback: if full query fails, try without optional relations
-  if (!costsResult.success) {
-    console.error('[costs GET] Full query failed, trying without relations:', costsResult.response)
-    costsResult = await safeDbOp(
-      () => db.cost.findMany({
-        where,
-        orderBy: { date: 'desc' },
-        include: {
-          project: { select: { id: true, name: true, code: true } },
-        },
-      }),
-      'جلب التكاليف (بدون علاقات اختيارية)'
-    )
-  }
-
-  // Fallback 2: if still failing, try simplest query
-  if (!costsResult.success) {
-    console.error('[costs GET] Query without relations failed, trying simple query:', costsResult.response)
-    costsResult = await safeDbOp(
-      () => db.cost.findMany({
-        where,
-        orderBy: { date: 'desc' },
-      }),
-      'جلب التكاليف (بسيط)'
-    )
-  }
-
-  if (!costsResult.success) return costsResult.response
-
-  var byCategoryResult = await safeDbOp(
-    () => db.cost.groupBy({
-      by: ['category'],
-      where,
-      _sum: { amount: true },
-    }),
-    'تجميع التكاليف حسب الفئة'
-  )
-
-  var costs = costsResult.data
-  var byCategory = byCategoryResult.success
-    ? byCategoryResult.data.map(function(c: any) { return { category: c.category, amount: c._sum.amount || 0 } })
-    : []
-  var total = costs.reduce(function(s: number, c: any) { return s + c.amount }, 0)
-
-  // Active rental assets from CompanyAsset (this month)
-  var today = new Date()
-  today.setHours(0, 0, 0, 0)
-  var monthStart = new Date(today.getFullYear(), today.getMonth(), 1)
-  var monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59, 999)
-
-  var rentalResult = await safeDbOp(
-    () => db.companyAsset.findMany({
-      where: {
-        ownership: 'rented',
-        rentalCost: { gt: 0 },
-        status: { notIn: ['returned', 'damaged'] },
-        OR: [
-          { rentalStart: null, rentalEnd: null },
-          { rentalStart: null, rentalEnd: { gte: monthStart } },
-          { rentalStart: { lte: monthEnd }, rentalEnd: null },
-          { rentalStart: { lte: monthEnd }, rentalEnd: { gte: monthStart } },
-        ],
-        ...(projectId ? { projectId: projectId } : {}),
-      },
-      select: { id: true, name: true, supplier: true, rentalCost: true, project: { select: { name: true } } },
-    }),
-    'جلب الإيجارات'
-  )
-
-  var rentalAssets = rentalResult.success ? rentalResult.data : []
-  var totalRentalCost = rentalAssets.reduce(function(s: number, a: any) { return s + (a.rentalCost || 0) }, 0)
-
-  // Add rental to byCategory
-  var allByCategory = byCategory.slice()
-  if (totalRentalCost > 0) {
-    var existingRental = allByCategory.find(function(c: any) { return c.category === 'rental' })
-    if (existingRental) {
-      existingRental.amount += totalRentalCost
-    } else {
-      allByCategory.push({ category: 'rental', amount: totalRentalCost })
-    }
-  }
-
-  var grandTotal = total + totalRentalCost
-
-  return NextResponse.json({
-    costs,
-    byCategory: allByCategory,
-    total,
-    totalRentalCost,
-    grandTotal,
-    rentalAssets: rentalAssets.map(function(a: any) {
-      return {
-        id: a.id,
-        name: a.name,
-        supplier: a.supplier || '-',
-        rentalCost: a.rentalCost || 0,
-        projectName: a.project ? a.project.name : '-',
-      }
-    }),
-  })
+function parseCostDetails(details: string): { category: string; description: string; amount: number } | null {
+  // الصيغة المعتمدة في POST /api/costs — المبلغ من النهاية (الوصف قد يحتوي أقواساً)
+  var m = /^Created cost: ([A-Za-z]+) - ([\s\S]*) \(([\d.]+) OMR\)$/.exec(details || '')
+  if (!m) return null
+  var amount = parseFloat(m[3])
+  if (!Number.isFinite(amount) || amount <= 0) return null
+  return { category: m[1], description: m[2], amount: amount }
 }
 
 export async function POST(req: NextRequest) {
   var user = await getAuthUser(req)
-
   if (!user) {
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
   }
 
-  // v13.1 SECURITY: كتابة التكاليف للإدارة والمحاسب فقط (كانت مفتوحة لأي مستخدم)
-  if (!canWrite(user.role, 'costs', user.permissions)) {
-    return NextResponse.json({ error: 'forbidden', message: 'إضافة التكاليف متاحة للإدارة والمحاسب فقط' }, { status: 403 })
+  // للإدارة العليا ومدير النظام فقط — العملية تُنشئ سجلات مالية
+  var isSystemAdmin = (user.email || '').toLowerCase().trim() === 'admin@axis.om'
+  if (user.role !== 'top_management' && !isSystemAdmin) {
+    return NextResponse.json({ error: 'forbidden', message: 'استرجاع الفواتير متاح للإدارة العليا فقط' }, { status: 403 })
   }
 
-  // Rate limit write operations
-  var rl = checkRateLimit(req, RateLimitPresets.write)
+  var rl = checkRateLimit(req, { maxRequests: 5, windowSeconds: 300, keyPrefix: 'restore-costs' })
   if (rl.limited) {
     return NextResponse.json(
-      { error: 'too_many_requests', message: 'طلبات كثيرة جداً، يرجى الانتظار قليلاً' },
+      { error: 'too_many_requests', message: 'طلبات كثيرة جداً — حاول بعد قليل' },
       { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } }
     )
   }
 
   try {
-    var body = await req.json()
+    var body: any = {}
+    try { body = await req.json() } catch (e) { body = {} }
+    var dryRun = !!body.dryRun
+    var defaultProjectId = body.defaultProjectId ? String(body.defaultProjectId) : ''
 
-    var validationError = validateRequired(body, ['projectId', 'date', 'category', 'description', 'amount'])
-    if (validationError) return validationError
+    // 1) سجلات إنشاء الفواتير — تنجو من حذف المشاريع
+    var createLogs = await db.auditLog.findMany({
+      where: { action: 'create', entity: 'cost' },
+      orderBy: { createdAt: 'asc' },
+    })
 
-    // SECURITY FIX: التحقق من صحة المبلغ المالي — منع القيم السالبة/الصفرية/العملاقة
-    var amount = parseNumber(body.amount, NaN)
-    if (!Number.isFinite(amount) || amount <= 0 || amount > 10000000) {
-      return NextResponse.json(
-        { error: 'invalid_amount', message: 'المبلغ يجب أن يكون رقماً موجباً ومعقولاً (أقل من 10,000,000)' },
-        { status: 400 }
-      )
-    }
+    // 2) الفواتير المحذوفة عمداً — لها سجل حذف فردي؛ نحترم القصد ولا نسترجعها
+    var deleteLogs = await db.auditLog.findMany({
+      where: { action: 'delete', entity: 'cost' },
+      select: { entityId: true },
+    })
+    var deliberatelyDeleted: Record<string, boolean> = {}
+    for (var d = 0; d < deleteLogs.length; d++) deliberatelyDeleted[deleteLogs[d].entityId] = true
 
-    // SECURITY FIX: قائمة سماح لتصنيف التكلفة
-    var category = String(body.category)
-    if (COST_CATEGORIES.indexOf(category) === -1) {
-      category = 'other'
-    }
+    // 3) الفواتير الموجودة حالياً
+    var existingCosts = await db.cost.findMany({ select: { id: true } })
+    var existingIds: Record<string, boolean> = {}
+    for (var ex = 0; ex < existingCosts.length; ex++) existingIds[existingCosts[ex].id] = true
 
-    var userId = user.id
+    // 4) المشاريع القائمة
+    var projectsRows = await db.project.findMany({ select: { id: true } })
+    var projectIds: Record<string, boolean> = {}
+    for (var pr = 0; pr < projectsRows.length; pr++) projectIds[projectsRows[pr].id] = true
+    var hasDefault = defaultProjectId !== '' && !!projectIds[defaultProjectId]
 
-    var createResult = await safeDbOp(
-      () => db.cost.create({
-        data: {
-          projectId: String(body.projectId),
-          dailyReportId: body.dailyReportId || null,
-          date: new Date(body.date),
-          category: category,
-          description: String(body.description).slice(0, 1000),
-          amount: amount,
-          notes: body.notes ? String(body.notes).slice(0, 2000) : null,
-          recordedById: userId,
-        },
-      }),
-      'إنشاء التكلفة'
-    )
-    if (!createResult.success) return createResult.response
+    var scan = { createLogs: createLogs.length, existing: 0, deliberatelyDeleted: 0, restorable: 0, orphaned: 0, invalid: 0 }
+    var orphans: Array<{ entityId: string; date: string; category: string; description: string; amount: number }> = []
+    var restored: string[] = []
+    var errors: string[] = []
 
-    // Audit log + notification (non-critical, fire-and-forget)
-    // SECURITY FIX: كان الإشعار بثاً عاماً (userId:null) يكشف المبالغ المالية لكل
-    // المستخدمين متجاوزاً بوابة صلاحيات التكاليف — أصبح موجهاً لذوي صلاحية costs فقط
-    Promise.all([
-      safeDbOp(
-        () => db.auditLog.create({
+    for (var i = 0; i < createLogs.length; i++) {
+      var log = createLogs[i]
+      var costId = String(log.entityId || '')
+      if (!costId) continue
+      if (existingIds[costId]) { scan.existing++; continue }
+      if (deliberatelyDeleted[costId]) { scan.deliberatelyDeleted++; continue }
+      var parsed = parseCostDetails(String(log.details || ''))
+      if (!parsed) { scan.invalid++; continue }
+
+      // تحديد المشروع: الأصلي إن كان قائماً، وإلا المشروع الافتراضي للفواتير اليتيمة
+      var targetProjectId = log.projectId && projectIds[String(log.projectId)] ? String(log.projectId) : ''
+      var wasOrphan = false
+      if (!targetProjectId) {
+        wasOrphan = true
+        // v32: اليتيمة تُسترجع بلا مشروع (projectId فارغ) ما لم يُختر مشروع أسناد
+        if (hasDefault) targetProjectId = defaultProjectId
+        scan.orphaned++
+        orphans.push({
+          entityId: costId,
+          date: new Date(log.createdAt).toISOString(),
+          category: parsed.category,
+          description: parsed.description,
+          amount: parsed.amount,
+        })
+      }
+
+      scan.restorable++
+      if (dryRun) continue
+
+      try {
+        await db.cost.create({
           data: {
-            userId: userId,
-            projectId: String(body.projectId),
+            id: costId,
+            projectId: targetProjectId || null, // v32: بلا مشروع إن لم يوجد بديل
+            date: new Date(log.createdAt),
+            category: COST_CATEGORIES.indexOf(parsed.category) !== -1 ? parsed.category : 'other',
+            description: parsed.description.slice(0, 1000) || 'فاتورة مسترجعة',
+            amount: parsed.amount,
+            notes: wasOrphan
+              ? 'مسترجعة من سجل التدقيق — المشروع الأصلي محذوف فاستُرجعت بلا مشروع؛ أسندها لمشروع بالتعديل وعدّل التاريخ إن لزم'
+              : 'مسترجعة من سجل التدقيق — تاريخ الفاتورة الأصلي غير مسجل في السجل (عدّله يدوياً إن لزم)',
+          },
+        })
+        restored.push(costId)
+        db.auditLog.create({
+          data: {
+            userId: user.id,
+            projectId: targetProjectId || null,
             action: 'create',
             entity: 'cost',
-            entityId: createResult.data.id,
-            details: 'Created cost: ' + category + ' - ' + body.description + ' (' + amount + ' OMR)',
+            entityId: costId,
+            details: 'استرجاع فاتورة من سجل التدقيق (كانت ممسوحة بحذف مشروع): ' + parsed.category + ' - ' + parsed.description.slice(0, 200) + ' (' + parsed.amount + ' OMR)',
           },
-        }),
-        'سجل التدقيق'
-      ),
-      notifyUsers({
-        type: 'cost_overrun',
-        title: 'تكلفة جديدة',
-        message: 'تم إضافة تكلفة: ' + category + ' - ' + body.description + ' بمبلغ ' + amount + ' ريال عماني',
-        severity: 'info',
-        projectId: String(body.projectId),
-        entityType: 'cost',
-        entityId: createResult.data.id,
-        permissions: ['costs'],
-        roles: ['top_management', 'project_manager', 'accountant'],
-        excludeUserIds: [userId],
-        includeSystemAdmin: true,
-        link: 'costs',
-      }),
-    ]).catch(function() {})
+        }).catch(function() {})
+      } catch (err: any) {
+        errors.push(costId + ': ' + (err && err.message ? err.message : 'فشل الإنشاء'))
+      }
+    }
 
-    return NextResponse.json({ cost: createResult.data, success: true })
+    if (!dryRun && restored.length > 0) {
+      // إبطال كاش اللوحة كي تظهر الفواتير المسترجعة في الأرقام فوراً
+      invalidateCachePrefix('dashboard:')
+      db.auditLog.create({
+        data: {
+          userId: user.id,
+          action: 'create',
+          entity: 'cost',
+          entityId: 'restore-batch-' + Date.now(),
+          details: 'استرجاع دفعة: ' + restored.length + ' فاتورة من سجل التدقيق (بواسطة ' + (user.name || user.email) + ')',
+        },
+      }).catch(function() {})
+    }
+
+    return NextResponse.json({
+      dryRun: dryRun,
+      scan: scan,
+      restoredCount: restored.length,
+      restored: restored,
+      orphans: orphans,
+      errors: errors,
+      message: dryRun
+        ? 'الفحص جاهز — ' + scan.restorable + ' فاتورة قابلة للاسترجاع' + (scan.orphaned > 0 ? ' (منها ' + scan.orphaned + ' ستُسترجع بلا مشروع)' : '')
+        : (restored.length > 0 ? 'تم استرجاع ' + restored.length + ' فاتورة بنجاح' + (scan.orphaned > 0 ? ' (منها ' + scan.orphaned + ' بلا مشروع)' : '') : 'لا توجد فواتير قابلة للاسترجاع'),
+    })
   } catch (error: any) {
-    return handleDbError(error, 'إنشاء التكلفة')
+    console.error('[restore-costs] failed:', error)
+    return NextResponse.json(
+      { error: 'restore_failed', message: 'فشل استرجاع الفواتير — راجع سجلات الخادم' },
+      { status: 500 }
+    )
   }
 }
+
