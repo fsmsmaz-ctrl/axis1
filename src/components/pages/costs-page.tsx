@@ -47,6 +47,12 @@ const categoryColors: Record<string, string> = {
   other: '#64748b',
 }
 
+// v37: الفواتير المسترجعة تُعرَف بملاحظتها التي يكتبها مسار الاسترجاع
+// («مسترجعة من سجل الإشعارات» أو «مسترجعة من سجل التدقيق»)
+function isRestoredCost(c: any) {
+  return !!(c && typeof c.notes === 'string' && c.notes.indexOf('مسترجعة من سجل') === 0)
+}
+
 export default function CostsPage() {
   const [costs, setCosts] = useState<any[]>([])
   const [byCategory, setByCategory] = useState<any[]>([])
@@ -71,6 +77,11 @@ export default function CostsPage() {
   // Search & filter
   const [searchQuery, setSearchQuery] = useState('')
   const [filterCategory, setFilterCategory] = useState<string>('all')
+  // v37: تحرير التاريخ السريع داخل الجدول + فلتر الفواتير المسترجعة
+  const [dateEditId, setDateEditId] = useState<string | null>(null)
+  const [dateEditValue, setDateEditValue] = useState('')
+  const [dateEditBusy, setDateEditBusy] = useState(false)
+  const [filterRestored, setFilterRestored] = useState(false)
   // v31: حالة نافذة استرجاع الفواتير من سجل التدقيق
   const [restoreOpen, setRestoreOpen] = useState(false)
   const [restoreBusy, setRestoreBusy] = useState(false)
@@ -238,13 +249,20 @@ export default function CostsPage() {
         (c.notes && c.notes.toLowerCase().includes(searchQuery.toLowerCase())) ||
         (c.project && c.project.name && c.project.name.toLowerCase().includes(searchQuery.toLowerCase()))
       var matchCat = filterCategory === 'all' || c.category === filterCategory
-      return matchSearch && matchCat
+      // v37: فلتر «المسترجعة فقط»
+      var matchRestored = !filterRestored || isRestoredCost(c)
+      return matchSearch && matchCat && matchRestored
     })
-  }, [costs, searchQuery, filterCategory])
+  }, [costs, searchQuery, filterCategory, filterRestored])
 
   var filteredTotal = useMemo(function() {
     return filteredCosts.reduce(function(s: number, c: any) { return s + c.amount }, 0)
   }, [filteredCosts])
+
+  // v37: عدد الفواتير المسترجعة
+  var restoredCount = useMemo(function() {
+    return costs.filter(function(c: any) { return isRestoredCost(c) }).length
+  }, [costs])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -271,6 +289,38 @@ export default function CostsPage() {
     } catch {
       toast.error(isRtl ? 'حدث خطأ' : 'Error')
     }
+  }
+
+  // v37: حفظ سريع لتاريخ الفاتورة من الجدول مباشرة
+  // يرسل الحقول كما هي ويُبقي الملاحظة؛ projectId يُترك خارج الحمولة فيبقى كما هو على الخادم
+  async function saveQuickDate(c: any) {
+    if (!dateEditValue) { setDateEditId(null); return }
+    setDateEditBusy(true)
+    try {
+      var res = await authedFetch('/api/costs/' + c.id, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          date: dateEditValue,
+          category: c.category,
+          description: c.description,
+          amount: String(c.amount),
+          notes: c.notes || '',
+        }),
+      })
+      if (res.ok) {
+        toast.success(isRtl ? 'تم تصحيح تاريخ الفاتورة' : 'Invoice date corrected')
+        setDateEditId(function(cur) { return cur === c.id ? null : cur })
+        fetchCosts()
+      } else {
+        var errData: any = null
+        try { errData = await res.json() } catch { errData = null }
+        toast.error((errData && errData.message) || (isRtl ? 'فشل حفظ التاريخ' : 'Failed to save date'))
+      }
+    } catch {
+      toast.error(isRtl ? 'حدث خطأ' : 'Error')
+    }
+    setDateEditBusy(false)
   }
 
   async function deleteCost(id: string) {
@@ -527,6 +577,15 @@ export default function CostsPage() {
                   })}
                 </SelectContent>
               </Select>
+              {/* v37: زر عزل الفواتير المسترجعة لتصحيح تواريخها */}
+              <Button
+                variant={filterRestored ? 'default' : 'outline'}
+                size="sm"
+                className={filterRestored ? 'h-9 bg-amber-600 hover:bg-amber-700 text-white' : 'h-9 border-amber-500/50 text-amber-700 dark:text-amber-400'}
+                onClick={function() { setFilterRestored(!filterRestored) }}
+              >
+                {isRtl ? 'المسترجعة' : 'Restored'} ({restoredCount})
+              </Button>
             </div>
           </div>
         </CardHeader>
@@ -572,7 +631,41 @@ export default function CostsPage() {
                     return (
                       <tr key={c.id} className="border-b hover:bg-muted/20 transition-colors group">
                         <td className="p-2.5 text-muted-foreground text-xs">{idx + 1}</td>
-                        <td className="p-2.5 whitespace-nowrap text-xs">{new Date(c.date).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')}</td>
+                        <td className="p-2.5 whitespace-nowrap text-xs">
+                          {/* v37: تعديل التاريخ بنقرة واحدة + شارة «مسترجعة» */}
+                          {dateEditId === c.id ? (
+                            <Input
+                              type="date"
+                              autoFocus
+                              value={dateEditValue}
+                              disabled={dateEditBusy}
+                              onChange={function(e) { setDateEditValue(e.target.value) }}
+                              onBlur={function() { if (dateEditId === c.id) saveQuickDate(c) }}
+                              onKeyDown={function(e: any) {
+                                if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLInputElement).blur() }
+                                if (e.key === 'Escape') { setDateEditId(null) }
+                              }}
+                              className="h-7 w-[132px] text-xs"
+                            />
+                          ) : (
+                            <button
+                              type="button"
+                              className={'inline-block underline-offset-2 hover:underline decoration-dotted ' + (isRestoredCost(c) ? 'text-amber-700 dark:text-amber-400 font-medium' : '')}
+                              title={isRtl ? 'انقر لتعديل التاريخ' : 'Click to edit the date'}
+                              onClick={function() {
+                                setDateEditValue(new Date(c.date).toISOString().split('T')[0])
+                                setDateEditId(c.id)
+                              }}
+                            >
+                              {new Date(c.date).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')}
+                            </button>
+                          )}
+                          {isRestoredCost(c) && dateEditId !== c.id && (
+                            <span className="mt-0.5 inline-block bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30 rounded px-1.5 text-[10px] leading-4 font-medium">
+                              {isRtl ? 'مسترجعة' : 'Restored'}
+                            </span>
+                          )}
+                        </td>
                         <td className="p-2.5">
                           <Badge
                             variant="secondary"
@@ -696,8 +789,8 @@ export default function CostsPage() {
             <DialogTitle>{isRtl ? 'استرجاع الفواتير من سجل التدقيق' : 'Restore invoices from audit log'}</DialogTitle>
             <DialogDescription>
               {isRtl
-                ? 'يفحص الأداة سجل التدقيق بحثاً عن كل فاتورة سُجلت يوماً ويعيد إنشاء المفقود منها (الممسوح بحذف مشروع). الفواتير المحذوفة عمداً لا تُسترجع. الفواتير اليتيمة تُسترجع بلا مشروع افتراضياً ويمكن إسنادها لمشروع لاحقاً بالتعديل. تاريخ الفاتورة المسترجعة = لحظة تسجيلها الأصلية.'
-                : 'Scans the audit log for every invoice ever created and recreates the missing ones (cascade-deleted). Deliberately deleted invoices are skipped.'}
+                ? 'يفحص الأداة سجل التدقيق بحثاً عن كل فاتورة سُجلت يوماً ويعيد إنشاء المفقود منها (الممسوح بحذف مشروع). الفواتير المحذوفة عمداً لا تُسترجع. الفواتير اليتيمة تُسترجع بلا مشروع افتراضياً ويمكن إسنادها لمشروع لاحقاً بالتعديل. التاريخ المعروض للفاتورة المسترجعة = لحظة تسجيلها الأصلية (التاريخ الذي اخترته لكل فاتورة كان محفوظاً في صفها المحذوف فقط، فلا يمكن استعادته آلياً) — انقر على التاريخ في جدول التكاليف لتصحيحه.'
+                : 'Scans the audit log for every invoice ever created and recreates the missing ones (cascade-deleted). Deliberately deleted invoices are skipped. A restored invoice shows its original registration date (the chosen date lived only in the deleted row) — click any date in the table to correct it.'}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
