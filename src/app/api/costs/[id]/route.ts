@@ -72,7 +72,8 @@ export async function PUT(
           description: String(body.description).slice(0, 1000),
           amount: validAmount,
           notes: body.notes ? String(body.notes).slice(0, 2000) : null,
-          projectId: body.projectId ? String(body.projectId) : undefined,
+          // v32: '' أو null يفصل الفاتورة عن مشروعها، والإغفال يتركها كما هي
+          projectId: body.projectId === undefined ? undefined : (body.projectId ? String(body.projectId) : null),
         },
       }),
       'تحديث التكلفة'
@@ -165,3 +166,4 @@ export async function DELETE(
     return handleDbError(error, 'حذف التكلفة')
   }
 }
+
