@@ -29,6 +29,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         where: { id },
         select: {
           status: true, projectId: true, reportDate: true, createdById: true,
+          // v30: حقول حاجز اكتمال البيانات قبل التسليم
+          driveLineId: true, workStartTime: true, workEndTime: true,
+          operatingHours: true, stoppageHours: true, stoppageReason: true,
+          workersCount: true, startReading: true, endReading: true,
           project: { select: { name: true, code: true } },
         },
       }),
@@ -43,6 +47,23 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     if (existingReport.status !== 'draft') {
       return NextResponse.json({ error: 'invalid_status', message: 'التقرير مسلّم مسبقاً' }, { status: 400 })
+    }
+
+    // v30: حاجز الاكتمال — لا يمكن تسليم التقرير وإرساله للاعتماد إلا بعد إدخال كل البيانات
+    var missingFields: string[] = []
+    if (!existingReport.driveLineId) missingFields.push('خط الحفر')
+    if (!existingReport.workStartTime) missingFields.push('بداية العمل')
+    if (!existingReport.workEndTime) missingFields.push('نهاية العمل')
+    if ((existingReport.operatingHours || 0) <= 0 && (existingReport.stoppageHours || 0) <= 0) missingFields.push('ساعات التشغيل')
+    if ((existingReport.workersCount || 0) <= 0) missingFields.push('عدد العمال')
+    if ((existingReport.endReading || 0) <= 0 && (existingReport.startReading || 0) <= 0) missingFields.push('قراءتا البداية والنهاية (م)')
+    if ((existingReport.endReading || 0) < (existingReport.startReading || 0)) missingFields.push('قراءة النهاية أقل من قراءة البداية')
+    if ((existingReport.stoppageHours || 0) > 0 && !(existingReport.stoppageReason || '').trim()) missingFields.push('سبب التوقف')
+    if (missingFields.length > 0) {
+      return NextResponse.json(
+        { error: 'incomplete_report', message: 'لا يمكن تسليم التقرير — بيانات ناقصة: ' + missingFields.join('، ') },
+        { status: 400 }
+      )
     }
 
     // v23: التسليم متاح لأي موظف مصرّح له — لأي مسودة (ولو أنشأها موظف آخر)
@@ -94,3 +115,4 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return handleDbError(error, 'تسليم التقرير')
   }
 }
+
