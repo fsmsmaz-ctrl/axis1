@@ -79,7 +79,20 @@ export async function POST(req: NextRequest) {
     for (var pr = 0; pr < projectsRows.length; pr++) projectIds[projectsRows[pr].id] = true
     var hasDefault = defaultProjectId !== '' && !!projectIds[defaultProjectId]
 
+    // v33: فحص مباشر لقاعدة البيانات — هل أصبح عمود Cost.projectId اختيارياً (ترقية v32 مطبقة)؟
+    // إن لم تُطبق الترقية بعد فإن كل محاولات الإنشاء بمعرف مشروع فارغ ستفشل — نكشف ذلك هنا بدل الفشل الصامت
+    var migrationApplied: any = null
+    try {
+      var colInfo: any = await db.$queryRaw`SELECT is_nullable FROM information_schema.columns WHERE table_name = 'Cost' AND column_name = 'projectId'`
+      migrationApplied = !!(colInfo && colInfo.length > 0 && String(colInfo[0].is_nullable) === 'YES')
+    } catch (e) { migrationApplied = null }
+
     var scan = { createLogs: createLogs.length, existing: 0, deliberatelyDeleted: 0, restorable: 0, orphaned: 0, invalid: 0 }
+    // v33: التغطية الزمنية لسجل التدقيق (الأقدم/الأحدث) — createLogs مرتبة تصاعدياً بالتاريخ
+    var coverage = {
+      oldest: createLogs.length ? new Date(createLogs[0].createdAt).toISOString() : '',
+      newest: createLogs.length ? new Date(createLogs[createLogs.length - 1].createdAt).toISOString() : '',
+    }
     var orphans: Array<{ entityId: string; date: string; category: string; description: string; amount: number }> = []
     var restored: string[] = []
     var errors: string[] = []
@@ -160,13 +173,25 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       dryRun: dryRun,
       scan: scan,
+      migrationApplied: migrationApplied,
+      coverage: coverage,
       restoredCount: restored.length,
       restored: restored,
       orphans: orphans,
       errors: errors,
       message: dryRun
-        ? 'الفحص جاهز — ' + scan.restorable + ' فاتورة قابلة للاسترجاع' + (scan.orphaned > 0 ? ' (منها ' + scan.orphaned + ' ستُسترجع بلا مشروع)' : '')
-        : (restored.length > 0 ? 'تم استرجاع ' + restored.length + ' فاتورة بنجاح' + (scan.orphaned > 0 ? ' (منها ' + scan.orphaned + ' بلا مشروع)' : '') : 'لا توجد فواتير قابلة للاسترجاع'),
+        ? (migrationApplied === false
+            ? 'تنبيه: ترقية قاعدة البيانات (v32) غير مطبقة بعد — الاسترجاع سيفشل حتى إعادة النشر الناجحة في Netlify'
+            : 'الفحص جاهز — ' + scan.restorable + ' فاتورة قابلة للاسترجاع' + (scan.orphaned > 0 ? ' (منها ' + scan.orphaned + ' ستُسترجع بلا مشروع)' : ''))
+        : (restored.length > 0
+            ? 'تم استرجاع ' + restored.length + ' فاتورة بنجاح' + (scan.orphaned > 0 ? ' (منها ' + scan.orphaned + ' بلا مشروع)' : '')
+            : (migrationApplied === false
+                ? 'لم تُسترجع أي فاتورة — السبب المؤكد: ترقية قاعدة البيانات (v32) غير مطبقة بعد. أعد النشر وتأكد من نجاح البناء في Netlify (البناء يطبق الترقية تلقائياً) ثم أعد المحاولة'
+                : (errors.length > 0
+                    ? 'لم تُسترجع أي فاتورة — فشل إنشاء ' + errors.length + ' فاتورة (التفاصيل ظاهرة الآن في النافذة)'
+                    : (scan.createLogs === 0
+                        ? 'سجل التدقيق لا يحتوي أي سجلات إنشاء فواتير — الفواتير المسجلة قبل 2026-07-27 (قبل تفعيل السجل) أو بين 2026-08-24 و 2026-08-30 (فترة خلوّ السجل) لا يمكن استرجاعها إلا عبر نسخة Supabase الاحتياطية'
+                        : 'لا توجد فواتير قابلة للاسترجاع — راجع أرقام الفحص في النافذة')))),
     })
   } catch (error: any) {
     console.error('[restore-costs] failed:', error)
