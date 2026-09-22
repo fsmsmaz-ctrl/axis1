@@ -15,9 +15,10 @@ import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   Cell
 } from 'recharts'
-import { Plus, DollarSign, TrendingUp, TrendingDown, Wallet, BarChart3, Search, FileText, Filter } from 'lucide-react'
+import { Plus, DollarSign, TrendingUp, TrendingDown, Wallet, BarChart3, Search, FileText, Filter, History } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
+import { SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
 import { toast } from 'sonner'
 
 const categoryLabels: Record<string, { ar: string; en: string }> = {
@@ -60,6 +61,9 @@ export default function CostsPage() {
   const [editingCostId, setEditingCostId] = useState<string | null>(null)
   const language = useAppStore((s) => s.language)
   const isRtl = language === 'ar'
+  const user = useAppStore((s) => s.user)
+  // v31: الاسترجاع لمدير النظام فقط
+  const isAdmin = ((user && user.email) || '').toLowerCase().trim() === SYSTEM_ADMIN_EMAIL
 
   const [revenue, setRevenue] = useState(0)
   const [approvedReports, setApprovedReports] = useState<any[]>([])
@@ -67,6 +71,11 @@ export default function CostsPage() {
   // Search & filter
   const [searchQuery, setSearchQuery] = useState('')
   const [filterCategory, setFilterCategory] = useState<string>('all')
+  // v31: حالة نافذة استرجاع الفواتير من سجل التدقيق
+  const [restoreOpen, setRestoreOpen] = useState(false)
+  const [restoreBusy, setRestoreBusy] = useState(false)
+  const [restoreScan, setRestoreScan] = useState<any>(null)
+  const [restoreProject, setRestoreProject] = useState<string>('none')
 
   const [formData, setFormData] = useState({
     projectId: '', date: new Date().toISOString().split('T')[0],
@@ -132,6 +141,53 @@ export default function CostsPage() {
     }
   }
 
+  // v31: فحص سجل التدقيق — كم فاتورة مفقودة قابلة للاسترجاع؟
+  async function runRestoreScan() {
+    setRestoreBusy(true)
+    try {
+      const res = await authedFetch('/api/admin/restore-costs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dryRun: true }),
+      })
+      const data = await res.json().catch(function() { return {} as any })
+      if (!res.ok) {
+        toast.error((data && data.message) || (isRtl ? 'فشل فحص سجل التدقيق' : 'Scan failed'))
+      } else {
+        setRestoreScan(data)
+        toast.info(data.message || '')
+      }
+    } catch {
+      toast.error(isRtl ? 'فشل الاتصال' : 'Network error')
+    }
+    setRestoreBusy(false)
+  }
+
+  // v31: تنفيذ الاسترجاع الفعلي
+  async function runRestoreExecute() {
+    if (!window.confirm(isRtl ? 'تنفيذ الاسترجاع الآن؟ ستُعاد الفواتير القابلة للاسترجاع إلى قسم التكاليف.' : 'Execute restore now?')) return
+    setRestoreBusy(true)
+    try {
+      const res = await authedFetch('/api/admin/restore-costs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ defaultProjectId: restoreProject !== 'none' ? restoreProject : undefined }),
+      })
+      const data = await res.json().catch(function() { return {} as any })
+      if (!res.ok) {
+        toast.error((data && data.message) || (isRtl ? 'فشل الاسترجاع' : 'Restore failed'))
+      } else {
+        toast.success(data.message || (isRtl ? 'تم' : 'Done'))
+        setRestoreOpen(false)
+        setRestoreScan(null)
+        fetchCosts()
+      }
+    } catch {
+      toast.error(isRtl ? 'فشل الاتصال' : 'Network error')
+    }
+    setRestoreBusy(false)
+  }
+
   useEffect(function() {
     fetchCosts()
     fetchProjects()
@@ -164,17 +220,19 @@ export default function CostsPage() {
     try {
       var url = editingCostId ? '/api/costs/' + editingCostId : '/api/costs'
       var method = editingCostId ? 'PUT' : 'POST'
+      // v32: «بدون مشروع» تُرسل كسلسلة فارغة ليخزنها الخادم null
+      var payload = Object.assign({}, formData, { projectId: formData.projectId === 'none' ? '' : formData.projectId })
       var res = await authedFetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(payload),
       })
       if (res.ok) {
         toast.success(editingCostId ? (isRtl ? 'تم تحديث التكلفة' : 'Cost updated') : (isRtl ? 'تم إضافة التكلفة' : 'Cost added'))
         setDialogOpen(false)
         setEditingCostId(null)
         setFormData({
-          projectId: projects[0]?.id || '', date: new Date().toISOString().split('T')[0],
+          projectId: projects[0]?.id || 'none', date: new Date().toISOString().split('T')[0],
           category: 'labor', description: '', amount: '', notes: '',
         })
         fetchCosts()
@@ -220,17 +278,25 @@ export default function CostsPage() {
             {isRtl ? 'متابعة التكاليف والإيرادات وحساب الأرباح' : 'Track costs, revenue, and profit'}
           </p>
         </div>
-        <Button onClick={function() {
-          setEditingCostId(null)
-          setFormData({
-            projectId: projects[0]?.id || '', date: new Date().toISOString().split('T')[0],
-            category: 'labor', description: '', amount: '', notes: '',
-          })
-          setDialogOpen(true)
-        }} className="shadow-sm">
-          <Plus className="h-4 w-4 ml-2" />
-          {isRtl ? 'إضافة تكلفة' : 'Add Cost'}
-        </Button>
+        <div className="flex gap-2">
+          {isAdmin && (
+            <Button variant="outline" onClick={function() { setRestoreScan(null); setRestoreOpen(true) }} className="shadow-sm">
+              <History className="h-4 w-4 ml-2" />
+              {isRtl ? 'استرجاع فواتير محذوفة' : 'Restore invoices'}
+            </Button>
+          )}
+          <Button onClick={function() {
+            setEditingCostId(null)
+            setFormData({
+              projectId: projects[0]?.id || 'none', date: new Date().toISOString().split('T')[0],
+              category: 'labor', description: '', amount: '', notes: '',
+            })
+            setDialogOpen(true)
+          }} className="shadow-sm">
+            <Plus className="h-4 w-4 ml-2" />
+            {isRtl ? 'إضافة تكلفة' : 'Add Cost'}
+          </Button>
+        </div>
       </div>
 
       {/* Summary Cards - Modern Design */}
@@ -489,7 +555,7 @@ export default function CostsPage() {
                           <p className="font-medium text-sm truncate">{c.description}</p>
                           {c.notes && <p className="text-xs text-muted-foreground truncate mt-0.5">{c.notes}</p>}
                         </td>
-                        <td className="p-2.5 text-xs text-muted-foreground">{c.project ? c.project.name : '-'}</td>
+                        <td className="p-2.5 text-xs text-muted-foreground">{c.project ? c.project.name : (isRtl ? 'بدون مشروع' : 'No project')}</td>
                         <td className="p-2.5 font-semibold text-rose-600 whitespace-nowrap">
                           {c.amount.toLocaleString()} {isRtl ? 'ر.ع' : 'OMR'}
                         </td>
@@ -498,7 +564,7 @@ export default function CostsPage() {
                             <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={function() {
                               setEditingCostId(c.id)
                               setFormData({
-                                projectId: c.projectId || '',
+                                projectId: c.projectId || 'none',
                                 date: new Date(c.date).toISOString().split('T')[0],
                                 category: c.category,
                                 description: c.description,
@@ -543,10 +609,11 @@ export default function CostsPage() {
           <form onSubmit={handleSubmit} className="space-y-3">
             <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label>{isRtl ? 'المشروع' : 'Project'} *</Label>
-                <Select value={formData.projectId} onValueChange={function(v) { setFormData(Object.assign({}, formData, { projectId: v })) }} required>
+                <Label>{isRtl ? 'المشروع (اختياري)' : 'Project (optional)'}</Label>
+                <Select value={formData.projectId || 'none'} onValueChange={function(v) { setFormData(Object.assign({}, formData, { projectId: v })) }}>
                   <SelectTrigger><SelectValue placeholder={isRtl ? 'اختر' : 'Select'} /></SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="none">{isRtl ? 'بدون مشروع' : 'No project'}</SelectItem>
                     {projects.map(function(p) {
                       return <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
                     })}
@@ -588,6 +655,59 @@ export default function CostsPage() {
               <Button type="submit">{isRtl ? 'حفظ' : 'Save'}</Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* v31 نافذة استرجاع الفواتير — مدير النظام فقط */}
+      <Dialog open={restoreOpen} onOpenChange={setRestoreOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{isRtl ? 'استرجاع الفواتير من سجل التدقيق' : 'Restore invoices from audit log'}</DialogTitle>
+            <DialogDescription>
+              {isRtl
+                ? 'يفحص الأداة سجل التدقيق بحثاً عن كل فاتورة سُجلت يوماً ويعيد إنشاء المفقود منها (الممسوح بحذف مشروع). الفواتير المحذوفة عمداً لا تُسترجع. الفواتير اليتيمة تُسترجع بلا مشروع افتراضياً ويمكن إسنادها لمشروع لاحقاً بالتعديل. تاريخ الفاتورة المسترجعة = لحظة تسجيلها الأصلية.'
+                : 'Scans the audit log for every invoice ever created and recreates the missing ones (cascade-deleted). Deliberately deleted invoices are skipped.'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            {restoreScan && (
+              <div className="p-3 rounded-lg border bg-muted/30 text-sm space-y-1.5">
+                <p>{isRtl ? 'سجلات إنشاء فواتير في سجل التدقيق' : 'Invoice creation records'}: <b>{restoreScan.scan.createLogs}</b></p>
+                <p>{isRtl ? 'موجودة فعلاً (سليمة)' : 'Already present'}: <b>{restoreScan.scan.existing}</b></p>
+                <p>{isRtl ? 'محذوفة عمداً — لن تُسترجع' : 'Deliberately deleted — skipped'}: <b>{restoreScan.scan.deliberatelyDeleted}</b></p>
+                <p className="text-emerald-700 font-semibold">{isRtl ? 'قابلة للاسترجاع' : 'Restorable'}: <b>{restoreScan.scan.restorable}</b></p>
+                {restoreScan.scan.orphaned > 0 && (
+                  <p className="text-orange-700">{isRtl ? 'يتيمة — ستُسترجع بلا مشروع (أو للمشروع المختار أدناه)' : 'Orphaned — restored without a project (or to the chosen one below)'}: <b>{restoreScan.scan.orphaned}</b></p>
+                )}
+                {restoreScan.scan.invalid > 0 && (
+                  <p className="text-muted-foreground">{isRtl ? 'سجلات غير قابلة للتحليل' : 'Unparseable records'}: <b>{restoreScan.scan.invalid}</b></p>
+                )}
+              </div>
+            )}
+            <div className="space-y-1.5">
+              <Label>{isRtl ? 'إسناد الفواتير اليتيمة لمشروع (اختياري)' : 'Assign orphaned invoices to a project (optional)'}</Label>
+              <Select value={restoreProject} onValueChange={setRestoreProject}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">{isRtl ? 'بدون مشروع — تُسترجع مستقلة' : 'None — restored standalone'}</SelectItem>
+                  {projects.map(function(p) {
+                    return <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                  })}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={runRestoreScan} disabled={restoreBusy}>
+              {isRtl ? 'فحص سجل التدقيق' : 'Scan audit log'}
+            </Button>
+            <Button type="button" onClick={runRestoreExecute} disabled={restoreBusy || !restoreScan || !(restoreScan.scan && restoreScan.scan.restorable > 0)}>
+              {isRtl ? 'تنفيذ الاسترجاع' : 'Restore now'}
+            </Button>
+            <Button type="button" variant="ghost" onClick={function() { setRestoreOpen(false) }}>
+              {isRtl ? 'إغلاق' : 'Close'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
