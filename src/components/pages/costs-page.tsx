@@ -177,10 +177,16 @@ export default function CostsPage() {
       if (!res.ok) {
         toast.error((data && data.message) || (isRtl ? 'فشل الاسترجاع' : 'Restore failed'))
       } else {
-        toast.success(data.message || (isRtl ? 'تم' : 'Done'))
-        setRestoreOpen(false)
-        setRestoreScan(null)
-        fetchCosts()
+        // v33: النتيجة الكاملة تبقى ظاهرة في النافذة (أرقام الفحص + الأخطاء نصاً) — لا نغلق النافذة عند الفشل
+        setRestoreScan(data)
+        if (data.restoredCount > 0) {
+          toast.success(data.message || (isRtl ? 'تم' : 'Done'))
+          setRestoreOpen(false)
+          setRestoreScan(null)
+          fetchCosts()
+        } else {
+          toast.error(data.message || (isRtl ? 'لم تُسترجع أي فاتورة — راجع التفاصيل في النافذة' : 'Nothing restored — see details'))
+        }
       }
     } catch {
       toast.error(isRtl ? 'فشل الاتصال' : 'Network error')
@@ -280,7 +286,7 @@ export default function CostsPage() {
         </div>
         <div className="flex gap-2">
           {isAdmin && (
-            <Button variant="outline" onClick={function() { setRestoreScan(null); setRestoreOpen(true) }} className="shadow-sm">
+            <Button variant="outline" onClick={function() { setRestoreScan(null); setRestoreOpen(true); runRestoreScan() }} className="shadow-sm">
               <History className="h-4 w-4 ml-2" />
               {isRtl ? 'استرجاع فواتير محذوفة' : 'Restore invoices'}
             </Button>
@@ -682,7 +688,29 @@ export default function CostsPage() {
                 {restoreScan.scan.invalid > 0 && (
                   <p className="text-muted-foreground">{isRtl ? 'سجلات غير قابلة للتحليل' : 'Unparseable records'}: <b>{restoreScan.scan.invalid}</b></p>
                 )}
+                {restoreScan.coverage && restoreScan.coverage.oldest && (
+                  <p className="text-muted-foreground">{isRtl ? 'تغطية السجل' : 'Log coverage'}: {new Date(restoreScan.coverage.oldest).toLocaleDateString()} {isRtl ? 'إلى' : 'to'} {new Date(restoreScan.coverage.newest).toLocaleDateString()}</p>
+                )}
               </div>
+            )}
+            {restoreScan && restoreScan.migrationApplied === false && (
+              <p className="p-2 rounded-md bg-orange-100 text-orange-900 text-sm font-semibold">
+                {isRtl ? 'ترقية قاعدة البيانات (v32) غير مطبقة بعد — الاسترجاع سيفشل. أعد النشر وتأكد من نجاح البناء في Netlify (البناء يطبق الترقية تلقائياً عبر prisma migrate deploy) ثم أعد المحاولة.' : 'DB migration (v32) is not applied yet — restore will fail. Redeploy and confirm the Netlify build succeeds, then retry.'}
+              </p>
+            )}
+            {restoreScan && restoreScan.migrationApplied === true && (
+              <p className="text-xs text-emerald-700">{isRtl ? 'قاعدة البيانات جاهزة (ترقية v32 مطبقة)' : 'Database ready (v32 migration applied)'}</p>
+            )}
+            {restoreScan && restoreScan.errors && restoreScan.errors.length > 0 && (
+              <div className="space-y-1">
+                <p className="text-sm font-semibold text-red-700">{isRtl ? 'أخطاء الإنشاء' : 'Creation errors'}:</p>
+                {restoreScan.errors.map(function(er: string, idx: number) {
+                  return <p key={idx} className="text-xs font-mono text-red-700 break-all">{er}</p>
+                })}
+              </div>
+            )}
+            {restoreScan && typeof restoreScan.restoredCount === 'number' && restoreScan.restoredCount > 0 && (
+              <p className="text-sm font-semibold text-emerald-700">{isRtl ? 'تم استرجاع' : 'Restored'}: {restoreScan.restoredCount}</p>
             )}
             <div className="space-y-1.5">
               <Label>{isRtl ? 'إسناد الفواتير اليتيمة لمشروع (اختياري)' : 'Assign orphaned invoices to a project (optional)'}</Label>
