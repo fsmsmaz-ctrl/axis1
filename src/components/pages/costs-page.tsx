@@ -76,6 +76,8 @@ export default function CostsPage() {
   const [restoreBusy, setRestoreBusy] = useState(false)
   const [restoreScan, setRestoreScan] = useState<any>(null)
   const [restoreProject, setRestoreProject] = useState<string>('none')
+  // v35: حالة تطبيق ترقية قاعدة البيانات يدوياً
+  const [migBusy, setMigBusy] = useState(false)
 
   const [formData, setFormData] = useState({
     projectId: '', date: new Date().toISOString().split('T')[0],
@@ -192,6 +194,29 @@ export default function CostsPage() {
       toast.error(isRtl ? 'فشل الاتصال' : 'Network error')
     }
     setRestoreBusy(false)
+  }
+
+  // v35: تطبيق ترقية v32 يدوياً بنقرة واحدة ثم إعادة الفحص تلقائياً
+  async function applyMigrationNow() {
+    if (!window.confirm(isRtl ? 'تطبيق ترقية قاعدة البيانات الآن؟ ستصبح الفواتير بلا مشروع ممكنة وسيعمل الاسترجاع.' : 'Apply DB migration now?')) return
+    setMigBusy(true)
+    try {
+      const res = await authedFetch('/api/admin/apply-cost-migration', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      const data = await res.json().catch(function() { return {} as any })
+      if (!res.ok) {
+        toast.error((data && data.message) || (isRtl ? 'فشل تطبيق الترقية' : 'Migration failed'))
+      } else {
+        toast.success(data.message || (isRtl ? 'تم' : 'Done'))
+        runRestoreScan()
+      }
+    } catch {
+      toast.error(isRtl ? 'فشل الاتصال' : 'Network error')
+    }
+    setMigBusy(false)
   }
 
   useEffect(function() {
@@ -700,9 +725,13 @@ export default function CostsPage() {
               </div>
             )}
             {restoreScan && restoreScan.migrationApplied === false && (
-              <p className="p-2 rounded-md bg-orange-100 text-orange-900 text-sm font-semibold">
-                {isRtl ? 'ترقية قاعدة البيانات (v32) غير مطبقة بعد — الاسترجاع سيفشل. أعد النشر وتأكد من نجاح البناء في Netlify (البناء يطبق الترقية تلقائياً عبر prisma migrate deploy) ثم أعد المحاولة.' : 'DB migration (v32) is not applied yet — restore will fail. Redeploy and confirm the Netlify build succeeds, then retry.'}
-              </p>
+              <div className="p-2 rounded-md bg-orange-100 text-orange-900 text-sm font-semibold space-y-2">
+                <p>{isRtl ? 'ترقية قاعدة البيانات (v32) غير مطبقة بعد — الاسترجاع سيفشل.' : 'DB migration (v32) is not applied yet — restore will fail.'}</p>
+                <Button type="button" size="sm" onClick={applyMigrationNow} disabled={migBusy}>
+                  {migBusy ? (isRtl ? 'جارٍ التطبيق...' : 'Applying...') : (isRtl ? 'تطبيق الترقية الآن' : 'Apply migration now')}
+                </Button>
+                <p className="text-xs font-normal">{isRtl ? 'أو أعد النشر وتأكد من نجاح البناء في Netlify (البناء يطبق الترقية تلقائياً عبر prisma migrate deploy).' : 'Or redeploy and confirm the Netlify build succeeds (the build applies it automatically).'}</p>
+              </div>
             )}
             {restoreScan && restoreScan.migrationApplied === true && (
               <p className="text-xs text-emerald-700">{isRtl ? 'قاعدة البيانات جاهزة (ترقية v32 مطبقة)' : 'Database ready (v32 migration applied)'}</p>
