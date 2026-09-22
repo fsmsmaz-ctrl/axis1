@@ -214,6 +214,15 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     // FIX: Warn if project has data — but still allow top_management to delete
     var hasData = counts.dailyReports > 0 || counts.costs > 0 || counts.driveLines > 0 || counts.finishings > 0
 
+    // v32: الفواتير لم تعد تُمسح بحذف المشروع (SetNull بدل Cascade) — تنجو وتظهر «بدون مشروع».
+    // يبقى المنع للتقارير اليومية فقط لأنها ما تزال تُحذف نهائياً مع المشروع (Cascade).
+    if (counts.dailyReports > 0) {
+      return NextResponse.json(
+        { error: 'project_has_data', message: 'لا يمكن حذف المشروع «' + project.code + '» لأنه يحتوي ' + counts.dailyReports + ' تقرير يومي — الحذف يمسحها نهائياً. أرشف المشروع بتغيير حالته أو احذف التقارير فردياً بعد المراجعة. (فواتير المشروع لن تُمسح — ستنجو وتظهر بلا مشروع)' },
+        { status: 400 }
+      )
+    }
+
     var deleteResult = await safeDbOp(() => db.project.delete({ where: { id } }), 'حذف المشروع')
     if (!deleteResult.success) return deleteResult.response
 
