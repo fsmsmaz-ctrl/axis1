@@ -47,6 +47,14 @@ function getMonthRange(): { gte: Date; lt: Date } {
   return { gte: start, lt: end }
 }
 
+/** v36: [gte, lt] for "this calendar year" (UTC) — نطاق توزيع التكاليف السنوي */
+function getYearRange(): { gte: Date; lt: Date } {
+  const now = new Date()
+  const start = new Date(Date.UTC(now.getUTCFullYear(), 0, 1))
+  const end = new Date(Date.UTC(now.getUTCFullYear() + 1, 0, 1))
+  return { gte: start, lt: end }
+}
+
 // ────────────────────────────────────────────────────────────────
 // Main handler
 // ────────────────────────────────────────────────────────────────
@@ -73,14 +81,18 @@ export async function GET(req: NextRequest) {
     // is mostly aggregate read-only data; a short TTL hides DB latency without
     // showing stale data for long. Cache key is user-scoped so permissions
     // are respected.
-    const cacheKey = `dashboard:${user.id}`
+    // v36: نطاق توزيع التكاليف — الشهر (الافتراضي) أو العام أو كل الفترات
+    // (الفواتير المسترجعة تحمل تواريخ تسجيلها الأصلية وقد تكون لأشهر سابقة)
+    const costsPeriodParam = new URL(req.url).searchParams.get('costsPeriod')
+    const costsPeriod = costsPeriodParam === 'year' || costsPeriodParam === 'all' ? costsPeriodParam : 'month'
+    const cacheKey = `dashboard:${user.id}:${costsPeriod}`
     // v16 (قرار صاحب الموقع): لوحة التحكم تعود ببياناتها المالية الكاملة —
     // كل من يملك صلاحية الوصول إلى اللوحة أصلاً (مدير النظام + الإدارة العليا)
     // يرى الإيرادات وصافي الربح والرسوم البيانية كاملة.
     // استثناء المشرف العام من الأسعار يبقى سارياً في بقية الأقسام عبر
     // canViewPricing دون أي تغيير — هذا التعديل محصور بلوحة التحكم فقط.
     const canSeePrice = canViewPricing(user) || canAccessDashboard(user)
-    const payload = await cached(cacheKey, 30_000, () => buildDashboard(canSeePrice))
+    const payload = await cached(cacheKey, 30_000, () => buildDashboard(canSeePrice, costsPeriod))
 
     // Helpful for debugging latency issues from the client.
     const duration = Date.now() - startedAt
@@ -108,9 +120,10 @@ export async function GET(req: NextRequest) {
 // Dashboard builder — all queries run concurrently
 // ────────────────────────────────────────────────────────────────
 
-async function buildDashboard(canSeePrice: boolean) {
+async function buildDashboard(canSeePrice: boolean, costsPeriod: 'month' | 'year' | 'all' = 'month') {
   const todayRange = getDateRange(0)
   const monthRange = getMonthRange()
+  const yearRange = getYearRange()
   const fourteenDaysAgo = new Date(todayRange.gte.getTime() - 14 * 24 * 60 * 60 * 1000)
 
   // ── Parallel: independent scalar queries ──
@@ -232,10 +245,14 @@ async function buildDashboard(canSeePrice: boolean) {
       include: { project: { select: { name: true } } },
     }),
 
-    // Costs by category
+    // v36: Costs by category — النطاق حسب اختيار اللوحة (الشهر/العام/الكل)
     db.cost.groupBy({
       by: ['category'],
-      where: { date: { gte: monthRange.gte, lt: monthRange.lt } },
+      where: costsPeriod === 'all'
+        ? {}
+        : costsPeriod === 'year'
+          ? { date: { gte: yearRange.gte, lt: yearRange.lt } }
+          : { date: { gte: monthRange.gte, lt: monthRange.lt } },
       _sum: { amount: true },
     }),
   ])
