@@ -51,6 +51,31 @@ function driveLineLabel(dl: any, isRtl: boolean): string {
   return label
 }
 
+// v30: فحص اكتمال بيانات التقرير قبل التسليم للاعتماد — يُرجع قائمة الحقول الناقصة
+// (قراءتا العدّاد 0/0 = غير مُدخلة، وسبب التوقف إلزامي عند وجود ساعات توقف)
+function incompleteReportFields(d: any, isRtl: boolean): string[] {
+  var missing: string[] = []
+  if (!d.driveLineId) missing.push(isRtl ? 'خط الحفر' : 'Drive line')
+  if (!d.reportDate) missing.push(isRtl ? 'التاريخ' : 'Report date')
+  if (!d.workStartTime) missing.push(isRtl ? 'بداية العمل' : 'Work start time')
+  if (!d.workEndTime) missing.push(isRtl ? 'نهاية العمل' : 'Work end time')
+  var operatingHours = parseFloat(d.operatingHours) || 0
+  var stoppageHours = parseFloat(d.stoppageHours) || 0
+  if (operatingHours <= 0 && stoppageHours <= 0) missing.push(isRtl ? 'ساعات التشغيل' : 'Operating hours')
+  var workersCount = parseInt(d.workersCount, 10) || 0
+  if (workersCount <= 0) missing.push(isRtl ? 'عدد العمال' : 'Workers count')
+  var startReading = parseFloat(d.startReading) || 0
+  var endReading = parseFloat(d.endReading) || 0
+  if (endReading <= 0 && startReading <= 0) missing.push(isRtl ? 'قراءتا البداية والنهاية (م)' : 'Start & end readings (m)')
+  if (d.startReading !== '' && d.startReading != null && d.endReading !== '' && d.endReading != null && endReading < startReading) {
+    missing.push(isRtl ? 'قراءة النهاية أقل من قراءة البداية' : 'End reading below start reading')
+  }
+  if (stoppageHours > 0 && !(d.stoppageReason && String(d.stoppageReason).trim() !== '')) {
+    missing.push(isRtl ? 'سبب التوقف (مطلوب عند وجود توقف)' : 'Stoppage reason (required with stoppage)')
+  }
+  return missing
+}
+
 export default function DailyReportsPage() {
   const [reports, setReports] = useState<any[]>([])
   const [projects, setProjects] = useState<any[]>([])
@@ -293,6 +318,18 @@ export default function DailyReportsPage() {
       return
     }
 
+    // v30: «حفظ وتسليم» — لا يتم التسليم إلا بعد إدخال كل البيانات المطلوبة
+    if (opts?.submitAfter) {
+      const missingFields = incompleteReportFields(formData, isRtl)
+      if (missingFields.length > 0) {
+        toast.error(isRtl
+          ? 'لا يمكن تسليم التقرير — بيانات ناقصة: ' + missingFields.join('، ')
+          : 'Cannot submit — missing data: ' + missingFields.join(', '))
+        setSubmitting(false)
+        return
+      }
+    }
+
     try {
       const url = editingReportId ? `/api/daily-reports/${editingReportId}` : '/api/daily-reports'
       const method = editingReportId ? 'PUT' : 'POST'
@@ -307,7 +344,7 @@ export default function DailyReportsPage() {
         delete body.driveLineId
         delete body.reportDate
         delete body.weather
-        if (opts?.submitAfter && editingStatus === 'draft') body.status = 'submitted'
+        // v30: لا يُرسَل status هنا — التسليم يتم بعد الحفظ عبر /submit حصراً
       }
 
       const res = await authedFetch(url, {
@@ -341,7 +378,22 @@ export default function DailyReportsPage() {
         }
         toast.success(isRtl ? 'تم إنشاء التقرير كمسودة — راجع البيانات ثم سلّم التقرير' : 'Report created as draft — review then submit')
       } else if (opts?.submitAfter && editingStatus === 'draft') {
-        toast.success(isRtl ? 'تم حفظ التقرير وتسليمه للاعتماد' : 'Report saved & submitted for approval')
+        // v30: الحفظ عبر PUT ثم التسليم الفعلي حصراً عبر /submit (مع حاجز اكتمال البيانات في الخادم)
+        try {
+          const subRes = await authedFetch(`/api/daily-reports/${editingReportId}/submit`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({}),
+          })
+          if (subRes.ok) {
+            toast.success(isRtl ? 'تم حفظ التقرير وتسليمه للاعتماد' : 'Report saved & submitted for approval')
+          } else {
+            const subBody = await subRes.json().catch(() => ({}))
+            toast.error(subBody?.message || subBody?.error || (isRtl ? 'تم الحفظ كمسودة — تعذر التسليم' : 'Saved as draft — submit failed'))
+          }
+        } catch {
+          toast.error(isRtl ? 'تم الحفظ كمسودة — تعذر التسليم، سلّم التقرير من القائمة' : 'Saved as draft — submit failed, submit from the list')
+        }
       } else {
         toast.success(isRtl ? 'تم تحديث التقرير' : 'Report updated successfully')
       }
@@ -356,11 +408,20 @@ export default function DailyReportsPage() {
     }
   }
 
-  // تسليم التقرير: من مسودة إلى مرسل — يظهر بعد تعديل البيانات
-  async function submitReport(id: string) {
+  // v30 تسليم التقرير: من مسودة إلى مرسل — لا يتم التسليم إلا بعد اكتمال كل البيانات
+  async function submitReport(report: any) {
+    if (!report || !report.id) return
+    // حاجز الاكتمال: منع التسليم قبل إدخال جميع البيانات المطلوبة
+    const missing = incompleteReportFields(report, isRtl)
+    if (missing.length > 0) {
+      toast.error(isRtl
+        ? 'لا يمكن تسليم التقرير — بيانات ناقصة: ' + missing.join('، ')
+        : 'Cannot submit — missing data: ' + missing.join(', '))
+      return
+    }
     if (!window.confirm(isRtl ? 'تسليم التقرير للاعتماد؟ لا يمكنك تعديله بعد التسليم' : 'Submit for approval? You cannot edit it after submission')) return
     try {
-      const res = await authedFetch(`/api/daily-reports/${id}/submit`, {
+      const res = await authedFetch(`/api/daily-reports/${report.id}/submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
@@ -573,8 +634,8 @@ export default function DailyReportsPage() {
                         </Button>
                       )}
                       {/* v23 تسليم التقرير: أي موظف مصرّح له — للمسودة بعد تعديل البيانات */}
-                      {(isAdmin || (canEditReports && r.status === 'draft')) && (
-                        <Button variant="outline" size="sm" className="text-emerald-600" title={isRtl ? 'تسليم التقرير للاعتماد' : 'Submit for approval'} onClick={() => submitReport(r.id)}>
+                      {canEditReports && r.status === 'draft' && (
+                        <Button variant="outline" size="sm" className="text-emerald-600" title={isRtl ? 'تسليم التقرير للاعتماد' : 'Submit for approval'} onClick={() => submitReport(r)}>
                           <Send className="h-4 w-4" />
                         </Button>
                       )}
@@ -1022,3 +1083,4 @@ function Stat({ label, value, color }: { label: string; value: string; color: st
     </div>
   )
 }
+
