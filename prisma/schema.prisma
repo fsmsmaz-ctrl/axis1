@@ -257,7 +257,7 @@ model EquipmentMaintenance {
 // ==================== Costs ====================
 model Cost {
   id            String   @id @default(cuid())
-  projectId     String
+  projectId     String? // v32: مشروع الفاتورة اختياري — الفواتير تنجو من حذف المشروع وتظهر «بدون مشروع»
   dailyReportId String?
   date          DateTime
   category      String   // labor, housing, transport, fuel, maintenance, parts, oil, safety, rental, other
@@ -265,7 +265,7 @@ model Cost {
   amount        Float
   notes         String?
 
-  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project       Project? @relation(fields: [projectId], references: [id], onDelete: SetNull) // v32: حذف المشروع لا يمسح الفواتير
   dailyReport   DailyReport? @relation(fields: [dailyReportId], references: [id])
   recordedBy    User?    @relation(fields: [recordedById], references: [id])
   recordedById  String?
@@ -501,3 +501,4 @@ model CompanyAsset {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 }
+
