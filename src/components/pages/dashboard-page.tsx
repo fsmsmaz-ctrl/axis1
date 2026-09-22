@@ -73,6 +73,8 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [recalculating, setRecalculating] = useState(false)
+  // v36: نطاق توزيع التكاليف — الفواتير المسترجعة تحمل تواريخها الأصلية (قد تكون لأشهر سابقة)
+  const [costsPeriod, setCostsPeriod] = useState<'month' | 'year' | 'all'>('month')
   const language = useAppStore((s) => s.language)
   const token = useAppStore((s) => s.token)
   const user = useAppStore((s) => s.user)
@@ -91,7 +93,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
       // should see a retry button rather than staring at a spinner forever.
       const controller = new AbortController()
       const timeout = setTimeout(() => controller.abort(), 15000)
-      const r = await authedFetch('/api/dashboard', { signal: controller.signal })
+      const r = await authedFetch('/api/dashboard?costsPeriod=' + costsPeriod, { signal: controller.signal })
       clearTimeout(timeout)
       if (!r.ok) {
         const body = await r.json().catch(function() { return {} })
@@ -120,7 +122,8 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
 
   useEffect(() => {
     fetchDashboard()
-  }, [token])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, costsPeriod])
 
   // Recalculate all progress & revenue. Available to top_management and
   // project_manager. Useful when the dashboard shows 0 because some old
@@ -323,6 +326,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
         {seePricing && (
         <MiniStat icon={TrendingUp} label={isRtl ? 'الإيراد اليوم' : "Today's Rev."} value={fmtCurrency(stats.revenueToday)} color="text-emerald-600" />
         )}
+        <MiniStat icon={Wallet} label={isRtl ? 'إجمالي التكاليف' : 'Total Costs'} value={fmtCurrency(stats.totalCosts)} color="text-purple-700" />
         <MiniStat icon={TrendingDown} label={isRtl ? 'تكاليف الشهر' : 'Month Costs'} value={fmtCurrency(stats.monthCosts)} color="text-purple-600" />
         <MiniStat icon={Activity} label={isRtl ? 'أمتار الشهر' : 'Month Meters'} value={fmt(stats.metersThisMonth) + ' م'} color="text-cyan-600" />
       </div>
@@ -361,6 +365,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
                   formatter={function(value: any, name: any) {
                     if (name === 'meters') return [fmt(value) + ' ' + (isRtl ? 'م' : 'm'), isRtl ? 'الأمتار' : 'Meters']
                     if (name === 'revenue') return [fmtCurrency(value), isRtl ? 'الإيراد' : 'Revenue']
+                    if (name === 'cost') return [fmtCurrency(value), isRtl ? 'التكلفة' : 'Cost']
                     if (name === 'profit') return [fmtCurrency(value), isRtl ? 'الربح' : 'Profit']
                     return [value, name]
                   }}
@@ -368,6 +373,10 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
                 <Area type="monotone" dataKey="meters" stroke="#f97316" fillOpacity={1} fill="url(#colorMeters)" strokeWidth={2} />
                 {seePricing && (
                 <Area type="monotone" dataKey="revenue" stroke="#10b981" fillOpacity={1} fill="url(#colorRevenue)" strokeWidth={2} />
+                )}
+                {/* v36: خط التكاليف اليومية في المنحنى */}
+                {seePricing && (
+                <Area type="monotone" dataKey="cost" stroke="#8b5cf6" fillOpacity={0} strokeWidth={2} strokeDasharray="4 3" />
                 )}
               </AreaChart>
             </ResponsiveContainer>
@@ -380,7 +389,23 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
               <Wallet className="h-5 w-5 text-primary" />
               {isRtl ? 'توزيع التكاليف' : 'Cost Breakdown'}
             </CardTitle>
-            <CardDescription>{isRtl ? 'حسب الفئة - هذا الشهر' : 'By category - this month'}</CardDescription>
+            <CardDescription>
+              {isRtl
+                ? (costsPeriod === 'month' ? 'حسب الفئة - هذا الشهر' : costsPeriod === 'year' ? 'حسب الفئة - هذا العام' : 'حسب الفئة - كل الفترات')
+                : (costsPeriod === 'month' ? 'By category - this month' : costsPeriod === 'year' ? 'By category - this year' : 'By category - all time')}
+            </CardDescription>
+            {/* v36: الفواتير المسترجعة تحمل تواريخ تسجيلها الأصلية — بدّل النطاق لرؤيتها كلها */}
+            <div className="flex gap-1.5 mt-1">
+              <Button type="button" size="sm" variant={costsPeriod === 'month' ? 'default' : 'outline'} onClick={function() { setCostsPeriod('month') }}>
+                {isRtl ? 'الشهر' : 'Month'}
+              </Button>
+              <Button type="button" size="sm" variant={costsPeriod === 'year' ? 'default' : 'outline'} onClick={function() { setCostsPeriod('year') }}>
+                {isRtl ? 'العام' : 'Year'}
+              </Button>
+              <Button type="button" size="sm" variant={costsPeriod === 'all' ? 'default' : 'outline'} onClick={function() { setCostsPeriod('all') }}>
+                {isRtl ? 'كل الفترات' : 'All time'}
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
             {costsByCategory.length === 0 ? (
