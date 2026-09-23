@@ -94,6 +94,12 @@ export default function SafetyPage() {
   const [editingSafety, setEditingSafety] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [selectedProject, setSelectedProject] = useState<string>('all')
+  // v39: فلترة تقارير السلامة — من/إلى تاريخ، الحالة، نوع الحادث، بحث نصي
+  const [filterFrom, setFilterFrom] = useState('')
+  const [filterTo, setFilterTo] = useState('')
+  const [filterStatus, setFilterStatus] = useState('all')
+  const [filterIncident, setFilterIncident] = useState('all')
+  const [filterSearch, setFilterSearch] = useState('')
   const [sheetOpen, setSheetOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState({ ...emptyForm })
@@ -123,7 +129,7 @@ export default function SafetyPage() {
 
   // v27: إعادة إسناد المشروع وخط الحفر — نفس صلاحيات القسم للمسودة/المُسلَّم،
   // والمعتمد/المرفوض للإدارة العليا ومدير النظام فقط
-  const isTopManagement = (storeUser?.role || '') === 'top_management'
+  const isTopManagement = String(storeUser?.role || '').toLowerCase().trim() === 'top_management'
 
   function canReassignSafety(r: any): boolean {
     var st = (r.dailyReport && r.dailyReport.status) || 'draft'
@@ -491,6 +497,28 @@ export default function SafetyPage() {
     return r.projectId === selectedProject && r.reportDate && r.reportDate.split('T')[0] === today
   })
 
+  // v39: حساب القائمة المفلترة — الفلترة على العناصر المحمّلة (حتى 100 تقرير)
+  var safetyFilterActive = !!(filterFrom || filterTo || filterStatus !== 'all' || filterIncident !== 'all' || filterSearch.trim())
+  var filteredReports = safetyFilterActive
+    ? reports.filter(function(r) {
+        var d = r.reportDate ? String(r.reportDate).split('T')[0] : ''
+        if (filterFrom && (!d || d < filterFrom)) return false
+        if (filterTo && (!d || d > filterTo)) return false
+        var st = (r.dailyReport && r.dailyReport.status) || 'draft'
+        if (filterStatus !== 'all' && st !== filterStatus) return false
+        if (filterIncident !== 'all' && (r.incidentType || 'none') !== filterIncident) return false
+        var q = filterSearch.trim().toLowerCase()
+        if (q) {
+          var hay = [r.project && r.project.name, r.incidentDescription].join(' ').toLowerCase()
+          if (hay.indexOf(q) === -1) return false
+        }
+        return true
+      })
+    : reports
+  function clearReportFilters() {
+    setFilterFrom(''); setFilterTo(''); setFilterStatus('all'); setFilterIncident('all'); setFilterSearch('')
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -574,18 +602,79 @@ export default function SafetyPage() {
         </SelectContent>
       </Select>
 
+      {/* v39: شريط فلترة تقارير السلامة */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 p-3 rounded-lg border bg-muted/30">
+        <div>
+          <Label className="text-xs text-muted-foreground">{isRtl ? 'من تاريخ' : 'From date'}</Label>
+          <Input type="date" value={filterFrom} onChange={(e) => setFilterFrom(e.target.value)} className="h-9 mt-1" />
+        </div>
+        <div>
+          <Label className="text-xs text-muted-foreground">{isRtl ? 'إلى تاريخ' : 'To date'}</Label>
+          <Input type="date" value={filterTo} onChange={(e) => setFilterTo(e.target.value)} className="h-9 mt-1" />
+        </div>
+        <div>
+          <Label className="text-xs text-muted-foreground">{isRtl ? 'الحالة' : 'Status'}</Label>
+          <Select value={filterStatus} onValueChange={setFilterStatus}>
+            <SelectTrigger className="h-9 mt-1"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{isRtl ? 'كل الحالات' : 'All statuses'}</SelectItem>
+              <SelectItem value="draft">{isRtl ? 'مسودة' : 'Draft'}</SelectItem>
+              <SelectItem value="submitted">{isRtl ? 'مرسل' : 'Submitted'}</SelectItem>
+              <SelectItem value="approved">{isRtl ? 'معتمد' : 'Approved'}</SelectItem>
+              <SelectItem value="rejected">{isRtl ? 'مرفوض' : 'Rejected'}</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <Label className="text-xs text-muted-foreground">{isRtl ? 'نوع الحادث' : 'Incident type'}</Label>
+          <Select value={filterIncident} onValueChange={setFilterIncident}>
+            <SelectTrigger className="h-9 mt-1"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{isRtl ? 'كل الأنواع' : 'All types'}</SelectItem>
+              <SelectItem value="none">{isRtl ? 'لا يوجد' : 'None'}</SelectItem>
+              <SelectItem value="near_miss">Near miss</SelectItem>
+              <SelectItem value="incident">{isRtl ? 'حادث' : 'Incident'}</SelectItem>
+              <SelectItem value="accident">{isRtl ? 'إصابة' : 'Accident'}</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <Label className="text-xs text-muted-foreground">{isRtl ? 'بحث' : 'Search'}</Label>
+          <Input type="search" value={filterSearch} onChange={(e) => setFilterSearch(e.target.value)} placeholder={isRtl ? 'مشروع أو حادث...' : 'project or incident...'} className="h-9 mt-1" />
+        </div>
+      </div>
+      {safetyFilterActive && (
+        <div className="flex items-center gap-2 flex-wrap -mt-1">
+          <p className="text-xs text-muted-foreground">
+            {isRtl ? `النتائج: ${filteredReports.length} من ${reports.length}` : `Showing ${filteredReports.length} of ${reports.length}`}
+          </p>
+          <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={clearReportFilters}>
+            {isRtl ? 'مسح الفلاتر' : 'Clear filters'}
+          </Button>
+        </div>
+      )}
+
       {loading ? (
         <div className="h-32 bg-muted animate-pulse rounded" />
-      ) : reports.length === 0 ? (
+      ) : filteredReports.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center">
             <ShieldCheck className="h-12 w-12 mx-auto text-muted-foreground/50" />
-            <p className="mt-3 text-muted-foreground">{isRtl ? 'لا توجد تقارير سلامة' : 'No safety reports'}</p>
+            {safetyFilterActive ? (
+              <>
+                <p className="mt-3 text-muted-foreground">{isRtl ? 'لا توجد نتائج مطابقة للفلاتر' : 'No reports match the filters'}</p>
+                <Button variant="outline" size="sm" className="mt-3" onClick={clearReportFilters}>
+                  {isRtl ? 'مسح الفلاتر' : 'Clear filters'}
+                </Button>
+              </>
+            ) : (
+              <p className="mt-3 text-muted-foreground">{isRtl ? 'لا توجد تقارير سلامة' : 'No safety reports'}</p>
+            )}
           </CardContent>
         </Card>
       ) : (
         <div className="space-y-3">
-          {reports.map(function(r) {
+          {filteredReports.map(function(r) {
             var checks = checklistItems.map(function(item) { return r[item.key as keyof any] })
             var passed = checks.filter(Boolean).length
             var compliance = (passed / 15) * 100
