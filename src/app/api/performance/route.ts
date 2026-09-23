@@ -32,8 +32,12 @@ export async function GET(req: NextRequest) {
     const costWhere: any = { date: { gte: threeMonthsAgo } }
     if (projectId) costWhere.projectId = projectId
 
+    // v40: نطاق خطوط الحفر — كامل عمر الخط (بدون نافذة 3 أشهر) لأن الخط أصل فيزيائي دائم
+    const lineWhere: any = {}
+    if (projectId) lineWhere.projectId = projectId
+
     // FIX: Wrap in safeDbOp for consistent error handling
-    const [reportsResult, safetyResult, costsResult] = await Promise.all([
+    const [reportsResult, safetyResult, costsResult, linesResult, lineReportsResult, lineCostsResult, lineSafetyResult, finishingsResult] = await Promise.all([
       safeDbOp(
         () => db.dailyReport.findMany({
           where,
@@ -57,6 +61,47 @@ export async function GET(req: NextRequest) {
           take: 500,
         }),
         'جلب التكاليف للأداء'
+      ),
+      // v40: بيانات خطوط الحفر — التحليل حسب كل خط
+      safeDbOp(
+        () => db.driveLine.findMany({
+          where: lineWhere,
+          select: { id: true, projectId: true, lineNumber: true, totalLength: true, diameter: true, status: true, completedLength: true, progress: true, pricePerMeter: true, project: { select: { name: true, code: true } } },
+          orderBy: { lineNumber: 'asc' }, take: 500,
+        }),
+        'جلب خطوط الحفر للأداء'
+      ),
+      safeDbOp(
+        () => db.dailyReport.findMany({
+          where: { status: 'approved', driveLineId: { not: null }, ...(projectId ? { projectId } : {}) },
+          select: { driveLineId: true, reportDate: true, dailyMeters: true, dailyRevenue: true, stoppageHours: true, stoppageReason: true, workersCount: true },
+          orderBy: { reportDate: 'asc' }, take: 3000,
+        }),
+        'جلب تقارير خطوط الحفر'
+      ),
+      safeDbOp(
+        () => db.cost.findMany({
+          where: { dailyReportId: { not: null }, ...(projectId ? { projectId } : {}) },
+          select: { amount: true, dailyReport: { select: { driveLineId: true } } },
+          take: 3000,
+        }),
+        'جلب تكاليف خطوط الحفر'
+      ),
+      safeDbOp(
+        () => db.safetyReport.findMany({
+          where: projectId ? { projectId } : {},
+          select: { incidentType: true, dailyReport: { select: { driveLineId: true } } },
+          take: 3000,
+        }),
+        'جلب حوادث خطوط الحفر'
+      ),
+      safeDbOp(
+        () => db.finishing.findMany({
+          where: projectId ? { projectId } : {},
+          select: { driveLineId: true, handoverStatus: true, status: true },
+          take: 1000,
+        }),
+        'جلب التشطيبات للأداء'
       ),
     ])
 
@@ -122,7 +167,94 @@ export async function GET(req: NextRequest) {
       return { ...p, safetyRate, totalCost, costPerMeter, profit: p.totalRevenue - totalCost, profitMargin, avgWorkers, attendanceRate: avgWorkers > 0 ? 100 : 0 }
     })
 
-    return NextResponse.json({ performance })
+    // v40: تجميع إحصاءات كل خط حفر (إنتاج/إيراد/تكلفة/ربح/حوادث/تسليم)
+    if (!linesResult.success) return linesResult.response
+    if (!lineReportsResult.success) return lineReportsResult.response
+    if (!lineCostsResult.success) return lineCostsResult.response
+    if (!lineSafetyResult.success) return lineSafetyResult.response
+    if (!finishingsResult.success) return finishingsResult.response
+
+    const driveLinesRaw = linesResult.data
+    const lineReports = lineReportsResult.data
+    const lineCosts = lineCostsResult.data
+    const lineSafety = lineSafetyResult.data
+    const finishings = finishingsResult.data
+
+    const lineStats = new Map<string, any>()
+    for (const l of driveLinesRaw) {
+      lineStats.set(l.id, {
+        id: l.id, projectId: l.projectId, lineNumber: l.lineNumber, projectName: l.project?.name || '', projectCode: l.project?.code || '',
+        totalLength: l.totalLength, diameter: l.diameter, status: l.status, completedLength: l.completedLength, progress: l.progress, pricePerMeter: l.pricePerMeter,
+        meters: 0, revenue: 0, reportDays: 0, bestDay: 0, stoppageDays: 0, totalWorkers: 0, avgWorkers: 0,
+        cost: 0, nearMiss: 0, minorIncidents: 0, majorAccidents: 0, incidentLoad: 0, handoverAccepted: 0,
+      })
+    }
+    for (const r of lineReports) {
+      if (!r.driveLineId) continue
+      const s = lineStats.get(r.driveLineId)
+      if (!s) continue
+      s.meters += r.dailyMeters
+      s.revenue += r.dailyRevenue
+      s.reportDays++
+      s.bestDay = Math.max(s.bestDay, r.dailyMeters)
+      if (r.stoppageHours > 2) s.stoppageDays++
+      s.totalWorkers += r.workersCount
+    }
+    for (const c of lineCosts) {
+      const dl = c.dailyReport?.driveLineId
+      if (!dl) continue
+      const s = lineStats.get(dl)
+      if (s) s.cost += c.amount
+    }
+    for (const sr of lineSafety) {
+      const dl = sr.dailyReport?.driveLineId
+      if (!dl) continue
+      const s = lineStats.get(dl)
+      if (!s) continue
+      if (sr.incidentType === 'near_miss') { s.nearMiss++; s.incidentLoad += 5 }
+      else if (sr.incidentType === 'incident') { s.minorIncidents++; s.incidentLoad += 15 }
+      else if (sr.incidentType === 'accident') { s.majorAccidents++; s.incidentLoad += 25 }
+    }
+    for (const f of finishings) {
+      if (!f.driveLineId) continue
+      const s = lineStats.get(f.driveLineId)
+      if (s && f.handoverStatus === 'accepted') s.handoverAccepted++
+    }
+
+    const driveLines = Array.from(lineStats.values()).map((s: any) => {
+      s.avgDaily = s.reportDays > 0 ? s.meters / s.reportDays : 0
+      s.avgWorkers = s.reportDays > 0 ? s.totalWorkers / s.reportDays : 0
+      s.profit = s.revenue - s.cost
+      s.profitMargin = s.revenue > 0 ? (s.profit / s.revenue) * 100 : 0
+      s.costPerMeter = s.meters > 0 ? s.cost / s.meters : 0
+      return s
+    })
+
+    // v40: مؤشر الأداء المركب 0-100 — الإنتاج 35% + الربحية 25% + كفاءة التكلفة 25% + السلامة 15%
+    // أوزان الحوادث: وشاية near_miss=5، حادث incident=15، إصابة accident=25
+    const linesWithData = driveLines.filter((s: any) => s.reportDays > 0)
+    const maxAvgDaily = linesWithData.length ? Math.max(...linesWithData.map((s: any) => s.avgDaily)) : 0
+    const maxMargin = linesWithData.length ? Math.max(...linesWithData.map((s: any) => Math.max(0, s.profitMargin))) : 0
+    const positiveCostPerMeter = linesWithData.map((s: any) => s.costPerMeter).filter((v: number) => v > 0)
+    const minCostPerMeter = positiveCostPerMeter.length ? Math.min(...positiveCostPerMeter) : 0
+    for (const s of driveLines) {
+      if (s.reportDays > 0) {
+        const prodScore = maxAvgDaily > 0 ? (s.avgDaily / maxAvgDaily) * 100 : 0
+        const profitScore = maxMargin > 0 ? (Math.max(0, s.profitMargin) / maxMargin) * 100 : 0
+        const costScore = s.costPerMeter > 0 ? (minCostPerMeter > 0 ? Math.min(100, (minCostPerMeter / s.costPerMeter) * 100) : 100) : 100
+        const safetyScore = Math.max(0, 100 - s.incidentLoad)
+        s.prodScore = Math.round(prodScore)
+        s.safetyScore = Math.round(safetyScore)
+        s.score = Math.round(prodScore * 0.35 + profitScore * 0.25 + costScore * 0.25 + safetyScore * 0.15)
+      } else {
+        s.prodScore = 0
+        s.safetyScore = 100
+        s.score = 0
+      }
+    }
+    driveLines.sort((a: any, b: any) => b.score - a.score || b.meters - a.meters)
+
+    return NextResponse.json({ performance, driveLines })
   } catch (error) {
     // FIX: Use handleDbError for consistent Arabic error messages
     return handleDbError(error, 'جلب بيانات الأداء')
