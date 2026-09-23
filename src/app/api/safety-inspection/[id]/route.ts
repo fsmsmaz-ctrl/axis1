@@ -23,7 +23,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   var userName = user.name
 
   // v38: الإدارة العليا تعدّل تقارير السلامة دائماً (بأي حالة)
-  var isTopManagementUser = user.role === 'top_management'
+  var isTopManagementUser = String(user.role || '').toLowerCase().trim() === 'top_management'
   if (!isTopManagementUser && !canWrite(user.role, 'safety', user.permissions)) {
     return NextResponse.json({ error: 'forbidden', message: 'تعديل تقارير السلامة متاح للموظفين المصرّح لهم فقط' }, { status: 403 })
   }
