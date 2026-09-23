@@ -7,6 +7,7 @@ import { db } from '@/lib/db'
 import bcrypt from 'bcryptjs'
 import { timingSafeEqual } from 'crypto'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
+import { ensureCompanyAssetFk } from '@/lib/db-selfheal'
 
 // مقارنة سلاسل بزمن ثابت — تمنع قياس التوقيت لكشف السر بايتاً بايتاً
 function timingSafeCompare(a: string, b: string): boolean {
@@ -67,6 +68,9 @@ export async function POST(req: NextRequest) {
         hint: 'Run npx prisma migrate deploy to apply migrations',
       }, { status: 500 })
     }
+
+    // v42: شفاء ذاتي — أصول الشركة تنجو من حذف المشاريع (نمط v32 للفواتير)
+    await ensureCompanyAssetFk()
 
     var passwordHash = await bcrypt.hash(adminPassword, 12)
     var createdUsers: string[] = []
