@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
   const result = await safeDbOp(
     () => db.companyAsset.findMany({
       where, orderBy: { createdAt: 'desc' }, take: 200,
-      include: { project: { select: { id: true, name: true, code: true } }, responsible: { select: { id: true, name: true, nameEn: true } }, createdBy: { select: { id: true, name: true } } },
+      include: { project: { select: { id: true, name: true, code: true } }, responsible: { select: { id: true, name: true, nameEn: true } }, createdBy: { select: { id: true, name: true } }, restoredBy: { select: { id: true, name: true } } },
     }), 'جلب الأصول والمستأجرات'
   )
   if (!result.success) return result.response
@@ -61,10 +61,26 @@ export async function POST(req: NextRequest) {
     const validationError = validateRequired(body, ['name', 'itemType', 'ownership'])
     if (validationError) return validationError
 
+    // v43: الاستعادة تحافظ على هوية الأصل الأصلي — نفس تاريخ التسجيل واسم منشئه الأصلي،
+    // ومن أجرى الاستعادة يُسجَّل في حقول منفصلة (restoredBy/restoredAt) لا تحل محل المنشئ الأصلي أبداً.
+    var restoreMeta: { createdAt: Date; createdById: string | null } | null = null
+    var isRestorer = user.role === 'top_management' || user.role === 'project_manager' || user.isSystemAdmin === true
+    if (isRestorer && body.restore && typeof body.restore === 'object') {
+      var origDate = new Date(String(body.restore.originalCreatedAt || ''))
+      if (!isNaN(origDate.getTime()) && origDate.getTime() < Date.now()) {
+        restoreMeta = { createdAt: origDate, createdById: null }
+        var origCreatorId = body.restore.originalCreatedById ? String(body.restore.originalCreatedById) : ''
+        if (origCreatorId) {
+          var origCreator = await safeDbOp(() => db.user.findUnique({ where: { id: origCreatorId }, select: { id: true } }), 'التحقق من المنشئ الأصلي')
+          if (origCreator.success && origCreator.data) restoreMeta.createdById = origCreatorId
+        }
+      }
+    }
+
     const createResult = await safeDbOp(
       () => db.companyAsset.create({
-        data: { projectId: body.projectId || null, name: String(body.name).trim(), itemType: String(body.itemType), quantity: parseInt(body.quantity) || 1, ownership: String(body.ownership), supplier: body.supplier ? String(body.supplier).trim() : null, rentalCost: body.rentalCost ? parseFloat(body.rentalCost) : null, rentalStart: body.rentalStart ? new Date(body.rentalStart) : null, rentalEnd: body.rentalEnd ? new Date(body.rentalEnd) : null, responsibleId: body.responsibleId || null, status: String(body.status || 'available'), notes: body.notes ? String(body.notes) : null, createdById: user.id },
-        include: { createdBy: { select: { id: true, name: true } } },
+        data: { projectId: body.projectId || null, name: String(body.name).trim(), itemType: String(body.itemType), quantity: parseInt(body.quantity) || 1, ownership: String(body.ownership), supplier: body.supplier ? String(body.supplier).trim() : null, rentalCost: body.rentalCost ? parseFloat(body.rentalCost) : null, rentalStart: body.rentalStart ? new Date(body.rentalStart) : null, rentalEnd: body.rentalEnd ? new Date(body.rentalEnd) : null, responsibleId: body.responsibleId || null, status: String(body.status || 'available'), notes: body.notes ? String(body.notes) : null, createdAt: restoreMeta ? restoreMeta.createdAt : undefined, createdById: restoreMeta ? restoreMeta.createdById : user.id, restoredById: restoreMeta ? user.id : null, restoredAt: restoreMeta ? new Date() : null },
+        include: { createdBy: { select: { id: true, name: true } }, restoredBy: { select: { id: true, name: true } } },
       }), 'إنشاء الأصل'
     )
     if (!createResult.success) return createResult.response
