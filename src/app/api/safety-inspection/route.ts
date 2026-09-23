@@ -267,7 +267,8 @@ export async function DELETE(req: NextRequest) {
   }
 
   // v38: الحذف متاح لمدير النظام والإدارة العليا
-  if (user.role !== 'top_management' && user.email.toLowerCase().trim() !== ADMIN_EMAIL) {
+  var userRoleNorm = String(user.role || '').toLowerCase().trim()
+  if (userRoleNorm !== 'top_management' && user.email.toLowerCase().trim() !== ADMIN_EMAIL) {
     return NextResponse.json({ error: 'forbidden', message: 'هذه العملية متاحة لمدير النظام والإدارة العليا فقط' }, { status: 403 })
   }
 
