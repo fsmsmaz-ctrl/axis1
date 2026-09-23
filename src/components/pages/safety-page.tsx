@@ -652,13 +652,13 @@ export default function SafetyPage() {
                         </Button>
                       )}
                     </div>
-                    {/* v26: تعديل تقرير السلامة — للموظفين المصرّح لهم وقبل إرسال التقرير اليومي فقط */}
-                    {canEditSafety && isDraft && (
+                    {/* v38: تعديل تقرير السلامة — الإدارة العليا ومدير النظام في أي حالة، والمصرّح لهم قبل الإرسال */}
+                    {(isAdmin || isTopManagement || (canEditSafety && isDraft)) && (
                       <Button
                         variant="ghost"
                         size="sm"
                         className="h-8 w-8 p-0 shrink-0"
-                        title={isRtl ? 'تعديل تقرير السلامة — متاح قبل إرسال التقرير اليومي فقط' : 'Edit safety report — available before submission only'}
+                        title={isRtl ? 'تعديل تقرير السلامة' : 'Edit safety report'}
                         onClick={function() { openEditSafety(r) }}
                       >
                         <Pencil className="h-4 w-4" />
@@ -676,7 +676,8 @@ export default function SafetyPage() {
                         <GitBranch className="h-4 w-4" />
                       </Button>
                     )}
-                    {isAdmin && (
+                    {/* v38: الحذف لمدير النظام والإدارة العليا */}
+                    {(isAdmin || isTopManagement) && (
                       <Button
                         variant="ghost"
                         size="sm"
