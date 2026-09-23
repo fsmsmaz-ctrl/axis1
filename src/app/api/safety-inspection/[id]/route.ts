@@ -22,7 +22,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   var userId = user.id
   var userName = user.name
 
-  if (!canWrite(user.role, 'safety', user.permissions)) {
+  // v38: الإدارة العليا تعدّل تقارير السلامة دائماً (بأي حالة)
+  var isTopManagementUser = user.role === 'top_management'
+  if (!isTopManagementUser && !canWrite(user.role, 'safety', user.permissions)) {
     return NextResponse.json({ error: 'forbidden', message: 'تعديل تقارير السلامة متاح للموظفين المصرّح لهم فقط' }, { status: 403 })
   }
 
@@ -57,7 +59,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     // القفل المطلق: بعد إرسال التقرير اليومي من قسم التقارير اليومية (submitted/approved/rejected)
     // لا يمكن تعديل تقرير السلامة أبداً — التعديل متاح في مرحلة المسودة فقط
     var dailyStatus = (existing.dailyReport && existing.dailyReport.status) || 'draft'
-    if (dailyStatus !== 'draft') {
+    // v38: القفل المطلق يستثني الإدارة العليا — تعدّل تقارير السلامة في أي حالة
+    if (!isTopManagementUser && dailyStatus !== 'draft') {
       return NextResponse.json(
         { error: 'report_locked', message: 'لا يمكن تعديل تقرير السلامة بعد إرسال التقرير اليومي للاعتماد' },
         { status: 409 }
@@ -133,3 +136,4 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     return handleDbError(error, 'تعديل تقرير السلامة')
   }
 }
+
