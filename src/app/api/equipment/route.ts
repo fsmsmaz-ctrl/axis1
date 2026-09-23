@@ -17,7 +17,9 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url)
     const projectId = searchParams.get('projectId')
     const where: any = {}
-    if (projectId) where.projectId = projectId
+    // v42: projectId=none → المعدات اليتيمة التي فقدت مشروعها (قيد SetNull يُبقيها في القاعدة)
+    if (projectId === 'none') where.projectId = null
+    else if (projectId) where.projectId = projectId
 
     const result = await safeDbOp(
       () => db.equipment.findMany({
