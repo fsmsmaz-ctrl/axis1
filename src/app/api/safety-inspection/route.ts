@@ -266,8 +266,9 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
   }
 
-  if (user.email.toLowerCase().trim() !== ADMIN_EMAIL) {
-    return NextResponse.json({ error: 'forbidden', message: 'هذه العملية متاحة فقط لمدير النظام' }, { status: 403 })
+  // v38: الحذف متاح لمدير النظام والإدارة العليا
+  if (user.role !== 'top_management' && user.email.toLowerCase().trim() !== ADMIN_EMAIL) {
+    return NextResponse.json({ error: 'forbidden', message: 'هذه العملية متاحة لمدير النظام والإدارة العليا فقط' }, { status: 403 })
   }
 
   var userId = user.id
