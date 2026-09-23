@@ -494,7 +494,8 @@ model CompanyAsset {
   notes          String?
   createdById    String?
 
-  project        Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  // v42: حذف المشروع لا يمسح الأصول — تنجو «بدون مشروع» ويمكن إسنادها لمشروع آخر (نمط v32 للفواتير)
+  project        Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
   responsible    User?    @relation("AssetResponsible", fields: [responsibleId], references: [id])
   createdBy      User?    @relation("AssetCreator", fields: [createdById], references: [id])
 
