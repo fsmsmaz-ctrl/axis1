@@ -65,15 +65,22 @@ export default function DriveLinesPage() {
 
   async function fetchData() {
     setLoading(true)
-    const [linesRes, projRes] = await Promise.all([
-      authedFetch('/api/drive-lines' + (selectedProject !== 'all' ? `?projectId=${selectedProject}` : '')),
-      authedFetch('/api/projects/list'),
-    ])
-    const linesData = await linesRes.json()
-    const projData = await projRes.json()
-    setDriveLines(linesData.driveLines || [])
-    setProjects(projData.projects || [])
-    setLoading(false)
+    // v41 FIX: try/finally — كان أي خطأ شبكة يترك الشاشة عالقة في التحميل للأبد دون رسالة
+    try {
+      const [linesRes, projRes] = await Promise.all([
+        authedFetch('/api/drive-lines' + (selectedProject !== 'all' ? `?projectId=${selectedProject}` : '')),
+        authedFetch('/api/projects/list'),
+      ])
+      const linesData = await linesRes.json()
+      const projData = await projRes.json()
+      setDriveLines(linesData.driveLines || [])
+      setProjects(projData.projects || [])
+    } catch {
+      setDriveLines([])
+      setProjects([])
+    } finally {
+      setLoading(false)
+    }
   }
 
   useEffect(() => {
