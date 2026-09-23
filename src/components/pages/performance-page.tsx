@@ -9,7 +9,7 @@ import {
   ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell
 } from 'recharts'
-import { TrendingUp, Award, AlertTriangle, Clock, Users, ShieldCheck, DollarSign, Activity, Flame, PiggyBank, Medal } from 'lucide-react'
+import { TrendingUp, Award, AlertTriangle, Clock, ShieldCheck, DollarSign, Activity, Flame, PiggyBank, Medal } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
 
@@ -46,7 +46,7 @@ export default function PerformancePage() {
   }, [selectedProject])
 
   // Memoize all derived computations
-  const { totals, avgDailyMeters, overallProfitMargin, avgSafety, avgAttendance } = useMemo(() => {
+  const { totals, avgDailyMeters, overallProfitMargin, avgSafety, avgWorkHours } = useMemo(() => {
     const t = performance.reduce((acc, p) => ({
       totalMeters: acc.totalMeters + p.totalMeters,
       totalRevenue: acc.totalRevenue + p.totalRevenue,
@@ -61,7 +61,8 @@ export default function PerformancePage() {
       avgDailyMeters: t.totalDays > 0 ? t.totalMeters / t.totalDays : 0,
       overallProfitMargin: t.totalRevenue > 0 ? (t.totalProfit / t.totalRevenue) * 100 : 0,
       avgSafety: performance.length > 0 ? performance.reduce((s, p) => s + p.safetyRate, 0) / performance.length : 0,
-      avgAttendance: performance.length > 0 ? performance.reduce((s, p) => s + p.attendanceRate, 0) / performance.length : 0,
+      // v41 FIX: كفاءة ساعات العمل الحقيقية بدل «نسبة الحضور» الشكلية (كانت 100% دائمًا)
+      avgWorkHours: performance.length > 0 ? performance.reduce((s, p) => s + (p.workHoursRate || 0), 0) / performance.length : 0,
     }
   }, [performance])
 
@@ -76,7 +77,7 @@ export default function PerformancePage() {
   const radarData = useMemo(() => performance[0] ? [
     { metric: isRtl ? 'الإنتاج' : 'Production', value: Math.min(100, (performance[0].avgDaily / 10) * 100) },
     { metric: isRtl ? 'السلامة' : 'Safety', value: performance[0].safetyRate },
-    { metric: isRtl ? 'الحضور' : 'Attendance', value: performance[0].attendanceRate },
+    { metric: isRtl ? 'ساعات العمل' : 'Work Hours', value: Math.max(0, Math.min(100, performance[0].workHoursRate || 0)) },
     { metric: isRtl ? 'الربحية' : 'Profitability', value: Math.max(0, performance[0].profitMargin) },
     { metric: isRtl ? 'كفاءة المعدات' : 'Equipment', value: 85 },
     { metric: isRtl ? 'الالتزام' : 'Compliance', value: 90 },
@@ -185,10 +186,10 @@ export default function PerformancePage() {
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center gap-2 mb-1">
-              <Users className="h-4 w-4 text-purple-600" />
-              <span className="text-xs text-muted-foreground">{isRtl ? 'نسبة الحضور' : 'Attendance Rate'}</span>
+              <Clock className="h-4 w-4 text-purple-600" />
+              <span className="text-xs text-muted-foreground">{isRtl ? 'كفاءة ساعات العمل' : 'Work Hours Efficiency'}</span>
             </div>
-            <p className="text-xl font-bold text-purple-700">{avgAttendance.toFixed(1)}%</p>
+            <p className="text-xl font-bold text-purple-700">{avgWorkHours.toFixed(1)}%</p>
           </CardContent>
         </Card>
         <Card>
