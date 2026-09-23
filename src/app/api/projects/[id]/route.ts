@@ -218,7 +218,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     // يبقى المنع للتقارير اليومية فقط لأنها ما تزال تُحذف نهائياً مع المشروع (Cascade).
     if (counts.dailyReports > 0) {
       return NextResponse.json(
-        { error: 'project_has_data', message: 'لا يمكن حذف المشروع «' + project.code + '» لأنه يحتوي ' + counts.dailyReports + ' تقرير يومي — الحذف يمسحها نهائياً. أرشف المشروع بتغيير حالته أو احذف التقارير فردياً بعد المراجعة. (فواتير المشروع لن تُمسح — ستنجو وتظهر بلا مشروع)' },
+        { error: 'project_has_data', message: 'لا يمكن حذف المشروع «' + project.code + '» لأنه يحتوي ' + counts.dailyReports + ' تقرير يومي — الحذف يمسحها نهائياً. أرشف المشروع بتغيير حالته أو احذف التقارير فردياً بعد المراجعة. (فواتير المشروع وأصول الشركة والمعدات لن تُمسح — ستنجو وتظهر بلا مشروع)' },
         { status: 400 }
       )
     }
