@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
       safeDbOp(
         () => db.dailyReport.findMany({
           where,
-          select: { projectId: true, reportDate: true, dailyMeters: true, dailyRevenue: true, stoppageHours: true, stoppageReason: true, workersCount: true, project: { select: { name: true, code: true } } },
+          select: { projectId: true, reportDate: true, dailyMeters: true, dailyRevenue: true, operatingHours: true, stoppageHours: true, stoppageReason: true, workersCount: true, project: { select: { name: true, code: true } } },
           orderBy: { reportDate: 'asc' }, take: 200,
         }),
         'جلب التقارير للأداء'
@@ -122,6 +122,7 @@ export async function GET(req: NextRequest) {
         projectStats.set(key, {
           projectId: r.projectId, projectName: r.project?.name || '', projectCode: r.project?.code || '',
           reports: [], totalMeters: 0, totalRevenue: 0, avgDaily: 0, bestDay: 0, worstDay: Infinity,
+          totalOperatingHours: 0, totalStoppageHours: 0,
           stoppageDays: 0, stoppageReasons: [] as string[], totalWorkers: 0, daysCount: 0,
         })
       }
@@ -133,6 +134,8 @@ export async function GET(req: NextRequest) {
       stat.worstDay = Math.min(stat.worstDay, r.dailyMeters)
       if (r.stoppageHours > 2) { stat.stoppageDays++; if (r.stoppageReason) stat.stoppageReasons.push(r.stoppageReason) }
       stat.totalWorkers += r.workersCount
+      stat.totalOperatingHours += r.operatingHours || 0
+      stat.totalStoppageHours += r.stoppageHours || 0
       stat.daysCount++
     }
 
@@ -164,7 +167,11 @@ export async function GET(req: NextRequest) {
       const profitMargin = p.totalRevenue > 0 ? ((p.totalRevenue - totalCost) / p.totalRevenue) * 100 : 0
       const avgWorkers = p.daysCount > 0 ? p.totalWorkers / p.daysCount : 0
 
-      return { ...p, safetyRate, totalCost, costPerMeter, profit: p.totalRevenue - totalCost, profitMargin, avgWorkers, attendanceRate: avgWorkers > 0 ? 100 : 0 }
+      // v41 FIX: كانت «نسبة الحضور» رقمًا شكليًا ثابتًا (100% عند وجود تقارير) — مضلل للإدارة.
+      // البديل الحقيقي: كفاءة ساعات العمل = ساعات التشغيل ÷ (التشغيل + التوقف) × 100
+      var totalHours = p.totalOperatingHours + p.totalStoppageHours
+      var workHoursRate = totalHours > 0 ? (p.totalOperatingHours / totalHours) * 100 : 0
+      return { ...p, safetyRate, totalCost, costPerMeter, profit: p.totalRevenue - totalCost, profitMargin, avgWorkers, workHoursRate, attendanceRate: workHoursRate }
     })
 
     // v40: تجميع إحصاءات كل خط حفر (إنتاج/إيراد/تكلفة/ربح/حوادث/تسليم)
