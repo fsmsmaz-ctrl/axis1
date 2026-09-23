@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 import { handleDbError, validateRequired, parseNumber, safeDbOp } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 import { canWrite, hasPermission } from '@/lib/auth'
+import { ensureCompanyAssetFk } from '@/lib/db-selfheal'
 
 export async function GET(req: NextRequest) {
   const user = await getAuthUser(req)
@@ -16,11 +17,16 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية عرض أصول الشركة' }, { status: 403 })
   }
 
+  // v42: شفاء ذاتي — تأكد أن أصول الشركة تنجو من حذف المشاريع (نمط v32 للفواتير)
+  await ensureCompanyAssetFk()
+
   const searchParams = new URL(req.url).searchParams
   const projectId = searchParams.get('projectId')
   const ownership = searchParams.get('ownership')
   const where: any = {}
-  if (projectId) where.projectId = projectId
+  // v42: projectId=none → الأصول اليتيمة التي فقدت مشروعها بحذف المشروع
+  if (projectId === 'none') where.projectId = null
+  else if (projectId) where.projectId = projectId
   if (ownership) where.ownership = ownership
 
   const result = await safeDbOp(
