@@ -66,10 +66,16 @@ export default function FinishingsPage() {
 
   async function fetchFinishings() {
     setLoading(true)
-    const res = await authedFetch('/api/finishings')
-    const data = await res.json()
-    setFinishings(data.finishings || [])
-    setLoading(false)
+    // v41 FIX: try/finally — منع علوق التحميل عند فشل الشبكة
+    try {
+      const res = await authedFetch('/api/finishings')
+      const data = await res.json()
+      setFinishings(data.finishings || [])
+    } catch {
+      setFinishings([])
+    } finally {
+      setLoading(false)
+    }
   }
 
   useEffect(() => {
