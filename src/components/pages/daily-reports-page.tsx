@@ -83,6 +83,11 @@ export default function DailyReportsPage() {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [selectedProject, setSelectedProject] = useState<string>('all')
+  // v39: فلترة التقارير — من/إلى تاريخ، الحالة، بحث نصي
+  const [filterFrom, setFilterFrom] = useState('')
+  const [filterTo, setFilterTo] = useState('')
+  const [filterStatus, setFilterStatus] = useState('all')
+  const [filterSearch, setFilterSearch] = useState('')
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingReportId, setEditingReportId] = useState<string | null>(null)
   const [viewReport, setViewReport] = useState<any | null>(null)
@@ -480,7 +485,7 @@ export default function DailyReportsPage() {
   // مدير النظام (admin@axis.om) — يرى زر الحذف والتعديل دائماً
   const isAdmin = (user?.email || '').toLowerCase().trim() === SYSTEM_ADMIN_EMAIL
   // v38: الإدارة العليا — تعديل وحذف التقارير في أي حالة
-  const isTopManagement = (user?.role || '') === 'top_management'
+  const isTopManagement = String(user?.role || '').toLowerCase().trim() === 'top_management'
   // v23: أي موظف مصرّح له (تقارير يومية أو سلامة) يعدّل ويحفظ ويسلّم التقرير
   // قبل الاعتماد — حتى لو أنشأه موظف آخر (مثلاً تقرير قادم من قسم السلامة)
   const canEditReports = isAdmin ||
@@ -505,13 +510,39 @@ export default function DailyReportsPage() {
     </p>
   )
 
+  // v39: حساب القائمة المفلترة — الفلترة على العناصر المحمّلة (حتى 200 تقرير)
+  var filterActive = !!(filterFrom || filterTo || filterStatus !== 'all' || filterSearch.trim())
+  var filteredReports = filterActive
+    ? reports.filter((r: any) => {
+        var d = r.reportDate ? String(r.reportDate).split('T')[0] : ''
+        if (filterFrom && (!d || d < filterFrom)) return false
+        if (filterTo && (!d || d > filterTo)) return false
+        if (filterStatus !== 'all' && r.status !== filterStatus) return false
+        var q = filterSearch.trim().toLowerCase()
+        if (q) {
+          var hay = [
+            r.project && r.project.name,
+            r.driveLine ? driveLineLabel(r.driveLine, isRtl) : '',
+            r.status && statusLabels[r.status] ? (isRtl ? statusLabels[r.status].ar : statusLabels[r.status].en) : '',
+          ].join(' ').toLowerCase()
+          if (hay.indexOf(q) === -1) return false
+        }
+        return true
+      })
+    : reports
+  function clearReportFilters() {
+    setFilterFrom(''); setFilterTo(''); setFilterStatus('all'); setFilterSearch('')
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold">{isRtl ? 'التقارير اليومية' : 'Daily Reports'}</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            {isRtl ? `${reports.length} تقرير` : `${reports.length} reports`}
+            {filterActive
+              ? (isRtl ? `${filteredReports.length} من ${reports.length} تقرير` : `${filteredReports.length} of ${reports.length} reports`)
+              : (isRtl ? `${reports.length} تقرير` : `${reports.length} reports`)}
           </p>
         </div>
         <div className="flex gap-2">
@@ -534,6 +565,45 @@ export default function DailyReportsPage() {
           ))}
         </SelectContent>
       </Select>
+
+      {/* v39: شريط فلترة التقارير */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 p-3 rounded-lg border bg-muted/30">
+        <div>
+          <Label className="text-xs text-muted-foreground">{isRtl ? 'من تاريخ' : 'From date'}</Label>
+          <Input type="date" value={filterFrom} onChange={(e) => setFilterFrom(e.target.value)} className="h-9 mt-1" />
+        </div>
+        <div>
+          <Label className="text-xs text-muted-foreground">{isRtl ? 'إلى تاريخ' : 'To date'}</Label>
+          <Input type="date" value={filterTo} onChange={(e) => setFilterTo(e.target.value)} className="h-9 mt-1" />
+        </div>
+        <div>
+          <Label className="text-xs text-muted-foreground">{isRtl ? 'الحالة' : 'Status'}</Label>
+          <Select value={filterStatus} onValueChange={setFilterStatus}>
+            <SelectTrigger className="h-9 mt-1"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{isRtl ? 'كل الحالات' : 'All statuses'}</SelectItem>
+              <SelectItem value="draft">{isRtl ? 'مسودة' : 'Draft'}</SelectItem>
+              <SelectItem value="submitted">{isRtl ? 'مرسل' : 'Submitted'}</SelectItem>
+              <SelectItem value="approved">{isRtl ? 'معتمد' : 'Approved'}</SelectItem>
+              <SelectItem value="rejected">{isRtl ? 'مرفوض' : 'Rejected'}</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <Label className="text-xs text-muted-foreground">{isRtl ? 'بحث' : 'Search'}</Label>
+          <Input type="search" value={filterSearch} onChange={(e) => setFilterSearch(e.target.value)} placeholder={isRtl ? 'مشروع أو خط حفر...' : 'project or drive line...'} className="h-9 mt-1" />
+        </div>
+      </div>
+      {filterActive && (
+        <div className="flex items-center gap-2 flex-wrap -mt-1">
+          <p className="text-xs text-muted-foreground">
+            {isRtl ? `النتائج: ${filteredReports.length} من ${reports.length}` : `Showing ${filteredReports.length} of ${reports.length}`}
+          </p>
+          <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={clearReportFilters}>
+            {isRtl ? 'مسح الفلاتر' : 'Clear filters'}
+          </Button>
+        </div>
+      )}
 
       {loading ? (
         // Skeleton: shows the approximate shape of a report row so the
@@ -572,19 +642,30 @@ export default function DailyReportsPage() {
             </Button>
           </CardContent>
         </Card>
-      ) : reports.length === 0 ? (
+      ) : filteredReports.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center">
             <FileText className="h-12 w-12 mx-auto text-muted-foreground/50" />
-            <p className="mt-3 text-muted-foreground">{isRtl ? 'لا توجد تقارير' : 'No reports'}</p>
-            <p className="text-xs text-muted-foreground/70 mt-1">
-              {isRtl ? 'تأتي التقارير اليومية من قسم السلامة' : 'Daily reports come from the Safety section'}
-            </p>
+            {filterActive ? (
+              <>
+                <p className="mt-3 text-muted-foreground">{isRtl ? 'لا توجد نتائج مطابقة للفلاتر' : 'No reports match the filters'}</p>
+                <Button variant="outline" size="sm" className="mt-3" onClick={clearReportFilters}>
+                  {isRtl ? 'مسح الفلاتر' : 'Clear filters'}
+                </Button>
+              </>
+            ) : (
+              <>
+                <p className="mt-3 text-muted-foreground">{isRtl ? 'لا توجد تقارير' : 'No reports'}</p>
+                <p className="text-xs text-muted-foreground/70 mt-1">
+                  {isRtl ? 'تأتي التقارير اليومية من قسم السلامة' : 'Daily reports come from the Safety section'}
+                </p>
+              </>
+            )}
           </CardContent>
         </Card>
       ) : (
         <div className="space-y-2">
-          {reports.map((r) => {
+          {filteredReports.map((r) => {
             const status = statusLabels[r.status]
             return (
               <Card key={r.id} className="hover:shadow-sm transition">
