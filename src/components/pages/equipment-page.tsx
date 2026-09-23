@@ -85,6 +85,8 @@ export default function EquipmentPage() {
   }
   function canEditAsset(a: any) {
     if (isAdmin) return true
+    // v43: من استعاد الأصل يبقى قادراً على تعديله حتى لو عُدّ المنشئ الأصلي صاحب السجل
+    if (user && a.restoredById && a.restoredById === user.id) return true
     if (user && a.createdById && a.createdById === user.id) return true
     return false
   }
@@ -100,6 +102,8 @@ export default function EquipmentPage() {
   // v42: الأصول المفقودة القابلة للاستعادة من سجل التدقيق
   const [lostAssets, setLostAssets] = useState<any[]>([])
   const [lostOpen, setLostOpen] = useState(true)
+  // v43: هوية الأصل الأصلي أثناء الاستعادة (تاريخ التسجيل + المنشئ الأصلي)
+  const [restoringMeta, setRestoringMeta] = useState<any>(null)
 
   const [formData, setFormData] = useState({
     projectId: '', name: '', number: '', type: 'jacking_machine',
@@ -349,6 +353,14 @@ export default function EquipmentPage() {
         delete payload.image
       }
 
+      // v43: إرسال هوية الأصل الأصلي عند الاستعادة — نفس تاريخ التسجيل واسم المنشئ الأصلي
+      if (!editingAsset && restoringMeta) {
+        payload.restore = {
+          originalCreatedAt: restoringMeta.originalCreatedAt,
+          originalCreatedById: restoringMeta.originalCreatedById,
+        }
+      }
+
       const url = editingAsset ? `/api/company-assets/${editingAsset.id}` : '/api/company-assets'
       const method = editingAsset ? 'PUT' : 'POST'
       const res = await authedFetch(url, {
@@ -357,9 +369,11 @@ export default function EquipmentPage() {
         body: JSON.stringify(payload),
       })
       if (res.ok) {
-        toast.success(isRtl ? (editingAsset ? 'تم التحديث' : 'تم الإضافة') : (editingAsset ? 'Updated' : 'Added'))
+        // v43: رسالة الاستعادة تؤكد الحفاظ على الهوية الأصلية
+        if (!editingAsset && restoringMeta) { toast.success(isRtl ? 'تمت الاستعادة — حُفظ الأصل بنفس تاريخ تسجيله واسم منشئه الأصلي' : 'Restored — original date and creator preserved') } else { toast.success(isRtl ? (editingAsset ? 'تم التحديث' : 'تم الإضافة') : (editingAsset ? 'Updated' : 'Added')) }
         setAssetDialogOpen(false)
         setEditingAsset(null)
+        setRestoringMeta(null)
         fetchAssets()
         fetchLostAssets()
       } else {
@@ -387,6 +401,7 @@ export default function EquipmentPage() {
   }
 
   function openAssetDialog(asset?: any) {
+    setRestoringMeta(null)
     if (asset) {
       setEditingAsset(asset)
       setAssetForm({
@@ -420,6 +435,13 @@ export default function EquipmentPage() {
   function restoreLostAsset(item: any) {
     var projExists = item.projectId && projects.some(function(p: any) { return p.id === item.projectId })
     setEditingAsset(null)
+    // v43: حفظ هوية الأصل الأصلي — التاريخ والمنشئ الأصلي يُرسلان مع الحفظ ولا يُستبدلان بمستعيد الأصل
+    setRestoringMeta({
+      entityId: item.entityId,
+      originalCreatedAt: item.originalCreatedAt || item.firstSeen || null,
+      originalCreatedById: item.originalCreatedById || null,
+      originalCreatedByName: item.originalCreatedByName || null,
+    })
     setAssetForm({
       projectId: projExists ? item.projectId : '',
       name: item.name || '',
@@ -746,7 +768,7 @@ export default function EquipmentPage() {
               {lostOpen && (
                 <div className="mt-3 space-y-2">
                   <p className="text-xs text-amber-700">
-                    {isRtl ? 'حُذفت هذه الأصول نهائياً مع مشاريعها قبل التحديث v42. البيانات مُستخرجة من سجل التدقيق — اضغط «إعادة إنشاء» وأكمل الحقول الناقصة.' : 'These assets were permanently deleted with their projects before v42. Data is extracted from the audit log — press "Recreate" and complete missing fields.'}
+                    {isRtl ? 'حُذفت هذه الأصول نهائياً مع مشاريعها قبل التحديث v42. البيانات مُستخرجة من سجل التدقيق — اضغط «إعادة إنشاء» وأكمل الحقول الناقصة. عند الاستعادة يُحفظ الأصل بنفس تاريخ تسجيله واسم منشئه الأصلي وليس باسم من استعاده.' : 'These assets were permanently deleted with their projects before v42. Data is extracted from the audit log — press "Recreate" and complete missing fields. Restored assets keep their original registration date and creator, not the restorer.'}
                   </p>
                   {lostAssets.map(function(item: any) {
                     var proj = item.projectId && projects.find(function(p: any) { return p.id === item.projectId })
@@ -757,11 +779,17 @@ export default function EquipmentPage() {
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-sm font-medium">{item.name}</span>
                             {own && <Badge variant="outline" className={`text-xs ${own.color} border-0`}>{isRtl ? own.ar : own.en}</Badge>}
+                            {item.alreadyRestored && <Badge className="bg-emerald-200 text-emerald-900 border-0 text-xs">{isRtl ? 'يُرجّح أنه استُعيد' : 'Likely restored'}</Badge>}
                             {item.quantity && Number(item.quantity) > 1 && <span className="text-xs text-muted-foreground">x{item.quantity}</span>}
                           </div>
                           <p className="text-xs text-muted-foreground mt-0.5">
                             {proj ? (isRtl ? 'المشروع الأصلي: ' + proj.name : 'Original project: ' + proj.name) : (isRtl ? 'المشروع الأصلي محذوف' : 'Original project deleted')}
-                            {item.firstSeen ? ' • ' + new Date(item.firstSeen).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US') : ''}
+                            {item.originalCreatedAt ? ' • ' + (isRtl ? 'تاريخ التسجيل: ' : 'Recorded: ') + new Date(item.originalCreatedAt).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US') : ''}
+                          </p>
+                          <p className="text-xs mt-0.5">
+                            {item.originalCreatedByName
+                              ? <span className="text-emerald-700 font-medium">{isRtl ? 'سُجّل أصلاً بواسطة: ' + item.originalCreatedByName : 'Originally recorded by: ' + item.originalCreatedByName}</span>
+                              : <span>{isRtl ? 'المُنشئ الأصلي غير موثق في سجل التدقيق — سيُحفظ بتاريخه الأصلي فقط' : 'Original creator not in audit log — original date will still be preserved'}</span>}
                           </p>
                         </div>
                         <Button size="sm" className="bg-amber-600 hover:bg-amber-700 text-white shrink-0" onClick={() => restoreLostAsset(item)}>
@@ -854,7 +882,8 @@ export default function EquipmentPage() {
                           {a.ownership === 'rented' && a.rentalCost > 0 && <span className="text-orange-600 font-medium">{a.rentalCost} {isRtl ? 'ر.ع/شهر' : 'OMR/mo'}</span>}
                           {a.ownership === 'borrowed' && a.rentalEnd && <span>{isRtl ? 'إرجاع' : 'Return'}: {new Date(a.rentalEnd).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')}</span>}
                           {a.supplier && <span>{isRtl ? 'الجهة' : 'From'}: {a.supplier}</span>}
-                          {a.createdBy && <span>{isRtl ? 'بواسطة' : 'By'}: {a.createdBy.name}</span>}
+                          {a.createdBy && <span>{isRtl ? 'بواسطة' : 'By'}: {a.createdBy.name}{a.createdAt ? ' • ' + new Date(a.createdAt).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US') : ''}</span>}
+                          {a.restoredBy && <span className="text-amber-700">{isRtl ? 'استعادها' : 'Restored by'}: {a.restoredBy.name}</span>}
                         </div>
                       </div>
                       <div className="flex gap-1 shrink-0">
@@ -1088,7 +1117,7 @@ export default function EquipmentPage() {
       </Dialog>
 
       {/* ==================== Asset Add/Edit Dialog ==================== */}
-      <Dialog open={assetDialogOpen} onOpenChange={(v) => { setAssetDialogOpen(v); if (!v) setEditingAsset(null) }}>
+      <Dialog open={assetDialogOpen} onOpenChange={(v) => { setAssetDialogOpen(v); if (!v) { setEditingAsset(null); setRestoringMeta(null) } }}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingAsset ? (isRtl ? 'تعديل أصل/مستأجر' : 'Edit Asset') : (isRtl ? 'إضافة أصل/مستأجر جديد' : 'Add New Asset')}</DialogTitle>
