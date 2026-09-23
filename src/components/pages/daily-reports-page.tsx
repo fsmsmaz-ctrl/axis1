@@ -479,6 +479,8 @@ export default function DailyReportsPage() {
 
   // مدير النظام (admin@axis.om) — يرى زر الحذف والتعديل دائماً
   const isAdmin = (user?.email || '').toLowerCase().trim() === SYSTEM_ADMIN_EMAIL
+  // v38: الإدارة العليا — تعديل وحذف التقارير في أي حالة
+  const isTopManagement = (user?.role || '') === 'top_management'
   // v23: أي موظف مصرّح له (تقارير يومية أو سلامة) يعدّل ويحفظ ويسلّم التقرير
   // قبل الاعتماد — حتى لو أنشأه موظف آخر (مثلاً تقرير قادم من قسم السلامة)
   const canEditReports = isAdmin ||
@@ -628,8 +630,8 @@ export default function DailyReportsPage() {
                     </div>
                     <div className="flex gap-1">
                       {/* v23 التعديل: أي موظف مصرّح له — للمسودة أو المُسلَّم قبل الاعتماد */}
-                      {(isAdmin || (canEditReports && (r.status === 'draft' || r.status === 'submitted'))) && (
-                        <Button variant="ghost" size="sm" title={isRtl ? 'تعديل — متاح قبل الاعتماد' : 'Edit — available before approval'} onClick={() => openEditReport(r)}>
+                      {(isAdmin || isTopManagement || (canEditReports && (r.status === 'draft' || r.status === 'submitted'))) && (
+                        <Button variant="ghost" size="sm" title={isRtl ? 'تعديل التقرير' : 'Edit report'} onClick={() => openEditReport(r)}>
                           <Pencil className="h-4 w-4" />
                         </Button>
                       )}
@@ -639,9 +641,9 @@ export default function DailyReportsPage() {
                           <Send className="h-4 w-4" />
                         </Button>
                       )}
-                      {/* الحذف: مدير النظام (admin@axis.om) فقط */}
-                      {isAdmin && (
-                        <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" title={isRtl ? 'حذف — مدير النظام فقط' : 'Delete — admin only'} onClick={() => deleteReport(r.id)}>
+                      {/* v38 الحذف: مدير النظام والإدارة العليا */}
+                      {(isAdmin || isTopManagement) && (
+                        <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" title={isRtl ? 'حذف التقرير' : 'Delete report'} onClick={() => deleteReport(r.id)}>
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       )}
