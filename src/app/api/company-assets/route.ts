@@ -4,7 +4,7 @@ import { db } from '@/lib/db'
 import { handleDbError, validateRequired, parseNumber, safeDbOp } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 import { canWrite, hasPermission } from '@/lib/auth'
-import { ensureCompanyAssetFk } from '@/lib/db-selfheal'
+import { ensureCompanyAssetFk, ensureCompanyAssetRestoreMeta } from '@/lib/db-selfheal'
 
 export async function GET(req: NextRequest) {
   const user = await getAuthUser(req)
@@ -19,6 +19,10 @@ export async function GET(req: NextRequest) {
 
   // v42: شفاء ذاتي — تأكد أن أصول الشركة تنجو من حذف المشاريع (نمط v32 للفواتير)
   await ensureCompanyAssetFk()
+
+  // v44: شفاء ذاتي — تأكد من وجود أعمدة الاستعادة قبل أي قراءة (restoredBy في include)
+  // يعالج خطأ «قاعدة البيانات غير مهيأة» عندما لا تكون التراخيم مطبقة بعد
+  await ensureCompanyAssetRestoreMeta()
 
   const searchParams = new URL(req.url).searchParams
   const projectId = searchParams.get('projectId')
@@ -76,6 +80,9 @@ export async function POST(req: NextRequest) {
         }
       }
     }
+
+    // v44: شفاء ذاتي قبل الإنشاء — الأعمدة restoredById/restoredAt يجب أن تكون موجودة
+    await ensureCompanyAssetRestoreMeta()
 
     const createResult = await safeDbOp(
       () => db.companyAsset.create({
