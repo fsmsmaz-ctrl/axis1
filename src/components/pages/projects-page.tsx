@@ -65,10 +65,16 @@ export default function ProjectsPage() {
 
   async function fetchProjects() {
     setLoading(true)
-    const res = await authedFetch('/api/projects/list' + (statusFilter !== 'all' ? `?status=${statusFilter}` : ''))
-    const data = await res.json()
-    setProjects(data.projects || [])
-    setLoading(false)
+    // v41 FIX: try/finally — منع علوق التحميل عند فشل الشبكة
+    try {
+      const res = await authedFetch('/api/projects/list' + (statusFilter !== 'all' ? `?status=${statusFilter}` : ''))
+      const data = await res.json()
+      setProjects(data.projects || [])
+    } catch {
+      setProjects([])
+    } finally {
+      setLoading(false)
+    }
   }
 
   useEffect(() => {
