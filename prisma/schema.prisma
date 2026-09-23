@@ -46,6 +46,7 @@ model User {
   companyAssets      CompanyAsset[]  @relation("AssetResponsible")
   equipmentsCreated  Equipment[]       @relation("EquipmentCreator")
   assetsCreated      CompanyAsset[]   @relation("AssetCreator")
+  assetsRestored     CompanyAsset[]   @relation("AssetRestorer")
   workersCreated      Worker[]         @relation("WorkerCreator")
   tasksAssigned       Task[]           @relation("TaskAssignee")
   tasksCreated        Task[]           @relation("TaskCreator")
@@ -493,11 +494,14 @@ model CompanyAsset {
   status         String   @default("available")
   notes          String?
   createdById    String?
+  restoredById   String?
+  restoredAt     DateTime?
 
   // v42: حذف المشروع لا يمسح الأصول — تنجو «بدون مشروع» ويمكن إسنادها لمشروع آخر (نمط v32 للفواتير)
   project        Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
   responsible    User?    @relation("AssetResponsible", fields: [responsibleId], references: [id])
   createdBy      User?    @relation("AssetCreator", fields: [createdById], references: [id])
+  restoredBy     User?    @relation("AssetRestorer", fields: [restoredById], references: [id])
 
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
