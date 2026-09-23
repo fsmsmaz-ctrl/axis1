@@ -14,7 +14,8 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Plus, Wrench, Clock, AlertTriangle, Cpu, Settings, Calendar, DollarSign,
-  Package, Building2, ArrowDownToLine, ArrowRightLeft, Trash2, Pencil, Eye, UserCircle, Camera, X
+  Package, Building2, ArrowDownToLine, ArrowRightLeft, Trash2, Pencil, Eye, UserCircle, Camera, X,
+  History, RotateCcw
 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
@@ -72,6 +73,8 @@ export default function EquipmentPage() {
   const user = useAppStore((s) => s.user)
   // FIX-6.6: Use role-based check instead of hardcoded admin email
   const isAdmin = user?.role === 'top_management'
+  // v42: تقرير الأصول المفقودة متاح للإدارة العليا ومدير المشاريع (بوابة سجل التدقيق)
+  const canSeeLost = !!user && (user.role === 'top_management' || user.role === 'project_manager')
   const language = useAppStore((s) => s.language)
   const isRtl = language === 'ar'
 
@@ -94,6 +97,9 @@ export default function EquipmentPage() {
   const [assetFilter, setAssetFilter] = useState<string>('all')
   const [viewAsset, setViewAsset] = useState<any | null>(null)
   const [viewAssetDialogOpen, setViewAssetDialogOpen] = useState(false)
+  // v42: الأصول المفقودة القابلة للاستعادة من سجل التدقيق
+  const [lostAssets, setLostAssets] = useState<any[]>([])
+  const [lostOpen, setLostOpen] = useState(true)
 
   const [formData, setFormData] = useState({
     projectId: '', name: '', number: '', type: 'jacking_machine',
@@ -272,11 +278,24 @@ export default function EquipmentPage() {
     }
   }
 
+  // v42: جلب الأصول المفقودة القابلة للاستعادة من سجل التدقيق
+  async function fetchLostAssets() {
+    try {
+      var lostRes = await authedFetch('/api/company-assets/lost?_t=' + Date.now(), { cache: 'no-store' })
+      if (!lostRes.ok) { setLostAssets([]); return }
+      var lostData = await lostRes.json()
+      setLostAssets(lostData.lost || [])
+    } catch {
+      setLostAssets([])
+    }
+  }
+
   useEffect(() => {
     if (!user) return
     fetchEquipment()
     fetchProjectList()
     fetchUserList()
+    fetchLostAssets()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user])
 
@@ -342,6 +361,7 @@ export default function EquipmentPage() {
         setAssetDialogOpen(false)
         setEditingAsset(null)
         fetchAssets()
+        fetchLostAssets()
       } else {
         var errData = await res.json().catch(function() { return {} })
         toast.error(errData.message || (isRtl ? 'فشل العملية' : 'Operation failed'))
@@ -394,6 +414,26 @@ export default function EquipmentPage() {
   function openViewAsset(a: any) {
     setViewAsset(a)
     setViewAssetDialogOpen(true)
+  }
+
+  // v42: إعادة إنشاء أصل مفقود من بيانات سجل التدقيق — تعبئة مسبقة ثم يكمل المستخدم الناقص
+  function restoreLostAsset(item: any) {
+    var projExists = item.projectId && projects.some(function(p: any) { return p.id === item.projectId })
+    setEditingAsset(null)
+    setAssetForm({
+      projectId: projExists ? item.projectId : '',
+      name: item.name || '',
+      itemType: item.itemType || 'machine',
+      quantity: String(item.quantity || 1),
+      ownership: item.ownership || 'owned',
+      supplier: item.supplier || '',
+      rentalCost: item.rentalCost && Number(item.rentalCost) > 0 ? String(item.rentalCost) : '',
+      rentalStart: '', rentalEnd: '', responsibleId: '',
+      status: 'available',
+      notes: isRtl ? 'مستعاد من سجل التدقيق — راجع وأكمل البيانات الناقصة' : 'Recovered from audit log — review and complete missing data',
+      image: '',
+    })
+    setAssetDialogOpen(true)
   }
 
   function openEditEquipment(eq: any) {
@@ -549,6 +589,7 @@ export default function EquipmentPage() {
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="all">{isRtl ? 'كل المشاريع' : 'All Projects'}</SelectItem>
+          <SelectItem value="none">{isRtl ? 'بدون مشروع (يتيمة)' : 'No project (orphans)'}</SelectItem>
           {projects.map((p) => (
             <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
           ))}
@@ -604,12 +645,10 @@ export default function EquipmentPage() {
                       <Cpu className="h-3.5 w-3.5" />
                       <span className="text-xs">{isRtl ? type.ar : type.en}</span>
                     </div>
-                    {eq.project && (
-                      <div className="flex items-center gap-2 text-muted-foreground">
-                        <Settings className="h-3.5 w-3.5" />
-                        <span className="text-xs truncate">{eq.project.name}</span>
-                      </div>
-                    )}
+                    <div className={`flex items-center gap-2 ${eq.project ? 'text-muted-foreground' : 'text-amber-600 font-medium'}`}>
+                      <Settings className="h-3.5 w-3.5 shrink-0" />
+                      <span className="text-xs truncate">{eq.project ? eq.project.name : (isRtl ? 'بدون مشروع — أُسندت لمشروع محذوف' : 'No project — was assigned to a deleted project')}</span>
+                    </div>
                     {eq.createdBy && (
                       <div className="flex items-center gap-2 text-muted-foreground">
                         <UserCircle className="h-3.5 w-3.5" />
@@ -692,6 +731,52 @@ export default function EquipmentPage() {
           </div>
         </div>
 
+        {/* v42: لوحة الأصول المفقودة القابلة للاستعادة من سجل التدقيق */}
+        {canSeeLost && lostAssets.length > 0 && (
+          <Card className="border-amber-300 bg-amber-50/60 mb-4">
+            <CardContent className="p-4">
+              <button type="button" className="w-full flex items-center justify-between gap-2" onClick={() => setLostOpen(!lostOpen)}>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <History className="h-4 w-4 text-amber-600" />
+                  <span className="text-sm font-semibold text-amber-800">{isRtl ? 'أصول مفقودة يمكن استعادتها من سجل التدقيق' : 'Lost assets recoverable from audit log'}</span>
+                  <Badge className="bg-amber-200 text-amber-900 border-0">{lostAssets.length}</Badge>
+                </div>
+                <span className="text-xs text-amber-700">{lostOpen ? (isRtl ? 'إخفاء' : 'Hide') : (isRtl ? 'عرض' : 'Show')}</span>
+              </button>
+              {lostOpen && (
+                <div className="mt-3 space-y-2">
+                  <p className="text-xs text-amber-700">
+                    {isRtl ? 'حُذفت هذه الأصول نهائياً مع مشاريعها قبل التحديث v42. البيانات مُستخرجة من سجل التدقيق — اضغط «إعادة إنشاء» وأكمل الحقول الناقصة.' : 'These assets were permanently deleted with their projects before v42. Data is extracted from the audit log — press "Recreate" and complete missing fields.'}
+                  </p>
+                  {lostAssets.map(function(item: any) {
+                    var proj = item.projectId && projects.find(function(p: any) { return p.id === item.projectId })
+                    var own = ownershipLabels[item.ownership] || null
+                    return (
+                      <div key={item.entityId} className="flex items-center justify-between gap-2 bg-white/70 border border-amber-200 rounded-lg px-3 py-2 flex-wrap">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-sm font-medium">{item.name}</span>
+                            {own && <Badge variant="outline" className={`text-xs ${own.color} border-0`}>{isRtl ? own.ar : own.en}</Badge>}
+                            {item.quantity && Number(item.quantity) > 1 && <span className="text-xs text-muted-foreground">x{item.quantity}</span>}
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            {proj ? (isRtl ? 'المشروع الأصلي: ' + proj.name : 'Original project: ' + proj.name) : (isRtl ? 'المشروع الأصلي محذوف' : 'Original project deleted')}
+                            {item.firstSeen ? ' • ' + new Date(item.firstSeen).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US') : ''}
+                          </p>
+                        </div>
+                        <Button size="sm" className="bg-amber-600 hover:bg-amber-700 text-white shrink-0" onClick={() => restoreLostAsset(item)}>
+                          <RotateCcw className="h-3.5 w-3.5 ml-1" />
+                          {isRtl ? 'إعادة إنشاء' : 'Recreate'}
+                        </Button>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
           <Card className="cursor-pointer" onClick={() => setAssetFilter(assetFilter === 'owned' ? 'all' : 'owned')}>
             <CardContent className="p-3">
@@ -764,7 +849,7 @@ export default function EquipmentPage() {
                           <span className="text-xs text-muted-foreground">x{a.quantity}</span>
                         </div>
                         <div className="flex items-center gap-4 mt-1 text-xs text-muted-foreground flex-wrap">
-                          {a.project && <span>{a.project.name}</span>}
+                          {a.project ? <span>{a.project.name}</span> : <span className="text-amber-600 font-medium">{isRtl ? 'بدون مشروع' : 'No project'}</span>}
                           {a.responsible && <span className="flex items-center gap-1"><UserCircle className="h-3 w-3" />{a.responsible.name}</span>}
                           {a.ownership === 'rented' && a.rentalCost > 0 && <span className="text-orange-600 font-medium">{a.rentalCost} {isRtl ? 'ر.ع/شهر' : 'OMR/mo'}</span>}
                           {a.ownership === 'borrowed' && a.rentalEnd && <span>{isRtl ? 'إرجاع' : 'Return'}: {new Date(a.rentalEnd).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')}</span>}
@@ -879,7 +964,10 @@ export default function EquipmentPage() {
                 <Label>{isRtl ? 'المشروع' : 'Project'}</Label>
                 <Select value={formData.projectId} onValueChange={(v) => setFormData({ ...formData, projectId: v })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>{projects.map((p) => (<SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>))}</SelectContent>
+                  <SelectContent>
+                    <SelectItem value="">{isRtl ? 'بدون مشروع' : 'No project'}</SelectItem>
+                    {projects.map((p) => (<SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>))}
+                  </SelectContent>
                 </Select>
               </div>
               <div className="space-y-1.5"><Label>{isRtl ? 'آخر صيانة' : 'Last Maintenance'}</Label><Input type="date" value={formData.lastMaintenance} onChange={(e) => setFormData({ ...formData, lastMaintenance: e.target.value })} /></div>
@@ -981,7 +1069,10 @@ export default function EquipmentPage() {
                 <Label>{isRtl ? 'المشروع' : 'Project'}</Label>
                 <Select value={formData.projectId} onValueChange={(v) => setFormData({ ...formData, projectId: v })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>{projects.map((p) => (<SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>))}</SelectContent>
+                  <SelectContent>
+                    <SelectItem value="">{isRtl ? 'بدون مشروع' : 'No project'}</SelectItem>
+                    {projects.map((p) => (<SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>))}
+                  </SelectContent>
                 </Select>
               </div>
               <div className="space-y-1.5"><Label>{isRtl ? 'آخر صيانة' : 'Last Maintenance'}</Label><Input type="date" value={formData.lastMaintenance} onChange={(e) => setFormData({ ...formData, lastMaintenance: e.target.value })} /></div>
