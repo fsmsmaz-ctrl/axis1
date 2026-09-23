@@ -199,7 +199,8 @@ export default function AppShell() {
   // تمرير بريد المستخدم ليتجاوز مدير النظام (admin@axis.om) كل فحوصات الصلاحيات
   // v14.1: قسم "تقييم الأداء" مالي (إيرادات وأرباح) — يُخفى من القائمة عن كل من لا يرى الأسعار
   const allowedItems = navItems.filter(item => {
-    if (item.id === 'performance' && !canViewPricing(user)) return false
+    // v40: تقييم الأداء يظهر أيضاً لمدير النظام — استثناء وحيد، باقي الأقسام المالية تبقى محجوبة عنه
+    if (item.id === 'performance' && !canViewPricing(user) && (user.email || '').toLowerCase().trim() !== SYSTEM_ADMIN_EMAIL) return false
     return hasPermission(user.role, item.resource, user.permissions, user.email)
   })
   // لوحة التحكم لمدير النظام والإدارة العليا فقط — الموظفون يُوجّهون لأول صفحة مخوّلة
@@ -450,8 +451,8 @@ export default function AppShell() {
         </nav>
 
         <div className="p-3 border-t border-sidebar-border">
-          {/* v39: علامة الإصدار — إن لم تظهر هنا فالنشر الأخير لم يتم بعد */}
-          <p className="text-center text-[10px] text-muted-foreground/60 select-none">v39</p>
+          {/* v40: علامة الإصدار — إن لم تظهر هنا فالنشر الأخير لم يتم بعد */}
+          <p className="text-center text-[10px] text-muted-foreground/60 select-none">v40</p>
           <div className="flex items-center gap-3 p-2 rounded-lg">
             <Avatar className="h-11 w-11 lg:h-9 lg:w-9 border-2 border-primary/20 shrink-0">
               <AvatarFallback className="bg-primary/10 text-primary font-semibold">
