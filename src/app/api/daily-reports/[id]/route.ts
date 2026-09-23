@@ -57,7 +57,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
   // v13.1 SECURITY: تعديل التقارير لمن يملك كتابة التقارير اليومية فقط
   // (المشرف فورمان يعدّل المسودات — كان التعديل مفتوحاً لأي مستخدم مسجل)
-  if (!canWrite(user.role, 'daily_reports', user.permissions)) {
+  // v38: الإدارة العليا تعدّل التقارير اليومية دائماً (بأي حالة)
+  var isTopManagementUser = user.role === 'top_management'
+  if (!isTopManagementUser && !canWrite(user.role, 'daily_reports', user.permissions)) {
     return NextResponse.json({ error: 'forbidden', message: 'تعديل التقارير اليومية متاح للمشرفين والإدارة فقط' }, { status: 403 })
   }
 
@@ -105,13 +107,14 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     // v23: أي موظف مصرّح له يعدّل ويحفظ التقرير قبل الاعتماد — حتى لو أنشأه موظف آخر
     // (تقارير قسم السلامة تصل هنا ويكملها أي موظف دون قيود ملكية أو تسليم)
     var isSystemAdmin = (user!.email || '').toLowerCase().trim() === SYSTEM_ADMIN_EMAIL
-    var canEditReport = canWrite(user!.role, 'daily_reports', user!.permissions) || canWrite(user!.role, 'safety', user!.permissions)
+    // v38: الإدارة العليا تعدّل كل التقارير (حتى المعتمد/المرفوض) مثل مدير النظام
+    var canEditReport = isTopManagementUser || canWrite(user!.role, 'daily_reports', user!.permissions) || canWrite(user!.role, 'safety', user!.permissions)
     if (!isSystemAdmin && !canEditReport) {
       return NextResponse.json({ error: 'forbidden', message: 'تعديل التقارير اليومية متاح للموظفين المصرّح لهم فقط' }, { status: 403 })
     }
-    // نقطة الإغلاق هي الاعتماد: المسودة والمُسلَّم قابلان للتعديل، المعتمد/المرفوض لمدير النظام فقط
-    if (!isSystemAdmin && (existingReport.status === 'approved' || existingReport.status === 'rejected')) {
-      return NextResponse.json({ error: 'forbidden', message: 'لا يمكن تعديل تقرير معتمد أو مرفوض — التعديل متاح لمدير النظام فقط' }, { status: 403 })
+    // نقطة الإغلاق هي الاعتماد: المسودة والمُسلَّم لكل المصرّح لهم، والمعتمد/المرفوض لمدير النظام والإدارة العليا (v38)
+    if (!isSystemAdmin && !isTopManagementUser && (existingReport.status === 'approved' || existingReport.status === 'rejected')) {
+      return NextResponse.json({ error: 'forbidden', message: 'لا يمكن تعديل تقرير معتمد أو مرفوض — التعديل متاح لمدير النظام والإدارة العليا فقط' }, { status: 403 })
     }
 
     // SECURITY FIX: حدود القراءات (نفس قواعد الإنشاء) — منع القيم السالبة/العملاقة
@@ -335,11 +338,8 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     var deletedDriveLineId = report.driveLineId
     var deletedProjectId = report.projectId
 
-    // الحذف: مدير النظام (admin@axis.om) فقط — مخفٍ وممنوع عن كل المستخدمين الآخرين
-    var isSystemAdminDelete = (user!.email || '').toLowerCase().trim() === SYSTEM_ADMIN_EMAIL
-    if (!isSystemAdminDelete) {
-      return NextResponse.json({ error: 'forbidden', message: 'حذف التقارير متاح لمدير النظام فقط' }, { status: 403 })
-    }
+    // v38: الحذف للإدارة العليا ومدير النظام — الفحص أعلاه (isSystemAdmin / top_management) يكفي
+    // (كان هنا جدار ثانٍ يسمح لمدير النظام فقط فجعل صلاحية الإدارة العليا عديمة الفائدة)
 
     var deleteResult = await safeDbOp(
       () => db.dailyReport.delete({ where: { id } }),
@@ -386,3 +386,4 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     return handleDbError(error, 'حذف التقرير اليومي')
   }
 }
+
