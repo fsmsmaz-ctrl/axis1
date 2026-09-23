@@ -58,7 +58,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   // v13.1 SECURITY: تعديل التقارير لمن يملك كتابة التقارير اليومية فقط
   // (المشرف فورمان يعدّل المسودات — كان التعديل مفتوحاً لأي مستخدم مسجل)
   // v38: الإدارة العليا تعدّل التقارير اليومية دائماً (بأي حالة)
-  var isTopManagementUser = user.role === 'top_management'
+  var isTopManagementUser = String(user.role || '').toLowerCase().trim() === 'top_management'
   if (!isTopManagementUser && !canWrite(user.role, 'daily_reports', user.permissions)) {
     return NextResponse.json({ error: 'forbidden', message: 'تعديل التقارير اليومية متاح للمشرفين والإدارة فقط' }, { status: 403 })
   }
@@ -302,7 +302,8 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
 
   // v13.1 SECURITY: حذف تقرير يومي = إتلاف سجل مالي — للإدارة العليا ومدير النظام فقط
   var isSystemAdmin = (user.email || '').toLowerCase().trim() === SYSTEM_ADMIN_EMAIL
-  if (!isSystemAdmin && user.role !== 'top_management') {
+  var isTopManagementDelete = String(user.role || '').toLowerCase().trim() === 'top_management'
+  if (!isSystemAdmin && !isTopManagementDelete) {
     return NextResponse.json({ error: 'forbidden', message: 'حذف التقارير اليومية متاح للإدارة العليا فقط' }, { status: 403 })
   }
 
