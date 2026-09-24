@@ -874,6 +874,12 @@ export default function EquipmentPage() {
                           <Badge variant="outline" className={`text-xs ${own.color} border-0`}>{isRtl ? own.ar : own.en}</Badge>
                           <Badge variant="secondary" className="text-xs">{isRtl ? aType.ar : aType.en}</Badge>
                           <Badge className={`text-xs ${aStatus.color} border-0`}>{isRtl ? aStatus.ar : aStatus.en}</Badge>
+                          {a.restoredBy && (
+                            <Badge className="bg-indigo-100 text-indigo-800 border-0 text-xs">
+                              <RotateCcw className="h-3 w-3 ml-1" />
+                              {isRtl ? 'أُعيد إنشاؤه مسبقاً' : 'Restored'}
+                            </Badge>
+                          )}
                           <span className="text-xs text-muted-foreground">x{a.quantity}</span>
                         </div>
                         <div className="flex items-center gap-4 mt-1 text-xs text-muted-foreground flex-wrap">
@@ -883,7 +889,7 @@ export default function EquipmentPage() {
                           {a.ownership === 'borrowed' && a.rentalEnd && <span>{isRtl ? 'إرجاع' : 'Return'}: {new Date(a.rentalEnd).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')}</span>}
                           {a.supplier && <span>{isRtl ? 'الجهة' : 'From'}: {a.supplier}</span>}
                           {a.createdBy && <span>{isRtl ? 'بواسطة' : 'By'}: {a.createdBy.name}{a.createdAt ? ' • ' + new Date(a.createdAt).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US') : ''}</span>}
-                          {a.restoredBy && <span className="text-amber-700">{isRtl ? 'استعادها' : 'Restored by'}: {a.restoredBy.name}</span>}
+                          {a.restoredBy && <span className="text-indigo-700">{isRtl ? 'أُعيد إنشاؤه بواسطة' : 'Re-created by'}: {a.restoredBy.name}{a.restoredAt ? ' • ' + new Date(a.restoredAt).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US') : ''}</span>}
                         </div>
                       </div>
                       <div className="flex gap-1 shrink-0">
@@ -1124,6 +1130,13 @@ export default function EquipmentPage() {
             <DialogDescription>{isRtl ? 'تحديد نوع الملكية وتفاصيل الغرض' : 'Specify ownership type and item details'}</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleAssetSubmit} className="space-y-3">
+            {/* v45: تنبيه — الأصل الذي يُعدَّل الآن أُعيد إنشاؤه مسبقاً من سجل التدقيق */}
+            {editingAsset && editingAsset.restoredBy && (
+              <div className="flex items-start gap-2 p-3 rounded-lg bg-indigo-50 border border-indigo-200 text-xs text-indigo-800">
+                <RotateCcw className="h-4 w-4 shrink-0 mt-0.5" />
+                <span>{isRtl ? 'تنبيه: هذا الأصل أُعيد إنشاؤه مسبقاً من سجل التدقيق بواسطة ' : 'Notice: this asset was previously re-created from the audit log by '}{editingAsset.restoredBy.name}{isRtl ? ' — بياناته الأصلية (المنشئ وتاريخ التسجيل) محفوظة ولن تتغير بالتعديل.' : ' — its original data (creator and registration date) is preserved and unaffected by edits.'}</span>
+              </div>
+            )}
             {/* Image Upload Section */}
             <div className="space-y-1.5">
               <Label>{isRtl ? 'صورة المعدة' : 'Equipment Image'}</Label>
@@ -1282,6 +1295,20 @@ export default function EquipmentPage() {
                 {viewAsset.project && (<div><p className="text-xs text-muted-foreground">{isRtl ? 'المشروع' : 'Project'}</p><p className="font-medium">{viewAsset.project.name}</p></div>)}
                 {viewAsset.responsible && (<div><p className="text-xs text-muted-foreground">{isRtl ? 'المسؤول' : 'Responsible'}</p><p className="font-medium">{viewAsset.responsible.name}</p></div>)}
               </div>
+              {viewAsset.restoredBy && (
+                <div className="p-3 rounded-lg bg-indigo-50 border border-indigo-200 text-sm">
+                  <div className="flex items-center gap-2 font-medium text-indigo-800">
+                    <RotateCcw className="h-4 w-4 shrink-0" />
+                    {isRtl ? 'هذا الأصل أُعيد إنشاؤه مسبقاً من سجل التدقيق' : 'This asset was previously re-created from the audit log'}
+                  </div>
+                  <p className="text-xs text-indigo-700 mt-1">
+                    {isRtl ? 'أعاد إنشاؤه: ' : 'Re-created by: '}{viewAsset.restoredBy.name}
+                    {viewAsset.restoredAt ? ' • ' + new Date(viewAsset.restoredAt).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US') : ''}
+                    {viewAsset.createdBy ? (isRtl ? ' — المنشئ الأصلي محفوظ: ' : ' — original creator preserved: ') + viewAsset.createdBy.name : ''}
+                    {viewAsset.createdAt ? ' • ' + new Date(viewAsset.createdAt).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US') : ''}
+                  </p>
+                </div>
+              )}
               {(viewAsset.ownership === 'rented' || viewAsset.ownership === 'borrowed') && (
                 <div className="p-3 rounded-lg bg-muted/30 border text-sm space-y-1.5">
                   {viewAsset.supplier && (<div><span className="text-muted-foreground">{isRtl ? 'الجهة' : 'From'}: </span><span className="font-medium">{viewAsset.supplier}</span></div>)}
