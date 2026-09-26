@@ -5,7 +5,7 @@ import { useAppStore } from '@/lib/store'
 import { hasPermission, MODULE_PERMISSIONS, MODULE_PERMISSION_LABELS, REPORT_PERMISSIONS, REPORT_LABELS, ROLE_PERMISSIONS, canAccessDashboard, canViewPricing, SYSTEM_ADMIN_EMAIL, type SessionUser } from '@/lib/auth'
 import { clearStoredToken, authedFetch } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -27,7 +27,7 @@ import {
   Wrench, DollarSign, CheckCircle2, FileBarChart, TrendingUp, ListChecks,
   Bell, LogOut, Menu, X, Globe,
   AlertTriangle, ChevronLeft, UserPlus, Users, Loader2, Shield, Pencil, Trash2, Check,
-  ShieldAlert, Eye
+  ShieldAlert, Eye, UserCircle
 } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
@@ -38,6 +38,7 @@ type PageId =
   | 'dashboard' | 'projects' | 'driveLines' | 'dailyReports' | 'safety'
   | 'equipment' | 'costs' | 'finishings' | 'tasks' | 'reports' | 'performance' | 'notifications'
   | 'oversight'
+  | 'profile'
 
 interface NavItem {
   id: PageId
@@ -61,6 +62,8 @@ const navItems: NavItem[] = [
   { id: 'reports', labelAr: 'التقارير', labelEn: 'Reports', icon: FileBarChart, resource: 'reports' },
   { id: 'oversight', labelAr: 'الرقابة العملية', labelEn: 'Operational Control', icon: Eye, resource: 'oversight' },
   { id: 'notifications', labelAr: 'التنبيهات', labelEn: 'Notifications', icon: Bell, resource: 'notifications' },
+  // v48: الملف الشخصي — أسفل القائمة ومتاح لكل المستخدمين
+  { id: 'profile', labelAr: 'الملف الشخصي', labelEn: 'Profile', icon: UserCircle, resource: 'profile' },
 ]
 
 const roleLabels: Record<string, { ar: string; en: string }> = {
@@ -128,6 +131,8 @@ const PerformancePage = dynamic(() => import('@/components/pages/performance-pag
 const ReportsPage = dynamic(() => import('@/components/pages/reports-page'), { ssr: false })
 const NotificationsPage = dynamic(() => import('@/components/pages/notifications-page'), { ssr: false })
 const OversightPage = dynamic(() => import('@/components/pages/oversight-page'), { ssr: false })
+// v48: الملف الشخصي
+const ProfilePage = dynamic(() => import('@/components/pages/profile-page'), { ssr: false })
 
 export default function AppShell() {
   const user = useAppStore((s) => s.user)
@@ -201,6 +206,8 @@ export default function AppShell() {
   const allowedItems = navItems.filter(item => {
     // v40: تقييم الأداء يظهر أيضاً لمدير النظام — استثناء وحيد، باقي الأقسام المالية تبقى محجوبة عنه
     if (item.id === 'performance' && !canViewPricing(user) && (user.email || '').toLowerCase().trim() !== SYSTEM_ADMIN_EMAIL) return false
+    // v48: الملف الشخصي متاح لكل المستخدمين بلا استثناء
+    if (item.id === 'profile') return true
     return hasPermission(user.role, item.resource, user.permissions, user.email)
   })
   // لوحة التحكم لمدير النظام والإدارة العليا فقط — الموظفون يُوجّهون لأول صفحة مخوّلة
@@ -383,6 +390,8 @@ export default function AppShell() {
       case 'reports': return <ReportsPage />
       case 'notifications': return <NotificationsPage />
       case 'oversight': return <OversightPage />
+      // v48: الملف الشخصي
+      case 'profile': return <ProfilePage />
       default: return canSeeDashboard ? <DashboardPage onNavigate={setCurrentPage} /> : <ProjectsPage />
     }
   }
@@ -451,10 +460,14 @@ export default function AppShell() {
         </nav>
 
         <div className="p-3 border-t border-sidebar-border">
-          {/* v47: علامة الإصدار — إن لم تظهر هنا فالنشر الأخير لم يتم بعد */}
-          <p className="text-center text-[10px] text-muted-foreground/60 select-none">v47</p>
-          <div className="flex items-center gap-3 p-2 rounded-lg">
+          {/* v48: علامة الإصدار — إن لم تظهر هنا فالنشر الأخير لم يتم بعد */}
+          <p className="text-center text-[10px] text-muted-foreground/60 select-none">v49</p>
+          {/* v48: بطاقة المستخدم قابلة للنقر — تفتح الملف الشخصي */}
+          <div className="flex items-center gap-3 p-2 rounded-lg cursor-pointer hover:bg-sidebar-accent transition-colors"
+            onClick={function() { setSidebarOpen(false); setCurrentPage('profile') }}
+            title={isRtl ? 'فتح الملف الشخصي' : 'Open profile'}>
             <Avatar className="h-11 w-11 lg:h-9 lg:w-9 border-2 border-primary/20 shrink-0">
+              {user.avatar && <AvatarImage src={user.avatar} alt={isRtl ? user.name : (user.nameEn || user.name)} />}
               <AvatarFallback className="bg-primary/10 text-primary font-semibold">
                 {(isRtl ? user.name : (user.nameEn || user.name)).charAt(0)}
               </AvatarFallback>
@@ -463,7 +476,7 @@ export default function AppShell() {
               <p className="text-[15px] lg:text-sm font-medium truncate">{isRtl ? user.name : (user.nameEn || user.name)}</p>
               <p className="text-xs text-muted-foreground">{isRtl ? roleLabels[user.role]?.ar : roleLabels[user.role]?.en}</p>
             </div>
-            <Button variant="ghost" size="icon" className="h-10 w-10 lg:h-9 lg:w-9 text-muted-foreground hover:text-destructive shrink-0" onClick={handleLogout} title={isRtl ? 'تسجيل الخروج' : 'Logout'}>
+            <Button variant="ghost" size="icon" className="h-10 w-10 lg:h-9 lg:w-9 text-muted-foreground hover:text-destructive shrink-0" onClick={function(e) { e.stopPropagation(); handleLogout() }} title={isRtl ? 'تسجيل الخروج' : 'Logout'}>
               <LogOut className="h-4 w-4" />
             </Button>
           </div>
@@ -766,12 +779,26 @@ export default function AppShell() {
                   <div className="border rounded-lg divide-y max-h-72 overflow-y-auto">
                     {existingUsers.map((u) => (
                       <div key={u.id} className="flex items-center gap-3 p-3">
-                        <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                          <span className="text-sm font-semibold text-primary">{(isAr ? u.name : (u.nameEn || u.name)).charAt(0)}</span>
-                        </div>
+                        {/* v49: صورة الملف الشخصي إن وُجدت — وإلا الحرف الأول */}
+                        {u.avatar ? (
+                          <img src={u.avatar} alt={isAr ? u.name : (u.nameEn || u.name)} className="w-9 h-9 rounded-full object-cover border border-primary/20 shrink-0" />
+                        ) : (
+                          <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                            <span className="text-sm font-semibold text-primary">{(isAr ? u.name : (u.nameEn || u.name)).charAt(0)}</span>
+                          </div>
+                        )}
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium truncate">{isAr ? u.name : (u.nameEn || u.name)}</p>
                           <p className="text-xs text-muted-foreground" dir="ltr">{u.email}</p>
+                          {/* v49: آخر تغيير يخص المستخدم (صورة/كلمة مرور/تعديل إداري) */}
+                          {u.lastProfileChange && u.lastProfileChange.summary ? (
+                            <p className="text-[10px] text-muted-foreground/80 mt-0.5 truncate">
+                              {isAr ? 'آخر تغيير: ' : 'Last change: '}
+                              {u.lastProfileChange.summary}
+                              {' — '}
+                              {new Date(u.lastProfileChange.at).toLocaleDateString(isAr ? 'ar-EG' : 'en-US')}
+                            </p>
+                          ) : null}
                         </div>
                         <span className="text-xs px-2 py-1 rounded-full bg-primary/10 text-primary font-medium shrink-0">
                           {roleLabels[u.role] ? (isAr ? roleLabels[u.role].ar : roleLabels[u.role].en) : (u.roleLabel ? (isAr ? u.roleLabel.ar : u.roleLabel.en) : u.role)}
