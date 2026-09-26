@@ -28,6 +28,8 @@ model User {
   // SECURITY v15: علم مدير النظام — مصدر الحقيقة قاعدة البيانات نفسها لا الإيميل ولا التوكن.
   // صاحب هذا العلم مستثنى نهائياً من رؤية الأسعار (canViewPricing) مهما كان دوره أو بريده.
   isSystemAdmin Boolean @default(false)
+  // v48: نقاط الولاء — تُمنح لاحقاً عبر إنجاز المهام (تحديث مستقل) وتظهر في الملف الشخصي
+  points        Int     @default(0)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -54,6 +56,9 @@ model User {
   tasksLastUpdated    Task[]           @relation("TaskLastUpdater")
   taskEvents          TaskEvent[]      @relation("TaskEventActor")
   taskAttachments     TaskAttachment[] @relation("TaskAttachmentUploader")
+  // v48: الملف الشخصي والمشتريات
+  purchases           Purchase[]       @relation("UserPurchases")
+  purchasesReviewed   Purchase[]       @relation("PurchaseReviewer")
 }
 
 // ==================== Projects ====================
@@ -75,6 +80,7 @@ model Project {
   status         String   @default("not_started") // not_started, in_progress, suspended, completed
   progress       Float    @default(0) // 0-100
   notes          String?
+  purchases      Purchase[] @relation("PurchaseProject")
 
   managerId      String?
   engineerId     String?
@@ -270,6 +276,9 @@ model Cost {
   dailyReport   DailyReport? @relation(fields: [dailyReportId], references: [id])
   recordedBy    User?    @relation(fields: [recordedById], references: [id])
   recordedById  String?
+
+  // v48: فاتورة المشتريات التي وُلّدت منها هذه التكلفة تلقائياً (اعتماد الفواتير)
+  purchase      Purchase? @relation("PurchaseCost")
 
   createdAt     DateTime @default(now())
 }
@@ -507,3 +516,32 @@ model CompanyAsset {
   updatedAt      DateTime @updatedAt
 }
 
+
+// ==================== v48: المشتريات (Purchases) ====================
+// يضيف الموظف ما اشتراه مع صورة فاتورة إلزامية ثم يسلمه للمراجعة؛
+// الاعتماد من قسم مراجعة الفواتير في لوحة التحكم يسجله تلقائياً في جدول التكاليف
+model Purchase {
+  id            String    @id @default(cuid())
+  userId        String
+  title         String
+  notes         String?
+  amount        Float
+  invoiceImage  String?
+  status        String    @default("draft") // draft, submitted, approved, rejected
+  projectId     String?
+  reviewNote    String?
+  reviewedById  String?
+  reviewedAt    DateTime?
+  costId        String?   @unique
+  submittedAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  user         User      @relation("UserPurchases", fields: [userId], references: [id])
+  project      Project?  @relation("PurchaseProject", fields: [projectId], references: [id], onDelete: SetNull)
+  reviewedBy   User?     @relation("PurchaseReviewer", fields: [reviewedById], references: [id])
+  cost         Cost?     @relation("PurchaseCost", fields: [costId], references: [id])
+
+  @@index([userId])
+  @@index([status])
+}
