@@ -75,6 +75,13 @@ export async function ensurePurchasesSupport(): Promise<void> {
       await db.$executeRawUnsafe('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "points" INTEGER NOT NULL DEFAULT 0')
       console.warn('v48: User.points column created by self-heal')
     }
+    // v50: ضمان عمود الصورة أيضاً — findUnique في مسار الدخول يقرأ كل أعمدة النموذج،
+    // وأي عمود ناقص يعطّل تسجيل الدخول بالكامل بـ P2022
+    var hasAvatar = userCols.some(function(c) { return c.column_name === 'avatar' })
+    if (!hasAvatar) {
+      await db.$executeRawUnsafe('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "avatar" TEXT')
+      console.warn('v50: User.avatar column created by self-heal')
+    }
     // 2) جدول المشتريات
     var purchaseTables = await db.$queryRawUnsafe<Array<{ table_name: string }>>(
       "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'Purchase'"
