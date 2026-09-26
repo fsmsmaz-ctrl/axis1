@@ -7,6 +7,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { verifyCredentials, createSession, getCookieOptions, SESSION_COOKIE } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
+// v50: الشفاء الذاتي على مسار الدخول — انظر الاستدعاء قبل verifyCredentials
+import { ensurePurchasesSupport } from '@/lib/db-selfheal'
 
 export async function POST(req: NextRequest) {
   var rl = checkRateLimit(req, RateLimitPresets.auth)
@@ -55,6 +57,11 @@ export async function POST(req: NextRequest) {
         { status: 500 }
       )
     }
+
+    // v50: شفاء ذاتي قبل التحقق من بيانات الدخول — أعمدة/جداول v48 (points/Purchase)
+    // قد لا تكون مطبقة لأن Netlify لا يشغّل prisma migrate deploy (درس v44)،
+    // وfindUnique يقرأ كل أعمدة النموذج فيفشل الدخول بـ P2022 إن نقص عمود واحد.
+    await ensurePurchasesSupport()
 
     var user = await verifyCredentials(emailStr, password)
     if (!user) {
