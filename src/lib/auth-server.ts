@@ -50,6 +50,8 @@ export async function verifyCredentials(email: string, password: string): Promis
       tokenVersion: user.tokenVersion || 0,
       // v15: علم مدير النظام من قاعدة البيانات — مصدر الحقيقة الوحيد
       isSystemAdmin: (user as { isSystemAdmin?: boolean }).isSystemAdmin === true,
+      // v48: صورة الملف الشخصي
+      avatar: (user as { avatar?: string | null }).avatar || null,
     }
   } catch (error) {
     // v20: خطأ قاعدة البيانات لم يعد يتنكر كبيانات دخول خاطئة (401) —
@@ -130,6 +132,8 @@ export async function getSessionUser(token: string | undefined): Promise<Session
       // v15: علم مدير النظام يُقرأ من قاعدة البيانات في كل طلب —
       // يسري فوراً حتى على الجلسات القديمة دون إعادة تسجيل دخول
       isSystemAdmin: (user as { isSystemAdmin?: boolean }).isSystemAdmin === true,
+      // v48: صورة الملف الشخصي
+      avatar: (user as { avatar?: string | null }).avatar || null,
     }
   } catch (error) {
     return null
