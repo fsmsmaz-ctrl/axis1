@@ -16,6 +16,7 @@ import { ShieldCheck, ShieldAlert, AlertTriangle, CheckCircle2, XCircle, Calenda
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
 import { canWrite } from '@/lib/auth'
+import { reportDayName } from '@/lib/day-name'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 
@@ -719,6 +720,10 @@ export default function SafetyPage() {
                       </div>
                       <p className="text-xs text-muted-foreground mb-2">
                         {new Date(r.reportDate).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+                        {/* v46: اسم يوم تقرير السلامة بجانب التاريخ — يشمل التقارير القديمة والمستقبلية */}
+                        {reportDayName(r.reportDate, isRtl) && (
+                          <span className="text-[10px] text-muted-foreground/80"> ({reportDayName(r.reportDate, isRtl)})</span>
+                        )}
                         {' \u2022 '}
                         {isRtl ? 'موقّع من' : 'Signed by'}: {r.signedByUser ? (r.signedByUser.name || r.signedByUser.nameEn || '-') : '-'}
                       </p>
