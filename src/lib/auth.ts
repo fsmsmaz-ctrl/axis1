@@ -12,6 +12,8 @@ export interface SessionUser {
   tokenVersion?: number
   // v15: علم مدير النظام من قاعدة البيانات (يُقرأ في كل طلب — لا يعتمد على التوكن)
   isSystemAdmin?: boolean
+  // v48: صورة الملف الشخصي (data URL) — الشريط الجانبي وصفحة الملف الشخصي
+  avatar?: string | null
 }
 
 export const SESSION_COOKIE = 'axis_session'
