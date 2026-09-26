@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import {
   Activity, TrendingUp, TrendingDown, DollarSign, Wallet,
   Users, AlertTriangle, Wrench, FolderKanban, ArrowLeft,
-  Trophy, AlertCircle, Calendar, Cpu, RefreshCw
+  Trophy, AlertCircle, Calendar, Cpu, RefreshCw, Receipt, Check, X, Loader2
 } from 'lucide-react'
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid,
@@ -16,6 +16,8 @@ import {
 } from 'recharts'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
+import { toast } from 'sonner'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { canViewPricing, canAccessDashboard } from '@/lib/auth'
 import { reportDayName } from '@/lib/day-name'
 
@@ -84,6 +86,8 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
   // اللوحة أصلاً: مدير النظام (admin@axis.om) والإدارة العليا.
   // استثناء المشرف العام من الأسعار يبقى سارياً في بقية الأقسام كما هو.
   const seePricing = !!(user && (canViewPricing(user) || canAccessDashboard(user)))
+  // v48: مراجعو الفواتير — الإدارة العليا ومدير النظام فقط
+  const canReviewInvoices = !!(user && (user.role === 'top_management' || user.isSystemAdmin))
   const isRtl = language === 'ar'
 
   async function fetchDashboard() {
@@ -641,6 +645,11 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
           </CardContent>
         </Card>
       </div>
+
+      {/* v48: مراجعة فواتير المشتريات — الإدارة العليا ومدير النظام فقط */}
+      {canReviewInvoices && (
+        <InvoicesReviewSection isRtl={isRtl} projects={(data && data.projects) || []} onChanged={fetchDashboard} />
+      )}
     </div>
   )
 }
@@ -684,3 +693,190 @@ function MiniStat({ icon: Icon, label, value, color }: { icon: any; label: strin
   )
 }
 
+
+
+// v48: قسم مراجعة فواتير المشتريات — يظهر في لوحة التحكم للإدارة العليا ومدير النظام
+// الاعتماد يسجل الفاتورة تلقائياً في التكاليف (اختيار المشروع والتصنيف عند الاعتماد)
+function InvoicesReviewSection({ isRtl, projects, onChanged }: { isRtl: boolean; projects: any[]; onChanged: () => void }) {
+  const [invoices, setInvoices] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const [viewImg, setViewImg] = useState<string | null>(null)
+  const [projSel, setProjSel] = useState<Record<string, string>>({})
+  const [catSel, setCatSel] = useState<Record<string, string>>({})
+
+  const catLabels: Record<string, string> = {
+    labor: isRtl ? 'أجور العمال' : 'Labor', housing: isRtl ? 'إسكان' : 'Housing',
+    transport: isRtl ? 'نقل' : 'Transport', fuel: isRtl ? 'وقود' : 'Fuel',
+    maintenance: isRtl ? 'صيانة' : 'Maintenance', parts: isRtl ? 'قطع غيار' : 'Parts',
+    oil: isRtl ? 'زيوت' : 'Oil', safety: isRtl ? 'سلامة' : 'Safety',
+    rental: isRtl ? 'إيجار' : 'Rental', other: isRtl ? 'أخرى' : 'Other',
+  }
+
+  async function fetchInvoices() {
+    setLoading(true)
+    try {
+      const r = await authedFetch('/api/invoices-review')
+      const d = await r.json()
+      if (r.ok) setInvoices(d.purchases || [])
+    } catch {} finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(function() {
+    fetchInvoices()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  async function review(inv: any, action: 'approve' | 'reject') {
+    var note: string | null = null
+    if (action === 'reject') {
+      note = window.prompt(isRtl ? 'سبب الرفض (اختياري):' : 'Rejection reason (optional):')
+      if (note === null) return
+    }
+    setBusyId(inv.id)
+    try {
+      const r = await authedFetch('/api/invoices-review', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: inv.id, action: action,
+          note: note || undefined,
+          projectId: projSel[inv.id] || undefined,
+          category: catSel[inv.id] || undefined,
+        }),
+      })
+      const d = await r.json()
+      if (r.ok) {
+        toast.success(action === 'approve'
+          ? (isRtl ? 'اعتُمدت الفاتورة وسُجلت في التكاليف تلقائياً' : 'Approved and recorded in Costs')
+          : (isRtl ? 'تم رفض الفاتورة' : 'Invoice rejected'))
+        fetchInvoices()
+        onChanged()
+      } else {
+        toast.error(d.message || (isRtl ? 'فشل تسجيل المراجعة' : 'Review failed'))
+      }
+    } catch {
+      toast.error(isRtl ? 'خطأ في الاتصال' : 'Connection error')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  var pending = invoices.filter(function(p) { return p.status === 'submitted' })
+  var reviewed = invoices.filter(function(p) { return p.status !== 'submitted' })
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center justify-between flex-wrap gap-2">
+          <span className="flex items-center gap-2">
+            <Receipt className="h-5 w-5 text-primary" />
+            {isRtl ? 'مراجعة فواتير المشتريات' : 'Purchase Invoices Review'}
+            {pending.length > 0 && <Badge className="text-xs">{pending.length}</Badge>}
+          </span>
+          <Button variant="ghost" size="sm" onClick={fetchInvoices}>
+            <RefreshCw className="h-4 w-4" />
+          </Button>
+        </CardTitle>
+        <CardDescription>
+          {isRtl ? 'مراجعة فواتير مشتريات الموظفين واعتمادها — الاعتماد يسجلها تلقائياً في قسم التكاليف' : 'Review employee purchase invoices — approval records them in Costs automatically'}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3 max-h-[500px] overflow-y-auto">
+        {loading ? (
+          <div className="h-20 bg-muted animate-pulse rounded-lg" />
+        ) : invoices.length === 0 ? (
+          <p className="text-center text-xs text-muted-foreground py-6">
+            {isRtl ? 'لا توجد فواتير للمراجعة' : 'No invoices to review'}
+          </p>
+        ) : (
+          <>
+            {pending.map(function(p) {
+              return (
+                <div key={p.id} className="p-3 rounded-lg border border-amber-200 bg-amber-50/40">
+                  <div className="flex items-center gap-3 flex-wrap">
+                    {p.invoiceImage && (
+                      <img src={p.invoiceImage} alt="invoice" className="h-14 w-14 rounded-lg object-cover border cursor-pointer shrink-0" onClick={function() { setViewImg(p.invoiceImage) }} />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-sm">
+                        {p.title} — <span className="font-bold">{p.amount} ر.ع</span>
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {isRtl ? 'الموظف' : 'Employee'}: {p.user ? (isRtl ? p.user.name : (p.user.nameEn || p.user.name)) : '-'}
+                        {' • '}{p.submittedAt ? new Date(p.submittedAt).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US') : ''}
+                        {p.notes ? (' • ' + p.notes) : ''}
+                      </p>
+                    </div>
+                    <div className="flex gap-1 shrink-0">
+                      <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" disabled={busyId === p.id} onClick={function() { review(p, 'approve') }}>
+                        {busyId === p.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4 ml-1" />}
+                        {isRtl ? 'اعتماد' : 'Approve'}
+                      </Button>
+                      <Button size="sm" variant="destructive" disabled={busyId === p.id} onClick={function() { review(p, 'reject') }}>
+                        <X className="h-4 w-4 ml-1" />
+                        {isRtl ? 'رفض' : 'Reject'}
+                      </Button>
+                    </div>
+                  </div>
+                  {/* اختيار المشروع والتصنيف عند الاعتماد — يحدد سجل التكلفة */}
+                  <div className="flex items-center gap-2 mt-2 flex-wrap">
+                    <select
+                      className="text-xs border rounded px-2 py-1 bg-background"
+                      value={projSel[p.id] || ''}
+                      onChange={function(e) { setProjSel(function(prev) { return { ...prev, [p.id]: e.target.value } }) }}
+                    >
+                      <option value="">{isRtl ? 'المشروع: بدون مشروع' : 'Project: none'}</option>
+                      {projects.map(function(pr: any) {
+                        return <option key={pr.id} value={pr.id}>{pr.name}</option>
+                      })}
+                    </select>
+                    <select
+                      className="text-xs border rounded px-2 py-1 bg-background"
+                      value={catSel[p.id] || 'other'}
+                      onChange={function(e) { setCatSel(function(prev) { return { ...prev, [p.id]: e.target.value } }) }}
+                    >
+                      {Object.keys(catLabels).map(function(k) {
+                        return <option key={k} value={k}>{isRtl ? 'التصنيف: ' : 'Category: '}{catLabels[k]}</option>
+                      })}
+                    </select>
+                    <button type="button" className="text-xs text-primary underline" onClick={function() { if (p.invoiceImage) setViewImg(p.invoiceImage) }}>
+                      {isRtl ? 'عرض الفاتورة' : 'View invoice'}
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+            {reviewed.map(function(p) {
+              return (
+                <div key={p.id} className="p-2.5 rounded-lg border opacity-75">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-sm font-medium">{p.title} — {p.amount} ر.ع</p>
+                    <Badge variant={p.status === 'approved' ? 'default' : 'destructive'} className="text-xs">
+                      {p.status === 'approved' ? (isRtl ? 'معتمدة' : 'Approved') : (isRtl ? 'مرفوضة' : 'Rejected')}
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">
+                      {p.user ? (isRtl ? p.user.name : (p.user.nameEn || p.user.name)) : '-'}
+                      {p.reviewedBy ? (isRtl ? ' • راجعها: ' : ' • reviewed by: ') + (isRtl ? p.reviewedBy.name : (p.reviewedBy.nameEn || p.reviewedBy.name)) : ''}
+                    </span>
+                  </div>
+                </div>
+              )
+            })}
+          </>
+        )}
+      </CardContent>
+      {/* نافذة عرض الفاتورة */}
+      <Dialog open={!!viewImg} onOpenChange={function(open) { if (!open) setViewImg(null) }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{isRtl ? 'صورة الفاتورة' : 'Invoice image'}</DialogTitle>
+          </DialogHeader>
+          {viewImg && <img src={viewImg} alt="invoice" className="w-full max-h-[70vh] object-contain rounded-lg" />}
+        </DialogContent>
+      </Dialog>
+    </Card>
+  )
+}
