@@ -451,8 +451,8 @@ export default function AppShell() {
         </nav>
 
         <div className="p-3 border-t border-sidebar-border">
-          {/* v46: علامة الإصدار — إن لم تظهر هنا فالنشر الأخير لم يتم بعد */}
-          <p className="text-center text-[10px] text-muted-foreground/60 select-none">v46</p>
+          {/* v47: علامة الإصدار — إن لم تظهر هنا فالنشر الأخير لم يتم بعد */}
+          <p className="text-center text-[10px] text-muted-foreground/60 select-none">v47</p>
           <div className="flex items-center gap-3 p-2 rounded-lg">
             <Avatar className="h-11 w-11 lg:h-9 lg:w-9 border-2 border-primary/20 shrink-0">
               <AvatarFallback className="bg-primary/10 text-primary font-semibold">
