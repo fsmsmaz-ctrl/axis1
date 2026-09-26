@@ -45,6 +45,10 @@ export const OVERSIGHT_NOTIFICATION_TYPES = [
   'task_ready_review',
   'task_overdue',
   'task_due_soon',
+  // v49: تغييرات الملف الشخصي والمشتريات — موطنها الحصري قسم الرقابة العملية
+  'profile_updated',
+  'password_changed',
+  'purchase_log',
   // أنواع رقابية قديمة — سجلاتها التاريخية تظهر في قسم الرقابة فقط (v19)
   'safety_alert',
   'work_stopped',
