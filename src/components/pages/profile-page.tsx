@@ -400,8 +400,8 @@ export default function ProfilePage() {
         <CardContent>
           <p className="text-xs text-muted-foreground mb-3">
             {isRtl
-              ? 'رتبتك وصلاحيات وصولك إلى الأقسام يحددها النظام وتديرها الإدارة من إدارة المستخدمين — لا يمكن تعديلها من الملف الشخصي، وتظهر هنا للاطلاع فقط.'
-              : 'Your rank and section access are set by the system and managed by administration in User Management — they cannot be changed from the profile, shown for reference only.'}
+              ? 'رتبتك وصلاحيات وصولك يحددها النظام وتديرها الإدارة من إدارة المستخدمين — لا يمكن تعديلها من الملف الشخصي، وللسرية التامة تظهر هنا فقط الصلاحيات المتاحة لك دون المقفلة.'
+              : 'Your rank and access are set by the system and managed by administration in User Management — they cannot be changed from the profile; for full confidentiality only your available permissions are shown, never the locked ones.'}
           </p>
           <div className="space-y-4">
             <div>
@@ -414,40 +414,46 @@ export default function ProfilePage() {
             <div>
               <p className="text-xs font-semibold text-muted-foreground mb-1.5">
                 {isRtl
-                  ? 'الأقسام المتاح الوصول إليها (' + v49ModuleAccess.length + ' من ' + MODULE_PERMISSIONS.length + ')'
-                  : 'Accessible sections (' + v49ModuleAccess.length + ' of ' + MODULE_PERMISSIONS.length + ')'}
+                  ? 'الأقسام المتاح الوصول إليها (' + v49ModuleAccess.length + ')'
+                  : 'Accessible sections (' + v49ModuleAccess.length + ')'}
               </p>
-              <div className="flex flex-wrap gap-1.5">
-                {MODULE_PERMISSIONS.map(function(res) {
-                  var ok = v49ModuleAccess.indexOf(res) !== -1
-                  var lbl = TOGGLABLE_PERMISSION_LABELS[res]
-                  return (
-                    <span key={res} className={'inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-full border ' + (ok ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-muted/40 border-border text-muted-foreground/60 line-through')}>
-                      {ok ? <CheckCircle2 className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
-                      {lbl ? (isRtl ? lbl.ar : lbl.en) : res}
-                    </span>
-                  )
-                })}
-              </div>
+              {v49ModuleAccess.length === 0 ? (
+                <p className="text-xs text-muted-foreground/70">{isRtl ? 'لا توجد أقسام مفتوحة لك حالياً' : 'No open sections for you currently'}</p>
+              ) : (
+                <div className="flex flex-wrap gap-1.5">
+                  {v49ModuleAccess.map(function(res) {
+                    var lbl = TOGGLABLE_PERMISSION_LABELS[res]
+                    return (
+                      <span key={res} className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-full border bg-emerald-50 border-emerald-200 text-emerald-700">
+                        <CheckCircle2 className="h-3 w-3" />
+                        {lbl ? (isRtl ? lbl.ar : lbl.en) : res}
+                      </span>
+                    )
+                  })}
+                </div>
+              )}
             </div>
             <div>
               <p className="text-xs font-semibold text-muted-foreground mb-1.5">
                 {isRtl
-                  ? 'التقارير المسموحة (' + v49ReportAccess.length + ' من ' + REPORT_PERMISSIONS.length + ')'
-                  : 'Allowed reports (' + v49ReportAccess.length + ' of ' + REPORT_PERMISSIONS.length + ')'}
+                  ? 'التقارير المسموحة (' + v49ReportAccess.length + ')'
+                  : 'Allowed reports (' + v49ReportAccess.length + ')'}
               </p>
-              <div className="flex flex-wrap gap-1.5">
-                {REPORT_PERMISSIONS.map(function(res) {
-                  var ok = v49ReportAccess.indexOf(res) !== -1
-                  var lbl = TOGGLABLE_PERMISSION_LABELS[res]
-                  return (
-                    <span key={res} className={'inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-full border ' + (ok ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-muted/40 border-border text-muted-foreground/60 line-through')}>
-                      {ok ? <CheckCircle2 className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
-                      {lbl ? (isRtl ? lbl.ar : lbl.en) : res}
-                    </span>
-                  )
-                })}
-              </div>
+              {v49ReportAccess.length === 0 ? (
+                <p className="text-xs text-muted-foreground/70">{isRtl ? 'لا توجد تقارير مفتوحة لك حالياً' : 'No open reports for you currently'}</p>
+              ) : (
+                <div className="flex flex-wrap gap-1.5">
+                  {v49ReportAccess.map(function(res) {
+                    var lbl = TOGGLABLE_PERMISSION_LABELS[res]
+                    return (
+                      <span key={res} className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-full border bg-emerald-50 border-emerald-200 text-emerald-700">
+                        <CheckCircle2 className="h-3 w-3" />
+                        {lbl ? (isRtl ? lbl.ar : lbl.en) : res}
+                      </span>
+                    )
+                  })}
+                </div>
+              )}
             </div>
           </div>
         </CardContent>
