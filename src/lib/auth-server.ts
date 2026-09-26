@@ -6,6 +6,8 @@ import bcrypt from 'bcryptjs'
 import { SignJWT, jwtVerify } from 'jose'
 import { db } from './db'
 import { SessionUser, SESSION_COOKIE, getSessionMaxAge, getCookieOptions } from './auth'
+// v50: الشفاء الذاتي لجلسات المستخدمين عند نقص أعمدة/جداول حديثة
+import { ensurePurchasesSupport } from './db-selfheal'
 
 // v14 SECURITY: hash وهمي لمقارنات مستخدم غير موجود — تسوية زمن الدخول (منع timing enumeration)
 const DUMMY_HASH = '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy'
@@ -103,7 +105,21 @@ export async function getSessionUser(token: string | undefined): Promise<Session
     const userId = payload.sub
     if (!userId) return null
 
-    const user = await db.user.findUnique({ where: { id: userId } })
+    // v50: إذا فشل الجلب بسبب عمود/جدول غير مطبّق (P2022/P2021 — Netlify لا يشغّل
+    // migrate deploy) نشغّل الشفاء الذاتي ونعيد المحاولة مرة واحدة حتى لا تنقطع
+    // جلسات المستخدمين العاملين بعد نشر تحديث جديد.
+    var user: any = null
+    try {
+      user = await db.user.findUnique({ where: { id: userId } })
+    } catch (healErr) {
+      var healCode = (healErr as { code?: string } | null)?.code || ''
+      if (healCode === 'P2022' || healCode === 'P2021') {
+        await ensurePurchasesSupport()
+        user = await db.user.findUnique({ where: { id: userId } })
+      } else {
+        throw healErr
+      }
+    }
     if (!user || !user.active) return null
 
     // v14 SECURITY: إبطال الجلسات — إذا رُفعت tokenVersion في قاعدة البيانات
