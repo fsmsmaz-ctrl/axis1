@@ -62,7 +62,7 @@ const navItems: NavItem[] = [
   { id: 'reports', labelAr: 'التقارير', labelEn: 'Reports', icon: FileBarChart, resource: 'reports' },
   { id: 'oversight', labelAr: 'الرقابة العملية', labelEn: 'Operational Control', icon: Eye, resource: 'oversight' },
   { id: 'notifications', labelAr: 'التنبيهات', labelEn: 'Notifications', icon: Bell, resource: 'notifications' },
-  // v48: الملف الشخصي — أسفل القائمة ومتاح لكل المستخدمين
+  // v48/v51: الملف الشخصي — يبقى هنا لعنوان الصفحة فقط، ولا يُعرض ضمن قائمة الأقسام (يُفتح من بطاقة المستخدم أسفل الشريط)
   { id: 'profile', labelAr: 'الملف الشخصي', labelEn: 'Profile', icon: UserCircle, resource: 'profile' },
 ]
 
@@ -206,8 +206,10 @@ export default function AppShell() {
   const allowedItems = navItems.filter(item => {
     // v40: تقييم الأداء يظهر أيضاً لمدير النظام — استثناء وحيد، باقي الأقسام المالية تبقى محجوبة عنه
     if (item.id === 'performance' && !canViewPricing(user) && (user.email || '').toLowerCase().trim() !== SYSTEM_ADMIN_EMAIL) return false
-    // v48: الملف الشخصي متاح لكل المستخدمين بلا استثناء
-    if (item.id === 'profile') return true
+    // v51: الملف الشخصي ليس قسماً — حُذف من قائمة الأقسام (الشريط الجانبي والشريط السفلي)
+    // ويُفتح من بطاقة المستخدم أسفل الشريط بجانب زر تسجيل الخروج فقط؛
+    // بقاءه في navItems يحفظ عنوان الصفحة في الشريط العلوي
+    if (item.id === 'profile') return false
     return hasPermission(user.role, item.resource, user.permissions, user.email)
   })
   // لوحة التحكم لمدير النظام والإدارة العليا فقط — الموظفون يُوجّهون لأول صفحة مخوّلة
@@ -461,7 +463,7 @@ export default function AppShell() {
 
         <div className="p-3 border-t border-sidebar-border">
           {/* v48: علامة الإصدار — إن لم تظهر هنا فالنشر الأخير لم يتم بعد */}
-          <p className="text-center text-[10px] text-muted-foreground/60 select-none">v50</p>
+          <p className="text-center text-[10px] text-muted-foreground/60 select-none">v51</p>
           {/* v48: بطاقة المستخدم قابلة للنقر — تفتح الملف الشخصي */}
           <div className="flex items-center gap-3 p-2 rounded-lg cursor-pointer hover:bg-sidebar-accent transition-colors"
             onClick={function() { setSidebarOpen(false); setCurrentPage('profile') }}
