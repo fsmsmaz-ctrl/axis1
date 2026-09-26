@@ -853,8 +853,8 @@ export default function SafetyPage() {
                         </td>
                         <td className="p-2.5 text-xs text-muted-foreground">{w.project ? w.project.name : '-'}</td>
                         <td className="p-2.5">
-                          {/* الأزرار ظاهرة دائماً على الهاتف (لا يوجد hover باللمس) */}
-                          <div className="flex gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                          {/* v47: أزرار التعديل والحذف ظاهرة طوال الوقت — على الجوال والحاسوب */}
+                          <div className="flex gap-1">
                             <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={function() {
                               setEditingWorker(w)
                               setWorkerForm({
