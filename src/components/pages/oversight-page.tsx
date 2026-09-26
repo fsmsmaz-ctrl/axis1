@@ -53,6 +53,10 @@ const typeLabels: Record<string, { ar: string; en: string }> = {
   task_review_pending: { ar: 'بانتظار مراجعة مهمة', en: 'Task review pending' },
   task_waiting: { ar: 'مهمة بانتظار جهة أخرى', en: 'Task waiting' },
   task_ready_review: { ar: 'مهمة جاهزة للمراجعة', en: 'Task ready for review' },
+  // v49: أنواع الملف الشخصي والمشتريات (موطنها الحصري قسم الرقابة)
+  profile_updated: { ar: 'تحديث الملف الشخصي', en: 'Profile updated' },
+  password_changed: { ar: 'تغيير كلمة المرور', en: 'Password changed' },
+  purchase_log: { ar: 'نشاط مشتريات', en: 'Purchase activity' },
   // أنواع سابقة تبقى مدعومة
   work_stopped: { ar: 'توقف العمل', en: 'Work stopped' },
   low_production: { ar: 'انخفاض الإنتاج', en: 'Low production' },
@@ -82,13 +86,14 @@ const entityLabels: Record<string, { ar: string; en: string }> = {
   company_asset: { ar: 'أصل شركة', en: 'Company Asset' },
   worker: { ar: 'عامل', en: 'Worker' },
   user: { ar: 'مستخدم', en: 'User' },
+  purchase: { ar: 'عملية شراء', en: 'Purchase' },
   safety_inspection: { ar: 'فحص سلامة', en: 'Safety Inspection' },
 }
 
 const entityFilterOptions = [
   'project', 'drive_line', 'daily_report', 'safety_report', 'cost',
   'equipment', 'equipment_maintenance', 'finishing', 'company_asset',
-  'worker', 'user', 'safety_inspection',
+  'worker', 'user', 'purchase', 'safety_inspection',
 ]
 
 const actionFilterOptions = ['create', 'update', 'delete', 'approve', 'submit', 'reject']
