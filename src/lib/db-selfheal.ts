@@ -56,3 +56,58 @@ export async function ensureCompanyAssetRestoreMeta(): Promise<void> {
     console.error('v43: CompanyAsset restore-meta self-heal skipped:', e)
   }
 }
+
+
+// v48: الملف الشخصي والمشتريات — إنشاء عمود النقاط وجدول Purchase تلقائياً
+// (Netlify لا يشغّل migrate deploy — درس v44: الشفاء يُربط بالمسارات المستخدمة فعلياً)
+var v48PurchasesChecked = false
+
+export async function ensurePurchasesSupport(): Promise<void> {
+  if (v48PurchasesChecked) return
+  v48PurchasesChecked = true
+  try {
+    // 1) عمود النقاط على المستخدم — تُمنح لاحقاً عبر المهام (تحديث مستقل)
+    var userCols = await db.$queryRawUnsafe<Array<{ column_name: string }>>(
+      "SELECT column_name FROM information_schema.columns WHERE table_name = 'User'"
+    )
+    var hasPoints = userCols.some(function(c) { return c.column_name === 'points' })
+    if (!hasPoints) {
+      await db.$executeRawUnsafe('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "points" INTEGER NOT NULL DEFAULT 0')
+      console.warn('v48: User.points column created by self-heal')
+    }
+    // 2) جدول المشتريات
+    var purchaseTables = await db.$queryRawUnsafe<Array<{ table_name: string }>>(
+      "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'Purchase'"
+    )
+    if (purchaseTables.length === 0) {
+      await db.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "Purchase" (
+  "id" TEXT NOT NULL,
+  "userId" TEXT NOT NULL,
+  "title" TEXT NOT NULL,
+  "notes" TEXT,
+  "amount" DOUBLE PRECISION NOT NULL,
+  "invoiceImage" TEXT,
+  "status" TEXT NOT NULL DEFAULT 'draft',
+  "projectId" TEXT,
+  "reviewNote" TEXT,
+  "reviewedById" TEXT,
+  "reviewedAt" TIMESTAMP(3),
+  "costId" TEXT,
+  "submittedAt" TIMESTAMP(3),
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" TIMESTAMP(3) NOT NULL,
+  CONSTRAINT "Purchase_pkey" PRIMARY KEY ("id")
+)`)
+      await db.$executeRawUnsafe('CREATE INDEX IF NOT EXISTS "Purchase_userId_idx" ON "Purchase"("userId")')
+      await db.$executeRawUnsafe('CREATE INDEX IF NOT EXISTS "Purchase_status_idx" ON "Purchase"("status")')
+      await db.$executeRawUnsafe('CREATE UNIQUE INDEX IF NOT EXISTS "Purchase_costId_key" ON "Purchase"("costId")')
+      await db.$executeRawUnsafe('ALTER TABLE "Purchase" ADD CONSTRAINT "Purchase_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE')
+      await db.$executeRawUnsafe('ALTER TABLE "Purchase" ADD CONSTRAINT "Purchase_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project"("id") ON DELETE SET NULL ON UPDATE CASCADE')
+      await db.$executeRawUnsafe('ALTER TABLE "Purchase" ADD CONSTRAINT "Purchase_reviewedById_fkey" FOREIGN KEY ("reviewedById") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE')
+      await db.$executeRawUnsafe('ALTER TABLE "Purchase" ADD CONSTRAINT "Purchase_costId_fkey" FOREIGN KEY ("costId") REFERENCES "Cost"("id") ON DELETE SET NULL ON UPDATE CASCADE')
+      console.warn('v48: Purchase table created by self-heal')
+    }
+  } catch (e) {
+    console.error('v48 purchases self-heal skipped:', e)
+  }
+}
