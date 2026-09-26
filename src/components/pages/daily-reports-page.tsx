@@ -22,6 +22,7 @@ import {
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
 import { canWrite, SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
+import { reportDayName } from '@/lib/day-name'
 import { toast } from 'sonner'
 
 const statusLabels: Record<string, { ar: string; en: string; color: string }> = {
@@ -691,6 +692,10 @@ export default function DailyReportsPage() {
                       </div>
                       <p className="text-xs text-muted-foreground mt-0.5">
                         {new Date(r.reportDate).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
+                        {/* v46: اسم يوم التقرير بجانب التاريخ بخط أصغر — يشمل التقارير القديمة والمستقبلية */}
+                        {reportDayName(r.reportDate, isRtl) && (
+                          <span className="text-[10px] text-muted-foreground/80"> ({reportDayName(r.reportDate, isRtl)})</span>
+                        )}
                         {' • '}
                         {r.workStartTime} - {r.workEndTime}
                         {' • '}
@@ -1070,7 +1075,8 @@ function ReportDetails({ report }: { report: any }) {
         <Detail label={isRtl ? 'المشروع' : 'Project'} value={report.project?.name || '-'} />
         {/* v25: الصيغة الكاملة لخط الحفر بدل رقم الخط فقط */}
         <Detail label={isRtl ? 'خط الحفر' : 'Drive Line'} value={report.driveLine ? driveLineLabel(report.driveLine, isRtl) : '-'} />
-        <Detail label={isRtl ? 'التاريخ' : 'Date'} value={new Date(report.reportDate).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')} />
+        {/* v46: اسم يوم التقرير بجانب التاريخ في نافذة التفاصيل */}
+        <Detail label={isRtl ? 'التاريخ' : 'Date'} value={new Date(report.reportDate).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US') + (reportDayName(report.reportDate, isRtl) ? ' — ' + reportDayName(report.reportDate, isRtl) : '')} />
         <Detail label={isRtl ? 'الطقس' : 'Weather'} value={report.weather || '-'} />
         <Detail label={isRtl ? 'بداية العمل' : 'Start'} value={report.workStartTime || '-'} />
         <Detail label={isRtl ? 'نهاية العمل' : 'End'} value={report.workEndTime || '-'} />
