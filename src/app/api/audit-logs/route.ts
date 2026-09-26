@@ -96,6 +96,9 @@ export async function GET(req: NextRequest) {
     { entity: 'equipment', ar: 'المعدات', en: 'Equipment', count: logs.filter(function(l: any) { return l.entity === 'equipment' }).length },
     { entity: 'drive_line', ar: 'خطوط الحفر', en: 'Drive Lines', count: logs.filter(function(l: any) { return l.entity === 'drive_line' }).length },
     { entity: 'finishing', ar: 'التشطيبات', en: 'Finishings', count: logs.filter(function(l: any) { return l.entity === 'finishing' }).length },
+    // v49: المشتريات وسجلات الملفات الشخصية
+    { entity: 'purchase', ar: 'المشتريات', en: 'Purchases', count: logs.filter(function(l: any) { return l.entity === 'purchase' }).length },
+    { entity: 'user', ar: 'الملفات الشخصية', en: 'User Profiles', count: logs.filter(function(l: any) { return l.entity === 'user' }).length },
   ]
 
   var actionStats = [
