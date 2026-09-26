@@ -14,6 +14,7 @@ import {
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
 import { hasReportPermission, canViewPricing } from '@/lib/auth'
+import { reportDayName } from '@/lib/day-name'
 import { toast } from 'sonner'
 import {
   reportTypes, reportStatusLabels, incidentLabels, handoverStatusLabels,
@@ -473,7 +474,13 @@ function ReportPreview({ data }: { data: any }) {
               <tbody>
                 {(data.data.reports || []).map((r: any) => (
                   <tr key={r.id} className="border-b">
-                    <td className="p-2">{new Date(r.reportDate).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')}</td>
+                    <td className="p-2">
+                      {new Date(r.reportDate).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')}
+                      {/* v46: يوم التقرير — سجل التقارير اليومية */}
+                      {reportDayName(r.reportDate, isRtl) && (
+                        <span className="block text-[10px] text-muted-foreground/80">{reportDayName(r.reportDate, isRtl)}</span>
+                      )}
+                    </td>
                     <td className="p-2">{r.project?.name}</td>
                     <td className="p-2">{r.driveLine?.lineNumber || '-'}</td>
                     <td className="p-2">{fmtNum(r.dailyMeters)}</td>
@@ -505,7 +512,13 @@ function ReportPreview({ data }: { data: any }) {
               <tbody>
                 {(data.data.reports || []).map((r: any) => (
                   <tr key={r.id} className="border-b">
-                    <td className="p-2">{new Date(r.reportDate).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')}</td>
+                    <td className="p-2">
+                      {new Date(r.reportDate).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')}
+                      {/* v46: يوم التقرير — سجل الحضور */}
+                      {reportDayName(r.reportDate, isRtl) && (
+                        <span className="block text-[10px] text-muted-foreground/80">{reportDayName(r.reportDate, isRtl)}</span>
+                      )}
+                    </td>
                     <td className="p-2">{r.project?.name}</td>
                     <td className="p-2">{r.workersCount}</td>
                     <td className="p-2">{r.absentees || '-'}</td>
@@ -536,7 +549,13 @@ function ReportPreview({ data }: { data: any }) {
               <tbody>
                 {(data.data.reports || []).filter((r: any) => r.safety).map((r: any) => (
                   <tr key={r.id} className="border-b">
-                    <td className="p-2">{new Date(r.reportDate).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')}</td>
+                    <td className="p-2">
+                      {new Date(r.reportDate).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')}
+                      {/* v46: يوم التقرير — سجل السلامة */}
+                      {reportDayName(r.reportDate, isRtl) && (
+                        <span className="block text-[10px] text-muted-foreground/80">{reportDayName(r.reportDate, isRtl)}</span>
+                      )}
+                    </td>
                     <td className="p-2">{r.project?.name}</td>
                     <td className="p-2">{r.safety.violations || '-'}</td>
                     <td className="p-2">{localized(incidentLabels, r.safety.incidentType, isRtl)}</td>
