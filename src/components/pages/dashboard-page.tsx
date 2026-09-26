@@ -17,6 +17,7 @@ import {
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
 import { canViewPricing, canAccessDashboard } from '@/lib/auth'
+import { reportDayName } from '@/lib/day-name'
 
 interface DashboardData {
   stats: {
@@ -568,7 +569,12 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-sm truncate">{r.project?.name}</p>
                       <p className="text-xs text-muted-foreground">
-                        {new Date(r.reportDate).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')} • {r.driveLine?.lineNumber || '-'}
+                        {new Date(r.reportDate).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')}
+                        {/* v46: يوم التقرير — التقارير الأخيرة في لوحة التحكم */}
+                        {reportDayName(r.reportDate, isRtl) && (
+                          <span className="text-[10px] text-muted-foreground/80"> ({reportDayName(r.reportDate, isRtl)})</span>
+                        )}
+                        {' • '}{r.driveLine?.lineNumber || '-'}
                       </p>
                     </div>
                     <div className="text-left shrink-0">
