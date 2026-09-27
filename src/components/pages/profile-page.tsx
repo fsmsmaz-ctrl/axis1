@@ -327,6 +327,8 @@ export default function ProfilePage() {
     : roleKey === 'hse_officer' ? (isRtl ? 'مسؤول السلامة' : 'HSE Officer')
     : roleKey === 'foreman' ? (isRtl ? 'المشرف' : 'Foreman')
     : roleKey === 'accountant' ? (isRtl ? 'المحاسب' : 'Accountant')
+    // v52: زائر
+    : roleKey === 'visitor' ? (isRtl ? 'زائر' : 'Visitor')
     : roleKey
 
   // v49: صلاحيات الوصول للأقسام — قراءة فقط (تديرها الإدارة من إدارة المستخدمين)
