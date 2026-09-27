@@ -106,6 +106,12 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
   accountant: [
     'projects', 'costs', 'tasks', 'reports', 'notifications',
   ],
+  // v52: الزائر — يرى قسم خطوط الحفر للقراءة فقط:
+  // ليس في WRITE_ROLES.drive_lines فلا أزرار إضافة/تعديل/حذف (والخادم يرفض كتاباته بـ 403)،
+  // وليس في PRICING_ALLOWED_ROLES فلا يرى أي سعر إطلاقاً (حظر سرية صارم عميل وخادم).
+  visitor: [
+    'drive_lines',
+  ],
 }
 
 // ─── Dashboard access (restricted) ─────────────────────────────
@@ -125,7 +131,8 @@ export function canAccessDashboard(
 }
 
 // H-1 FIX: Role-based access control helper for API routes
-export const VALID_ROLES = ['top_management', 'project_manager', 'site_engineer', 'hse_officer', 'foreman', 'accountant'] as const
+// v52: زائر — حساب للمعاينة فقط: قراءة فقط لقسم خطوط الحفر وبلا أي أسعار
+export const VALID_ROLES = ['top_management', 'project_manager', 'site_engineer', 'hse_officer', 'foreman', 'accountant', 'visitor'] as const
 
 // Roles that can write to each resource
 export const WRITE_ROLES: Record<string, string[]> = {
