@@ -9,6 +9,8 @@ import { db } from '@/lib/db'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 // v50: الشفاء الذاتي على مسار الدخول — انظر الاستدعاء قبل verifyCredentials
 import { ensurePurchasesSupport } from '@/lib/db-selfheal'
+// v52: إنشاء حساب الزائر تلقائياً عند أول محاولة دخول (قبل verifyCredentials)
+import { ensureVisitorAccount } from '@/lib/db-selfheal'
 
 export async function POST(req: NextRequest) {
   var rl = checkRateLimit(req, RateLimitPresets.auth)
@@ -62,6 +64,8 @@ export async function POST(req: NextRequest) {
     // قد لا تكون مطبقة لأن Netlify لا يشغّل prisma migrate deploy (درس v44)،
     // وfindUnique يقرأ كل أعمدة النموذج فيفشل الدخول بـ P2022 إن نقص عمود واحد.
     await ensurePurchasesSupport()
+    // v52: ضمان وجود حساب الزائر (زائر — visitor@axis.om) قبل التحقق من بيانات الدخول
+    await ensureVisitorAccount()
 
     var user = await verifyCredentials(emailStr, password)
     if (!user) {
