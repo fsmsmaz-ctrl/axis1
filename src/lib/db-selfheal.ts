@@ -6,6 +6,7 @@
 // - إن كان القيد فعلاً SET NULL فلا يُنفَّذ أي DDL
 // - أي فشل يُسجَّل في السجل ولا يعطّل الطلب الأصلي
 
+import bcrypt from 'bcryptjs'
 import { db } from '@/lib/db'
 
 var v42FkChecked = false
@@ -116,5 +117,36 @@ export async function ensurePurchasesSupport(): Promise<void> {
     }
   } catch (e) {
     console.error('v48 purchases self-heal skipped:', e)
+  }
+}
+
+
+// v52: حساب الزائر — يُنشأ تلقائياً مرة واحدة (نمط الشفاء الذاتي، مثل حساب الأدمن):
+// زائر / visitor@axis.om بدور visitor — قراءة فقط لخطوط الحفر وبلا أي أسعار.
+// لا يُعاد تفعيله إن عطّله المدير (الإنشاء فقط عند عدم الوجود) وكلمة المرور
+// قابلة للتغيير من إدارة المستخدمين كأي مستخدم (مع إبطال الجلسات القديمة).
+var v52VisitorChecked = false
+
+export async function ensureVisitorAccount(): Promise<void> {
+  if (v52VisitorChecked) return
+  v52VisitorChecked = true
+  try {
+    var existing = await db.user.findUnique({ where: { email: 'visitor@axis.om' }, select: { id: true } })
+    if (existing) return
+    var passwordHash = await bcrypt.hash('visitor123', 12)
+    await db.user.create({
+      data: {
+        email: 'visitor@axis.om',
+        password: passwordHash,
+        name: 'زائر',
+        nameEn: 'Visitor',
+        role: 'visitor',
+        language: 'ar',
+        active: true,
+      },
+    })
+    console.warn('v52: visitor account created (visitor@axis.om) — read-only drive_lines, no pricing')
+  } catch (e) {
+    console.error('v52: visitor account seed skipped:', e)
   }
 }
