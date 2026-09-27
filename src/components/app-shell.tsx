@@ -73,6 +73,8 @@ const roleLabels: Record<string, { ar: string; en: string }> = {
   hse_officer: { ar: 'مسؤول السلامة', en: 'HSE Officer' },
   foreman: { ar: 'المشرف', en: 'Foreman' },
   accountant: { ar: 'المحاسب', en: 'Accountant' },
+  // v52: زائر — قراءة فقط لخطوط الحفر وبلا أسعار
+  visitor: { ar: 'زائر', en: 'Visitor' },
 }
 
 const ROLES = [
@@ -82,6 +84,8 @@ const ROLES = [
   { value: 'hse_officer', ar: 'مسؤول السلامة HSE', en: 'HSE Officer' },
   { value: 'foreman', ar: 'المشرف / الفورمان', en: 'Foreman' },
   { value: 'accountant', ar: 'المحاسب / الإدارة المالية', en: 'Accountant' },
+  // v52: زائر
+  { value: 'visitor', ar: 'زائر', en: 'Visitor' },
 ]
 
 // ─── Permission helpers ──────────────────────────────────────────
@@ -463,7 +467,7 @@ export default function AppShell() {
 
         <div className="p-3 border-t border-sidebar-border">
           {/* v48: علامة الإصدار — إن لم تظهر هنا فالنشر الأخير لم يتم بعد */}
-          <p className="text-center text-[10px] text-muted-foreground/60 select-none">v51</p>
+          <p className="text-center text-[10px] text-muted-foreground/60 select-none">v52</p>
           {/* v48: بطاقة المستخدم قابلة للنقر — تفتح الملف الشخصي */}
           <div className="flex items-center gap-3 p-2 rounded-lg cursor-pointer hover:bg-sidebar-accent transition-colors"
             onClick={function() { setSidebarOpen(false); setCurrentPage('profile') }}
