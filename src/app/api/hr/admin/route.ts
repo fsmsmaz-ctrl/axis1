@@ -247,7 +247,8 @@ export async function POST(req: NextRequest) {
       var target = await db.user.findUnique({ where: { id: userId }, select: { id: true, name: true } })
       if (!target) return NextResponse.json({ error: 'not_found', message: 'الموظف غير موجود' }, { status: 404 })
       await getOrCreateBalance(userId)
-      await db.leaveBalance.update({ where: { userId }, data: { annualTotal, carriedOver } })
+      // v61: تحديد صريح من الإدارة = بيانات الإجازة مُدخلة (اكتمال)
+      await db.leaveBalance.update({ where: { userId }, data: { annualTotal, carriedOver, configured: true } })
       try {
         await db.auditLog.create({
           data: {
@@ -277,7 +278,7 @@ export async function POST(req: NextRequest) {
       var newUsed = Math.max(0, adjBalance.used + delta)
       var applied = newUsed - adjBalance.used
       await db.$transaction([
-        db.leaveBalance.update({ where: { userId: adjUserId }, data: { used: newUsed } }),
+        db.leaveBalance.update({ where: { userId: adjUserId }, data: { used: newUsed, configured: true } }),
         db.leaveAdjustment.create({
           data: { userId: adjUserId, delta: applied, reason: reason.slice(0, 500), byId: me.id },
         }),
