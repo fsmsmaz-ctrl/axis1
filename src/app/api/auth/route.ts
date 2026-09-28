@@ -8,7 +8,7 @@ import { verifyCredentials, createSession, getCookieOptions, SESSION_COOKIE } fr
 import { db } from '@/lib/db'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 // v50: الشفاء الذاتي على مسار الدخول — انظر الاستدعاء قبل verifyCredentials
-import { ensurePurchasesSupport } from '@/lib/db-selfheal'
+import { ensurePurchasesSupport, ensureHRSupport } from '@/lib/db-selfheal'
 // v52: إنشاء حساب الزائر تلقائياً عند أول محاولة دخول (قبل verifyCredentials)
 import { ensureVisitorAccount } from '@/lib/db-selfheal'
 
@@ -66,6 +66,9 @@ export async function POST(req: NextRequest) {
     await ensurePurchasesSupport()
     // v52: ضمان وجود حساب الزائر (زائر — visitor@axis.om) قبل التحقق من بيانات الدخول
     await ensureVisitorAccount()
+    // v53: أعمدة الموارد البشرية على User إلزامية قبل findUnique (يقرأ كل أعمدة النموذج —
+    // أي عمود ناقص يعطّل الدخول بـ P2022) + جداول الإجازات
+    await ensureHRSupport()
 
     var user = await verifyCredentials(emailStr, password)
     if (!user) {
