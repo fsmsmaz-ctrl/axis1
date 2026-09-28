@@ -133,35 +133,58 @@ export async function POST(req: NextRequest) {
     }
     // === End of drive line validation ===
 
-    // === Check: only ONE safety report per employee per project per day ===
+    // === فحص التكرار ===
+    // v55: القاعدة أصبحت «تقرير سلامة واحد لكل خط حفر في اليوم» بدل «تقرير واحد لكل مشروع في اليوم» —
+    // المشاريع متعددة الخطوط (مثل تواتير 1 وتواتير 2) تحتاج تقرير سلامة مستقلاً لكل خط في نفس التاريخ،
+    // بينما القيد القديم كان يربط كل خطوط المشروع ببعضها فيمنع التقرير الثاني.
+    // - عند اختيار خط حفر: نمنع التكرار على مستوى (المشروع + الخط + التاريخ) لأي موقّع،
+    //   لأن منع تكرار التقرير اليومي لنفس الخط في نفس اليوم أهم من هوية الموقّع
+    // - بدون خط حفر: يبقى السلوك القديم (تقرير واحد لكل موظف لكل مشروع في اليوم)
     var dateStart = new Date(body.reportDate)
     dateStart.setHours(0, 0, 0, 0)
     var dateEnd = new Date(body.reportDate)
     dateEnd.setHours(23, 59, 59, 999)
 
-    var existingResult = await safeDbOp(
-      () => db.safetyReport.findFirst({
-        where: {
+    var selectedLineId = body.driveLineId ? String(body.driveLineId) : ''
+
+    var duplicateWhere: any = selectedLineId
+      ? {
+          projectId: body.projectId,
+          reportDate: { gte: dateStart, lte: dateEnd },
+          dailyReport: { driveLineId: selectedLineId },
+        }
+      : {
           projectId: body.projectId,
           signedById: userId,
           reportDate: { gte: dateStart, lte: dateEnd },
-        },
-        include: { dailyReport: { select: { id: true } } },
+        }
+
+    var existingResult = await safeDbOp(
+      () => db.safetyReport.findFirst({
+        where: duplicateWhere,
+        include: { dailyReport: { select: { id: true, driveLine: { select: { lineNumber: true, startPoint: true, endPoint: true } } } } },
       }),
       'التحقق من فحص السلامة'
     )
 
     if (existingResult.success && existingResult.data) {
+      var dupLine = existingResult.data.dailyReport && existingResult.data.dailyReport.driveLine
+      var dupLineLabel = dupLine
+        ? ('خط ' + (dupLine.lineNumber || '-') + ' - ' + (dupLine.startPoint || '-') + ' \u2192 ' + (dupLine.endPoint || '-'))
+        : ''
+      var dupMessage = selectedLineId
+        ? ('تم إنشاء تقرير سلامة لهذا الخط (' + dupLineLabel + ') في هذا التاريخ بالفعل — كل خط حفر له تقريره المستقل في نفس اليوم')
+        : 'لقد قمت بإنشاء تقرير سلامة لهذا المشروع في هذا التاريخ بالفعل'
       return NextResponse.json(
         {
           error: 'duplicate',
-          message: 'لقد قمت بإنشاء تقرير سلامة لهذا المشروع في هذا التاريخ بالفعل',
+          message: dupMessage,
           existingId: existingResult.data.id,
         },
         { status: 409 }
       )
     }
-    // === End of duplicate check ===
+    // === نهاية فحص التكرار ===
 
     // 1. Create a minimal daily report (safety_only flag via status)
     var createReportResult = await safeDbOp(
