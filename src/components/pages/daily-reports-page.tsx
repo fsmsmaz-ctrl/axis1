@@ -492,8 +492,8 @@ export default function DailyReportsPage() {
   const canEditReports = isAdmin ||
     canWrite(user?.role || '', 'daily_reports', user?.permissions) ||
     canWrite(user?.role || '', 'safety', user?.permissions)
-  // v23: الاعتماد — مدير النظام (admin@axis.om) فقط
-  const canApprove = isAdmin
+  // v59: الاعتماد — مدير النظام أو الإدارة العليا (طابق توسعة نقطة النهاية approve)
+  const canApprove = isAdmin || user?.role === 'top_management'
   // تسميات القراءة فقط لبيانات السلامة في وضع التعديل
   const editProjectName = projects.find((p) => p.id === formData.projectId)?.name || editProjectNameFallback
   const editDriveLine = driveLines.find((l) => l.id === formData.driveLineId)
@@ -1172,4 +1172,5 @@ function Stat({ label, value, color }: { label: string; value: string; color: st
     </div>
   )
 }
+
 
