@@ -7,7 +7,7 @@ import { SignJWT, jwtVerify } from 'jose'
 import { db } from './db'
 import { SessionUser, SESSION_COOKIE, getSessionMaxAge, getCookieOptions } from './auth'
 // v50: الشفاء الذاتي لجلسات المستخدمين عند نقص أعمدة/جداول حديثة
-import { ensurePurchasesSupport } from './db-selfheal'
+import { ensurePurchasesSupport, ensureHRSupport } from './db-selfheal'
 
 // v14 SECURITY: hash وهمي لمقارنات مستخدم غير موجود — تسوية زمن الدخول (منع timing enumeration)
 const DUMMY_HASH = '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy'
@@ -115,6 +115,8 @@ export async function getSessionUser(token: string | undefined): Promise<Session
       var healCode = (healErr as { code?: string } | null)?.code || ''
       if (healCode === 'P2022' || healCode === 'P2021') {
         await ensurePurchasesSupport()
+        // v53: أعمدة الموارد البشرية على User قد تكون سبب P2022 أيضاً
+        await ensureHRSupport()
         user = await db.user.findUnique({ where: { id: userId } })
       } else {
         throw healErr
