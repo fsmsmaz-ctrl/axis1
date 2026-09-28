@@ -3,7 +3,7 @@
 
 import {
   FileText, FileSpreadsheet, FileBarChart, Calendar, DollarSign,
-  Shield, Users, Wrench, CheckCircle2, TrendingUp,
+  Shield, Users, Wrench, CheckCircle2, TrendingUp, Calculator,
 } from 'lucide-react'
 
 export interface ReportType {
@@ -27,6 +27,8 @@ export const reportTypes: ReportType[] = [
   { id: 'weekly', labelAr: 'تقرير الإنجاز الأسبوعي', labelEn: 'Weekly Progress', icon: Calendar, color: 'text-indigo-600', description: 'ملخص أسبوعي لجميع الأعمال' },
   { id: 'monthly', labelAr: 'تقرير شهري للإدارة', labelEn: 'Monthly Management', icon: FileBarChart, color: 'text-purple-600', description: 'تقرير شهري للإدارة العليا' },
   { id: 'handover', labelAr: 'تقرير تسليم الأعمال', labelEn: 'Handover Report', icon: CheckCircle2, color: 'text-emerald-600', description: 'تقارير التشطيب والتسليم' },
+  // v60: سري — يظهر للإدارة العليا ومدير النظام فقط (فلتر إضافي في صفحة التقارير + فحص على الخادم)
+  { id: 'operational_averages', labelAr: 'تقرير المتوسطات التشغيلية والمالية', labelEn: 'Operational & Financial Averages', icon: Calculator, color: 'text-amber-600', description: 'متوسطات الأداء والتكلفة والربح لكل مشروع خلال فترة محددة — سري للإدارة العليا' },
 ]
 
 export const reportStatusLabels: Record<string, { ar: string; en: string }> = {
