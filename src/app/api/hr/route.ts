@@ -11,7 +11,7 @@ import { db } from '@/lib/db'
 import { handleDbError } from '@/lib/api-helpers'
 import { isHRManager } from '@/lib/auth'
 import { ensureHRSupport } from '@/lib/db-selfheal'
-import { getOrCreateBalance, getPolicy, parseDay } from '@/lib/hr'
+import { getOrCreateBalance, getPolicy, parseDay, computeCompleteness } from '@/lib/hr'
 
 const hrUserSelect = {
   id: true, email: true, name: true, nameEn: true, role: true, phone: true, active: true,
@@ -48,6 +48,8 @@ export async function GET(req: NextRequest) {
     }
     var policy = await getPolicy()
     var balance = await getOrCreateBalance(targetId, policy.defaultAnnualDays)
+    // v61: اكتمال بيانات الموظف — يحكم ظهور الملف والإجازات للموظف نفسه
+    var completeness = computeCompleteness(target, balance)
     var history = await db.leaveRequest.findMany({
       where: { employeeId: targetId },
       orderBy: { createdAt: 'desc' },
@@ -68,11 +70,30 @@ export async function GET(req: NextRequest) {
       },
     })
     var employees: any[] = []
+    var roster: any[] = []
     if (manager) {
       employees = await db.user.findMany({
         where: { role: { not: 'visitor' } },
-        select: { id: true, name: true, nameEn: true, role: true, jobTitle: true, active: true },
+        select: { id: true, name: true, nameEn: true, role: true, jobTitle: true, active: true,
+          // v61: حقول اكتمال البيانات لقائمة «تعبئة بيانات المستخدمين»
+          department: true, joinDate: true, employeeNo: true },
         orderBy: { name: 'asc' },
+      })
+      // v61: قائمة تعبئة بيانات الموظفين — حالة الاكتمال لكل موظف (وظيفية + إجازة)
+      var balRows = await db.leaveBalance.findMany({
+        select: { userId: true, annualTotal: true, carriedOver: true, used: true, configured: true },
+      })
+      var balByUser: Record<string, any> = {}
+      for (var bb of balRows) balByUser[bb.userId] = bb
+      roster = employees.map(function(u: any) {
+        var ub = balByUser[u.id] || null
+        var c = computeCompleteness(u, ub)
+        return {
+          id: u.id, name: u.name, nameEn: u.nameEn, role: u.role, active: u.active,
+          jobTitle: u.jobTitle, department: u.department, joinDate: u.joinDate, employeeNo: u.employeeNo,
+          jobComplete: c.job, leaveComplete: c.leave, complete: c.complete, missing: c.missing,
+          remainingBalance: ub ? (ub.annualTotal + ub.carriedOver - ub.used) : null,
+        }
       })
     }
     return NextResponse.json({
@@ -83,6 +104,9 @@ export async function GET(req: NextRequest) {
       history,
       adjustments,
       employees,
+      // v61
+      completeness,
+      roster,
     })
   } catch (error) {
     return handleDbError(error, 'جلب الملف الوظيفي')
