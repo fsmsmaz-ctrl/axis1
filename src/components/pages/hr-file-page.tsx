@@ -22,6 +22,7 @@ import {
 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
+import { SystemDiagnosticsButton } from '@/components/system-diagnostics'
 import { toast } from 'sonner'
 
 const roleLabels: Record<string, { ar: string; en: string }> = {
@@ -123,6 +124,8 @@ export default function HRFilePage({ hideHeader = false }: { hideHeader?: boolea
   const [data, setData] = useState<any | null>(null)
   const [loading, setLoading] = useState(true)
   const [targetId, setTargetId] = useState<string>('')
+  // v57: حالة الخطأ المرئية — كانت أخطاء الشبكة/الخادم تُبتلع صامتة فتبدو الصفحة "لا تفتح"
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   // تعديل الملف (الإدارة)
   const [editOpen, setEditOpen] = useState(false)
@@ -134,10 +137,32 @@ export default function HRFilePage({ hideHeader = false }: { hideHeader?: boolea
     try {
       const url = userId ? '/api/hr?userId=' + encodeURIComponent(userId) : '/api/hr'
       const r = await authedFetch(url)
+      // v57: كشف الردود غير JSON (502/504 HTML من المنصة) — نمط v56
+      const ct = r.headers.get('content-type') || ''
+      if (ct.indexOf('application/json') === -1) {
+        var unexpected = isAr
+          ? ('رد غير متوقع من الخادم (رمز ' + r.status + ') — قد تكون قاعدة البيانات أو منصة الاستضافة مشغولة مؤقتاً')
+          : ('Unexpected server response (HTTP ' + r.status + ')')
+        setLoadError(unexpected)
+        setData(null)
+        toast.error(unexpected)
+        return
+      }
       const d = await r.json()
-      if (r.ok) setData(d)
-      else toast.error(d.message || (isAr ? 'فشل جلب الملف الوظيفي' : 'Failed to load HR file'))
-    } catch {} finally {
+      if (r.ok) { setData(d); setLoadError(null) }
+      else {
+        var msg = d.message || (isAr ? 'فشل جلب الملف الوظيفي' : 'Failed to load HR file')
+        setLoadError(msg)
+        toast.error(msg)
+      }
+    } catch {
+      var netErr = isAr
+        ? 'تعذر الاتصال بالخادم — تحقق من الاتصال بالإنترنت ثم أعد المحاولة'
+        : 'Cannot reach the server — check your connection and retry'
+      setLoadError(netErr)
+      setData(null)
+      toast.error(netErr)
+    } finally {
       setLoading(false)
     }
   }
@@ -212,6 +237,24 @@ export default function HRFilePage({ hideHeader = false }: { hideHeader?: boolea
     )
   }
   if (!data?.profile) {
+    // v57: شاشة خطأ واضحة مع إعادة المحاولة وتشخيص النظام — بدل «لا توجد بيانات» الصامتة
+    if (loadError) {
+      return (
+        <div className="space-y-4 py-10">
+          <div className="mx-auto flex max-w-md flex-col items-center gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 p-5 text-center">
+            <AlertTriangle className="h-8 w-8 text-amber-600" />
+            <p className="text-sm font-medium leading-6 text-amber-800 dark:text-amber-300">{loadError}</p>
+            <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+              <Button size="sm" onClick={function() { load(targetId || undefined) }}>
+                <Loader2 className="h-4 w-4" />
+                {isAr ? 'إعادة المحاولة' : 'Retry'}
+              </Button>
+              <SystemDiagnosticsButton isAr={isAr} variant="sm" />
+            </div>
+          </div>
+        </div>
+      )
+    }
     return (
       <div className="text-center py-16 text-muted-foreground">
         {isAr ? 'لا توجد بيانات للعرض' : 'No data to display'}
