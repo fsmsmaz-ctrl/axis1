@@ -8,7 +8,8 @@ import { Button } from '@/components/ui/button'
 import {
   Activity, TrendingUp, TrendingDown, DollarSign, Wallet,
   Users, AlertTriangle, Wrench, FolderKanban, ArrowLeft,
-  Trophy, AlertCircle, Calendar, Cpu, RefreshCw, Receipt, Check, X, Loader2
+  Trophy, AlertCircle, Calendar, Cpu, RefreshCw, Receipt, Check, X, Loader2,
+  ClipboardCheck, CheckCircle2
 } from 'lucide-react'
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid,
@@ -88,6 +89,9 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
   const seePricing = !!(user && (canViewPricing(user) || canAccessDashboard(user)))
   // v48: مراجعو الفواتير — الإدارة العليا ومدير النظام فقط
   const canReviewInvoices = !!(user && (user.role === 'top_management' || user.isSystemAdmin))
+  // v59: اعتماد التقارير من لوحة التحكم — مدير النظام والإدارة العليا
+  // (نفس من يرى اللوحة، وطابق توسعة نقطة النهاية approve في v59)
+  const canApproveReports = !!(user && (user.isSystemAdmin || user.role === 'top_management'))
   const isRtl = language === 'ar'
 
   async function fetchDashboard() {
@@ -335,6 +339,13 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
         <MiniStat icon={TrendingDown} label={isRtl ? 'تكاليف الشهر' : 'Month Costs'} value={fmtCurrency(stats.monthCosts)} color="text-purple-600" />
         <MiniStat icon={Activity} label={isRtl ? 'أمتار الشهر' : 'Month Meters'} value={fmt(stats.metersThisMonth) + ' م'} color="text-cyan-600" />
       </div>
+
+      {/* v59: قسم «تقارير بانتظار الاعتماد» — قسم كامل مستقل: فقط التقارير المسلّمة
+          تحتاج قراراً، مع كل التفاصيل والاعتماد/الرفض من هنا دون الانتقال لقسم
+          التقارير اليومية، وبعد القرار يختفي التقرير من القائمة */}
+      {canApproveReports && (
+        <PendingApprovalsSection isRtl={isRtl} onChanged={fetchDashboard} />
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <Card className="lg:col-span-2">
@@ -875,6 +886,264 @@ function InvoicesReviewSection({ isRtl, projects, onChanged }: { isRtl: boolean;
             <DialogTitle>{isRtl ? 'صورة الفاتورة' : 'Invoice image'}</DialogTitle>
           </DialogHeader>
           {viewImg && <img src={viewImg} alt="invoice" className="w-full max-h-[70vh] object-contain rounded-lg" />}
+        </DialogContent>
+      </Dialog>
+    </Card>
+  )
+}
+
+// v59: قسم «تقارير بانتظار الاعتماد» — يعرض فقط التقارير المسلّمة (submitted)
+// الاعتماد أو الرفض يتم من هنا مباشرة، مع حوار يعرض كل تفاصيل التقرير
+// (الإنتاج + الحضور + المرفقات + السلامة المرتبطة) دون الانتقال لقسم التقارير
+// اليومية. بعد الاعتماد أو الرفض يختفي التقرير من القائمة فوراً.
+function PendingApprovalsSection({ isRtl, onChanged }: { isRtl: boolean; onChanged: () => void }) {
+  const [items, setItems] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const [detailId, setDetailId] = useState<string | null>(null)
+  const [detail, setDetail] = useState<any>(null)
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [detailError, setDetailError] = useState<string | null>(null)
+
+  const weatherLabels: Record<string, { ar: string; en: string }> = {
+    sunny: { ar: 'مشمس', en: 'Sunny' },
+    cloudy: { ar: 'غائم', en: 'Cloudy' },
+    rainy: { ar: 'ممطر', en: 'Rainy' },
+    windy: { ar: 'رياح', en: 'Windy' },
+  }
+
+  async function load() {
+    setLoading(true)
+    setError(null)
+    try {
+      // نمط v56: ردود المنصة غير JSON تُكشف برسالة واضحة بدل الابتلاع الصامت
+      const r = await authedFetch('/api/daily-reports?status=submitted&limit=100')
+      const body = await r.json().catch(() => null)
+      if (!r.ok || !body) throw new Error((body && body.message) || ('HTTP ' + r.status))
+      if (body.error) throw new Error(body.message || body.error)
+      setItems(Array.isArray(body.reports) ? body.reports : [])
+    } catch (e: any) {
+      setError(e?.message || (isRtl ? 'فشل تحميل التقارير' : 'Failed to load reports'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { load() }, [])
+
+  async function act(id: string, action: 'approve' | 'reject') {
+    if (action === 'reject' && !window.confirm(isRtl
+      ? 'رفض هذا التقرير؟ سيُعاد لمنشئه مع إشعار، ويختفي من قائمة الاعتماد'
+      : 'Reject this report? The creator will be notified and it leaves the queue')) return
+    setBusyId(id + ':' + action)
+    try {
+      const r = await authedFetch('/api/daily-reports/' + id + '/approve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action }),
+      })
+      const body = await r.json().catch(() => null)
+      if (!r.ok) throw new Error((body && body.message) || ('HTTP ' + r.status))
+      toast.success(action === 'approve'
+        ? (isRtl ? 'تم اعتماد التقرير بنجاح' : 'Report approved')
+        : (isRtl ? 'تم رفض التقرير' : 'Report rejected'))
+      // القرار نُفِّذ → التقرير يختفي من القائمة فوراً
+      setItems(function(prev) { return prev.filter(function(x) { return x.id !== id }) })
+      if (detailId === id) setDetailId(null)
+      onChanged()
+    } catch (e: any) {
+      toast.error(e?.message || (isRtl ? 'فشل تنفيذ العملية' : 'Action failed'))
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  async function openDetail(id: string) {
+    setDetailId(id)
+    setDetail(null)
+    setDetailError(null)
+    setDetailLoading(true)
+    try {
+      const r = await authedFetch('/api/daily-reports/' + id)
+      const body = await r.json().catch(() => null)
+      if (!r.ok || !body) throw new Error((body && body.message) || ('HTTP ' + r.status))
+      setDetail(body.report)
+    } catch (e: any) {
+      setDetailError(e?.message || (isRtl ? 'فشل تحميل التفاصيل' : 'Failed to load details'))
+    } finally {
+      setDetailLoading(false)
+    }
+  }
+
+  function closeDetail() { setDetailId(null); setDetail(null); setDetailError(null) }
+
+  const fmt = (n: number) => (n || 0).toLocaleString(isRtl ? 'ar-EG' : 'en-US', { maximumFractionDigits: 1 })
+
+  function DetailRow({ label, value }: { label: string; value: any }) {
+    if (value === null || value === undefined || value === '') return null
+    return (
+      <div className="flex items-start justify-between gap-3 py-1.5 border-b border-border/40 last:border-0">
+        <span className="text-xs text-muted-foreground shrink-0">{label}</span>
+        <span className="text-sm font-medium break-words">{String(value)}</span>
+      </div>
+    )
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center justify-between flex-wrap gap-2">
+          <span className="flex items-center gap-2">
+            <ClipboardCheck className="h-5 w-5 text-primary" />
+            {isRtl ? 'تقارير بانتظار الاعتماد' : 'Reports Awaiting Approval'}
+            <Badge variant="secondary">{items.length}</Badge>
+          </span>
+          <Button variant="ghost" size="sm" onClick={load}>
+            <RefreshCw className={'h-4 w-4 ml-2' + (loading ? ' animate-spin' : '')} />
+            {isRtl ? 'تحديث' : 'Refresh'}
+          </Button>
+        </CardTitle>
+        <CardDescription>
+          {isRtl
+            ? 'تظهر هنا فقط التقارير المسلّمة التي تحتاج قرارك — اعتمدها أو ارفضها من هنا مباشرة مع مشاهدة كل تفاصيلها، وبعد القرار تختفي من القائمة'
+            : 'Only submitted reports awaiting your decision appear here — approve or reject directly with full details; they leave the list once decided'}
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {loading ? (
+          <div className="flex items-center justify-center py-8 text-muted-foreground text-sm gap-2">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            {isRtl ? 'جارٍ التحميل...' : 'Loading...'}
+          </div>
+        ) : error ? (
+          <div className="flex flex-col items-center gap-3 py-6">
+            <p className="text-sm text-red-600">{(isRtl ? 'تعذّر تحميل التقارير: ' : 'Failed to load: ') + error}</p>
+            <Button variant="outline" size="sm" onClick={load}>{isRtl ? 'إعادة المحاولة' : 'Retry'}</Button>
+          </div>
+        ) : items.length === 0 ? (
+          <div className="flex flex-col items-center gap-2 py-8 text-center">
+            <CheckCircle2 className="h-10 w-10 text-emerald-500" />
+            <p className="text-sm text-muted-foreground">
+              {isRtl ? 'لا توجد تقارير بانتظار الاعتماد — كل شيء تم البتّ فيه' : 'Nothing awaiting approval — all caught up'}
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-2 max-h-[420px] overflow-y-auto">
+            {items.map(function(r) {
+              return (
+                <div key={r.id} className="flex items-center gap-3 p-3 rounded-lg border hover:bg-muted/40 transition flex-wrap">
+                  <div className="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center shrink-0">
+                    <Calendar className="h-4 w-4 text-amber-600" />
+                  </div>
+                  <div className="flex-1 min-w-[180px]">
+                    <p className="font-medium text-sm truncate">{(r.project && r.project.name) || '-'}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {new Date(r.reportDate).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')}
+                      {reportDayName(r.reportDate, isRtl) ? ' (' + reportDayName(r.reportDate, isRtl) + ')' : ''}
+                      {' • '}{isRtl ? 'خط' : 'Line'} {(r.driveLine && r.driveLine.lineNumber) || '-'}
+                      {' • '}{fmt(r.dailyMeters)} {isRtl ? 'م' : 'm'}
+                      {r.createdBy && r.createdBy.name ? ' • ' + (isRtl ? 'أنشأه: ' : 'By: ') + r.createdBy.name : ''}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
+                    <Button variant="outline" size="sm" onClick={() => openDetail(r.id)}>
+                      {isRtl ? 'التفاصيل' : 'Details'}
+                    </Button>
+                    <Button variant="outline" size="sm" className="text-emerald-600" disabled={!!busyId} onClick={() => act(r.id, 'approve')}>
+                      {busyId === r.id + ':approve' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4 ml-1" />}
+                      {isRtl ? 'اعتماد' : 'Approve'}
+                    </Button>
+                    <Button variant="outline" size="sm" className="text-destructive" disabled={!!busyId} onClick={() => act(r.id, 'reject')}>
+                      {busyId === r.id + ':reject' ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4 ml-1" />}
+                      {isRtl ? 'رفض' : 'Reject'}
+                    </Button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </CardContent>
+
+      {/* حوار التفاصيل الكاملة — كل بيانات التقرير دون مغادرة لوحة التحكم */}
+      <Dialog open={!!detailId} onOpenChange={function(open) { if (!open) closeDetail() }}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ClipboardCheck className="h-5 w-5 text-primary" />
+              {isRtl ? 'تفاصيل التقرير اليومي' : 'Daily Report Details'}
+            </DialogTitle>
+          </DialogHeader>
+          {detailLoading ? (
+            <div className="flex items-center justify-center py-10 gap-2 text-muted-foreground text-sm">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              {isRtl ? 'جارٍ تحميل التفاصيل...' : 'Loading details...'}
+            </div>
+          ) : detailError ? (
+            <div className="flex flex-col items-center gap-3 py-6">
+              <p className="text-sm text-red-600">{(isRtl ? 'تعذّر تحميل التفاصيل: ' : 'Failed to load details: ') + detailError}</p>
+              {detailId && <Button variant="outline" size="sm" onClick={() => openDetail(detailId)}>{isRtl ? 'إعادة المحاولة' : 'Retry'}</Button>}
+            </div>
+          ) : detail ? (
+            <div className="space-y-4">
+              <div>
+                <p className="text-xs font-semibold text-muted-foreground mb-1">{isRtl ? 'معلومات عامة' : 'General'}</p>
+                <DetailRow label={isRtl ? 'المشروع' : 'Project'} value={detail.project && detail.project.name} />
+                <DetailRow label={isRtl ? 'التاريخ' : 'Date'} value={new Date(detail.reportDate).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US') + (reportDayName(detail.reportDate, isRtl) ? ' (' + reportDayName(detail.reportDate, isRtl) + ')' : '')} />
+                <DetailRow label={isRtl ? 'خط الحفر' : 'Drive line'} value={detail.driveLine ? ('خط ' + (detail.driveLine.lineNumber || '-') + ' — ' + (detail.driveLine.startPoint || '-') + ' ← ' + (detail.driveLine.endPoint || '-')) : (isRtl ? 'بدون خط حفر' : 'No line')} />
+                <DetailRow label={isRtl ? 'الطقس' : 'Weather'} value={detail.weather ? ((weatherLabels[detail.weather] && weatherLabels[detail.weather][isRtl ? 'ar' : 'en']) || detail.weather) : null} />
+                <DetailRow label={isRtl ? 'أنشأه' : 'Created by'} value={(detail.createdBy && (detail.createdBy.name || detail.createdBy.nameEn)) || null} />
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-muted-foreground mb-1">{isRtl ? 'الإنتاج' : 'Production'}</p>
+                <DetailRow label={isRtl ? 'وقت العمل' : 'Work hours'} value={(detail.workStartTime || detail.workEndTime) ? ((detail.workStartTime || '-') + ' ← ' + (detail.workEndTime || '-')) : null} />
+                <DetailRow label={isRtl ? 'ساعات التشغيل' : 'Operating hours'} value={detail.operatingHours != null ? String(detail.operatingHours) : null} />
+                <DetailRow label={isRtl ? 'ساعات التوقف' : 'Stoppage hours'} value={detail.stoppageHours ? (String(detail.stoppageHours) + (detail.stoppageReason ? ' — ' + detail.stoppageReason : '')) : null} />
+                <DetailRow label={isRtl ? 'القراءة الابتدائية' : 'Start reading'} value={detail.startReading ? (fmt(detail.startReading) + ' م') : null} />
+                <DetailRow label={isRtl ? 'القراءة النهائية' : 'End reading'} value={detail.endReading ? (fmt(detail.endReading) + ' م') : null} />
+                <DetailRow label={isRtl ? 'أمتار اليوم' : 'Daily meters'} value={fmt(detail.dailyMeters) + ' م'} />
+                <DetailRow label={isRtl ? 'الإجمالي' : 'Total meters'} value={detail.totalMeters ? (fmt(detail.totalMeters) + ' م') : null} />
+                <DetailRow label={isRtl ? 'الأنابيب المركبة' : 'Pipes installed'} value={detail.pipesInstalled ? String(detail.pipesInstalled) : null} />
+                <DetailRow label={isRtl ? 'التربة' : 'Soil'} value={detail.soilExcavated} />
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-muted-foreground mb-1">{isRtl ? 'الحضور والملاحظات' : 'Attendance & notes'}</p>
+                <DetailRow label={isRtl ? 'عدد العمال' : 'Workers'} value={detail.workersCount ? String(detail.workersCount) : null} />
+                <DetailRow label={isRtl ? 'الحاضرون' : 'Attendees'} value={detail.attendees} />
+                <DetailRow label={isRtl ? 'الغائبون' : 'Absentees'} value={detail.absentees} />
+                <DetailRow label={isRtl ? 'ملاحظات الحضور' : 'Attendance notes'} value={detail.attendanceNotes} />
+                <DetailRow label={isRtl ? 'ملاحظات الإنتاج' : 'Production notes'} value={detail.productionNotes} />
+                <DetailRow label={isRtl ? 'المشاكل' : 'Problems'} value={detail.problems} />
+              </div>
+              {Array.isArray(detail.attachments) && detail.attachments.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground mb-1">{isRtl ? ('المرفقات (' + detail.attachments.length + ')') : ('Attachments (' + detail.attachments.length + ')')}</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {detail.attachments.map(function(a: any) {
+                      return a.fileType === 'image' ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img key={a.id} src={a.url} alt={a.fileName || ''} className="w-full h-20 object-cover rounded-md border" />
+                      ) : (
+                        <div key={a.id} className="h-20 rounded-md border flex items-center justify-center text-xs text-muted-foreground p-1 text-center truncate">{a.fileName || (isRtl ? 'ملف' : 'File')}</div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+              <div className="flex items-center gap-2 pt-2 border-t">
+                <Button className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white" disabled={!!busyId} onClick={() => act(detail.id, 'approve')}>
+                  {busyId === detail.id + ':approve' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4 ml-1" />}
+                  {isRtl ? 'اعتماد التقرير' : 'Approve report'}
+                </Button>
+                <Button variant="outline" className="flex-1 text-destructive" disabled={!!busyId} onClick={() => act(detail.id, 'reject')}>
+                  {busyId === detail.id + ':reject' ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4 ml-1" />}
+                  {isRtl ? 'رفض التقرير' : 'Reject report'}
+                </Button>
+              </div>
+            </div>
+          ) : null}
         </DialogContent>
       </Dialog>
     </Card>
