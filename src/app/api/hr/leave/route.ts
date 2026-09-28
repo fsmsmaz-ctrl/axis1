@@ -18,7 +18,7 @@ import { notifyUsers } from '@/lib/notify'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 import {
   getOrCreateBalance, getPolicy, parseWeekend, parseDay, dayKey,
-  countWorkingDays, loadHolidayKeys, fmtDay, LEAVE_TYPE_LABELS_AR,
+  countWorkingDays, loadHolidayKeys, fmtDay, LEAVE_TYPE_LABELS_AR, computeCompleteness,
 } from '@/lib/hr'
 
 var MAX_ATTACHMENT_CHARS = 6000000 // ~4.5MB base64 — نفس حد صور الفواتير
@@ -44,6 +44,12 @@ export async function GET(req: NextRequest) {
     var manager = isHRManager(me)
     var policy = await getPolicy()
     var balance = await getOrCreateBalance(me.id, policy.defaultAnnualDays)
+    // v61: اكتمال بيانات الموظف — بوابة ظهور قسم الإجازات للموظف غير المكتمل
+    var meProfile = await db.user.findUnique({
+      where: { id: me.id },
+      select: { jobTitle: true, department: true, joinDate: true },
+    })
+    var completeness = computeCompleteness(meProfile || { jobTitle: null, department: null, joinDate: null }, balance)
     var holidays = await db.holiday.findMany({
       orderBy: { date: 'asc' },
       take: 200,
@@ -123,6 +129,8 @@ export async function GET(req: NextRequest) {
       teamCount,
       isHR: manager,
       balance,
+      // v61: اكتمال البيانات
+      completeness,
       policy: {
         weekendDays: policy.weekendDays,
         defaultAnnualDays: policy.defaultAnnualDays,
