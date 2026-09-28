@@ -4,6 +4,7 @@ import { hasPermission, canWrite } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { handleDbError, validateRequired, safeDbOp } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
+import { ensureDailyReportSafety } from '@/lib/db-selfheal'
 
 export async function GET(req: NextRequest) {
   var user = await getAuthUser(req)
@@ -87,7 +88,11 @@ export async function POST(req: NextRequest) {
     var validationError = validateRequired(body, ['projectId', 'reportDate'])
     if (validationError) return validationError
 
-    // === Validate drive line: must exist, belong to the project, and have actually started ===
+    // === Validate drive line: must exist and belong to the project ===
+    // v57: أُلغي شرط «أن يكون الخط قد بدأ العمل عليه» — تفتيش السلامة إجراء وقائي مشروع
+    // قبل بدء الحفر نفسه، وكان هذا الشرط يمنع فعلياً إنشاء تقارير لخطوط سلمتها حالة
+    // not_started (مثل تواتير 2) فبدت التقارير «لا تُنشأ». الواجهة تعرض الآن كل الخطوط
+    // مع وسم «لم يبدأ» بدل إخفائها من القائمة.
     if (body.driveLineId) {
       var dlResult = await safeDbOp(
         () => db.driveLine.findUnique({ where: { id: String(body.driveLineId) } }),
@@ -108,30 +113,13 @@ export async function POST(req: NextRequest) {
           { status: 400 }
         )
       }
-      // الخط يُعتبر "مبدوءاً" إذا كانت حالته المحفوظة ليست not_started،
-      // أو إذا كان لديه بالفعل قراءات حفر مسجلة في التقارير اليومية
-      // (نفس منطق الحساب الديناميكي في /api/drive-lines)
-      if (dl.status === 'not_started') {
-        var progressResult = await safeDbOp(
-          () => db.dailyReport.findFirst({
-            where: { driveLineId: dl.id, endReading: { gt: 0 } },
-            select: { id: true },
-          }),
-          'التحقق من بدء خط الحفر'
-        )
-        var hasProgress = !!(progressResult.success && progressResult.data)
-        if (!hasProgress) {
-          return NextResponse.json(
-            {
-              error: 'drive_line_not_started',
-              message: 'لا يمكن تسجيل تقرير سلامة لخط حفر لم يبدأ العمل عليه بعد',
-            },
-            { status: 400 }
-          )
-        }
-      }
     }
     // === End of drive line validation ===
+
+    // v57: شفاء ذاتي — ضمان وجود عمود safetyLocked وجدول SafetyReport قبل الكتابة
+    // (درس v44: الشفاء يُربَط بالمسارات المستخدمة فعلياً — أي نقص يظهر سابقاً كرسالة
+    // «قاعدة البيانات غير مهيأة» عند الحفظ دون أي إصلاح تلقائي)
+    await ensureDailyReportSafety()
 
     // === فحص التكرار ===
     // v55: القاعدة أصبحت «تقرير سلامة واحد لكل خط حفر في اليوم» بدل «تقرير واحد لكل مشروع في اليوم» —
@@ -373,6 +361,4 @@ export async function DELETE(req: NextRequest) {
     return handleDbError(error, 'حذف تقرير السلامة')
   }
 }
-
-
 
