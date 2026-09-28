@@ -37,6 +37,8 @@ export function getCookieOptions() {
 
 export const MODULE_PERMISSIONS = [
   'projects', 'drive_lines', 'daily_reports', 'safety', 'equipment', 'costs', 'finishings', 'tasks', 'performance', 'notifications', 'oversight',
+  // v53: الموارد البشرية — الملف الوظيفي والإجازات (لكل الموظفين عدا الزائر)
+  'hr_file', 'hr_leave',
 ] as const
 
 export const MODULE_PERMISSION_LABELS: Record<string, { ar: string; en: string }> = {
@@ -51,6 +53,9 @@ export const MODULE_PERMISSION_LABELS: Record<string, { ar: string; en: string }
   performance:    { ar: 'تقييم الأداء',      en: 'Performance' },
   notifications:  { ar: 'التنبيهات وسجل المراقبة', en: 'Notifications & Monitor' },
   oversight:      { ar: 'الرقابة العملية',   en: 'Operational Control' },
+  // v53: الموارد البشرية
+  hr_file:        { ar: 'ملفي الوظيفي',      en: 'My HR File' },
+  hr_leave:       { ar: 'الإجازات',          en: 'Leaves' },
 }
 
 export const REPORT_PERMISSIONS = [
@@ -92,19 +97,29 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
   project_manager: [
     'projects', 'drive_lines', 'daily_reports', 'safety',
     'equipment', 'costs', 'finishings', 'tasks', 'reports', 'performance', 'notifications', 'oversight',
+    // v53: الموارد البشرية
+    'hr_file', 'hr_leave',
   ],
   site_engineer: [
     'projects', 'drive_lines', 'daily_reports', 'safety',
     'equipment', 'finishings', 'tasks', 'notifications',
+    // v53: الموارد البشرية
+    'hr_file', 'hr_leave',
   ],
   hse_officer: [
     'projects', 'equipment', 'safety', 'tasks', 'reports', 'notifications',
+    // v53: الموارد البشرية
+    'hr_file', 'hr_leave',
   ],
   foreman: [
     'projects', 'daily_reports', 'finishings', 'tasks', 'reports', 'notifications',
+    // v53: الموارد البشرية
+    'hr_file', 'hr_leave',
   ],
   accountant: [
     'projects', 'costs', 'tasks', 'reports', 'notifications',
+    // v53: الموارد البشرية
+    'hr_file', 'hr_leave',
   ],
   // v52: الزائر — يرى قسم خطوط الحفر للقراءة فقط:
   // ليس في WRITE_ROLES.drive_lines فلا أزرار إضافة/تعديل/حذف (والخادم يرفض كتاباته بـ 403)،
@@ -212,6 +227,20 @@ export function canViewPricing(user: { role?: string; email?: string; isSystemAd
   // v15 HARDENING (الطبقة الثالثة): جلسة بلا بريد = لا أسعار أبداً
   if (!email) return false
   return (PRICING_ALLOWED_ROLES as readonly string[]).includes(user.role || '')
+}
+
+// ─── v53: الموارد البشرية ──────────────────────────────────────
+// مدير الموارد البشرية: الإدارة العليا + مدير النظام.
+// يملك حصراً: إنشاء وتعديل الملفات الوظيفية، تحديد أرصدة الإجازات،
+// تسجيل الغياب والتأخير، تعديل الرصيد مع السبب، العطلات والسياسات،
+// والاطلاع على بيانات الرواتب (سرية عن باقي الأدوار حتى المشرفين).
+export const HR_MANAGE_ROLES = ['top_management'] as const
+
+export function isHRManager(user: { role?: string; email?: string; isSystemAdmin?: boolean } | null | undefined): boolean {
+  if (!user) return false
+  if (user.isSystemAdmin === true) return true
+  if (user.email && user.email.toLowerCase().trim() === SYSTEM_ADMIN_EMAIL) return true
+  return (HR_MANAGE_ROLES as readonly string[]).includes(user.role || '')
 }
 
 // ─── Task Management helpers ───────────────────────────────────
