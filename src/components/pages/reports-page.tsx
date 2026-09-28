@@ -34,8 +34,26 @@ export default function ReportsPage() {
   const [reportData, setReportData] = useState<any>(null)
   const [generating, setGenerating] = useState(false)
   const [mounted, setMounted] = useState(false)
+  // v60: تقرير المتوسطات التشغيلية والمالية — سري للإدارة العليا ومدير النظام فقط
+  const isTopMgmt = !!(user && (user.isSystemAdmin || user.role === 'top_management'))
+  const [driveLines, setDriveLines] = useState<any[]>([])
+  const [selectedLine, setSelectedLine] = useState<string>('all')
   const language = useAppStore((s) => s.language)
   const isRtl = language === 'ar'
+
+  // v60: تحميل خطوط الحفر للمشروع عند اختيار تقرير المتوسطات (فلتر الموقع/خط الحفر)
+  useEffect(() => {
+    if (selectedReport !== 'operational_averages' || selectedProject === 'all') {
+      setDriveLines([])
+      setSelectedLine('all')
+      return
+    }
+    setSelectedLine('all')
+    authedFetch('/api/drive-lines?projectId=' + selectedProject)
+      .then(r => r.json())
+      .then(d => setDriveLines(d.driveLines || []))
+      .catch(() => setDriveLines([]))
+  }, [selectedReport, selectedProject])
 
   useEffect(() => {
     setMounted(true)
@@ -57,6 +75,11 @@ export default function ReportsPage() {
   async function generateReport() {
     if (!selectedReport) {
       toast.error(isRtl ? 'اختر نوع التقرير' : 'Select report type')
+      return
+    }
+    // v60: تقرير المتوسطات يُحسب لمشروع واحد محدد — ليس له معنى لكل المشاريع
+    if (selectedReport === 'operational_averages' && selectedProject === 'all') {
+      toast.error(isRtl ? 'اختر مشروعاً محدداً — تقرير المتوسطات يُحسب لكل مشروع على حدة' : 'Select a specific project — averages are computed per project')
       return
     }
 
@@ -102,6 +125,19 @@ export default function ReportsPage() {
         const totalRevenue = approvedReports.reduce((s: number, r: any) => s + (Number(r.dailyRevenue) || 0), 0)
         const totalCosts = Number(cost.grandTotal) || 0
         data = { reports, byCategory: cost.byCategory || [], totalRevenue, totalCosts, netProfit: totalRevenue - totalCosts }
+      } else if (selectedReport === 'operational_averages') {
+        // v60: نقطة النهاية المخصصة — تحسب كل المتوسطات على الخادم (سري: 403 لغير الإدارة العليا)
+        const p2 = new URLSearchParams()
+        p2.set('projectId', selectedProject)
+        if (fromDate) p2.set('from', fromDate)
+        if (toDate) p2.set('to', toDate)
+        if (selectedLine !== 'all') p2.set('driveLineId', selectedLine)
+        const res = await authedFetch('/api/reports/operational-averages?' + p2.toString())
+        // نمط v56: كشف ردود المنصة غير JSON برسالة واضحة
+        const body = await res.json().catch(() => null)
+        if (!res.ok || !body) throw new Error((body && body.message) || 'HTTP ' + res.status)
+        if (body.error) throw new Error(body.message || body.error)
+        data = body
       } else if (selectedReport === 'equipment') {
         const res = await authedFetch('/api/equipment?' + params.toString())
         data = await res.json()
@@ -143,8 +179,10 @@ export default function ReportsPage() {
 
       setReportData({ type: selectedReport, data, project: projects.find(p => p.id === selectedProject), fromDate, toDate })
       toast.success(isRtl ? 'تم توليد التقرير' : 'Report generated')
-    } catch (err) {
-      toast.error(isRtl ? 'فشل توليد التقرير' : 'Failed to generate')
+    } catch (err: any) {
+      // v60: عرض سبب الفشل الحقيقي (403 سري / مهلة / تحقق) بدل رسالة عامة
+      const detail = err?.message ? (isRtl ? ': ' + err.message : ': ' + err.message) : ''
+      toast.error((isRtl ? 'فشل توليد التقرير' : 'Failed to generate') + detail)
     } finally {
       setGenerating(false)
     }
@@ -308,6 +346,41 @@ export default function ReportsPage() {
             f.signedBy || '-',
           ]),
         ]
+      case 'operational_averages': {
+        // v60: تصدير Excel/CSV — نفس قيم المعاينة والمطبوعة (null = لا توجد بيانات كافية)
+        const rp = d.report || {}
+        const m = rp.metrics || {}
+        const NA = H('لا توجد بيانات كافية', 'Insufficient data')
+        const n = (v: any) => (v === null || v === undefined ? NA : (Math.round(v * 100) / 100))
+        const rows: any[][] = [
+          [H('تقرير المتوسطات التشغيلية والمالية', 'Operational & Financial Averages')],
+          [H('المشروع', 'Project'), rp.project?.name || '-'],
+          [H('الموقع / خط الحفر', 'Site / Line'), rp.driveLine ? ('خط ' + (rp.driveLine.lineNumber || '-')) : H('جميع المواقع', 'All Sites')],
+          [H('الفترة', 'Period'), (rp.period?.from || reportData.fromDate) + ' ← ' + (rp.period?.to || reportData.toDate)],
+          [],
+          [H('البيان', 'Metric'), H('القيمة', 'Value')],
+          [H('إجمالي أمتار الحفر المنفذة (م)', 'Total drilled meters (m)'), n(m.totalMeters)],
+          [H('عدد أيام العمل الفعلية', 'Actual working days'), m.workingDays ?? 0],
+          [H('متوسط الحفر اليومي (م/يوم)', 'Avg daily drilling (m/day)'), n(m.avgDailyMeters)],
+          [H('متوسط عدد العمال اليومي', 'Avg daily workers'), n(m.avgWorkers)],
+          [H('إجمالي التكاليف المسجلة (ر.ع)', 'Total recorded costs (OMR)'), m.costTotal === null ? NA : n(m.costTotal)],
+          [H('متوسط تكلفة المتر (ر.ع)', 'Avg cost per meter (OMR)'), n(m.avgCostPerMeter)],
+          [H('متوسط الصرف اليومي (ر.ع)', 'Avg daily spend (OMR)'), n(m.avgDailySpend)],
+          [H('إجمالي قيمة الأعمال المنفذة (ر.ع)', 'Total executed work value (OMR)'), n(m.workValue)],
+          [H('صافي الربح (ر.ع)', 'Net profit (OMR)'), n(m.netProfit)],
+          [H('متوسط الربح اليومي (ر.ع)', 'Avg daily profit (OMR)'), n(m.avgDailyProfit)],
+          [H('متوسط ربح المتر (ر.ع)', 'Avg profit per meter (OMR)'), n(m.profitPerMeter)],
+          [H('نسبة الربح من قيمة الأعمال (%)', 'Profit margin (% of work value)'), n(m.profitMarginPct)],
+          [],
+        ]
+        if (rp.costsScope === 'project_only') rows.push([H('ملاحظة: عند اختيار خط محدد تُعرض قيمة أعمال الخط فقط، والتكاليف والأرباح تُحتسب على مستوى المشروع كاملاً', 'Note: with a specific line selected, costs & profit are project-level only')])
+        rows.push(
+          [H('تفصيل قيمة الأعمال حسب الخط', 'Work value by line')],
+          [H('الخط', 'Line'), H('الأمتار (م)', 'Meters (m)'), H('سعر المتر (ر.ع)', 'Price per meter (OMR)'), H('القيمة (ر.ع)', 'Value (OMR)')],
+          ...(rp.perLine || []).map((l: any) => [l.label, Math.round((l.meters || 0) * 100) / 100, l.price ?? 0, Math.round((l.value || 0) * 100) / 100])
+        )
+        return rows
+      }
       default:
         return []
     }
@@ -330,6 +403,9 @@ export default function ReportsPage() {
             .filter((r) => user && hasReportPermission(user.role, 'rpt_' + r.id, user.permissions))
             // v14.2 SECURITY: تقريرا الإيراد وصافي الربح مخفيان عن غير المصرح لهم مالياً
             .filter((r) => seePricing || (r.id !== 'revenue' && r.id !== 'profit'))
+            // v60 SECURITY: تقرير المتوسطات التشغيلية والمالية سري — للإدارة العليا
+            // ومدير النظام فقط، ولا يظهر في القائمة لأي حساب آخر (حتى لو امتلك صلاحية التقارير)
+            .filter((r) => isTopMgmt || r.id !== 'operational_averages')
             .map((r) => {
             const Icon = r.icon
             const isSelected = selectedReport === r.id
@@ -384,6 +460,34 @@ export default function ReportsPage() {
               <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
             </div>
           </div>
+
+          {/* v60: فلتر الموقع/خط الحفر — يظهر لتقرير المتوسطات فقط مع خيار جميع المواقع */}
+          {selectedReport === 'operational_averages' && (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">{isRtl ? 'الموقع / خط الحفر' : 'Site / Drive Line'}</Label>
+                <Select value={selectedLine} onValueChange={setSelectedLine}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">{isRtl ? 'جميع المواقع' : 'All Sites'}</SelectItem>
+                    {driveLines.map((l) => (
+                      <SelectItem key={l.id} value={l.id}>
+                        {'خط ' + (l.lineNumber || '-') + (l.startPoint ? ' — ' + l.startPoint : '')}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="sm:col-span-2 flex items-end">
+                <p className="text-xs text-amber-600 flex items-center gap-1.5">
+                  <Shield className="h-3.5 w-3.5 shrink-0" />
+                  {isRtl
+                    ? 'تقرير سري — يظهر للإدارة العليا فقط، ولا يمكن لأي حساب آخر فتحه أو تصديره'
+                    : 'Confidential — top management only; no other account can open or export it'}
+                </p>
+              </div>
+            </div>
+          )}
 
           <div className="flex gap-2 flex-wrap">
             <Button onClick={generateReport} disabled={!selectedReport || generating}>
@@ -852,9 +956,112 @@ function ReportPreview({ data }: { data: any }) {
             )}
           </div>
         </div>
+      ) : data.type === 'operational_averages' ? (
+        // v60: معاينة تقرير المتوسطات التشغيلية والمالية
+        <OperationalAveragesPreview report={(data.data && data.data.report) || {}} isRtl={isRtl} />
       ) : (
         <div className="text-center py-8 text-muted-foreground text-sm">
           {isRtl ? 'اضغط "توليد التقرير" لعرض المعاينة' : 'Press "Generate Report" to see preview'}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// v60: معاينة تقرير المتوسطات — تُستخدم في الشاشة، والمطبوعة لها قسم مطابق في PrintableReport
+function OperationalAveragesPreview({ report, isRtl }: { report: any; isRtl: boolean }) {
+  const m = report.metrics || {}
+  const NA = isRtl ? 'لا توجد بيانات كافية' : 'Insufficient data'
+  const fmt = (v: any) => (v === null || v === undefined ? NA : (Math.round(v * 100) / 100).toLocaleString(isRtl ? 'ar-EG' : 'en-US', { maximumFractionDigits: 2 }))
+  const rows: Array<{ ar: string; en: string; value: any; strong?: boolean }> = [
+    { ar: 'إجمالي أمتار الحفر المنفذة (م)', en: 'Total drilled meters (m)', value: fmt(m.totalMeters) },
+    { ar: 'عدد أيام العمل الفعلية', en: 'Actual working days', value: m.workingDays ?? 0 },
+    { ar: 'متوسط الحفر اليومي (م/يوم)', en: 'Avg daily drilling (m/day)', value: fmt(m.avgDailyMeters) },
+    { ar: 'متوسط عدد العمال اليومي', en: 'Avg daily workers', value: fmt(m.avgWorkers) },
+    { ar: 'إجمالي التكاليف المسجلة (ر.ع)', en: 'Total recorded costs (OMR)', value: m.costTotal === null || m.costTotal === undefined ? NA : fmt(m.costTotal) },
+    { ar: 'متوسط تكلفة المتر (ر.ع)', en: 'Avg cost per meter (OMR)', value: fmt(m.avgCostPerMeter) },
+    { ar: 'متوسط الصرف اليومي (ر.ع)', en: 'Avg daily spend (OMR)', value: fmt(m.avgDailySpend) },
+    { ar: 'إجمالي قيمة الأعمال المنفذة (ر.ع)', en: 'Total executed work value (OMR)', value: fmt(m.workValue), strong: true },
+    { ar: 'صافي الربح (ر.ع)', en: 'Net profit (OMR)', value: fmt(m.netProfit), strong: true },
+    { ar: 'متوسط الربح اليومي (ر.ع)', en: 'Avg daily profit (OMR)', value: fmt(m.avgDailyProfit) },
+    { ar: 'متوسط ربح المتر (ر.ع)', en: 'Avg profit per meter (OMR)', value: fmt(m.profitPerMeter) },
+    { ar: 'نسبة الربح من قيمة الأعمال (%)', en: 'Profit margin (% of work value)', value: fmt(m.profitMarginPct) },
+  ]
+  return (
+    <div className="space-y-3">
+      <div className="text-xs text-muted-foreground">
+        {isRtl ? 'الموقع: ' : 'Site: '}
+        <span className="font-medium text-foreground">
+          {report.driveLine ? ('خط ' + (report.driveLine.lineNumber || '-')) : (isRtl ? 'جميع المواقع' : 'All Sites')}
+        </span>
+        {' • '}{isRtl ? 'تقارير الفترة: ' : 'Period reports: '}{report.reportsCount ?? 0}
+      </div>
+
+      {report.insufficient ? (
+        <div className="p-6 text-center border rounded-lg bg-amber-500/5">
+          <p className="font-semibold text-amber-600">{isRtl ? 'لا توجد بيانات كافية' : 'Insufficient data'}</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            {isRtl ? 'لا توجد تقارير عمل يومي (مسلَّمة أو معتمدة) في هذه الفترة — لا تُحسب المتوسطات' : 'No submitted/approved daily reports in this period — averages are not computed'}
+          </p>
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b text-right">
+                <th className="p-2">{isRtl ? 'البيان' : 'Metric'}</th>
+                <th className="p-2">{isRtl ? 'القيمة' : 'Value'}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(function(row, idx) {
+                return (
+                  <tr key={idx} className={'border-b' + (row.strong ? ' bg-muted/40 font-semibold' : '')}>
+                    <td className="p-2">{isRtl ? row.ar : row.en}</td>
+                    <td className="p-2">{row.value}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {report.costsScope === 'project_only' && (
+        <p className="text-xs text-amber-600">
+          {isRtl
+            ? 'ملاحظة: عند اختيار خط محدد تُعرض قيمة أعمال ذلك الخط فقط، بينما التكاليف والأرباح تُحتسب على مستوى المشروع كاملاً (المستندات المالية غير مرتبطة بخط بعينه) — اختر «جميع المواقع» للاطلاع على الأرباح'
+            : 'Note: with a specific line selected, only that line\'s work value is shown; costs & profit remain project-level (financial records are not line-scoped) — choose "All Sites" for profit figures'}
+        </p>
+      )}
+
+      {Array.isArray(report.perLine) && report.perLine.length > 0 && !report.insufficient && (
+        <div>
+          <h3 className="font-semibold text-sm mb-2">{isRtl ? 'تفصيل قيمة الأعمال حسب الخط' : 'Work Value by Line'}</h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b text-right">
+                  <th className="p-2">{isRtl ? 'الخط' : 'Line'}</th>
+                  <th className="p-2">{isRtl ? 'الأمتار (م)' : 'Meters (m)'}</th>
+                  <th className="p-2">{isRtl ? 'سعر المتر (ر.ع)' : 'Price/m (OMR)'}</th>
+                  <th className="p-2">{isRtl ? 'القيمة (ر.ع)' : 'Value (OMR)'}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {report.perLine.map(function(l: any, idx: number) {
+                  return (
+                    <tr key={idx} className="border-b">
+                      <td className="p-2">{l.label}</td>
+                      <td className="p-2">{fmt(l.meters)}</td>
+                      <td className="p-2">{fmt(l.price)}</td>
+                      <td className="p-2">{fmt(l.value)}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>
