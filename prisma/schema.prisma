@@ -59,6 +59,35 @@ model User {
   // v48: الملف الشخصي والمشتريات
   purchases           Purchase[]       @relation("UserPurchases")
   purchasesReviewed   Purchase[]       @relation("PurchaseReviewer")
+
+  // v53: الموارد البشرية — بيانات الملف الوظيفي (الرواتب سرية: تظهر للموظف نفسه والإدارة/الموارد البشرية فقط)
+  employeeNo      String?   // الرقم الوظيفي
+  jobTitle        String?   // المسمى الوظيفي
+  department      String?   // القسم / المشروع
+  workLocation    String?   // موقع العمل الحالي
+  supervisorId    String?   // المسؤول المباشر — توجَّه إليه طلبات الإجازة تلقائياً
+  joinDate        DateTime? // تاريخ الالتحاق بالشركة — تُحسب مدة الخدمة منه
+  contractStart   DateTime? // بداية العقد
+  contractEnd     DateTime? // نهاية العقد — تنبيه قبل الانتهاء
+  baseSalary      Float?    // الراتب الأساسي — سرية
+  allowances      Float?    // البدلات — سرية
+  passportNo      String?   // جواز السفر
+  passportExpiry  DateTime?
+  idNo            String?   // البطاقة الشخصية
+  idExpiry        DateTime?
+  residenceNo     String?   // الإقامة
+  residenceExpiry DateTime?
+  absenceDays     Float     @default(0) // أيام الغياب — تُسجَّل من الإدارة/الموارد البشرية
+  lateDays        Float     @default(0) // أيام التأخير — تُسجَّل من الإدارة/الموارد البشرية
+
+  // v53: علاقات الموارد البشرية
+  supervisor        User?             @relation("UserSupervisor", fields: [supervisorId], references: [id])
+  directReports     User[]            @relation("UserSupervisor")
+  leaveRequests     LeaveRequest[]    @relation("LeaveEmployee")
+  leaveReviewed     LeaveRequest[]    @relation("LeaveReviewer")
+  leaveBalance      LeaveBalance?     @relation("UserLeaveBalance")
+  leaveAdjustments  LeaveAdjustment[] @relation("LeaveAdjustmentUser")
+  adjustmentsMade   LeaveAdjustment[] @relation("LeaveAdjuster")
 }
 
 // ==================== Projects ====================
@@ -544,4 +573,81 @@ model Purchase {
 
   @@index([userId])
   @@index([status])
+}
+
+// ==================== v53: الموارد البشرية (الملف الوظيفي والإجازات) ====================
+// دورة طلب الإجازة:
+//   pending (بانتظار موافقة المسؤول المباشر) → approved (معتمد — تُخصم الأيام تلقائياً من الرصيد السنوي)
+//   / rejected (مرفوض — السبب إلزامي) / cancelled (ملغى — إلغاء المعتمد يُرجع الرصيد)
+// الإجازة السنوية فقط تخصم من الرصيد؛ المرضية/الطارئة/بدون راتب تُسجَّل دون خصم سنوي.
+// الأيام تُحسب تلقائياً وفق أيام العمل (استبعاد نهاية الأسبوع القابل للتعديل والعطلات الرسمية).
+model LeaveRequest {
+  id             String    @id @default(cuid())
+  employeeId     String
+  type           String    // annual, sick, emergency, unpaid, other
+  startDate      DateTime  // بداية الإجازة (منتصف ليل UTC)
+  endDate        DateTime  // آخر يوم إجازة (شامل)
+  days           Float     @default(0) // أيام العمل المحسوبة تلقائياً
+  reason         String?   // سبب أو ملاحظات (اختياري)
+  attachmentName String?   // اسم المستند المرفق
+  attachmentData String?   // المستند base64 data URL — إلزامي للإجازة المرضية (وفق السياسة)
+  substituteName String?   // الموظف البديل خلال الإجازة
+  status         String    @default("pending") // pending, approved, rejected, cancelled
+  reviewedById   String?
+  reviewedAt     DateTime?
+  reviewNote     String?   // سبب الرفض (إلزامي) أو ملاحظة الاعتماد
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  employee   User  @relation("LeaveEmployee", fields: [employeeId], references: [id])
+  reviewedBy User? @relation("LeaveReviewer", fields: [reviewedById], references: [id])
+
+  @@index([employeeId, status])
+  @@index([status, createdAt])
+}
+
+// رصيد الإجازات لكل موظف — المتبقي = annualTotal + carriedOver - used
+// تُحدَّد القيم من الإدارة/الموارد البشرية (سياسات قابلة للتعديل لا مبرمجة ثابتة)
+model LeaveBalance {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  annualTotal Float    @default(30) // الرصيد السنوي المعتمد
+  carriedOver Float    @default(0)  // رصيد مرحّل من سنة سابقة
+  used        Float    @default(0)  // المستخدم من الإجازات السنوية المعتمدة
+  updatedAt   DateTime @updatedAt
+
+  user User @relation("UserLeaveBalance", fields: [userId], references: [id])
+}
+
+// العطلات الرسمية المعتمدة — لا تُحسب ضمن أيام الإجازة، تُدار من لوحة الإدارة
+model Holiday {
+  id        String   @id @default(cuid())
+  date      DateTime @unique // منتصف ليل UTC
+  name      String?
+  createdAt DateTime @default(now())
+}
+
+// سياسة الإجازات — صف وحيد (singleton) يُعدَّل من لوحة الإدارة ولا شيء مبرمج ثابتاً
+model LeavePolicy {
+  id                 String  @id @default(cuid())
+  singleton          String  @unique @default("default")
+  weekendDays        String  @default("5,6") // أيام نهاية الأسبوع بترميز JS getDay: 5=الجمعة 6=السبت
+  defaultAnnualDays  Float   @default(30)    // الرصيد السنوي الافتراضي عند إنشاء الرصيد
+  sickAttachRequired Boolean @default(true)  // المستند إلزامي للإجازة المرضية
+  createdAt          DateTime @default(now())
+}
+
+// سجل تعديلات الرصيد — كل تعديل يدوي من الإدارة يتطلب سبباً (تدقيق كامل)
+model LeaveAdjustment {
+  id        String   @id @default(cuid())
+  userId    String
+  delta     Float    // مقدار التعديل على المستخدم (سالب = خصم إضافي، موجب = إرجاع)
+  reason    String   // سبب التعديل — إلزامي
+  byId      String?
+  createdAt DateTime @default(now())
+
+  user User  @relation("LeaveAdjustmentUser", fields: [userId], references: [id])
+  by   User? @relation("LeaveAdjuster", fields: [byId], references: [id])
+
+  @@index([userId, createdAt])
 }
