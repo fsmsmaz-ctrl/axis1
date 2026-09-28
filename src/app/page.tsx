@@ -89,7 +89,19 @@ export default function HomePage() {
         body: JSON.stringify({ email, password }),
         credentials: 'include',
       })
-      const data = await res.json()
+      // v56: المنصة (Netlify) قد ترجع صفحة HTML عند تعطل الدالة أو مهلتها (502/504)
+      // — res.json() يرمي عندها وتظهر رسالة «فشل الاتصال بالخادم» المضللة.
+      // الآن نعرض رمز الحالة الفعلي والسبب المرجّح بدلاً منها.
+      let data: any = null
+      try {
+        data = await res.json()
+      } catch {}
+      if (!data) {
+        setError(isAr
+          ? 'استجابة غير صالحة من الخادم (رمز ' + res.status + ') — غالباً انقطاع مؤقت أو توقف قاعدة البيانات. حاول بعد دقائق، وإن استمر افحص لوحة Supabase وحالة النشر في Netlify'
+          : 'Invalid server response (HTTP ' + res.status + ') — likely a temporary outage or database down. Try again shortly')
+        return
+      }
       if (!res.ok) {
         if (data.error === 'invalidCredentials') {
           setError(isAr ? 'البريد الإلكتروني أو كلمة المرور غير صحيحة' : 'Invalid email or password')
@@ -108,7 +120,10 @@ export default function HomePage() {
       setUser(data.user)
       toast.success(t.welcomeBack + data.user.name)
     } catch (err) {
-      setError(t.connectionError)
+      // v56: خطأ شبكة فعلي (انقطاع إنترنت/DNS) — رسالة أوضح من السابقة
+      setError(isAr
+        ? 'تعذر الوصول إلى الخادم — تحقق من اتصالك بالإنترنت أو حاول بعد قليل'
+        : 'Cannot reach the server — check your internet connection or try later')
     } finally {
       setLoading(false)
     }
