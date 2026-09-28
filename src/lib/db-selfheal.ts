@@ -330,3 +330,76 @@ WHERE NOT EXISTS (SELECT 1 FROM "LeavePolicy")`)
     console.error('v53 HR self-heal skipped (will retry):', e)
   }
 }
+
+
+// v57: شفاء ذاتي لقسم السلامة — عمود DailyReport.safetyLocked وجدول SafetyReport
+// أُضيف بعد أن بقي عمود safetyLocked خارج ملفات الـ migrations كلها (آخر migration
+// هو 20250926_profile_purchases ولا يذكره) — وأي نقص يظهر عند الحفظ كـ P2022
+// «قاعدة البيانات غير مهيأة». الدالة آمنة تماماً (idempotent) وتعمل مرة واحدة لكل تشغيل.
+var v57SafetyChecked = false
+
+export async function ensureDailyReportSafety(): Promise<void> {
+  if (v57SafetyChecked) return
+  try {
+    var cols = await db.$queryRawUnsafe<Array<{ column_name: string }>>(
+      "SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name = 'DailyReport'"
+    )
+    var colSet = new Set<string>((cols || []).map(function(c) { return c.column_name }))
+    if (!colSet.has('safetyLocked')) {
+      await db.$executeRawUnsafe('ALTER TABLE "DailyReport" ADD COLUMN IF NOT EXISTS "safetyLocked" BOOLEAN NOT NULL DEFAULT false')
+      console.warn('v57: DailyReport.safetyLocked column created by self-heal')
+    }
+    var tables = await db.$queryRawUnsafe<Array<{ table_name: string }>>(
+      "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'SafetyReport'"
+    )
+    if ((tables || []).length === 0) {
+      // جدول السلامة مفقود كلياً (قاعدة معاد تهيئتها) — إنشاؤه بكل أعمدته
+      await db.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "SafetyReport" (
+  "id" TEXT NOT NULL,
+  "dailyReportId" TEXT NOT NULL,
+  "projectId" TEXT NOT NULL,
+  "reportDate" TIMESTAMP(3) NOT NULL,
+  "ppeAvailable" BOOLEAN NOT NULL DEFAULT false,
+  "helmetCheck" BOOLEAN NOT NULL DEFAULT false,
+  "bootsCheck" BOOLEAN NOT NULL DEFAULT false,
+  "glovesCheck" BOOLEAN NOT NULL DEFAULT false,
+  "glassesCheck" BOOLEAN NOT NULL DEFAULT false,
+  "workAreaCheck" BOOLEAN NOT NULL DEFAULT false,
+  "barriersCheck" BOOLEAN NOT NULL DEFAULT false,
+  "shaftCheck" BOOLEAN NOT NULL DEFAULT false,
+  "ventilationCheck" BOOLEAN NOT NULL DEFAULT false,
+  "electricalCheck" BOOLEAN NOT NULL DEFAULT false,
+  "craneCheck" BOOLEAN NOT NULL DEFAULT false,
+  "hydraulicCheck" BOOLEAN NOT NULL DEFAULT false,
+  "fireExtinguishers" BOOLEAN NOT NULL DEFAULT false,
+  "workPermit" BOOLEAN NOT NULL DEFAULT false,
+  "toolboxTalk" BOOLEAN NOT NULL DEFAULT false,
+  "hazards" TEXT,
+  "observations" TEXT,
+  "violations" TEXT,
+  "incidentType" TEXT,
+  "incidentDescription" TEXT,
+  "signedBy" TEXT,
+  "signedById" TEXT,
+  "signedAt" TIMESTAMP(3),
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" TIMESTAMP(3) NOT NULL,
+  CONSTRAINT "SafetyReport_pkey" PRIMARY KEY ("id")
+)`)
+      await db.$executeRawUnsafe('CREATE UNIQUE INDEX IF NOT EXISTS "SafetyReport_dailyReportId_key" ON "SafetyReport"("dailyReportId")')
+      try {
+        await db.$executeRawUnsafe('ALTER TABLE "SafetyReport" ADD CONSTRAINT "SafetyReport_dailyReportId_fkey" FOREIGN KEY ("dailyReportId") REFERENCES "DailyReport"("id") ON DELETE CASCADE ON UPDATE CASCADE')
+        await db.$executeRawUnsafe('ALTER TABLE "SafetyReport" ADD CONSTRAINT "SafetyReport_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project"("id") ON DELETE RESTRICT ON UPDATE CASCADE')
+        await db.$executeRawUnsafe('ALTER TABLE "SafetyReport" ADD CONSTRAINT "SafetyReport_signedById_fkey" FOREIGN KEY ("signedById") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE')
+      } catch (fkE) {
+        var fkMsg = (fkE as { message?: string })?.message || ''
+        if (fkMsg.indexOf('already exists') === -1) console.error('v57: SafetyReport FK skipped:', fkE)
+      }
+      console.warn('v57: SafetyReport table created by self-heal')
+    }
+    v57SafetyChecked = true
+  } catch (e) {
+    // لا نُثبّت العلم عند الفشل — تُعاد المحاولة في الطلب التالي
+    console.error('v57 safety self-heal skipped (will retry):', e)
+  }
+}
