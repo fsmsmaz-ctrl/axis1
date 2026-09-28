@@ -17,7 +17,7 @@ import {
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
 import {
   UserCircle, Coins, KeyRound, ShoppingCart, Loader2, Plus, Pencil, Trash2,
-  Send, Eye, ImageUp, CheckCircle2, XCircle, Clock, FileText, ShieldCheck, Lock
+  Send, Eye, ImageUp, CheckCircle2, XCircle, Clock, FileText, ShieldCheck, Lock, Briefcase
 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch, clearStoredToken } from '@/lib/api-client'
@@ -386,8 +386,16 @@ export default function ProfilePage() {
         </CardContent>
       </Card>
 
-      {/* v53: الملف الوظيفي الكامل مدمجاً هنا — كل بيانات الموظف (الوظيفة، مدة الخدمة، الأرصدة، سجل الإجازات، الغياب والتأخير، المستندات وتنبيهات انتهائها) تظهر في ملفه الشخصي مباشرة (يُخفى عن حساب الزائر) */}
-      {roleKey !== 'visitor' && <HRFilePage hideHeader />}
+      {/* v62: بياناتي الوظيفية والإجازات — بعد حذف قسما «ملفي الوظيفي» و«الإجازات» أصبح الملف الشخصي هو الموطن الوحيد:
+          كل بيانات الموظف (الوظيفة، مدة الخدمة، رصيد الإجازات وسجلها، الغياب والتأخير، المستندات وتنبيهات انتهائها) تظهر في ملفه الشخصي مباشرة،
+          وللإدارة ومدير النظام تظهر هنا أيضاً قائمة «تعبئة بيانات المستخدمين» لإدخال وتعديل بيانات كل المستخدمين (بيانات الملف الوظيفي سابقاً) — يُخفى كل ذلك عن حساب الزائر */}
+      {roleKey !== 'visitor' && (
+        <div className="flex items-center gap-2 pt-1">
+          <Briefcase className="h-5 w-5 text-primary" />
+          <h2 className="text-lg font-semibold">{isRtl ? 'بياناتي الوظيفية والإجازات' : 'My Employment & Leave Data'}</h2>
+        </div>
+      )}
+      {roleKey !== 'visitor' && <HRFilePage />}
 
       {/* v49: الرتبة وصلاحيات الوصول للأقسام — قراءة فقط (تُدار من إدارة المستخدمين) */}
       <Card>
