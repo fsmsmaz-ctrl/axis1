@@ -8,7 +8,7 @@ import { db } from './db'
 
 // ── رصيد الإجازات: إنشاء تلقائي عند أول استخدام (افتراضي من السياسة) ──
 export async function getOrCreateBalance(userId: string, defaultAnnualDays?: number): Promise<{
-  id: string; userId: string; annualTotal: number; carriedOver: number; used: number; updatedAt: Date
+  id: string; userId: string; annualTotal: number; carriedOver: number; used: number; configured: boolean; updatedAt: Date
 }> {
   var b = await db.leaveBalance.findUnique({ where: { userId } })
   if (b) return b
@@ -118,4 +118,29 @@ export const LEAVE_TYPE_LABELS_AR: Record<string, string> = {
   emergency: 'طارئة',
   unpaid: 'بدون راتب',
   other: 'أخرى',
+}
+
+// ============================================================
+// v61: اكتمال بيانات الموظف — شرط ظهور الملف والإجازات للموظف
+// البيانات الوظيفية الأساسية: المسمى الوظيفي + القسم/المشروع + تاريخ الالتحاق
+// بيانات الإجازة: رصيد حدّدته الإدارة فعلياً (configured) أو لديه استخدام فعلي سابق
+// الموظف غير المكتمل يرى رسالة «انت غير مكتمل البيانات , قم بمراجعة الادارة» فقط
+// ============================================================
+export function computeCompleteness(
+  user: { jobTitle?: string | null; department?: string | null; joinDate?: Date | string | null },
+  balance: { configured?: boolean; used?: number } | null | undefined
+): {
+  job: boolean; leave: boolean; complete: boolean; missing: string[]
+} {
+  var missing: string[] = []
+  var hasJobTitle = !!(user.jobTitle && String(user.jobTitle).trim())
+  var hasDepartment = !!(user.department && String(user.department).trim())
+  var hasJoinDate = !!user.joinDate
+  var job = hasJobTitle && hasDepartment && hasJoinDate
+  var leave = !!(balance && (balance.configured === true || (typeof balance.used === 'number' && balance.used > 0)))
+  if (!hasJobTitle) missing.push('jobTitle')
+  if (!hasDepartment) missing.push('department')
+  if (!hasJoinDate) missing.push('joinDate')
+  if (!leave) missing.push('leaveBalance')
+  return { job: job, leave: leave, complete: job && leave, missing: missing }
 }
