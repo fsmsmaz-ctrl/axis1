@@ -11,10 +11,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
   }
 
-  // v23: الاعتماد لمدير النظام (admin@axis.om) فقط
+  // v59: الاعتماد لمدير النظام (admin@axis.om) أو الإدارة العليا (top_management) —
+  // كان حصراً لمدير النظام فقط (v23)، وتوسّع بطلب صريح: المستخدم الإداري الذي يرى
+  // التقارير في لوحة التحكم يعتمدها من هناك مباشرة.
   var isSystemAdmin = (user.email || '').toLowerCase().trim() === SYSTEM_ADMIN_EMAIL
-  if (!isSystemAdmin) {
-    return NextResponse.json({ error: 'forbidden', message: 'اعتماد التقارير متاح لمدير النظام فقط' }, { status: 403 })
+  var isTopManagement = String(user.role || '').toLowerCase().trim() === 'top_management'
+  if (!isSystemAdmin && !isTopManagement) {
+    return NextResponse.json({ error: 'forbidden', message: 'اعتماد التقارير متاح لمدير النظام والإدارة العليا فقط' }, { status: 403 })
   }
 
   var rl = checkRateLimit(req, RateLimitPresets.write)
@@ -39,11 +42,59 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: 'not_found', message: 'التقرير غير موجود' }, { status: 404 })
     }
 
+    // v59: إصلاح خطأ صامت خطير — الزر «رفض» في الواجهة يرسل { action: 'reject' }
+    // لكن نقطة النهاية كانت تتجاهل الجسم تماماً فتعتمد التقرير بدل رفضه!
+    var bodyAction: any = {}
+    try { bodyAction = await req.json() } catch (e) { bodyAction = {} }
+    var action = bodyAction && bodyAction.action === 'reject' ? 'reject' : 'approve'
+
     if (existingReport.status !== 'submitted') {
       return NextResponse.json(
-        { error: 'invalid_status', message: 'لا يمكن اعتماد تقرير لم يتم تسليمه' },
+        { error: 'invalid_status', message: action === 'reject' ? 'لا يمكن رفض تقرير لم يتم تسليمه' : 'لا يمكن اعتماد تقرير لم يتم تسليمه' },
         { status: 400 }
       )
+    }
+
+    // v59: مسار الرفض — إرجاع التقرير بوضع «مرفوض» مع إشعار صريح لمنشئه وسجل تدقيق
+    if (action === 'reject') {
+      var rejectedResult = await safeDbOp(
+        () => db.dailyReport.update({
+          where: { id },
+          data: { status: 'rejected' },
+        }),
+        'رفض التقرير'
+      )
+      if (!rejectedResult.success) return rejectedResult.response
+
+      safeDbOp(
+        () => db.auditLog.create({
+          data: {
+            userId: user!.id, dailyReportId: id, projectId: existingReport.projectId,
+            action: 'reject', entity: 'daily_report', entityId: id,
+            details: 'Rejected daily report',
+          },
+        }),
+        'سجل التدقيق'
+      ).catch(function() {})
+
+      // صف موجّه للمنشئ حصراً (لا يُنشأ إذا كان الرافض هو المنشئ نفسه)
+      if (existingReport.createdById && existingReport.createdById !== user!.id) {
+        db.notification.create({
+          data: {
+            userId: existingReport.createdById,
+            projectId: existingReport.projectId,
+            type: 'report_rejected',
+            title: 'تم رفض التقرير اليومي',
+            message: 'تم رفض تقريرك اليومي بتاريخ ' + new Date(existingReport.reportDate).toISOString().split('T')[0] + ' بواسطة ' + user!.name + '.',
+            severity: 'warning',
+            link: 'dailyReports',
+            entityType: 'daily_report',
+            entityId: id + ':rejected',
+          },
+        }).catch(function() {})
+      }
+
+      return NextResponse.json({ report: sanitizeDailyReport(rejectedResult.data, canViewPricing(user)) })
     }
 
     // v13: لحظة الاعتماد: الإيراد = الأمتار المحفورة × سعر متر خط الحفر (أو سعر المشروع احتياطياً)
