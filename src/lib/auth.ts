@@ -37,8 +37,7 @@ export function getCookieOptions() {
 
 export const MODULE_PERMISSIONS = [
   'projects', 'drive_lines', 'daily_reports', 'safety', 'equipment', 'costs', 'finishings', 'tasks', 'performance', 'notifications', 'oversight',
-  // v53: الموارد البشرية — الملف الوظيفي والإجازات (لكل الموظفين عدا الزائر)
-  'hr_file', 'hr_leave',
+  // v62: حُذفت صلاحيتا «ملفي الوظيفي» و«الإجازات» مع القسمين — بيانات الموظف ورصيده في الملف الشخصي فقط
 ] as const
 
 export const MODULE_PERMISSION_LABELS: Record<string, { ar: string; en: string }> = {
@@ -53,9 +52,6 @@ export const MODULE_PERMISSION_LABELS: Record<string, { ar: string; en: string }
   performance:    { ar: 'تقييم الأداء',      en: 'Performance' },
   notifications:  { ar: 'التنبيهات وسجل المراقبة', en: 'Notifications & Monitor' },
   oversight:      { ar: 'الرقابة العملية',   en: 'Operational Control' },
-  // v53: الموارد البشرية
-  hr_file:        { ar: 'ملفي الوظيفي',      en: 'My HR File' },
-  hr_leave:       { ar: 'الإجازات',          en: 'Leaves' },
 }
 
 export const REPORT_PERMISSIONS = [
@@ -97,29 +93,19 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
   project_manager: [
     'projects', 'drive_lines', 'daily_reports', 'safety',
     'equipment', 'costs', 'finishings', 'tasks', 'reports', 'performance', 'notifications', 'oversight',
-    // v53: الموارد البشرية
-    'hr_file', 'hr_leave',
   ],
   site_engineer: [
     'projects', 'drive_lines', 'daily_reports', 'safety',
     'equipment', 'finishings', 'tasks', 'notifications',
-    // v53: الموارد البشرية
-    'hr_file', 'hr_leave',
   ],
   hse_officer: [
     'projects', 'equipment', 'safety', 'tasks', 'reports', 'notifications',
-    // v53: الموارد البشرية
-    'hr_file', 'hr_leave',
   ],
   foreman: [
     'projects', 'daily_reports', 'finishings', 'tasks', 'reports', 'notifications',
-    // v53: الموارد البشرية
-    'hr_file', 'hr_leave',
   ],
   accountant: [
     'projects', 'costs', 'tasks', 'reports', 'notifications',
-    // v53: الموارد البشرية
-    'hr_file', 'hr_leave',
   ],
   // v52: الزائر — يرى قسم خطوط الحفر للقراءة فقط:
   // ليس في WRITE_ROLES.drive_lines فلا أزرار إضافة/تعديل/حذف (والخادم يرفض كتاباته بـ 403)،
