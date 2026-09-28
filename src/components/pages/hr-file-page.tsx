@@ -1,8 +1,8 @@
 'use client'
 
-// v53: صفحة «ملفي الوظيفي» — بيانات الموظف الوظيفية ومدة الخدمة والأرصدة والمستندات وسجل الإجازات
-// • تُضمَّن كاملة داخل صفحة «الملف الشخصي» (hideHeader) ليراى الموظف كل بياناته في مكان واحد
-// • الموظف يرى ملفه فقط — الإدارة/الموارد البشرية ترى أي ملف ويمكنها تعديله
+// v62: بيانات الموظف الوظيفية ومدة الخدمة والأرصدة والمستندات وسجل الإجازات — مكوّن مدمج حصراً داخل صفحة «الملف الشخصي»
+// • v62: حُذف قسما «ملفي الوظيفي» و«الإجازات» من التنقل نهائياً — الملف الشخصي هو الموطن الوحيد لبيانات الموظف ورصيد إجازاته
+// • الموظف يرى ملفه فقط — الإدارة ومدير النظام يرون هنا قائمة «تعبئة بيانات المستخدمين» ويمكنهم إدخال وتعديل بيانات كل مستخدم
 // • الرواتب سرية: تظهر للموظف نفسه والإدارة فقط (الخادم لا يرسلها لغيرهم أصلاً)
 // • تنبيهات انتهاء الجواز والبطاقة والإقامة والعقد (أحمر ≤30 يوماً، كهرماني ≤60)
 
@@ -16,7 +16,6 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle
 } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
 import {
   Briefcase, Wallet, FileCheck, Pencil, Loader2, Clock, Plane, History, AlertTriangle,
   Search, Users, UserX, CheckCircle2
@@ -273,7 +272,7 @@ var EMPTY_FORM = {
   annualTotal: '', carriedOver: '',
 }
 
-export default function HRFilePage({ hideHeader = false }: { hideHeader?: boolean }) {
+export default function HRFilePage() {
   const language = useAppStore((s) => s.language)
   const token = useAppStore((s) => s.token)
   const isAr = language === 'ar'
@@ -367,16 +366,6 @@ export default function HRFilePage({ hideHeader = false }: { hideHeader?: boolea
       annualTotal: b && b.annualTotal !== null && b.annualTotal !== undefined ? String(b.annualTotal) : '',
       carriedOver: b && b.carriedOver !== null && b.carriedOver !== undefined ? String(b.carriedOver) : '',
     }
-  }
-
-  function openEdit() {
-    if (!data?.profile) return
-    setForm(buildForm(data.profile, data.balance))
-    setBalanceBaseline({
-      annualTotal: data.balance && data.balance.annualTotal !== null && data.balance.annualTotal !== undefined ? String(data.balance.annualTotal) : '',
-      carriedOver: data.balance && data.balance.carriedOver !== null && data.balance.carriedOver !== undefined ? String(data.balance.carriedOver) : '',
-    })
-    setEditOpen(true)
   }
 
   // v61: فتح نموذج التعبئة لموظف محدد من القائمة — يجلب ملفه أولاً ثم يفتح النافذة
@@ -513,7 +502,6 @@ export default function HRFilePage({ hideHeader = false }: { hideHeader?: boolea
   var b = data.balance
   var totalBalance = b ? (b.annualTotal + b.carriedOver - b.used) : 0
   var displayName = isRtl ? p.name : (p.nameEn || p.name)
-  var roleLabel = isRtl ? roleLabels[p.role]?.ar : roleLabels[p.role]?.en
   var contractExpiryBadge = expiryBadge(p.contractEnd, isAr)
 
   return (
@@ -533,62 +521,7 @@ export default function HRFilePage({ hideHeader = false }: { hideHeader?: boolea
         />
       )}
 
-      {/* محدد الموظف للإدارة/الموارد البشرية — يُخفى عند التضمين داخل الملف الشخصي */}
-      {!hideHeader && data.canEdit && data.employees && data.employees.length > 0 && (
-        <Card>
-          <CardContent className="py-3">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-              <span className="text-sm font-medium shrink-0">{isAr ? 'عرض ملف موظف:' : 'View employee file:'}</span>
-              <Select value={targetId || p.id} onValueChange={(v) => setTargetId(v === p.id ? '' : v)}>
-                <SelectTrigger className="w-full sm:w-72">
-                  <SelectValue placeholder={isAr ? 'اختر موظفاً' : 'Select employee'} />
-                </SelectTrigger>
-                <SelectContent>
-                  {data.employees.map((emp: any) => (
-                    <SelectItem key={emp.id} value={emp.id}>
-                      {(isRtl ? emp.name : (emp.nameEn || emp.name)) + (emp.jobTitle ? ' — ' + emp.jobTitle : '')}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {targetId && (
-                <Button variant="ghost" size="sm" onClick={() => setTargetId('')}>
-                  {isAr ? 'ملفي' : 'My file'}
-                </Button>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* الترويسة: الصورة والاسم والدور + زر التعديل للإدارة — تُخفى عند التضمين داخل الملف الشخصي */}
-      {hideHeader ? null : (
-      <Card>
-        <CardContent className="py-4">
-          <div className="flex items-center gap-4 flex-wrap">
-            <Avatar className="h-16 w-16 border-2 border-primary/20">
-              {p.avatar && <AvatarImage src={p.avatar} alt={displayName} />}
-              <AvatarFallback className="bg-primary/10 text-primary text-xl font-semibold">{displayName.charAt(0)}</AvatarFallback>
-            </Avatar>
-            <div className="flex-1 min-w-0">
-              <h3 className="text-lg font-semibold truncate">{displayName}</h3>
-              <div className="flex items-center gap-2 flex-wrap mt-1">
-                <Badge variant="secondary">{roleLabel || p.role}</Badge>
-                {p.employeeNo && <Badge variant="outline">{isAr ? 'رقم وظيفي: ' : 'No.: '}{p.employeeNo}</Badge>}
-                {!p.active && <Badge variant="destructive">{isAr ? 'الحساب معطل' : 'Inactive'}</Badge>}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">{p.email}{p.phone ? ' · ' + p.phone : ''}</p>
-            </div>
-            {data.canEdit && (
-              <Button size="sm" onClick={openEdit} className="gap-1.5">
-                <Pencil className="h-4 w-4" />
-                {isAr ? 'تعديل الملف' : 'Edit file'}
-              </Button>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-      )}
+      {/* v62: أُزيلت ترويسة الصفحة المستقلة ومحدد الموظف مع حذف قسم «ملفي الوظيفي» — الترويسة تعرضها صفحة الملف الشخصي نفسها */}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* البيانات الوظيفية */}
