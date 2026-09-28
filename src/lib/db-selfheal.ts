@@ -173,6 +173,12 @@ export async function ensureHRSupport(): Promise<void> {
       "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name IN ('LeaveRequest','LeaveBalance','Holiday','LeavePolicy','LeaveAdjustment')"
     )
     var tableSet = new Set<string>((hrTables || []).map(function(t) { return t.table_name }))
+    // v61: عمود configured على LeaveBalance — هل حدّدت الإدارة بيانات الإجازة فعلياً؟
+    var lbCols = await db.$queryRawUnsafe<Array<{ column_name: string }>>(
+      "SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name = 'LeaveBalance'"
+    )
+    var lbSet = new Set<string>((lbCols || []).map(function(c) { return c.column_name }))
+    var needLbCols = lbSet.has('configured') ? [] : ['configured']
 
     var colDefs: Record<string, string> = {
       employeeNo: 'TEXT', jobTitle: 'TEXT', department: 'TEXT', workLocation: 'TEXT',
@@ -187,7 +193,7 @@ export async function ensureHRSupport(): Promise<void> {
       .filter(function(t) { return !tableSet.has(t) })
 
     // المسار السريع: كل شيء موجود — ثبّت العلم وارجع فوراً
-    if (needCols.length === 0 && needTables.length === 0) {
+    if (needCols.length === 0 && needTables.length === 0 && needLbCols.length === 0) {
       v53HRChecked = true
       return
     }
@@ -249,6 +255,7 @@ export async function ensureHRSupport(): Promise<void> {
   "annualTotal" DOUBLE PRECISION NOT NULL DEFAULT 30,
   "carriedOver" DOUBLE PRECISION NOT NULL DEFAULT 0,
   "used" DOUBLE PRECISION NOT NULL DEFAULT 0,
+  "configured" BOOLEAN NOT NULL DEFAULT false,
   "updatedAt" TIMESTAMP(3) NOT NULL,
   CONSTRAINT "LeaveBalance_pkey" PRIMARY KEY ("id")
 )`)
@@ -320,11 +327,27 @@ WHERE NOT EXISTS (SELECT 1 FROM "LeavePolicy")`)
       } catch (e) { console.error('v53: LeaveAdjustment self-heal skipped:', e) }
     }
 
+    // v61: عمود configured على LeaveBalance — يُنفَّذ بعد إنشاء الجداول المفقودة
+    // (الجدول الجديد يُنشأ بالفعل مع العمود في CREATE أعلاه، وهنا نضيفه للجداول القديمة)
+    if (needLbCols.length > 0) {
+      try {
+        await db.$executeRawUnsafe('ALTER TABLE "LeaveBalance" ADD COLUMN IF NOT EXISTS "configured" BOOLEAN NOT NULL DEFAULT false')
+        // أرصدة لها استخدام فعلي (إجازات معتمدة سابقاً) تُعدّ بياناتها مُدخلة سلفاً
+        await db.$executeRawUnsafe('UPDATE "LeaveBalance" SET "configured" = true WHERE "used" > 0')
+        console.warn('v61: LeaveBalance.configured column created by self-heal')
+      } catch (e) {
+        console.error('v61: LeaveBalance.configured self-heal skipped:', e)
+      }
+    }
+
     // إعادة الفحص: يُثبَّت العلم فقط عند اكتمال كل شيء (الفشل الجزئي يعيد المحاولة لاحقاً)
     var reTables = await db.$queryRawUnsafe<Array<{ table_name: string }>>(
       "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name IN ('LeaveRequest','LeaveBalance','Holiday','LeavePolicy','LeaveAdjustment')"
     )
-    if ((reTables || []).length >= 5) v53HRChecked = true
+    var reLbCols = await db.$queryRawUnsafe<Array<{ column_name: string }>>(
+      "SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name = 'LeaveBalance' AND column_name = 'configured'"
+    )
+    if ((reTables || []).length >= 5 && (reLbCols || []).length >= 1) v53HRChecked = true
   } catch (e) {
     // لا نُثبّت العلم عند الفشل — تُعاد المحاولة في الطلب التالي (أعمدة User حرجة للدخول)
     console.error('v53 HR self-heal skipped (will retry):', e)
