@@ -46,6 +46,12 @@ const typeLabels: Record<string, { ar: string; en: string }> = {
   task_due_changed: { ar: 'تغيير موعد مهمة', en: 'Task due date changed' },
   task_due_reminder: { ar: 'تذكير: مهمتك موعدها قريب', en: 'Task due soon reminder' },
   task_overdue_reminder: { ar: 'تأخير في مهمة مسندة إليك', en: 'Your task is overdue' },
+  // v62: أقسام الإجازات حُذفت — تبقى التسميات للإشعارات القديمة المخزّنة (روابطها تفتح الملف الشخصي)
+  leave_submitted: { ar: 'طلب إجازة', en: 'Leave request' },
+  leave_approved: { ar: 'تم اعتماد إجازة', en: 'Leave approved' },
+  leave_rejected: { ar: 'تم رفض إجازة', en: 'Leave rejected' },
+  leave_cancelled: { ar: 'إلغاء طلب إجازة', en: 'Leave request cancelled' },
+  leave_decision: { ar: 'قرار على طلب إجازة', en: 'Leave request decision' },
 }
 
 const typeIcons: Record<string, any> = {
