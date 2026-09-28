@@ -614,6 +614,7 @@ model LeaveBalance {
   annualTotal Float    @default(30) // الرصيد السنوي المعتمد
   carriedOver Float    @default(0)  // رصيد مرحّل من سنة سابقة
   used        Float    @default(0)  // المستخدم من الإجازات السنوية المعتمدة
+  configured  Boolean  @default(false) // v61: هل حدّدت الإدارة بيانات الإجازة فعلياً؟ (شرط اكتمال البيانات — الرصيد الافتراضي التلقائي لا يُعدّ بيانات مُدخلة)
   updatedAt   DateTime @updatedAt
 
   user User @relation("UserLeaveBalance", fields: [userId], references: [id])
