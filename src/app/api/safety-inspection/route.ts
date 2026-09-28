@@ -88,11 +88,10 @@ export async function POST(req: NextRequest) {
     var validationError = validateRequired(body, ['projectId', 'reportDate'])
     if (validationError) return validationError
 
-    // === Validate drive line: must exist and belong to the project ===
-    // v57: أُلغي شرط «أن يكون الخط قد بدأ العمل عليه» — تفتيش السلامة إجراء وقائي مشروع
-    // قبل بدء الحفر نفسه، وكان هذا الشرط يمنع فعلياً إنشاء تقارير لخطوط سلمتها حالة
-    // not_started (مثل تواتير 2) فبدت التقارير «لا تُنشأ». الواجهة تعرض الآن كل الخطوط
-    // مع وسم «لم يبدأ» بدل إخفائها من القائمة.
+    // === Validate drive line: must exist, belong to the project, and be in progress ===
+    // v58: تُنشأ تقارير السلامة فقط للخطوط قيد التنفيذ — طلب صريح من المستخدم:
+    // «الخطوط المكتملة أو التي لم تبدأ يجب ألا تظهر للاختيار وإنشاء تقارير لها».
+    // الواجهة تخفيها من القائمة، وهذا الفحص حماية إضافية على الخادم (تحوّط الإرسال المباشر).
     if (body.driveLineId) {
       var dlResult = await safeDbOp(
         () => db.driveLine.findUnique({ where: { id: String(body.driveLineId) } }),
@@ -110,6 +109,15 @@ export async function POST(req: NextRequest) {
       if (dl.projectId !== String(body.projectId)) {
         return NextResponse.json(
           { error: 'invalid_drive_line', message: 'خط الحفر المحدد لا ينتمي إلى المشروع المختار' },
+          { status: 400 }
+        )
+      }
+      // v58: رفض الخطوط غير قيد التنفيذ (لم تبدأ / متوقفة / مكتملة) برسالة عربية تذكر حالة الخط الفعلية
+      var inactiveLabels: Record<string, string> = { not_started: 'لم يبدأ', completed: 'مكتمل', suspended: 'متوقف' }
+      if (dl.status !== 'in_progress') {
+        var inactiveLabel = inactiveLabels[dl.status] || dl.status
+        return NextResponse.json(
+          { error: 'drive_line_not_active', message: 'لا يمكن إنشاء تقرير سلامة لخط «' + (dl.lineNumber || '-') + '» لأن حالته «' + inactiveLabel + '» — تُنشأ تقارير السلامة فقط للخطوط قيد التنفيذ' },
           { status: 400 }
         )
       }
@@ -361,4 +369,6 @@ export async function DELETE(req: NextRequest) {
     return handleDbError(error, 'حذف تقرير السلامة')
   }
 }
+
+
 
