@@ -1,0 +1,595 @@
+'use client'
+
+// v53: صفحة «ملفي الوظيفي» — بيانات الموظف الوظيفية ومدة الخدمة والأرصدة والمستندات وسجل الإجازات
+// • تُضمَّن كاملة داخل صفحة «الملف الشخصي» (hideHeader) ليراى الموظف كل بياناته في مكان واحد
+// • الموظف يرى ملفه فقط — الإدارة/الموارد البشرية ترى أي ملف ويمكنها تعديله
+// • الرواتب سرية: تظهر للموظف نفسه والإدارة فقط (الخادم لا يرسلها لغيرهم أصلاً)
+// • تنبيهات انتهاء الجواز والبطاقة والإقامة والعقد (أحمر ≤30 يوماً، كهرماني ≤60)
+
+import { useEffect, useState } from 'react'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle
+} from '@/components/ui/dialog'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
+import {
+  Briefcase, Wallet, FileCheck, Pencil, Loader2, Clock, Plane, History, AlertTriangle
+} from 'lucide-react'
+import { useAppStore } from '@/lib/store'
+import { authedFetch } from '@/lib/api-client'
+import { toast } from 'sonner'
+
+const roleLabels: Record<string, { ar: string; en: string }> = {
+  top_management: { ar: 'الإدارة العليا', en: 'Top Management' },
+  project_manager: { ar: 'مدير المشروع', en: 'Project Manager' },
+  site_engineer: { ar: 'مهندس الموقع', en: 'Site Engineer' },
+  hse_officer: { ar: 'مسؤول السلامة', en: 'HSE Officer' },
+  foreman: { ar: 'المشرف', en: 'Foreman' },
+  accountant: { ar: 'المحاسب', en: 'Accountant' },
+  visitor: { ar: 'زائر', en: 'Visitor' },
+}
+
+const leaveTypeLabels: Record<string, { ar: string; en: string }> = {
+  annual: { ar: 'سنوية', en: 'Annual' },
+  sick: { ar: 'مرضية', en: 'Sick' },
+  emergency: { ar: 'طارئة', en: 'Emergency' },
+  unpaid: { ar: 'بدون راتب', en: 'Unpaid' },
+  other: { ar: 'أخرى', en: 'Other' },
+}
+
+const leaveStatus: Record<string, { ar: string; en: string; cls: string }> = {
+  pending: { ar: 'بانتظار الموافقة', en: 'Pending', cls: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300' },
+  approved: { ar: 'معتمد', en: 'Approved', cls: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300' },
+  rejected: { ar: 'مرفوض', en: 'Rejected', cls: 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300' },
+  cancelled: { ar: 'ملغى', en: 'Cancelled', cls: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300' },
+}
+
+function fmtDate(v: any, isAr: boolean): string {
+  if (!v) return '—'
+  try { return new Date(v).toLocaleDateString(isAr ? 'ar-EG' : 'en-US', { year: 'numeric', month: 'short', day: 'numeric' }) }
+  catch { return '—' }
+}
+
+// مدة الخدمة محسوبة تلقائياً من تاريخ الالتحاق
+function serviceDuration(joinDate: any, isAr: boolean): string {
+  if (!joinDate) return '—'
+  var start = new Date(joinDate)
+  var now = new Date()
+  if (isNaN(start.getTime()) || start > now) return '—'
+  var years = now.getFullYear() - start.getFullYear()
+  var months = now.getMonth() - start.getMonth()
+  var days = now.getDate() - start.getDate()
+  if (days < 0) {
+    months--
+    var prevMonth = new Date(now.getFullYear(), now.getMonth(), 0).getDate()
+    days += prevMonth
+  }
+  if (months < 0) { years--; months += 12 }
+  var parts: string[] = []
+  if (isAr) {
+    if (years > 0) parts.push(years + (years === 1 ? ' سنة' : years === 2 ? ' سنتان' : ' سنوات'))
+    if (months > 0) parts.push(months + (months === 1 ? ' شهر' : ' أشهر'))
+    if (days > 0) parts.push(days + (days === 1 ? ' يوم' : ' أيام'))
+    return parts.length ? parts.join(' و') : 'أقل من يوم'
+  }
+  if (years > 0) parts.push(years + 'y')
+  if (months > 0) parts.push(months + 'm')
+  if (days > 0) parts.push(days + 'd')
+  return parts.length ? parts.join(' ') : '<1d'
+}
+
+// حالة انتهاء المستند: أحمر ≤30 أو منتهٍ، كهرماني ≤60، عادي بعدها
+function expiryBadge(expiry: any, isAr: boolean): { label: string; cls: string } | null {
+  if (!expiry) return null
+  var d = new Date(expiry)
+  if (isNaN(d.getTime())) return null
+  var todayKey = Math.floor(Date.now() / 86400000)
+  var expKey = Math.floor(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) / 86400000)
+  var daysLeft = expKey - todayKey
+  if (daysLeft < 0) return { label: isAr ? 'منتهٍ' : 'Expired', cls: 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300' }
+  if (daysLeft <= 30) return { label: isAr ? 'ينتهي خلال ' + daysLeft + ' يوم' : 'Expires in ' + daysLeft + 'd', cls: 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300' }
+  if (daysLeft <= 60) return { label: isAr ? 'ينتهي خلال ' + daysLeft + ' يوماً' : 'Expires in ' + daysLeft + 'd', cls: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300' }
+  return null
+}
+
+function InfoRow({ label, value, isAr }: { label: string; value: any; isAr: boolean }) {
+  return (
+    <div className="flex items-center justify-between gap-3 py-2 border-b border-border/50 last:border-0">
+      <span className="text-sm text-muted-foreground shrink-0">{label}</span>
+      <span className="text-sm font-medium text-start break-words">{value === null || value === undefined || value === '' ? (isAr ? 'غير محدد' : 'Not set') : value}</span>
+    </div>
+  )
+}
+
+var EMPTY_FORM = {
+  employeeNo: '', jobTitle: '', department: '', workLocation: '', supervisorId: '',
+  joinDate: '', contractStart: '', contractEnd: '',
+  baseSalary: '', allowances: '',
+  passportNo: '', passportExpiry: '', idNo: '', idExpiry: '', residenceNo: '', residenceExpiry: '',
+  absenceDays: '', lateDays: '',
+}
+
+export default function HRFilePage({ hideHeader = false }: { hideHeader?: boolean }) {
+  const language = useAppStore((s) => s.language)
+  const token = useAppStore((s) => s.token)
+  const isAr = language === 'ar'
+  const isRtl = isAr
+
+  const [data, setData] = useState<any | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [targetId, setTargetId] = useState<string>('')
+
+  // تعديل الملف (الإدارة)
+  const [editOpen, setEditOpen] = useState(false)
+  const [form, setForm] = useState<any>(EMPTY_FORM)
+  const [saving, setSaving] = useState(false)
+
+  async function load(userId?: string) {
+    setLoading(true)
+    try {
+      const url = userId ? '/api/hr?userId=' + encodeURIComponent(userId) : '/api/hr'
+      const r = await authedFetch(url)
+      const d = await r.json()
+      if (r.ok) setData(d)
+      else toast.error(d.message || (isAr ? 'فشل جلب الملف الوظيفي' : 'Failed to load HR file'))
+    } catch {} finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!token) return
+    load(targetId || undefined)
+  }, [token, targetId])
+
+  function toDayInput(v: any): string {
+    if (!v) return ''
+    var d = new Date(v)
+    if (isNaN(d.getTime())) return ''
+    return d.toISOString().slice(0, 10)
+  }
+
+  function openEdit() {
+    if (!data?.profile) return
+    var p = data.profile
+    setForm({
+      employeeNo: p.employeeNo || '',
+      jobTitle: p.jobTitle || '',
+      department: p.department || '',
+      workLocation: p.workLocation || '',
+      supervisorId: p.supervisorId || '',
+      joinDate: toDayInput(p.joinDate),
+      contractStart: toDayInput(p.contractStart),
+      contractEnd: toDayInput(p.contractEnd),
+      baseSalary: p.baseSalary === null || p.baseSalary === undefined ? '' : String(p.baseSalary),
+      allowances: p.allowances === null || p.allowances === undefined ? '' : String(p.allowances),
+      passportNo: p.passportNo || '',
+      passportExpiry: toDayInput(p.passportExpiry),
+      idNo: p.idNo || '',
+      idExpiry: toDayInput(p.idExpiry),
+      residenceNo: p.residenceNo || '',
+      residenceExpiry: toDayInput(p.residenceExpiry),
+      absenceDays: p.absenceDays === null || p.absenceDays === undefined ? '' : String(p.absenceDays),
+      lateDays: p.lateDays === null || p.lateDays === undefined ? '' : String(p.lateDays),
+    })
+    setEditOpen(true)
+  }
+
+  async function saveEdit() {
+    if (!data?.profile) return
+    setSaving(true)
+    try {
+      const r = await authedFetch('/api/hr', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: data.profile.id, ...form }),
+      })
+      const d = await r.json()
+      if (!r.ok) {
+        toast.error(d.message || (isAr ? 'فشل حفظ التعديلات' : 'Failed to save'))
+        return
+      }
+      toast.success(isAr ? 'تم حفظ الملف الوظيفي بنجاح' : 'HR file saved successfully')
+      setEditOpen(false)
+      load(targetId || undefined)
+    } catch {
+      toast.error(isAr ? 'خطأ في الاتصال' : 'Connection error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (loading && !data) {
+    return (
+      <div className="flex items-center justify-center py-16 text-muted-foreground">
+        <Loader2 className="h-6 w-6 animate-spin" />
+      </div>
+    )
+  }
+  if (!data?.profile) {
+    return (
+      <div className="text-center py-16 text-muted-foreground">
+        {isAr ? 'لا توجد بيانات للعرض' : 'No data to display'}
+      </div>
+    )
+  }
+
+  var p = data.profile
+  var b = data.balance
+  var totalBalance = b ? (b.annualTotal + b.carriedOver - b.used) : 0
+  var displayName = isRtl ? p.name : (p.nameEn || p.name)
+  var roleLabel = isRtl ? roleLabels[p.role]?.ar : roleLabels[p.role]?.en
+  var contractExpiryBadge = expiryBadge(p.contractEnd, isAr)
+
+  return (
+    <div className="space-y-4">
+      {/* محدد الموظف للإدارة/الموارد البشرية — يُخفى عند التضمين داخل الملف الشخصي */}
+      {!hideHeader && data.canEdit && data.employees && data.employees.length > 0 && (
+        <Card>
+          <CardContent className="py-3">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+              <span className="text-sm font-medium shrink-0">{isAr ? 'عرض ملف موظف:' : 'View employee file:'}</span>
+              <Select value={targetId || p.id} onValueChange={(v) => setTargetId(v === p.id ? '' : v)}>
+                <SelectTrigger className="w-full sm:w-72">
+                  <SelectValue placeholder={isAr ? 'اختر موظفاً' : 'Select employee'} />
+                </SelectTrigger>
+                <SelectContent>
+                  {data.employees.map((emp: any) => (
+                    <SelectItem key={emp.id} value={emp.id}>
+                      {(isRtl ? emp.name : (emp.nameEn || emp.name)) + (emp.jobTitle ? ' — ' + emp.jobTitle : '')}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {targetId && (
+                <Button variant="ghost" size="sm" onClick={() => setTargetId('')}>
+                  {isAr ? 'ملفي' : 'My file'}
+                </Button>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* الترويسة: الصورة والاسم والدور + زر التعديل للإدارة — تُخفى عند التضمين داخل الملف الشخصي */}
+      {hideHeader ? null : (
+      <Card>
+        <CardContent className="py-4">
+          <div className="flex items-center gap-4 flex-wrap">
+            <Avatar className="h-16 w-16 border-2 border-primary/20">
+              {p.avatar && <AvatarImage src={p.avatar} alt={displayName} />}
+              <AvatarFallback className="bg-primary/10 text-primary text-xl font-semibold">{displayName.charAt(0)}</AvatarFallback>
+            </Avatar>
+            <div className="flex-1 min-w-0">
+              <h3 className="text-lg font-semibold truncate">{displayName}</h3>
+              <div className="flex items-center gap-2 flex-wrap mt-1">
+                <Badge variant="secondary">{roleLabel || p.role}</Badge>
+                {p.employeeNo && <Badge variant="outline">{isAr ? 'رقم وظيفي: ' : 'No.: '}{p.employeeNo}</Badge>}
+                {!p.active && <Badge variant="destructive">{isAr ? 'الحساب معطل' : 'Inactive'}</Badge>}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">{p.email}{p.phone ? ' · ' + p.phone : ''}</p>
+            </div>
+            {data.canEdit && (
+              <Button size="sm" onClick={openEdit} className="gap-1.5">
+                <Pencil className="h-4 w-4" />
+                {isAr ? 'تعديل الملف' : 'Edit file'}
+              </Button>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* البيانات الوظيفية */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Briefcase className="h-4 w-4 text-primary" />
+              {isAr ? 'البيانات الوظيفية' : 'Employment Data'}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <InfoRow label={isAr ? 'المسمى الوظيفي' : 'Job Title'} value={p.jobTitle} isAr={isAr} />
+            <InfoRow label={isAr ? 'القسم / المشروع' : 'Department / Project'} value={p.department} isAr={isAr} />
+            <InfoRow label={isAr ? 'موقع العمل الحالي' : 'Current Work Location'} value={p.workLocation} isAr={isAr} />
+            <InfoRow
+              label={isAr ? 'المسؤول المباشر' : 'Direct Supervisor'}
+              value={p.supervisor ? (isRtl ? p.supervisor.name : (p.supervisor.nameEn || p.supervisor.name)) : null}
+              isAr={isAr}
+            />
+            <InfoRow label={isAr ? 'تاريخ الالتحاق' : 'Join Date'} value={fmtDate(p.joinDate, isAr)} isAr={isAr} />
+            <InfoRow label={isAr ? 'مدة الخدمة' : 'Service Duration'} value={serviceDuration(p.joinDate, isAr)} isAr={isAr} />
+            <div className="flex items-center justify-between gap-3 py-2 border-b border-border/50">
+              <span className="text-sm text-muted-foreground shrink-0">{isAr ? 'العقد' : 'Contract'}</span>
+              <span className="text-sm font-medium text-start flex items-center gap-2 flex-wrap justify-end">
+                {fmtDate(p.contractStart, isAr)} ← {fmtDate(p.contractEnd, isAr)}
+                {contractExpiryBadge && <Badge className={contractExpiryBadge.cls + ' border-0'}>{contractExpiryBadge.label}</Badge>}
+              </span>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* رصيد الإجازات والغياب */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Plane className="h-4 w-4 text-primary" />
+              {isAr ? 'رصيد الإجازات والغياب' : 'Leave Balance & Absence'}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="grid grid-cols-3 gap-2 my-2">
+              <div className="rounded-xl bg-muted/60 p-3 text-center">
+                <p className="text-[11px] text-muted-foreground">{isAr ? 'الرصيد الكلي' : 'Total'}</p>
+                <p className="text-xl font-bold">{b ? b.annualTotal + b.carriedOver : 0}</p>
+              </div>
+              <div className="rounded-xl bg-muted/60 p-3 text-center">
+                <p className="text-[11px] text-muted-foreground">{isAr ? 'المستخدم' : 'Used'}</p>
+                <p className="text-xl font-bold">{b ? b.used : 0}</p>
+              </div>
+              <div className="rounded-xl bg-emerald-500/10 p-3 text-center">
+                <p className="text-[11px] text-muted-foreground">{isAr ? 'المتبقي' : 'Remaining'}</p>
+                <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400">{totalBalance}</p>
+              </div>
+            </div>
+            {b && b.carriedOver > 0 && (
+              <p className="text-xs text-muted-foreground mb-2">{isAr ? 'يشمل رصيداً مرحّلاً: ' : 'Includes carried-over: '}{b.carriedOver} {isAr ? 'يوم' : 'days'}</p>
+            )}
+            <InfoRow label={isAr ? 'أيام الغياب' : 'Absence Days'} value={String(p.absenceDays ?? 0)} isAr={isAr} />
+            <InfoRow label={isAr ? 'أيام التأخير' : 'Late Days'} value={String(p.lateDays ?? 0)} isAr={isAr} />
+            <p className="text-[11px] text-muted-foreground mt-2">
+              {isAr ? 'الإجازات المعتمدة لا تُحتسب غياباً — الغياب والتأخير تُسجله الإدارة/الموارد البشرية' : 'Approved leaves are not counted as absence — absence/late days are recorded by HR'}
+            </p>
+          </CardContent>
+        </Card>
+
+        {/* الرواتب — تُعرض فقط للموظف نفسه والإدارة (الخادم لا يرسلها لغيرهم) */}
+        {data.canSeeSalary && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Wallet className="h-4 w-4 text-primary" />
+                {isAr ? 'الراتب (سرّي)' : 'Salary (Confidential)'}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <InfoRow label={isAr ? 'الراتب الأساسي' : 'Base Salary'} value={p.baseSalary === null || p.baseSalary === undefined ? null : p.baseSalary + ' OMR'} isAr={isAr} />
+              <InfoRow label={isAr ? 'البدلات' : 'Allowances'} value={p.allowances === null || p.allowances === undefined ? null : p.allowances + ' OMR'} isAr={isAr} />
+              <InfoRow
+                label={isAr ? 'إجمالي الراتب' : 'Total Salary'}
+                value={(p.baseSalary || 0) + (p.allowances || 0) + ' OMR'}
+                isAr={isAr}
+              />
+            </CardContent>
+          </Card>
+        )}
+
+        {/* المستندات */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <FileCheck className="h-4 w-4 text-primary" />
+              {isAr ? 'المستندات' : 'Documents'}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0 space-y-3">
+            {[
+              { icon: '🛂', label: isAr ? 'جواز السفر' : 'Passport', no: p.passportNo, exp: p.passportExpiry },
+              { icon: '🪪', label: isAr ? 'البطاقة الشخصية' : 'ID Card', no: p.idNo, exp: p.idExpiry },
+              { icon: '📋', label: isAr ? 'الإقامة' : 'Residence', no: p.residenceNo, exp: p.residenceExpiry },
+            ].map(function(doc) {
+              var badge = expiryBadge(doc.exp, isAr)
+              return (
+                <div key={doc.label} className="flex items-center justify-between gap-3 py-2 border-b border-border/50 last:border-0">
+                  <span className="text-sm text-muted-foreground">{doc.icon} {doc.label}</span>
+                  <span className="text-sm font-medium text-start flex items-center gap-2 flex-wrap justify-end">
+                    <span>{doc.no || (isAr ? 'غير مسجل' : 'Not set')}</span>
+                    <span className="text-xs text-muted-foreground">{doc.exp ? fmtDate(doc.exp, isAr) : ''}</span>
+                    {badge && <Badge className={badge.cls + ' border-0'}>{badge.label}</Badge>}
+                  </span>
+                </div>
+              )
+            })}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* سجل الإجازات */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base flex items-center gap-2">
+            <History className="h-4 w-4 text-primary" />
+            {isAr ? 'سجل الإجازات السابقة' : 'Leave History'}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="pt-0">
+          {(!data.history || data.history.length === 0) ? (
+            <p className="text-sm text-muted-foreground py-4 text-center">
+              {isAr ? 'لا توجد إجازات مسجلة' : 'No leave records'}
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {data.history.map(function(r: any) {
+                var st = leaveStatus[r.status] || leaveStatus.pending
+                return (
+                  <div key={r.id} className="rounded-xl border p-3">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Badge variant="outline">{(isRtl ? leaveTypeLabels[r.type]?.ar : leaveTypeLabels[r.type]?.en) || r.type}</Badge>
+                        <Badge className={st.cls + ' border-0'}>{isRtl ? st.ar : st.en}</Badge>
+                        <span className="text-sm font-medium">{r.days} {isAr ? 'يوم' : 'days'}</span>
+                      </div>
+                      <span className="text-xs text-muted-foreground">
+                        {fmtDate(r.startDate, isAr)} ← {fmtDate(r.endDate, isAr)}
+                      </span>
+                    </div>
+                    {r.reason && <p className="text-xs text-muted-foreground mt-1.5">{isAr ? 'السبب: ' : 'Reason: '}{r.reason}</p>}
+                    {r.substituteName && <p className="text-xs text-muted-foreground mt-0.5">{isAr ? 'البديل: ' : 'Substitute: '}{r.substituteName}</p>}
+                    {r.reviewNote && (
+                      <p className={'text-xs mt-1.5 ' + (r.status === 'rejected' ? 'text-rose-600 dark:text-rose-400' : 'text-muted-foreground')}>
+                        {isAr ? 'القرار: ' : 'Decision: '}{r.reviewNote}
+                        {r.reviewedBy ? ' — ' + (isRtl ? r.reviewedBy.name : (r.reviewedBy.nameEn || r.reviewedBy.name)) : ''}
+                      </p>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* تعديلات الرصيد المسجلة */}
+      {data.adjustments && data.adjustments.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Clock className="h-4 w-4 text-primary" />
+              {isAr ? 'تعديلات الرصيد' : 'Balance Adjustments'}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0 space-y-1.5">
+            {data.adjustments.map(function(a: any) {
+              return (
+                <div key={a.id} className="flex items-center justify-between gap-2 text-sm py-1.5 border-b border-border/40 last:border-0">
+                  <span className="flex items-center gap-2">
+                    <span className={'font-semibold ' + (a.delta >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400')}>
+                      {a.delta > 0 ? '+' : ''}{a.delta}
+                    </span>
+                    <span className="text-muted-foreground">{a.reason}</span>
+                  </span>
+                  <span className="text-xs text-muted-foreground shrink-0">
+                    {a.by ? (isRtl ? a.by.name : (a.by.nameEn || a.by.name)) + ' · ' : ''}
+                    {fmtDate(a.createdAt, isAr)}
+                  </span>
+                </div>
+              )
+            })}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* نافذة تعديل الملف — الإدارة/الموارد البشرية */}
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="sm:max-w-[640px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Pencil className="h-5 w-5 text-primary" />
+              {isAr ? 'تعديل الملف الوظيفي — ' : 'Edit HR File — '}{displayName}
+            </DialogTitle>
+            <DialogDescription>
+              {isAr ? 'بيانات الرواتب سرية ولا تظهر إلا للموظف نفسه والإدارة' : 'Salary data is confidential — visible to the employee and management only'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label>{isAr ? 'الرقم الوظيفي' : 'Employee No.'}</Label>
+              <Input value={form.employeeNo} onChange={(e) => setForm({ ...form, employeeNo: e.target.value })} />
+            </div>
+            <div className="space-y-1">
+              <Label>{isAr ? 'المسمى الوظيفي' : 'Job Title'}</Label>
+              <Input value={form.jobTitle} onChange={(e) => setForm({ ...form, jobTitle: e.target.value })} />
+            </div>
+            <div className="space-y-1">
+              <Label>{isAr ? 'القسم / المشروع' : 'Department / Project'}</Label>
+              <Input value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} />
+            </div>
+            <div className="space-y-1">
+              <Label>{isAr ? 'موقع العمل الحالي' : 'Work Location'}</Label>
+              <Input value={form.workLocation} onChange={(e) => setForm({ ...form, workLocation: e.target.value })} />
+            </div>
+            <div className="space-y-1 sm:col-span-2">
+              <Label>{isAr ? 'المسؤول المباشر' : 'Direct Supervisor'}</Label>
+              <Select value={form.supervisorId || 'none'} onValueChange={(v) => setForm({ ...form, supervisorId: v === 'none' ? '' : v })}>
+                <SelectTrigger>
+                  <SelectValue placeholder={isAr ? 'اختر المسؤول' : 'Select supervisor'} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">{isAr ? 'بدون مسؤول مباشر (تتحول الطلبات للإدارة)' : 'None (requests go to management)'}</SelectItem>
+                  {(data.employees || []).filter((emp: any) => emp.id !== p.id).map((emp: any) => (
+                    <SelectItem key={emp.id} value={emp.id}>
+                      {isRtl ? emp.name : (emp.nameEn || emp.name)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label>{isAr ? 'تاريخ الالتحاق' : 'Join Date'}</Label>
+              <Input type="date" value={form.joinDate} onChange={(e) => setForm({ ...form, joinDate: e.target.value })} />
+            </div>
+            <div className="space-y-1" />
+            <div className="space-y-1">
+              <Label>{isAr ? 'بداية العقد' : 'Contract Start'}</Label>
+              <Input type="date" value={form.contractStart} onChange={(e) => setForm({ ...form, contractStart: e.target.value })} />
+            </div>
+            <div className="space-y-1">
+              <Label>{isAr ? 'نهاية العقد' : 'Contract End'}</Label>
+              <Input type="date" value={form.contractEnd} onChange={(e) => setForm({ ...form, contractEnd: e.target.value })} />
+            </div>
+            <div className="space-y-1">
+              <Label>{isAr ? 'الراتب الأساسي (OMR)' : 'Base Salary (OMR)'}</Label>
+              <Input type="number" min="0" step="0.001" value={form.baseSalary} onChange={(e) => setForm({ ...form, baseSalary: e.target.value })} />
+            </div>
+            <div className="space-y-1">
+              <Label>{isAr ? 'البدلات (OMR)' : 'Allowances (OMR)'}</Label>
+              <Input type="number" min="0" step="0.001" value={form.allowances} onChange={(e) => setForm({ ...form, allowances: e.target.value })} />
+            </div>
+            <div className="space-y-1">
+              <Label>{isAr ? 'رقم جواز السفر' : 'Passport No.'}</Label>
+              <Input value={form.passportNo} onChange={(e) => setForm({ ...form, passportNo: e.target.value })} />
+            </div>
+            <div className="space-y-1">
+              <Label>{isAr ? 'انتهاء الجواز' : 'Passport Expiry'}</Label>
+              <Input type="date" value={form.passportExpiry} onChange={(e) => setForm({ ...form, passportExpiry: e.target.value })} />
+            </div>
+            <div className="space-y-1">
+              <Label>{isAr ? 'رقم البطاقة' : 'ID No.'}</Label>
+              <Input value={form.idNo} onChange={(e) => setForm({ ...form, idNo: e.target.value })} />
+            </div>
+            <div className="space-y-1">
+              <Label>{isAr ? 'انتهاء البطاقة' : 'ID Expiry'}</Label>
+              <Input type="date" value={form.idExpiry} onChange={(e) => setForm({ ...form, idExpiry: e.target.value })} />
+            </div>
+            <div className="space-y-1">
+              <Label>{isAr ? 'رقم الإقامة' : 'Residence No.'}</Label>
+              <Input value={form.residenceNo} onChange={(e) => setForm({ ...form, residenceNo: e.target.value })} />
+            </div>
+            <div className="space-y-1">
+              <Label>{isAr ? 'انتهاء الإقامة' : 'Residence Expiry'}</Label>
+              <Input type="date" value={form.residenceExpiry} onChange={(e) => setForm({ ...form, residenceExpiry: e.target.value })} />
+            </div>
+            <div className="space-y-1">
+              <Label>{isAr ? 'أيام الغياب' : 'Absence Days'}</Label>
+              <Input type="number" min="0" step="0.5" value={form.absenceDays} onChange={(e) => setForm({ ...form, absenceDays: e.target.value })} />
+            </div>
+            <div className="space-y-1">
+              <Label>{isAr ? 'أيام التأخير' : 'Late Days'}</Label>
+              <Input type="number" min="0" step="0.5" value={form.lateDays} onChange={(e) => setForm({ ...form, lateDays: e.target.value })} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditOpen(false)}>{isAr ? 'إلغاء' : 'Cancel'}</Button>
+            <Button onClick={saveEdit} disabled={saving} className="gap-1.5">
+              {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+              {isAr ? 'حفظ' : 'Save'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {data.canEdit && (
+        <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+          <AlertTriangle className="h-3.5 w-3.5" />
+          {isAr ? 'كل تعديل على الملف يُسجَّل في سجل التدقيق مع اسم المعدِّل والتاريخ' : 'Every file edit is recorded in the audit log with editor name and date'}
+        </p>
+      )}
+    </div>
+  )
+}
