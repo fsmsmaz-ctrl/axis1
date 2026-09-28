@@ -475,6 +475,107 @@ export function PrintableReport({ data, generatedBy, showRevenue = true }: { dat
         </>
       )}
 
+      {/* v60: تقرير المتوسطات التشغيلية والمالية — سري للإدارة العليا */}
+      {data.type === 'operational_averages' && (() => {
+        const rp = d.report || {}
+        const m = rp.metrics || {}
+        const NA = isRtl ? 'لا توجد بيانات كافية' : 'Insufficient data'
+        const nf = (v: any) => (v === null || v === undefined ? NA : fmtNum(Math.round(v * 100) / 100))
+        const metricRows: Array<[string, string, any, boolean?]> = [
+          [isRtl ? 'إجمالي أمتار الحفر المنفذة (م)' : 'Total drilled meters (m)', isRtl ? 'إجمالي' : 'Total', nf(m.totalMeters)],
+          [isRtl ? 'عدد أيام العمل الفعلية' : 'Actual working days', isRtl ? 'أيام' : 'days', m.workingDays ?? 0],
+          [isRtl ? 'متوسط الحفر اليومي' : 'Avg daily drilling', isRtl ? 'م/يوم' : 'm/day', nf(m.avgDailyMeters)],
+          [isRtl ? 'متوسط عدد العمال اليومي' : 'Avg daily workers', isRtl ? 'عامل/يوم' : 'workers/day', nf(m.avgWorkers)],
+          [isRtl ? 'إجمالي التكاليف المسجلة' : 'Total recorded costs', cur, m.costTotal === null || m.costTotal === undefined ? NA : nf(m.costTotal)],
+          [isRtl ? 'متوسط تكلفة المتر' : 'Avg cost per meter', cur, nf(m.avgCostPerMeter)],
+          [isRtl ? 'متوسط الصرف اليومي' : 'Avg daily spend', cur, nf(m.avgDailySpend)],
+          [isRtl ? 'إجمالي قيمة الأعمال المنفذة' : 'Total executed work value', cur, nf(m.workValue), true],
+          [isRtl ? 'صافي الربح' : 'Net profit', cur, nf(m.netProfit), true],
+          [isRtl ? 'متوسط الربح اليومي' : 'Avg daily profit', cur, nf(m.avgDailyProfit)],
+          [isRtl ? 'متوسط ربح المتر' : 'Avg profit per meter', cur, nf(m.profitPerMeter)],
+          [isRtl ? 'نسبة الربح من قيمة الأعمال' : 'Profit margin (% of work value)', '%', nf(m.profitMarginPct)],
+        ]
+        return (
+          <>
+            <div className="pr-section-title">
+              {isRtl
+                ? ('الموقع: ' + (rp.driveLine ? ('خط ' + (rp.driveLine.lineNumber || '-')) : 'جميع المواقع') + ' — تقارير الفترة: ' + (rp.reportsCount ?? 0))
+                : ('Site: ' + (rp.driveLine ? ('Line ' + (rp.driveLine.lineNumber || '-')) : 'All Sites') + ' — Period reports: ' + (rp.reportsCount ?? 0))}
+            </div>
+            {rp.insufficient ? (
+              <table className="pr-table">
+                <tbody>
+                  <tr><td className="pr-empty" style={{ fontWeight: 700 }}>{isRtl ? 'لا توجد بيانات كافية — لا توجد تقارير عمل يومي (مسلَّمة أو معتمدة) في هذه الفترة' : 'Insufficient data — no submitted/approved daily reports in this period'}</td></tr>
+                </tbody>
+              </table>
+            ) : (
+              <table className="pr-table">
+                <thead>
+                  <tr>
+                    <th>{isRtl ? 'البيان' : 'Metric'}</th>
+                    <th>{isRtl ? 'الوحدة' : 'Unit'}</th>
+                    <th>{isRtl ? 'القيمة' : 'Value'}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {metricRows.map(function(row, idx) {
+                    return (
+                      <tr key={idx} style={row[3] ? { fontWeight: 700, backgroundColor: '#f5f5f4' } : undefined}>
+                        <td>{row[0]}</td>
+                        <td>{row[1]}</td>
+                        <td className="pr-num">{row[2]}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            )}
+
+            {rp.costsScope === 'project_only' && (
+              <div className="pr-section-title" style={{ color: '#b45309', fontSize: '10px' }}>
+                {isRtl
+                  ? 'ملاحظة: عند اختيار خط محدد تُعرض قيمة أعمال ذلك الخط فقط، والتكاليف والأرباح تُحتسب على مستوى المشروع كاملاً'
+                  : 'Note: with a specific line selected, costs & profit remain project-level'}
+              </div>
+            )}
+
+            {Array.isArray(rp.perLine) && rp.perLine.length > 0 && !rp.insufficient && (
+              <>
+                <div className="pr-section-title">{isRtl ? 'تفصيل قيمة الأعمال حسب الخط' : 'Work Value by Line'}</div>
+                <table className="pr-table">
+                  <thead>
+                    <tr>
+                      <th>{isRtl ? 'الخط' : 'Line'}</th>
+                      <th>{isRtl ? 'الأمتار (م)' : 'Meters (m)'}</th>
+                      <th>{isRtl ? 'سعر المتر (ر.ع)' : 'Price/m (OMR)'}</th>
+                      <th>{isRtl ? 'القيمة (ر.ع)' : 'Value (OMR)'}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(rp.perLine || []).map(function(l: any, idx: number) {
+                      return (
+                        <tr key={idx}>
+                          <td>{l.label}</td>
+                          <td className="pr-num">{nf(l.meters)}</td>
+                          <td className="pr-num">{nf(l.price)}</td>
+                          <td className="pr-num">{nf(l.value)}</td>
+                        </tr>
+                      )
+                    })}
+                    <tr style={{ fontWeight: 700, backgroundColor: '#f5f5f4' }}>
+                      <td>{isRtl ? 'الإجمالي' : 'Total'}</td>
+                      <td className="pr-num">{nf((rp.perLine || []).reduce((s: number, l: any) => s + (Number(l.meters) || 0), 0))}</td>
+                      <td></td>
+                      <td className="pr-num">{nf((rp.perLine || []).reduce((s: number, l: any) => s + (Number(l.value) || 0), 0))}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </>
+            )}
+          </>
+        )
+      })()}
+
       {/* ─── Footer ─── */}
       <div className="pr-foot">
         <span>AXIS — {isRtl ? 'نظام إدارة عمليات دفع الأنابيب' : 'Pipe Jacking Operations Management'}</span>
