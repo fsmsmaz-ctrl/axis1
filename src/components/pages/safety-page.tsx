@@ -476,8 +476,10 @@ export default function SafetyPage() {
   var incidents = reports.filter(function(r) { return r.incidentType && r.incidentType !== 'none' }).length
 
   var seenDates: Record<string, boolean> = {}
+  // v55: مفتاح منع التكرار يشمل خط الحفر — تقارير الخطوط المختلفة (تواتير 1 وتواتير 2)
+  // لنفس المشروع في نفس اليوم تقارير مستقلة يجب عرضها كلها
   var uniqueReports = reports.filter(function(r) {
-    var dateKey = r.projectId + '_' + (r.reportDate ? r.reportDate.split('T')[0] : '')
+    var dateKey = r.projectId + '_' + (r.reportDate ? r.reportDate.split('T')[0] : '') + '_' + (r.dailyReport && r.dailyReport.driveLine ? r.dailyReport.driveLine.id : 'no-line')
     if (seenDates[dateKey]) return false
     seenDates[dateKey] = true
     return true
@@ -536,7 +538,7 @@ export default function SafetyPage() {
           driveLinesLoaded.current = null
           setEditingSafety(null)
           setSheetOpen(true)
-        }} disabled={todayReportExists}>
+        }}>
           <Plus className="h-4 w-4 ml-2" />
           {isRtl ? 'إضافة تقرير سلامة' : 'Add Safety Report'}
         </Button>
@@ -544,7 +546,7 @@ export default function SafetyPage() {
 
       {todayReportExists && (
         <div className="p-3 rounded-lg bg-blue-50 border border-blue-200 text-sm">
-          <span className="text-blue-700">{isRtl ? 'لقد أنشأت تقرير سلامة لهذا اليوم بالفعل.' : 'You already created a safety report for today.'}</span>
+          <span className="text-blue-700">{isRtl ? 'لقد أنشأت تقرير سلامة لهذا المشروع اليوم — يمكنك إضافة تقرير مستقل لكل خط حفر في نفس اليوم.' : 'You already created a safety report for this project today — you can still add a separate report for each drive line.'}</span>
         </div>
       )}
 
@@ -702,6 +704,12 @@ export default function SafetyPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap mb-1">
                         <p className="font-semibold text-sm">{r.project ? r.project.name : '-'}</p>
+                        {/* v55: عرض خط الحفر على البطاقة — لتمييز تقارير الخطوط المختلفة لنفس المشروع/التاريخ */}
+                        {r.dailyReport && r.dailyReport.driveLine && (
+                          <span className="text-xs text-muted-foreground border rounded px-1.5 py-0.5 bg-muted/40">
+                            {'خط ' + (r.dailyReport.driveLine.lineNumber || '-') + ': ' + (r.dailyReport.driveLine.startPoint || '-') + ' \u2192 ' + (r.dailyReport.driveLine.endPoint || '-')}
+                          </span>
+                        )}
                         {isDraft && (
                           <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
                             {isRtl ? 'بانتظار إكمال البيانات' : 'Awaiting data'}
