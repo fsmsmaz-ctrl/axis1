@@ -12,6 +12,23 @@ import { ensurePurchasesSupport, ensureHRSupport } from '@/lib/db-selfheal'
 // v52: إنشاء حساب الزائر تلقائياً عند أول محاولة دخول (قبل verifyCredentials)
 import { ensureVisitorAccount } from '@/lib/db-selfheal'
 
+// v56: مهلة قصوى لكل خطوة قاعدة بيانات في الدخول — لو علق الاتصال (مثل مشروع
+// Supabase المتوقف paused أو بطء الشبكة) نرجع رسالة JSON واضحة تحدد السبب،
+// بدل مهلة Netlify (10 ثوانٍ → 504 HTML) التي تصل للواجهة رداً غير JSON
+// فتظهر للمستخدم رسالة «فشل الاتصال بالخادم» المضللة بلا أي تفاصيل.
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>(function (_resolve, reject) {
+      setTimeout(function () { reject(new Error('AXIS_TIMEOUT_' + label)) }, ms)
+    }),
+  ])
+}
+
+function isTimeoutErr(e: unknown): boolean {
+  return !!e && String((e as { message?: string }).message || '').indexOf('AXIS_TIMEOUT_') === 0
+}
+
 export async function POST(req: NextRequest) {
   var rl = checkRateLimit(req, RateLimitPresets.auth)
   if (rl.limited) {
@@ -50,27 +67,57 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    // v56: فحص قاعدة البيانات بمهلة 3.5 ثوانٍ — التعليق يعطي رسالة صريحة فورية
     try {
-      await db.$queryRaw`SELECT 1`
+      await withTimeout(db.$queryRaw`SELECT 1`, 3500, 'DB_PING')
     } catch (dbErr) {
       console.error('Database connection failed during login:', dbErr)
       return NextResponse.json(
-        { error: 'database_error', message: 'فشل الاتصال بقاعدة البيانات. يرجى المحاولة لاحقاً.' },
-        { status: 500 }
+        {
+          error: 'database_error',
+          message: isTimeoutErr(dbErr)
+            ? 'قاعدة البيانات لا تستجيب (تجاوزت المهلة). افتح لوحة Supabase وتحقق من أن المشروع نشط — المشاريع المجانية تتوقف تلقائياً بعد أسبوع من عدم الاستخدام، اضغط Resume لاستئنافها.'
+            : 'فشل الاتصال بقاعدة البيانات. يرجى المحاولة لاحقاً.',
+        },
+        { status: 503 }
       )
     }
 
     // v50: شفاء ذاتي قبل التحقق من بيانات الدخول — أعمدة/جداول v48 (points/Purchase)
     // قد لا تكون مطبقة لأن Netlify لا يشغّل prisma migrate deploy (درس v44)،
     // وfindUnique يقرأ كل أعمدة النموذج فيفشل الدخول بـ P2022 إن نقص عمود واحد.
-    await ensurePurchasesSupport()
-    // v52: ضمان وجود حساب الزائر (زائر — visitor@axis.om) قبل التحقق من بيانات الدخول
-    await ensureVisitorAccount()
-    // v53: أعمدة الموارد البشرية على User إلزامية قبل findUnique (يقرأ كل أعمدة النموذج —
-    // أي عمود ناقص يعطّل الدخول بـ P2022) + جداول الإجازات
-    await ensureHRSupport()
+    // v56: الشفاء الذاتي الثلاثة بالتوازي مع مهلة مشتركة — تعليق الشفاء لا يمنع الدخول
+    // (الأعمدة الحرجة موجودة غالباً، والشفاء يُعاد في الطلب التالي تلقائياً)
+    try {
+      await withTimeout(
+        Promise.all([
+          ensurePurchasesSupport(),
+          ensureVisitorAccount(),
+          ensureHRSupport(),
+        ]),
+        3000,
+        'SELF_HEAL'
+      )
+    } catch (healErr) {
+      console.error('Login self-heal timeout/error (continuing with login):', healErr)
+    }
 
-    var user = await verifyCredentials(emailStr, password)
+    // v56: التحقق من بيانات الدخول بمهلة 4.5 ثانية — bcrypt + جلب المستخدم
+    var user: Awaited<ReturnType<typeof verifyCredentials>>
+    try {
+      user = await withTimeout(verifyCredentials(emailStr, password), 4500, 'VERIFY')
+    } catch (verifyErr) {
+      console.error('Login verify failed:', verifyErr)
+      return NextResponse.json(
+        {
+          error: 'database_error',
+          message: isTimeoutErr(verifyErr)
+            ? 'التحقق من بيانات الدخول تجاوز المهلة — قاعدة البيانات بطيئة أو متوقفة. حاول مجدداً أو افحص لوحة Supabase.'
+            : 'حدث خطأ أثناء التحقق من بيانات الدخول. يرجى المحاولة مرة أخرى.',
+        },
+        { status: 503 }
+      )
+    }
     if (!user) {
       return NextResponse.json(
         { error: 'invalidCredentials', message: 'البريد الإلكتروني أو كلمة المرور غير صحيحة' },
@@ -78,11 +125,26 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    var token = await createSession(user)
-
+    // v56: إنشاء الجلسة بمهلة — فشل JWT_SECRET يعطي رسالة صريحة بدل انهيار عام
+    var token: string
     try {
-      await db.user.update({ where: { id: user.id }, data: { updatedAt: new Date() } })
-    } catch {}
+      token = await withTimeout(createSession(user), 2000, 'JWT')
+    } catch (jwtErr) {
+      console.error('createSession failed during login:', jwtErr)
+      return NextResponse.json(
+        {
+          error: 'internal_error',
+          message: 'تعذر إنشاء الجلسة (JWT). راجع متغير البيئة JWT_SECRET في إعدادات Netlify (لا بد أن يكون 32 حرفاً على الأقل).',
+        },
+        { status: 500 }
+      )
+    }
+
+    // v56: تحديث طابع آخر دخول دون انتظار — لا يحبس الاستجابة إن كانت قاعدة
+    // البيانات بطيئة (غير حرج — مجرد طابع updatedAt)
+    db.user
+      .update({ where: { id: user.id }, data: { updatedAt: new Date() } })
+      .catch(function () {})
 
     // C-6 FIX: Do NOT return token in body — it's in httpOnly cookie only
     var response = NextResponse.json({ user })
