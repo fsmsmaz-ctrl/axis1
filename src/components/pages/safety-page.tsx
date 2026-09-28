@@ -15,6 +15,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { ShieldCheck, ShieldAlert, AlertTriangle, CheckCircle2, XCircle, Calendar, Plus, Loader2, Trash2, GitBranch, Users, Phone, Building2, Pencil, Lock } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
+import { SystemDiagnosticsButton } from '@/components/system-diagnostics'
 import { canWrite } from '@/lib/auth'
 import { reportDayName } from '@/lib/day-name'
 import { cn } from '@/lib/utils'
@@ -364,8 +365,10 @@ export default function SafetyPage() {
       .then(function(d) {
         // 401/403 أو أي خطأ من الخادم → مسار الخطأ المرئي بدل قائمة فارغة صامتة
         if (d && d.error) throw new Error(String(d.error || 'failed'))
-        // إخفاء خطوط الحفر التي لم تبدأ بعد — لا يمكن تسجيل سلامة لخط لم يبدأ العمل عليه
-        var list = (d.driveLines || []).filter(function(l: any) { return l.status !== 'not_started' })
+        // v57: عرض كل خطوط المشروع (بما فيها التي لم تبدأ) — كان إخفاؤها يمنع فعلياً
+        // إنشاء تقرير سلامة لخطوط مثل تواتير 2 قبل بدئها، وبدت التقارير «لا تُنشأ».
+        // الخطوط غير المبدوءة تظهر موسومة بـ «لم يبدأ» في القائمة بدل أن تختفي.
+        var list: any[] = d.driveLines || []
         setDriveLines(list)
         // إذا كان الخط المختار سابقاً ضمن الخطوط المخفية نُفرغه
         setForm(function(f) {
@@ -451,7 +454,21 @@ export default function SafetyPage() {
         return
       }
 
-      if (!safetyRes.ok) throw new Error('Failed to save safety report')
+      // v57: عرض رسالة الخادم الحقيقية بدل إخفائها — كان أي خطأ غير 409 يظهر
+      // برسالة إنجليزية عامة «Failed to save safety report» تخفي السبب الفعلي
+      // (منع تكرار / نقص أعمدة / مهلة المنصة) وعيق تشخيص المشكلة شهوراً
+      if (!safetyRes.ok) {
+        var failData = await safetyRes.json().catch(function() { return null })
+        if (failData && failData.message) {
+          toast.error(String(failData.message) + (failData.error ? ' (' + failData.error + ')' : ''))
+        } else {
+          toast.error(isRtl
+            ? ('رد غير متوقع من الخادم (رمز ' + safetyRes.status + ') — قد تكون قاعدة البيانات أو منصة الاستضافة مشغولة مؤقتاً. جرّب «تشخيص النظام» من صفحة الموارد البشرية')
+            : ('Unexpected server response (HTTP ' + safetyRes.status + ') — the database or hosting platform may be temporarily busy'))
+        }
+        setSaving(false)
+        return
+      }
 
       toast.success(isRtl
         ? (isEdit ? 'تم حفظ التعديلات — ستظهر في قسم التقارير اليومية وقسم الرقابة' : 'تم حفظ تقرير السلامة بنجاح')
@@ -531,17 +548,21 @@ export default function SafetyPage() {
             {isRtl ? 'تقارير السلامة اليومية وإدارة بيانات العمال' : 'Daily safety reports and worker management'}
           </p>
         </div>
-        <Button onClick={function() {
-          setForm({ ...emptyForm, reportDate: new Date().toISOString().split('T')[0] })
-          setDriveLines([])
-          setDriveLinesError(false)
-          driveLinesLoaded.current = null
-          setEditingSafety(null)
-          setSheetOpen(true)
-        }}>
-          <Plus className="h-4 w-4 ml-2" />
-          {isRtl ? 'إضافة تقرير سلامة' : 'Add Safety Report'}
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* v57: تشخيص النظام في متناول اليد — عند تعذر الإنشاء أو العرض يكشف السبب فوراً */}
+          <SystemDiagnosticsButton isAr={isRtl} variant="outline" />
+          <Button onClick={function() {
+            setForm({ ...emptyForm, reportDate: new Date().toISOString().split('T')[0] })
+            setDriveLines([])
+            setDriveLinesError(false)
+            driveLinesLoaded.current = null
+            setEditingSafety(null)
+            setSheetOpen(true)
+          }}>
+            <Plus className="h-4 w-4 ml-2" />
+            {isRtl ? 'إضافة تقرير سلامة' : 'Add Safety Report'}
+          </Button>
+        </div>
       </div>
 
       {todayReportExists && (
@@ -1018,7 +1039,9 @@ export default function SafetyPage() {
                   <option key="editing-line" value={editingSafety.dailyReport.driveLine.id}>{'خط ' + (editingSafety.dailyReport.driveLine.lineNumber || '-') + ' - ' + (editingSafety.dailyReport.driveLine.startPoint || '-') + ' \u2192 ' + (editingSafety.dailyReport.driveLine.endPoint || '-')}</option>
                 )}
                 {driveLines.map(function(l) {
-                  return <option key={l.id} value={l.id}>{(l.lineNumber || '-') + ' - ' + (l.startPoint || '-') + ' \u2192 ' + (l.endPoint || '-')}</option>
+                  var lineLabel = (l.lineNumber || '-') + ' - ' + (l.startPoint || '-') + ' \u2192 ' + (l.endPoint || '-')
+                  if (l.status === 'not_started') lineLabel += isRtl ? ' — لم يبدأ' : ' — Not started'
+                  return <option key={l.id} value={l.id}>{lineLabel}</option>
                 })}
               </select>
               {driveLinesError ? (
