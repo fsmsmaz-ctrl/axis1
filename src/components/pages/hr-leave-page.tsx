@@ -21,7 +21,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   Plane, Plus, Loader2, CheckCircle2, XCircle, Clock, FileText, Ban,
-  AlertTriangle, CalendarDays, Users, Wallet, ShieldAlert, Settings, Trash2, Eye
+  AlertTriangle, CalendarDays, Users, Wallet, ShieldAlert, Settings, Trash2, Eye, UserX
 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
@@ -466,6 +466,24 @@ export default function HRLeavePage() {
             </Button>
             <SystemDiagnosticsButton isAr={isAr} variant="sm" />
           </div>
+        </div>
+      </div>
+    )
+  }
+
+  // v61: بوابة عدم اكتمال البيانات — الموظف (غير الإدارة) ببيانات ناقصة يرى رسالة واحدة فقط في القسم
+  // نص الرسالة كما طلبت الإدارة حرفياً: «انت غير مكتمل البيانات , قم بمراجعة الادارة»
+  var isManagerView = !!(data && data.isHR)
+  if (!isManagerView && data && data.completeness && data.completeness.complete === false) {
+    return (
+      <div className="py-14">
+        <div className="mx-auto flex max-w-md flex-col items-center gap-4 rounded-2xl border border-amber-500/40 bg-amber-500/10 p-8 text-center">
+          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-amber-500/20">
+            <UserX className="h-7 w-7 text-amber-600 dark:text-amber-400" />
+          </div>
+          <p className="text-base font-semibold leading-7 text-amber-800 dark:text-amber-200">
+            {isAr ? 'انت غير مكتمل البيانات , قم بمراجعة الادارة' : 'Your data is incomplete — please contact management'}
+          </p>
         </div>
       </div>
     )
