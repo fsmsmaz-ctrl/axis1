@@ -19,6 +19,8 @@ const typeLabels: Record<string, { ar: string; en: string }> = {
   // تنبيهات التقارير اليومية والاعتماد
   report_pending_approval: { ar: 'تقرير بحاجة إلى اعتماد', en: 'Report pending approval' },
   report_approved: { ar: 'تم اعتماد التقرير', en: 'Report approved' },
+  // v59: إشعار الرفض الصريح — كان الزر «رفض» يعتمد التقرير فعلياً (تُجاهَل الحركة)
+  report_rejected: { ar: 'تم رفض التقرير', en: 'Report rejected' },
   report_delay: { ar: 'تأخير في التقارير', en: 'Report delay' },
   // السلامة
   safety_missing: { ar: 'تقرير سلامة ناقص', en: 'Missing safety report' },
@@ -49,6 +51,7 @@ const typeLabels: Record<string, { ar: string; en: string }> = {
 const typeIcons: Record<string, any> = {
   report_pending_approval: ClipboardCheck,
   report_approved: FileCheck,
+  report_rejected: XCircle,
   report_delay: ClipboardCheck,
   safety_missing: AlertTriangle,
   drive_line_completed: HardHat,
