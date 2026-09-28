@@ -365,10 +365,12 @@ export default function SafetyPage() {
       .then(function(d) {
         // 401/403 أو أي خطأ من الخادم → مسار الخطأ المرئي بدل قائمة فارغة صامتة
         if (d && d.error) throw new Error(String(d.error || 'failed'))
-        // v57: عرض كل خطوط المشروع (بما فيها التي لم تبدأ) — كان إخفاؤها يمنع فعلياً
-        // إنشاء تقرير سلامة لخطوط مثل تواتير 2 قبل بدئها، وبدت التقارير «لا تُنشأ».
-        // الخطوط غير المبدوءة تظهر موسومة بـ «لم يبدأ» في القائمة بدل أن تختفي.
-        var list: any[] = d.driveLines || []
+        // v58: تظهر في قائمة اختيار خط الحفر فقط الخطوط قيد التنفيذ — طلب صريح من
+        // المستخدم: «الخطوط المكتملة أو التي لم تبدأ يجب ألا تظهر للاختيار وإنشاء
+        // تقارير لها». الخطوط (لم تبدأ / متوقفة / مكتملة) تُخفى من القائمة، والخادم
+        // يرفضها كذلك برسالة عربية واضحة (drive_line_not_active).
+        var all: any[] = d.driveLines || []
+        var list: any[] = all.filter(function(l) { return l.status === 'in_progress' })
         setDriveLines(list)
         // إذا كان الخط المختار سابقاً ضمن الخطوط المخفية نُفرغه
         setForm(function(f) {
@@ -1038,9 +1040,9 @@ export default function SafetyPage() {
                 {editingSafety && editingSafety.dailyReport && editingSafety.dailyReport.driveLine && !driveLines.some(function(l) { return l.id === editingSafety.dailyReport.driveLine.id }) && (
                   <option key="editing-line" value={editingSafety.dailyReport.driveLine.id}>{'خط ' + (editingSafety.dailyReport.driveLine.lineNumber || '-') + ' - ' + (editingSafety.dailyReport.driveLine.startPoint || '-') + ' \u2192 ' + (editingSafety.dailyReport.driveLine.endPoint || '-')}</option>
                 )}
+                {/* v58: القائمة تعرض فقط الخطوط قيد التنفيذ — الترشيح في loadDriveLines */}
                 {driveLines.map(function(l) {
                   var lineLabel = (l.lineNumber || '-') + ' - ' + (l.startPoint || '-') + ' \u2192 ' + (l.endPoint || '-')
-                  if (l.status === 'not_started') lineLabel += isRtl ? ' — لم يبدأ' : ' — Not started'
                   return <option key={l.id} value={l.id}>{lineLabel}</option>
                 })}
               </select>
@@ -1064,11 +1066,11 @@ export default function SafetyPage() {
                         : 'Select a project first to list its drive lines')
                     : driveLines.length === 0
                       ? (isRtl
-                          ? 'لا توجد خطوط حفر بدأ العمل عليها في هذا المشروع بعد'
-                          : 'No started drive lines in this project yet')
+                          ? 'لا توجد خطوط حفر قيد التنفيذ في هذا المشروع — يمكن حفظ التقرير بدون ربطه بخط'
+                          : 'No drive lines currently in progress — you can still save the report without a line')
                       : (isRtl
-                          ? 'تظهر هنا فقط خطوط الحفر التي بدأ العمل عليها فعلياً'
-                          : 'Only drive lines that have actually started are listed')}
+                          ? 'تظهر هنا فقط الخطوط قيد التنفيذ — الخطوط التي لم تبدأ أو المكتملة أو المتوقفة لا تُعرض'
+                          : 'Only in-progress lines are listed — not-started, completed or suspended lines are hidden')}
                 </p>
               )}
               {editingSafety && (
