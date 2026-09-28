@@ -27,7 +27,7 @@ import {
   Wrench, DollarSign, CheckCircle2, FileBarChart, TrendingUp, ListChecks,
   Bell, LogOut, Menu, X, Globe,
   AlertTriangle, ChevronLeft, UserPlus, Users, Loader2, Shield, Pencil, Trash2, Check,
-  ShieldAlert, Eye, UserCircle, Contact, CalendarDays
+  ShieldAlert, Eye, UserCircle
 } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
@@ -39,8 +39,6 @@ type PageId =
   | 'equipment' | 'costs' | 'finishings' | 'tasks' | 'reports' | 'performance' | 'notifications'
   | 'oversight'
   | 'profile'
-  // v53: الموارد البشرية
-  | 'hrFile' | 'hrLeave'
 
 interface NavItem {
   id: PageId
@@ -64,9 +62,7 @@ const navItems: NavItem[] = [
   { id: 'reports', labelAr: 'التقارير', labelEn: 'Reports', icon: FileBarChart, resource: 'reports' },
   { id: 'oversight', labelAr: 'الرقابة العملية', labelEn: 'Operational Control', icon: Eye, resource: 'oversight' },
   { id: 'notifications', labelAr: 'التنبيهات', labelEn: 'Notifications', icon: Bell, resource: 'notifications' },
-  // v53: الموارد البشرية — الملف الوظيفي والإجازات (لكل الموظفين المخوّلين، عدا الزائر)
-  { id: 'hrFile', labelAr: 'ملفي الوظيفي', labelEn: 'My HR File', icon: Contact, resource: 'hr_file' },
-  { id: 'hrLeave', labelAr: 'الإجازات', labelEn: 'Leaves', icon: CalendarDays, resource: 'hr_leave' },
+  // v62: قسما «ملفي الوظيفي» و«الإجازات» حُذفا نهائياً — بيانات كل موظف ورصيد إجازاته في الملف الشخصي فقط
   // v48/v51: الملف الشخصي — يبقى هنا لعنوان الصفحة فقط، ولا يُعرض ضمن قائمة الأقسام (يُفتح من بطاقة المستخدم أسفل الشريط)
   { id: 'profile', labelAr: 'الملف الشخصي', labelEn: 'Profile', icon: UserCircle, resource: 'profile' },
 ]
@@ -142,9 +138,6 @@ const NotificationsPage = dynamic(() => import('@/components/pages/notifications
 const OversightPage = dynamic(() => import('@/components/pages/oversight-page'), { ssr: false })
 // v48: الملف الشخصي
 const ProfilePage = dynamic(() => import('@/components/pages/profile-page'), { ssr: false })
-// v53: الموارد البشرية
-const HRFilePage = dynamic(() => import('@/components/pages/hr-file-page'), { ssr: false })
-const HRLeavePage = dynamic(() => import('@/components/pages/hr-leave-page'), { ssr: false })
 
 export default function AppShell() {
   const user = useAppStore((s) => s.user)
@@ -195,6 +188,8 @@ export default function AppShell() {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail
       if (typeof detail === 'string' && detail) {
+        // v62: القسمان «ملفي الوظيفي» و«الإجازات» حُذفا — روابط الإشعارات القديمة تفتح الملف الشخصي
+        if (detail === 'hrFile' || detail === 'hrLeave') { setCurrentPage('profile'); return }
         setCurrentPage(detail as PageId)
       }
     }
@@ -406,9 +401,6 @@ export default function AppShell() {
       case 'oversight': return <OversightPage />
       // v48: الملف الشخصي
       case 'profile': return <ProfilePage />
-      // v53: الموارد البشرية
-      case 'hrFile': return <HRFilePage />
-      case 'hrLeave': return <HRLeavePage />
       default: return canSeeDashboard ? <DashboardPage onNavigate={setCurrentPage} /> : <ProjectsPage />
     }
   }
@@ -478,7 +470,7 @@ export default function AppShell() {
 
         <div className="p-3 border-t border-sidebar-border">
           {/* v48: علامة الإصدار — إن لم تظهر هنا فالنشر الأخير لم يتم بعد */}
-          <p className="text-center text-[10px] text-muted-foreground/60 select-none">v61</p>
+          <p className="text-center text-[10px] text-muted-foreground/60 select-none">v62</p>
           {/* v48: بطاقة المستخدم قابلة للنقر — تفتح الملف الشخصي */}
           <div className="flex items-center gap-3 p-2 rounded-lg cursor-pointer hover:bg-sidebar-accent transition-colors"
             onClick={function() { setSidebarOpen(false); setCurrentPage('profile') }}
