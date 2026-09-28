@@ -117,7 +117,14 @@ export async function getSessionUser(token: string | undefined): Promise<Session
         await ensurePurchasesSupport()
         // v53: أعمدة الموارد البشرية على User قد تكون سبب P2022 أيضاً
         await ensureHRSupport()
-        user = await db.user.findUnique({ where: { id: userId } })
+        // v54: إعادة المحاولة محمية — إن فشل الشفاء جزئياً نُرجع null (جلسة منتهية
+        // نظيفة) بدل رمي خطأ يُسقط كل نداءات الـAPI بخطأ 500
+        try {
+          user = await db.user.findUnique({ where: { id: userId } })
+        } catch (retryErr) {
+          console.error('v54: session user retry failed after self-heal:', retryErr)
+          return null
+        }
       } else {
         throw healErr
       }
