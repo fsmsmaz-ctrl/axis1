@@ -18,7 +18,8 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
 import {
-  Briefcase, Wallet, FileCheck, Pencil, Loader2, Clock, Plane, History, AlertTriangle
+  Briefcase, Wallet, FileCheck, Pencil, Loader2, Clock, Plane, History, AlertTriangle,
+  Search, Users, UserX, CheckCircle2
 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
@@ -48,6 +49,161 @@ const leaveStatus: Record<string, { ar: string; en: string; cls: string }> = {
   approved: { ar: 'معتمد', en: 'Approved', cls: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300' },
   rejected: { ar: 'مرفوض', en: 'Rejected', cls: 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300' },
   cancelled: { ar: 'ملغى', en: 'Cancelled', cls: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300' },
+}
+
+// v61: رسالة الموظف غير المكتمل بياناته — نصها كما طلبت الإدارة حرفياً
+var INCOMPLETE_MSG_AR = 'انت غير مكتمل البيانات , قم بمراجعة الادارة'
+var INCOMPLETE_MSG_EN = 'Your data is incomplete — please contact management'
+
+// v61: تسميات الحقول الناقصة (تظهر للإدارة في قائمة التعبئة)
+const missingLabels: Record<string, { ar: string; en: string }> = {
+  jobTitle: { ar: 'المسمى الوظيفي', en: 'Job title' },
+  department: { ar: 'القسم / المشروع', en: 'Department' },
+  joinDate: { ar: 'تاريخ الالتحاق', en: 'Join date' },
+  leaveBalance: { ar: 'بيانات الإجازة (الرصيد)', en: 'Leave data (balance)' },
+}
+
+// v61: بطاقة واحدة فقط للموظف الذي بياناته غير مكتملة — بدل كل بيانات القسم
+function IncompleteDataCard({ isAr }: { isAr: boolean }) {
+  return (
+    <div className="py-14">
+      <div className="mx-auto flex max-w-md flex-col items-center gap-4 rounded-2xl border border-amber-500/40 bg-amber-500/10 p-8 text-center">
+        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-amber-500/20">
+          <UserX className="h-7 w-7 text-amber-600 dark:text-amber-400" />
+        </div>
+        <p className="text-base font-semibold leading-7 text-amber-800 dark:text-amber-200">
+          {isAr ? INCOMPLETE_MSG_AR : INCOMPLETE_MSG_EN}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+// v61: قائمة «تعبئة بيانات المستخدمين» — للإدارة فقط (isHRManager على الخادم)
+// تعرض كل موظف مع حالة اكتمال بياناته (الوظيفية + الإجازة) وزر تعبئة يفتح نموذج الإدخال الكامل
+function RosterCard({
+  isAr, isRtl, roster, rosterSearch, setRosterSearch, rosterFilter, setRosterFilter, fillLoadingId, onFill,
+}: {
+  isAr: boolean
+  isRtl: boolean
+  roster: any[]
+  rosterSearch: string
+  setRosterSearch: (v: string) => void
+  rosterFilter: 'all' | 'incomplete' | 'complete'
+  setRosterFilter: (v: 'all' | 'incomplete' | 'complete') => void
+  fillLoadingId: string
+  onFill: (userId: string) => void
+}) {
+  var completeCount = 0
+  for (var i = 0; i < roster.length; i++) if (roster[i].complete) completeCount++
+  var filtered = roster.filter(function(emp: any) {
+    if (rosterFilter === 'incomplete' && emp.complete) return false
+    if (rosterFilter === 'complete' && !emp.complete) return false
+    var q = rosterSearch.trim().toLowerCase()
+    if (q) {
+      var hay = ((emp.name || '') + ' ' + (emp.nameEn || '') + ' ' + (emp.jobTitle || '') + ' ' + (emp.employeeNo || '')).toLowerCase()
+      if (hay.indexOf(q) === -1) return false
+    }
+    return true
+  })
+  return (
+    <Card className="border-primary/30">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base flex items-center gap-2 flex-wrap">
+          <Users className="h-4 w-4 text-primary" />
+          {isAr ? 'تعبئة بيانات المستخدمين' : 'Fill Employee Data'}
+          <Badge variant="outline" className="gap-1">
+            <CheckCircle2 className="h-3 w-3" />
+            {completeCount}/{roster.length} {isAr ? 'مكتمل' : 'complete'}
+          </Badge>
+        </CardTitle>
+        <p className="text-xs text-muted-foreground leading-5 mt-1">
+          {isAr
+            ? 'أدخل لكل موظف بياناته الوظيفية الأساسية (المسمى الوظيفي، القسم، تاريخ الالتحاق) وبيانات الإجازة (الرصيد السنوي) — بعد الاكتمال تظهر بياناته له تلقائياً في قسمه. الموظف الذي بياناته ناقصة يرى رسالة «انت غير مكتمل البيانات , قم بمراجعة الادارة» فقط.'
+            : 'Enter each employee’s essential employment data (job title, department, join date) and leave data (annual balance) — once complete, the data appears to them automatically. Employees with incomplete data see only a notice to contact management.'}
+        </p>
+      </CardHeader>
+      <CardContent className="pt-0 space-y-3">
+        <div className="flex flex-col sm:flex-row gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute start-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              value={rosterSearch}
+              onChange={(e) => setRosterSearch(e.target.value)}
+              placeholder={isAr ? 'بحث بالاسم أو الرقم الوظيفي…' : 'Search by name or employee no…'}
+              className="ps-8"
+            />
+          </div>
+          <Select value={rosterFilter} onValueChange={(v: any) => setRosterFilter(v)}>
+            <SelectTrigger className="sm:w-44">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{isAr ? 'كل الموظفين' : 'All employees'}</SelectItem>
+              <SelectItem value="incomplete">{isAr ? 'ناقص البيانات فقط' : 'Incomplete only'}</SelectItem>
+              <SelectItem value="complete">{isAr ? 'المكتملة فقط' : 'Complete only'}</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          {filtered.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-3">
+              {isAr ? 'لا توجد نتائج مطابقة' : 'No matching employees'}
+            </p>
+          ) : filtered.map(function(emp: any) {
+            var empName = isRtl ? emp.name : (emp.nameEn || emp.name)
+            var missingText = (emp.missing || [])
+              .map(function(k: string) { return isAr ? missingLabels[k]?.ar : missingLabels[k]?.en })
+              .filter(Boolean)
+              .join(isAr ? '، ' : ', ')
+            return (
+              <div key={emp.id} className="flex items-center justify-between gap-3 rounded-xl border p-3 flex-wrap">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm font-medium truncate">{empName}</span>
+                    <Badge variant="secondary">{(isRtl ? roleLabels[emp.role]?.ar : roleLabels[emp.role]?.en) || emp.role}</Badge>
+                    {emp.complete ? (
+                      <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300 border-0 gap-1">
+                        <CheckCircle2 className="h-3 w-3" />
+                        {isAr ? 'مكتمل' : 'Complete'}
+                      </Badge>
+                    ) : (
+                      <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 border-0 gap-1">
+                        <AlertTriangle className="h-3 w-3" />
+                        {isAr ? 'بيانات ناقصة' : 'Incomplete'}
+                      </Badge>
+                    )}
+                    {!emp.active && <Badge variant="destructive">{isAr ? 'معطل' : 'Inactive'}</Badge>}
+                  </div>
+                  {!emp.complete && missingText && (
+                    <p className="text-[11px] text-amber-700 dark:text-amber-400 mt-1">
+                      {isAr ? 'الناقص: ' : 'Missing: '}{missingText}
+                    </p>
+                  )}
+                  {(emp.jobTitle || emp.department) && (
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {emp.jobTitle || ''}{emp.jobTitle && emp.department ? ' — ' : ''}{emp.department || ''}
+                      {emp.leaveComplete && emp.remainingBalance !== null && emp.remainingBalance !== undefined ? (isAr ? ' · رصيد الإجازة المتبقي: ' : ' · Leave left: ') + emp.remainingBalance + (isAr ? ' يوم' : 'd') : ''}
+                    </p>
+                  )}
+                </div>
+                <Button
+                  size="sm"
+                  variant={emp.complete ? 'outline' : 'default'}
+                  className="gap-1.5 shrink-0"
+                  onClick={() => onFill(emp.id)}
+                  disabled={fillLoadingId === emp.id}
+                >
+                  {fillLoadingId === emp.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Pencil className="h-3.5 w-3.5" />}
+                  {isAr ? 'تعبئة البيانات' : 'Fill data'}
+                </Button>
+              </div>
+            )
+          })}
+        </div>
+      </CardContent>
+    </Card>
+  )
 }
 
 function fmtDate(v: any, isAr: boolean): string {
@@ -113,6 +269,8 @@ var EMPTY_FORM = {
   baseSalary: '', allowances: '',
   passportNo: '', passportExpiry: '', idNo: '', idExpiry: '', residenceNo: '', residenceExpiry: '',
   absenceDays: '', lateDays: '',
+  // v61: بيانات الإجازة — تُحفظ عبر /api/hr/admin (set_balance) وليس PUT /api/hr
+  annualTotal: '', carriedOver: '',
 }
 
 export default function HRFilePage({ hideHeader = false }: { hideHeader?: boolean }) {
@@ -131,6 +289,12 @@ export default function HRFilePage({ hideHeader = false }: { hideHeader?: boolea
   const [editOpen, setEditOpen] = useState(false)
   const [form, setForm] = useState<any>(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
+  // v61: قائمة «تعبئة بيانات المستخدمين» — بحث وفلترة وتحميل لكل صف
+  const [rosterSearch, setRosterSearch] = useState('')
+  const [rosterFilter, setRosterFilter] = useState<'all' | 'incomplete' | 'complete'>('all')
+  const [fillLoadingId, setFillLoadingId] = useState('')
+  // v61: قيم الرصيد عند فتح النافذة — لكشف التغيير (لا نُرسل set_balance إلا عند التعديل الفعلي)
+  const [balanceBaseline, setBalanceBaseline] = useState<{ annualTotal: string; carriedOver: string } | null>(null)
 
   async function load(userId?: string) {
     setLoading(true)
@@ -179,10 +343,9 @@ export default function HRFilePage({ hideHeader = false }: { hideHeader?: boolea
     return d.toISOString().slice(0, 10)
   }
 
-  function openEdit() {
-    if (!data?.profile) return
-    var p = data.profile
-    setForm({
+  // v61: بناء النموذج من الملف + الرصيد (يشمل بيانات الإجازة)
+  function buildForm(p: any, b?: any) {
+    return {
       employeeNo: p.employeeNo || '',
       jobTitle: p.jobTitle || '',
       department: p.department || '',
@@ -201,25 +364,103 @@ export default function HRFilePage({ hideHeader = false }: { hideHeader?: boolea
       residenceExpiry: toDayInput(p.residenceExpiry),
       absenceDays: p.absenceDays === null || p.absenceDays === undefined ? '' : String(p.absenceDays),
       lateDays: p.lateDays === null || p.lateDays === undefined ? '' : String(p.lateDays),
+      annualTotal: b && b.annualTotal !== null && b.annualTotal !== undefined ? String(b.annualTotal) : '',
+      carriedOver: b && b.carriedOver !== null && b.carriedOver !== undefined ? String(b.carriedOver) : '',
+    }
+  }
+
+  function openEdit() {
+    if (!data?.profile) return
+    setForm(buildForm(data.profile, data.balance))
+    setBalanceBaseline({
+      annualTotal: data.balance && data.balance.annualTotal !== null && data.balance.annualTotal !== undefined ? String(data.balance.annualTotal) : '',
+      carriedOver: data.balance && data.balance.carriedOver !== null && data.balance.carriedOver !== undefined ? String(data.balance.carriedOver) : '',
     })
     setEditOpen(true)
+  }
+
+  // v61: فتح نموذج التعبئة لموظف محدد من القائمة — يجلب ملفه أولاً ثم يفتح النافذة
+  async function openEditFor(userId: string) {
+    setFillLoadingId(userId)
+    try {
+      const r = await authedFetch('/api/hr?userId=' + encodeURIComponent(userId))
+      const ct = r.headers.get('content-type') || ''
+      if (ct.indexOf('application/json') === -1) {
+        toast.error(isAr ? 'رد غير متوقع من الخادم (رمز ' + r.status + ')' : 'Unexpected server response (HTTP ' + r.status + ')')
+        return
+      }
+      const d = await r.json()
+      if (!r.ok || !d?.profile) {
+        toast.error(d.message || (isAr ? 'فشل جلب ملف الموظف' : 'Failed to load employee file'))
+        return
+      }
+      // عرض ملف الموظف المعني تحت النافذة — يتسق مع ما يُعدَّل
+      setTargetId(userId)
+      setData(d)
+      setForm(buildForm(d.profile, d.balance))
+      setBalanceBaseline({
+        annualTotal: d.balance && d.balance.annualTotal !== null && d.balance.annualTotal !== undefined ? String(d.balance.annualTotal) : '',
+        carriedOver: d.balance && d.balance.carriedOver !== null && d.balance.carriedOver !== undefined ? String(d.balance.carriedOver) : '',
+      })
+      setEditOpen(true)
+    } catch {
+      toast.error(isAr ? 'خطأ في الاتصال' : 'Connection error')
+    } finally {
+      setFillLoadingId('')
+    }
   }
 
   async function saveEdit() {
     if (!data?.profile) return
     setSaving(true)
     try {
+      // v61: بيانات الإجازة — تُحفظ فقط إذا أدخلها المدير فعلياً وتغيّرت عن القيم المحمّلة
+      var balChanged = false
+      var annualNum: number | null = null
+      var carriedNum = 0
+      var annualRaw = String(form.annualTotal ?? '').trim()
+      var carriedRaw = String(form.carriedOver ?? '').trim()
+      if (annualRaw !== '' || carriedRaw !== '') {
+        annualNum = annualRaw === '' ? null : parseFloat(annualRaw)
+        carriedNum = carriedRaw === '' ? 0 : parseFloat(carriedRaw)
+        if (annualNum !== null && (isNaN(annualNum) || annualNum < 0 || annualNum > 365)) {
+          toast.error(isAr ? 'الرصيد السنوي المعتمد يجب أن يكون بين 0 و365' : 'Annual balance must be between 0 and 365')
+          return
+        }
+        if (isNaN(carriedNum) || carriedNum < 0 || carriedNum > 365) {
+          toast.error(isAr ? 'الرصيد المرحّل يجب أن يكون بين 0 و365' : 'Carried-over balance must be between 0 and 365')
+          return
+        }
+        var base = balanceBaseline || { annualTotal: '', carriedOver: '' }
+        balChanged = annualRaw !== base.annualTotal || carriedRaw !== base.carriedOver
+      }
+      var jobForm = { ...form }
+      delete jobForm.annualTotal
+      delete jobForm.carriedOver
       const r = await authedFetch('/api/hr', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: data.profile.id, ...form }),
+        body: JSON.stringify({ userId: data.profile.id, ...jobForm }),
       })
       const d = await r.json()
       if (!r.ok) {
         toast.error(d.message || (isAr ? 'فشل حفظ التعديلات' : 'Failed to save'))
         return
       }
-      toast.success(isAr ? 'تم حفظ الملف الوظيفي بنجاح' : 'HR file saved successfully')
+      if (balChanged && annualNum !== null) {
+        const r2 = await authedFetch('/api/hr/admin', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'set_balance', userId: data.profile.id, annualTotal: annualNum, carriedOver: carriedNum }),
+        })
+        const d2 = await r2.json().catch(() => null)
+        if (!r2.ok || !d2) {
+          toast.error((d2 && d2.message) || (isAr ? 'تم حفظ البيانات الوظيفية لكن فشل حفظ رصيد الإجازة' : 'File saved but leave balance failed'))
+          load(targetId || undefined)
+          return
+        }
+      }
+      toast.success(isAr ? 'تم حفظ بيانات الموظف بنجاح' : 'Employee data saved successfully')
       setEditOpen(false)
       load(targetId || undefined)
     } catch {
@@ -262,6 +503,12 @@ export default function HRFilePage({ hideHeader = false }: { hideHeader?: boolea
     )
   }
 
+  // v61: بوابة عدم اكتمال البيانات — الموظف (غير الإدارة) ببيانات ناقصة يرى رسالة واحدة فقط في القسم
+  // نص الرسالة كما طلبت الإدارة حرفياً: «انت غير مكتمل البيانات , قم بمراجعة الادارة»
+  if (!data.canEdit && data.completeness && data.completeness.complete === false) {
+    return <IncompleteDataCard isAr={isAr} />
+  }
+
   var p = data.profile
   var b = data.balance
   var totalBalance = b ? (b.annualTotal + b.carriedOver - b.used) : 0
@@ -271,6 +518,21 @@ export default function HRFilePage({ hideHeader = false }: { hideHeader?: boolea
 
   return (
     <div className="space-y-4">
+      {/* v61: تعبئة بيانات المستخدمين — الإدارة فقط: قائمة الموظفين بحالة الاكتمال ونموذج التعبئة */}
+      {data.canEdit && data.roster && data.roster.length > 0 && (
+        <RosterCard
+          isAr={isAr}
+          isRtl={isRtl}
+          roster={data.roster}
+          rosterSearch={rosterSearch}
+          setRosterSearch={setRosterSearch}
+          rosterFilter={rosterFilter}
+          setRosterFilter={setRosterFilter}
+          fillLoadingId={fillLoadingId}
+          onFill={openEditFor}
+        />
+      )}
+
       {/* محدد الموظف للإدارة/الموارد البشرية — يُخفى عند التضمين داخل الملف الشخصي */}
       {!hideHeader && data.canEdit && data.employees && data.employees.length > 0 && (
         <Card>
@@ -615,6 +877,24 @@ export default function HRFilePage({ hideHeader = false }: { hideHeader?: boolea
             <div className="space-y-1">
               <Label>{isAr ? 'أيام التأخير' : 'Late Days'}</Label>
               <Input type="number" min="0" step="0.5" value={form.lateDays} onChange={(e) => setForm({ ...form, lateDays: e.target.value })} />
+            </div>
+            {/* v61: بيانات الإجازة — جزء من اكتمال بيانات الموظف، تُحفظ عبر set_balance */}
+            <div className="sm:col-span-2 border-t border-border pt-3 mt-1">
+              <p className="text-sm font-medium flex items-center gap-1.5">
+                <Plane className="h-4 w-4 text-primary" />
+                {isAr ? 'بيانات الإجازة — تُحتسب ضمن اكتمال بيانات الموظف' : 'Leave data — counts toward employee data completeness'}
+              </p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {isAr ? 'اتركهما فارغين للإبقاء على الرصيد الحالي دون تغيير' : 'Leave empty to keep the current balance unchanged'}
+              </p>
+            </div>
+            <div className="space-y-1">
+              <Label>{isAr ? 'الرصيد السنوي المعتمد (يوم)' : 'Approved Annual Balance (days)'}</Label>
+              <Input type="number" min="0" max="365" step="1" value={form.annualTotal} onChange={(e) => setForm({ ...form, annualTotal: e.target.value })} placeholder={isAr ? 'مثال: 30' : 'e.g. 30'} />
+            </div>
+            <div className="space-y-1">
+              <Label>{isAr ? 'الرصيد المرحّل من العام السابق (يوم)' : 'Carried-over Balance (days)'}</Label>
+              <Input type="number" min="0" max="365" step="1" value={form.carriedOver} onChange={(e) => setForm({ ...form, carriedOver: e.target.value })} placeholder="0" />
             </div>
           </div>
           <DialogFooter>
