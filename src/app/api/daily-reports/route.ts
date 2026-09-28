@@ -27,6 +27,12 @@ export async function GET(req: NextRequest) {
   const limit = Math.min(parseInt(searchParams.get('limit') || '50'), 500)
 
   const where: any = {}
+  // v59: فلتر الحالة — يقود قسم «تقارير بانتظار الاعتماد» في لوحة التحكم
+  // (status=submitted يجلب فقط التقارير المسلّمة التي تحتاج قراراً)
+  const statusFilter = searchParams.get('status')
+  if (statusFilter && ['draft', 'submitted', 'approved', 'rejected'].includes(statusFilter)) {
+    where.status = statusFilter
+  }
   if (projectId) where.projectId = projectId
   // Normalize date filter to a UTC-midnight range so the comparison works
   // regardless of the server's local timezone. Previously `new Date(date)`
@@ -360,4 +366,3 @@ export async function POST(req: NextRequest) {
     return handleDbError(error, 'إنشاء التقرير اليومي')
   }
 }
-
