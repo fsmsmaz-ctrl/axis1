@@ -23,6 +23,7 @@ import { useAppStore } from '@/lib/store'
 import { authedFetch, clearStoredToken } from '@/lib/api-client'
 import { toast } from 'sonner'
 import { MODULE_PERMISSIONS, REPORT_PERMISSIONS, TOGGLABLE_PERMISSION_LABELS, hasPermission } from '@/lib/auth'
+import HRFilePage from './hr-file-page'
 
 const purchaseStatus: Record<string, { ar: string; en: string; color: any }> = {
   draft: { ar: 'مسودة', en: 'Draft', color: 'secondary' },
@@ -384,6 +385,9 @@ export default function ProfilePage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* v53: الملف الوظيفي الكامل مدمجاً هنا — كل بيانات الموظف (الوظيفة، مدة الخدمة، الأرصدة، سجل الإجازات، الغياب والتأخير، المستندات وتنبيهات انتهائها) تظهر في ملفه الشخصي مباشرة (يُخفى عن حساب الزائر) */}
+      {roleKey !== 'visitor' && <HRFilePage hideHeader />}
 
       {/* v49: الرتبة وصلاحيات الوصول للأقسام — قراءة فقط (تُدار من إدارة المستخدمين) */}
       <Card>
