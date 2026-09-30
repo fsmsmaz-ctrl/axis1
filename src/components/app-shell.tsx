@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { useAppStore } from '@/lib/store'
-import { hasPermission, MODULE_PERMISSIONS, MODULE_PERMISSION_LABELS, REPORT_PERMISSIONS, REPORT_LABELS, ROLE_PERMISSIONS, canAccessDashboard, canViewPricing, SYSTEM_ADMIN_EMAIL, type SessionUser } from '@/lib/auth'
+import { hasPermission, MODULE_PERMISSIONS, MODULE_PERMISSION_LABELS, REPORT_PERMISSIONS, REPORT_LABELS, ROLE_PERMISSIONS, canAccessDashboard, canViewPricing, SYSTEM_ADMIN_EMAIL, HR_MANAGE_ROLES, HR_MANAGE_PERMISSION_KEY, normalizeRole, type SessionUser } from '@/lib/auth'
 import { clearStoredToken, authedFetch } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
@@ -93,7 +93,7 @@ const ROLES = [
 function getRoleDefaults(role: string): Record<string, boolean> {
   const defs: Record<string, boolean> = {}
   // Module permissions from role
-  const rolePerms = ROLE_PERMISSIONS[role] || []
+  const rolePerms = ROLE_PERMISSIONS[normalizeRole(role)] || []
   const hasAll = rolePerms.includes('*')
   for (const key of MODULE_PERMISSIONS) {
     defs[key] = hasAll || rolePerms.includes(key)
@@ -102,6 +102,9 @@ function getRoleDefaults(role: string): Record<string, boolean> {
   for (const key of REPORT_PERMISSIONS) {
     defs[key] = hasAll || rolePerms.includes('reports')
   }
+  // v67: صلاحية تعديل بيانات الموظفين — افتراض الدور (الإدارة العليا + مدير المشروع)
+  // ومدير النظام يسمح ويمنع لكل مستخدم على حدة عبر التجاوز اليدوي
+  defs[HR_MANAGE_PERMISSION_KEY] = hasAll || (HR_MANAGE_ROLES as readonly string[]).includes(normalizeRole(role))
   return defs
 }
 
@@ -315,7 +318,7 @@ export default function AppShell() {
         })
         const data = await res.json()
         if (!res.ok) {
-          setCreateError(data.error || (isAr ? 'فشل تحديث المستخدم' : 'Failed to update user'))
+          setCreateError(data.message || data.error || (isAr ? 'فشل تحديث المستخدم' : 'Failed to update user'))
           return
         }
         toast.success(isAr ? 'تم تحديث المستخدم بنجاح' : 'User updated successfully')
@@ -475,7 +478,7 @@ export default function AppShell() {
 
         <div className="p-3 border-t border-sidebar-border">
           {/* v48: علامة الإصدار — إن لم تظهر هنا فالنشر الأخير لم يتم بعد */}
-          <p className="text-center text-[10px] text-muted-foreground/60 select-none">v66</p>
+          <p className="text-center text-[10px] text-muted-foreground/60 select-none">v67</p>
           {/* v48: بطاقة المستخدم قابلة للنقر — تفتح الملف الشخصي */}
           <div className="flex items-center gap-3 p-2 rounded-lg cursor-pointer hover:bg-sidebar-accent transition-colors"
             onClick={function() { setSidebarOpen(false); setCurrentPage('profile') }}
@@ -690,6 +693,41 @@ export default function AppShell() {
                   <div className="space-y-2">
                     <Label>{isAr ? 'رقم الهاتف' : 'Phone'}</Label>
                     <Input type="tel" value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} placeholder="+968XXXXXXXX" dir="ltr" className="h-10" />
+                  </div>
+                </div>
+
+                {/* v67: صلاحية تعديل بيانات الموظفين — مدير النظام يمنحها ويسحبها لكل مستخدم */}
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 text-sm font-semibold">
+                    <Users className="h-4 w-4 text-primary" />
+                    <span>{isAr ? 'صلاحية تعديل بيانات الموظفين' : 'Employee Data Editing'}</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground -mt-1">
+                    {isAr ? 'إدخال وتعديل البيانات الوظيفية وأرصدة الإجازات لكل الموظفين من الملف الشخصي — يُمنح أو يُسحب من هنا' : 'Enter and edit employment data and leave balances for all employees from the profile — grant or revoke it here'}
+                  </p>
+                  <div className="p-3 rounded-lg border bg-muted/30">
+                    {(() => {
+                      const key = HR_MANAGE_PERMISSION_KEY
+                      const val = getEffective(key, formData.role, formData.permissions)
+                      const isDefault = typeof formData.permissions[key] !== 'boolean'
+                      return (
+                        <div className="flex items-center justify-between gap-2 py-1">
+                          <span className="text-xs">{isAr ? 'السماح بتعديل بيانات الموظفين' : 'Allow editing employee data'}</span>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {!isDefault && (
+                              <Badge variant="outline" className="h-4 px-1 text-[10px] font-normal text-amber-600 border-amber-300">
+                                {isAr ? 'مخصص' : 'custom'}
+                              </Badge>
+                            )}
+                            <Switch
+                              checked={val}
+                              onCheckedChange={() => setFormData({ ...formData, permissions: togglePerm(key, formData.role, formData.permissions) })}
+                              className={cn("scale-75", val ? "" : "opacity-50")}
+                            />
+                          </div>
+                        </div>
+                      )
+                    })()}
                   </div>
                 </div>
 
