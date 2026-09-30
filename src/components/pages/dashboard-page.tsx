@@ -1160,3 +1160,4 @@ function PendingApprovalsSection({ isRtl, onChanged }: { isRtl: boolean; onChang
     </Card>
   )
 }
+
