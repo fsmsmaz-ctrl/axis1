@@ -115,6 +115,16 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
   ],
 }
 
+// ─── v63: تطبيع دور المستخدم ──────────────────────────────────────
+// قاعدة البيانات قد تحمل الدور بمسافة زائدة أو بأحرف كبيرة (تعديل يدوي من
+// لوحة Supabase، نسخ ولصق عند الإنشاء...). كان فحص الواجهة يقارن النص حرفياً
+// بينما الخادم يطبّع قبل المقارنة — فاختلف الحكم بين الطرفين واختفت لوحة
+// التحكم وقسم اعتماد التقارير عن أحد المستخدمين الإداريين. الآن كل فحص دور
+// في النظام (واجهة وخادماً) يمر من هنا فتتطابق النتيجة دائماً.
+export function normalizeRole(role?: string | null): string {
+  return String(role || '').trim().toLowerCase()
+}
+
 // ─── Dashboard access (restricted) ─────────────────────────────
 // لوحة التحكم مخفية عن كل الموظفين — تظهر فقط لـ:
 //   1) مدير النظام (حساب الأدمن الرئيسي)
@@ -128,7 +138,8 @@ export function canAccessDashboard(
 ): boolean {
   if (!user) return false
   if (user.email && user.email.toLowerCase().trim() === SYSTEM_ADMIN_EMAIL) return true
-  return (DASHBOARD_ALLOWED_ROLES as readonly string[]).includes(user.role || '')
+  // v63: المقارنة عبر normalizeRole — لا اعتماد على شكل النص في قاعدة البيانات
+  return (DASHBOARD_ALLOWED_ROLES as readonly string[]).includes(normalizeRole(user.role))
 }
 
 // H-1 FIX: Role-based access control helper for API routes
@@ -159,7 +170,8 @@ export function canWrite(userRole: string, resource: string, userPermissions?: R
   }
   const allowed = WRITE_ROLES[resource]
   if (!allowed) return false
-  return allowed.includes(userRole)
+  // v63: تطبيع الدور قبل المقارنة (نفس سبب canAccessDashboard)
+  return allowed.includes(normalizeRole(userRole))
 }
 
 export function hasPermission(
@@ -180,7 +192,8 @@ export function hasPermission(
     return userPermissions[resource]
   }
 
-  const perms = ROLE_PERMISSIONS[role] || []
+  // v63: تطبيع الدور قبل البحث في صلاحيات الرتبة
+  const perms = ROLE_PERMISSIONS[normalizeRole(role)] || []
   if (resource.startsWith('rpt_') && perms.includes('reports')) {
     return true
   }
@@ -212,7 +225,8 @@ export function canViewPricing(user: { role?: string; email?: string; isSystemAd
   if (email === SYSTEM_ADMIN_EMAIL) return false
   // v15 HARDENING (الطبقة الثالثة): جلسة بلا بريد = لا أسعار أبداً
   if (!email) return false
-  return (PRICING_ALLOWED_ROLES as readonly string[]).includes(user.role || '')
+  // v63: تطبيع الدور قبل المقارنة
+  return (PRICING_ALLOWED_ROLES as readonly string[]).includes(normalizeRole(user.role))
 }
 
 // ─── v53: الموارد البشرية ──────────────────────────────────────
