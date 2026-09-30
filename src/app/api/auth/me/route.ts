@@ -36,5 +36,7 @@ export async function GET(req: NextRequest) {
     return response
   }
 
-  return NextResponse.json({ user })
+  // v67: لا تخزين مؤقت إطلاقاً — الصلاحيات المغلقة من إدارة المستخدمين
+  // يجب أن تصل الواجهة فور تحديث الصفحة دون أي وساطة CDN
+  return NextResponse.json({ user }, { headers: { 'Cache-Control': 'no-store, max-age=0' } })
 }
