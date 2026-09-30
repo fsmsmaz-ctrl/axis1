@@ -5,7 +5,7 @@
 import bcrypt from 'bcryptjs'
 import { SignJWT, jwtVerify } from 'jose'
 import { db } from './db'
-import { SessionUser, SESSION_COOKIE, getSessionMaxAge, getCookieOptions } from './auth'
+import { SessionUser, SESSION_COOKIE, getSessionMaxAge, getCookieOptions, normalizeRole } from './auth'
 // v50: الشفاء الذاتي لجلسات المستخدمين عند نقص أعمدة/جداول حديثة
 import { ensurePurchasesSupport, ensureHRSupport } from './db-selfheal'
 
@@ -45,7 +45,9 @@ export async function verifyCredentials(email: string, password: string): Promis
       email: user.email,
       name: user.name,
       nameEn: user.nameEn,
-      role: user.role,
+      // v63: الدور يُطبَّع هنا — مصدر الجلسة الوحيد للدخول — فتصل كل الواجهة
+      // والخادم قيمة نظيفة مهما كان شكلها في قاعدة البيانات
+      role: normalizeRole(user.role),
       phone: user.phone,
       language: user.language,
       permissions,
@@ -149,7 +151,8 @@ export async function getSessionUser(token: string | undefined): Promise<Session
       email: user.email,
       name: user.name,
       nameEn: user.nameEn,
-      role: user.role,
+      // v63: تطبيع الدور عند مصدر الجلسة (نفس سبب verifyCredentials)
+      role: normalizeRole(user.role),
       phone: user.phone,
       language: user.language,
       permissions,
