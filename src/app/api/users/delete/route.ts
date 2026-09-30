@@ -3,6 +3,7 @@ import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { handleDbError, safeDbOp } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
+import { normalizeRole } from '@/lib/auth'
 
 // FIX-3.2: Removed hardcoded ADMIN_EMAIL — now uses role-based check
 
@@ -18,7 +19,8 @@ export async function DELETE(req: NextRequest) {
   try {
     var authUser = await getAuthUser(req)
     // FIX-3.2: Use role check instead of hardcoded email
-    if (!authUser || authUser.role !== 'top_management') {
+    // v65: المقارنة عبر normalizeRole — لا مقارنات دور حرفية (نفس علة v63)
+    if (!authUser || normalizeRole(authUser.role) !== 'top_management') {
       return NextResponse.json({ error: 'forbidden', message: 'هذه العملية متاحة فقط للإدارة العليا' }, { status: 403 })
     }
 
@@ -39,7 +41,10 @@ export async function DELETE(req: NextRequest) {
     }
 
     // FIX-3.2: Protect top_management accounts by role, not email
-    if (targetResult.data.role === 'top_management') {
+    // v65 إصلاح: دور هذا السجل يُقرأ من قاعدة البيانات مباشرة — كان يقارن
+    // حرفياً فتنكشف حسابات إدارية دورُها في قاعدتها يحمل مسافة/حرفاً كبيراً
+    // (v63 صلّح users/update وترك users/delete بنفس الفجوة)
+    if (normalizeRole(targetResult.data.role) === 'top_management') {
       return NextResponse.json({ error: 'forbidden', message: 'لا يمكن حذف حسابات الإدارة العليا' }, { status: 403 })
     }
 
