@@ -230,11 +230,13 @@ export function canViewPricing(user: { role?: string; email?: string; isSystemAd
 }
 
 // ─── v53: الموارد البشرية ──────────────────────────────────────
-// مدير الموارد البشرية: الإدارة العليا + مدير النظام.
+// مدير الموارد البشرية: الإدارة العليا + المحاسب (v66) + مدير النظام.
 // يملك حصراً: إنشاء وتعديل الملفات الوظيفية، تحديد أرصدة الإجازات،
 // تسجيل الغياب والتأخير، تعديل الرصيد مع السبب، العطلات والسياسات،
 // والاطلاع على بيانات الرواتب (سرية عن باقي الأدوار حتى المشرفين).
-export const HR_MANAGE_ROLES = ['top_management'] as const
+// v66: أُضيف «accountant» بطلب صريح — المحاسب يدخل بيانات الموظفين أيضاً
+// (تعبئة بيانات المستخدمين في الملف الشخصي: بيانات وظيفية + أرصدة إجازات)
+export const HR_MANAGE_ROLES = ['top_management', 'accountant'] as const
 
 export function isHRManager(user: { role?: string; email?: string; isSystemAdmin?: boolean } | null | undefined): boolean {
   if (!user) return false
@@ -252,7 +254,8 @@ export const TASK_MANAGE_ROLES = ['top_management', 'project_manager'] as const
 export function isTaskManager(user: { role?: string; email?: string } | null | undefined): boolean {
   if (!user) return false
   if (user.email && user.email.toLowerCase().trim() === SYSTEM_ADMIN_EMAIL) return true
-  return (TASK_MANAGE_ROLES as readonly string[]).includes(user.role || '')
+  // v65: تطبيع الدور (نفس منطق v63/v64) — كل فحوصات الدور تمر من normalizeRole
+  return (TASK_MANAGE_ROLES as readonly string[]).includes(normalizeRole(user.role))
 }
 
 
