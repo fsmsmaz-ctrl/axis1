@@ -4,7 +4,7 @@ import { db } from '@/lib/db'
 import bcrypt from 'bcryptjs'
 import { buildAuditDetails, handleDbError, safeDbOp } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
-import { VALID_ROLES, normalizeRole } from '@/lib/auth'
+import { VALID_ROLES, normalizeRole, SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
 
 // FIX-3.2: Removed hardcoded ADMIN_EMAIL — now uses role-based check
 
@@ -27,7 +27,10 @@ export async function PATCH(req: NextRequest) {
   try {
     var authUser = await getAuthUser(req)
     // FIX-3.2: Use role check instead of hardcoded email
-    if (!authUser || authUser.role !== 'top_management') {
+    // v67: مدير النظام (العلم أو البريد) يدير المستخدمين أيضاً — لم يعد مقيّداً بدوره
+    var editorIsSysAdmin = authUser != null &&
+      (authUser.isSystemAdmin === true || (authUser.email || '').toLowerCase().trim() === SYSTEM_ADMIN_EMAIL)
+    if (!authUser || (normalizeRole(authUser.role) !== 'top_management' && !editorIsSysAdmin)) {
       return NextResponse.json({ error: 'forbidden', message: 'هذه العملية متاحة فقط للإدارة العليا' }, { status: 403 })
     }
 
@@ -57,7 +60,9 @@ export async function PATCH(req: NextRequest) {
     // FIX-3.2: Protect top_management accounts from modification by role, not email
     // v63: المقارنة عبر normalizeRole — حماية الحسابات الإدارية حتى لو كان نص
     // الدور في القاعدة يحمل مسافة/حرفاً كبيراً من تعديل يدوي قديم
-    if (normalizeRole(targetResult.data.role) === 'top_management' && targetResult.data.id !== authUser.id) {
+    // v67 FIX: استثناء مدير النظام — كان هذا الفحص يمنعه من إغلاق صلاحية عن
+    // أحد الإداريين (403 صامت) فتبدو الصلاحية مغلقة والقسم يظل ظاهراً لصاحبه
+    if (normalizeRole(targetResult.data.role) === 'top_management' && targetResult.data.id !== authUser.id && !editorIsSysAdmin) {
       return NextResponse.json({ error: 'forbidden', message: 'لا يمكن تعديل حسابات الإدارة العليا' }, { status: 403 })
     }
 
@@ -76,8 +81,11 @@ export async function PATCH(req: NextRequest) {
     if (permissions !== undefined) {
       var cleanPerms: Record<string, boolean> = {}
       if (permissions && typeof permissions === 'object') {
-        for (var i = 0; i < ALL_PERMISSIONS.length; i++) {
-          var key = ALL_PERMISSIONS[i]
+        // v67: صلاحية تعديل بيانات الموظفين ('hr_manage') يمنحها ويسحبها
+        // مدير النظام فقط من إدارة المستخدمين — تُتجاهل من غيره
+        var allowKeys = editorIsSysAdmin ? ALL_PERMISSIONS.concat(['hr_manage']) : ALL_PERMISSIONS
+        for (var i = 0; i < allowKeys.length; i++) {
+          var key = allowKeys[i]
           if (typeof permissions[key] === 'boolean') {
             cleanPerms[key] = permissions[key]
           }
