@@ -15,7 +15,7 @@ import {
 import { Plus, CheckCircle2, XCircle, AlertCircle, Send, Pencil, Check, X } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
-import { SYSTEM_ADMIN_EMAIL, canWrite } from '@/lib/auth'
+import { SYSTEM_ADMIN_EMAIL, canWrite, normalizeRole } from '@/lib/auth'
 import { toast } from 'sonner'
 
 // حالة تسليم العميل (كما كانت) — منفصلة عن حالة اعتماد الإدارة
@@ -51,9 +51,10 @@ export default function FinishingsPage() {
   // مدير النظام (admin@axis.om)
   const isAdmin = (user?.email || '').toLowerCase().trim() === SYSTEM_ADMIN_EMAIL
   // المشرف (الفورمان) — له صلاحية رفع التشطيب للإدارة بعد الانتهاء من العمل
-  const isSupervisor = user?.role === 'foreman'
+  // v65: المقارنة عبر normalizeRole — لا مقارنات دور حرفية (نفس علة v63)
+  const isSupervisor = normalizeRole(user?.role) === 'foreman'
   // الاعتماد/الرفض: الإداري (الإدارة العليا) أو مدير المشروع أو مدير النظام
-  const canApprove = isAdmin || user?.role === 'top_management' || user?.role === 'project_manager'
+  const canApprove = isAdmin || normalizeRole(user?.role) === 'top_management' || normalizeRole(user?.role) === 'project_manager'
   // إنشاء/تعديل التشطيبات — وفق صلاحيات الكتابة المعتمدة في النظام
   const canWriteFin = !!user && (isAdmin || canWrite(user.role, 'finishings', user.permissions))
 
