@@ -229,7 +229,12 @@ export default function AppShell() {
 
   // شريط التنقل السفلي للهاتف: أهم 3 أقسام متاحة حسب صلاحية المستخدم
   // (بترتيب أولوية الاستخدام الميداني) + زر "المزيد" يفتح القائمة الجانبية
-  const bottomNavPriority: PageId[] = ['dailyReports', 'safety', 'driveLines', 'dashboard', 'projects']
+  // v63: لوحة التحكم أول عنصر في الشريط السفلي لمن يملك صلاحيتها — كانت رابعًا
+  // في الترتيب فتُقطع مع أول 3 عناصر، فلا تظهر للإدارة على الهاتف إطلاقًا إلا
+  // عبر القائمة الجانبية (زر المزيد) وكان يُظن القسم المضاف فيها غير موجود
+  const bottomNavPriority: PageId[] = canSeeDashboard
+    ? ['dashboard', 'dailyReports', 'safety', 'driveLines', 'projects']
+    : ['dailyReports', 'safety', 'driveLines', 'dashboard', 'projects']
   const bottomItems = bottomNavPriority
     .map(id => allowedItems.find(i => i.id === id))
     .filter((i): i is NavItem => !!i)
@@ -470,7 +475,7 @@ export default function AppShell() {
 
         <div className="p-3 border-t border-sidebar-border">
           {/* v48: علامة الإصدار — إن لم تظهر هنا فالنشر الأخير لم يتم بعد */}
-          <p className="text-center text-[10px] text-muted-foreground/60 select-none">v62</p>
+          <p className="text-center text-[10px] text-muted-foreground/60 select-none">v63</p>
           {/* v48: بطاقة المستخدم قابلة للنقر — تفتح الملف الشخصي */}
           <div className="flex items-center gap-3 p-2 rounded-lg cursor-pointer hover:bg-sidebar-accent transition-colors"
             onClick={function() { setSidebarOpen(false); setCurrentPage('profile') }}
