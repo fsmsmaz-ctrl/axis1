@@ -256,10 +256,12 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Recalculate button — fixes 0 values by recomputing dailyMeters
-              and dailyRevenue from startReading/endReading for every report,
-              then invalidates the dashboard cache. Visible to admins only. */}
-          {(user?.role === 'top_management' || user?.role === 'project_manager') && (
+          {/* v65 إصلاح: كان الزر يظهر لمدير المشروع أيضاً بينما نقطة النهاية
+              /api/admin/recalc-all ترفضه منذ v29 (الإدارة العليا ومدير النظام
+              فقط — العملية تعيد كتابة المبالغ المالية) فكان يضغطه ويصله خطأ
+              403. طُابق الزر قاعدة الخادم حرفياً + المقارنة عبر normalizeRole
+              (نفس علة v63 — لا مقارنات دور حرفية في الواجهة) */}
+          {(user && (user.isSystemAdmin || normalizeRole(user.role) === 'top_management' || (user.email || '').toLowerCase().trim() === SYSTEM_ADMIN_EMAIL)) && (
             <Button
               variant="outline"
               size="sm"
