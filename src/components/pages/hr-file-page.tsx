@@ -330,9 +330,14 @@ export default function HRFilePage() {
     }
   }
 
+  // v64 إصلاح حرج: كان الشرط «if (!token) return» يوقف التحميل للأبد —
+  // منذ v14 لا يُخزن أي توكن في المتجر (المصادقة كوكي httpOnly فقط) فتبقى
+  // s.token دائماً null، وبالتالي لم يُستدعَ load() قط فظهرت دائرة التحميل
+  // الدوّارة بلا بيانات في «بياناتي الوظيفية والإجازات». authedFetch يرسل
+  // الكوكي تلقائياً — لا حاجة لأي شرط توكن هنا (نمط بقية الصفحات).
   useEffect(() => {
-    if (!token) return
     load(targetId || undefined)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, targetId])
 
   function toDayInput(v: any): string {
@@ -849,3 +854,4 @@ export default function HRFilePage() {
     </div>
   )
 }
+
