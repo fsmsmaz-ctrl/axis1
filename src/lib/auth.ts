@@ -230,18 +230,27 @@ export function canViewPricing(user: { role?: string; email?: string; isSystemAd
 }
 
 // ─── v53: الموارد البشرية ──────────────────────────────────────
-// مدير الموارد البشرية: الإدارة العليا + المحاسب (v66) + مدير النظام.
-// يملك حصراً: إنشاء وتعديل الملفات الوظيفية، تحديد أرصدة الإجازات،
+// صلاحية تعديل بيانات الموظفين (v67): قابلة للمنح والسحب لكل مستخدم على حدة
+// من إدارة المستخدمين — مدير النظام هو من يسمح ويمنع.
+// مفاتيح الصلاحية في كائن permissions للمستخدم: 'hr_manage'
+// الافتراض حسب الدور: الإدارة العليا + مدير المشروع (v67 — مكان المحاسب).
+// يملكها حصراً: إنشاء وتعديل الملفات الوظيفية، تحديد أرصدة الإجازات،
 // تسجيل الغياب والتأخير، تعديل الرصيد مع السبب، العطلات والسياسات،
 // والاطلاع على بيانات الرواتب (سرية عن باقي الأدوار حتى المشرفين).
-// v66: أُضيف «accountant» بطلب صريح — المحاسب يدخل بيانات الموظفين أيضاً
-// (تعبئة بيانات المستخدمين في الملف الشخصي: بيانات وظيفية + أرصدة إجازات)
-export const HR_MANAGE_ROLES = ['top_management', 'accountant'] as const
+// التاريخ: v66 أضافت «accountant» ثم أُزيلت في v67 بطلب صريح.
+export const HR_MANAGE_ROLES = ['top_management', 'project_manager'] as const
+export const HR_MANAGE_PERMISSION_KEY = 'hr_manage'
 
-export function isHRManager(user: { role?: string; email?: string; isSystemAdmin?: boolean } | null | undefined): boolean {
+export function isHRManager(user: { role?: string; email?: string; isSystemAdmin?: boolean; permissions?: Record<string, boolean> | null } | null | undefined): boolean {
   if (!user) return false
   if (user.isSystemAdmin === true) return true
   if (user.email && user.email.toLowerCase().trim() === SYSTEM_ADMIN_EMAIL) return true
+  // v67: التجاوز الصريح من إدارة المستخدمين يقدم على افتراض الدور —
+  // مدير النظام يسمح ويمنع أي موظف بصرف النظر عن رتبته
+  var p = user.permissions
+  if (p && typeof p[HR_MANAGE_PERMISSION_KEY] === 'boolean') {
+    return p[HR_MANAGE_PERMISSION_KEY]
+  }
   // v64: تطبيع الدور (نفس منطق v63) — لا انكسار لو كان نص الدور في القاعدة غير نظيف
   return (HR_MANAGE_ROLES as readonly string[]).includes(normalizeRole(user.role))
 }
