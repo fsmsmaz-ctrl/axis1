@@ -4,7 +4,7 @@ import { db } from '@/lib/db'
 import bcrypt from 'bcryptjs'
 import { buildAuditDetails, handleDbError, safeDbOp } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
-import { VALID_ROLES } from '@/lib/auth'
+import { VALID_ROLES, normalizeRole } from '@/lib/auth'
 
 // FIX-3.2: Removed hardcoded ADMIN_EMAIL — now uses role-based check
 
@@ -35,7 +35,8 @@ export async function PATCH(req: NextRequest) {
     var userId = body.userId
     var name = body.name
     var nameEn = body.nameEn
-    var role = body.role
+    // v63: تطبيع الدور قبل التحقق والحفظ
+    var role = body.role !== undefined ? normalizeRole(body.role) : undefined
     var phone = body.phone
     var password = body.password
     var permissions = body.permissions
@@ -54,7 +55,9 @@ export async function PATCH(req: NextRequest) {
     }
 
     // FIX-3.2: Protect top_management accounts from modification by role, not email
-    if (targetResult.data.role === 'top_management' && targetResult.data.id !== authUser.id) {
+    // v63: المقارنة عبر normalizeRole — حماية الحسابات الإدارية حتى لو كان نص
+    // الدور في القاعدة يحمل مسافة/حرفاً كبيراً من تعديل يدوي قديم
+    if (normalizeRole(targetResult.data.role) === 'top_management' && targetResult.data.id !== authUser.id) {
       return NextResponse.json({ error: 'forbidden', message: 'لا يمكن تعديل حسابات الإدارة العليا' }, { status: 403 })
     }
 
