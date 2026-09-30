@@ -4,7 +4,7 @@ import { db } from '@/lib/db'
 import bcrypt from 'bcryptjs'
 import { handleDbError, safeDbOp } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
-import { VALID_ROLES } from '@/lib/auth'
+import { VALID_ROLES, normalizeRole } from '@/lib/auth'
 
 // FIX-3.2: Removed hardcoded ADMIN_EMAIL — now uses role-based check
 
@@ -33,7 +33,8 @@ export async function POST(req: NextRequest) {
     var nameEn = body.nameEn
     var email = body.email
     var phone = body.phone
-    var role = body.role
+    // v63: تطبيع الدور قبل التحقق والحفظ — لا مسافات ولا اختلاف أحرف يدخل قاعدة البيانات
+    var role = normalizeRole(body.role)
     var password = body.password
     var permissions = body.permissions
 
