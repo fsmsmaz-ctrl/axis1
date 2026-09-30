@@ -110,8 +110,10 @@ export default function ProfilePage() {
     }
   }
 
+  // v64 إصلاح حرج: نفس خلل hr-file-page — «if (!token) return» كان يمنع
+  // loadProfile و loadPurchases من العمل أبداً (المتجر لا يحمل توكناً منذ
+  // v14 — كوكي httpOnly فقط) فبقيت بيانات الملف والمشتريات بلا تحميل
   useEffect(() => {
-    if (!token) return
     loadProfile()
     loadPurchases()
   }, [token])
