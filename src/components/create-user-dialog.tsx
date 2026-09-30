@@ -15,7 +15,7 @@ import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
 import { toast } from 'sonner'
 import { UserPlus, ShieldAlert, Trash2, Edit3, Save, ArrowLeft, Users } from 'lucide-react'
-import { TOGGLABLE_PERMISSIONS, TOGGLABLE_PERMISSION_LABELS, ROLE_PERMISSIONS } from '@/lib/auth'
+import { TOGGLABLE_PERMISSIONS, TOGGLABLE_PERMISSION_LABELS, ROLE_PERMISSIONS, normalizeRole } from '@/lib/auth'
 
 const VALID_ROLES = [
   { value: 'top_management', ar: 'الإدارة العليا', en: 'Top Management' },
@@ -225,8 +225,10 @@ export default function CreateUserDialog({ open, onOpenChange }: CreateUserDialo
 
   // Get role's default permission for a resource
   function getRoleDefault(role: string, resource: string): boolean {
-    if (role === 'top_management') return true
-    const perms = ROLE_PERMISSIONS[role] || []
+    // v65: تطبيع الدور (نفس علة v63) — قد يأتي نص الدور من قاعدة البيانات غير نظيف
+    const nr = normalizeRole(role)
+    if (nr === 'top_management') return true
+    const perms = ROLE_PERMISSIONS[nr] || []
     // Report sub-permissions (rpt_*): if role has general 'reports' access, allow all report types
     if (resource.startsWith('rpt_') && perms.includes('reports')) {
       return true
@@ -297,7 +299,8 @@ export default function CreateUserDialog({ open, onOpenChange }: CreateUserDialo
   }
 
   // FIX-6.2: Removed hardcoded admin email check — use role instead
-  const isAdmin = useAppStore((s) => s.user)?.role === 'top_management'
+  // v65: المقارنة عبر normalizeRole
+  const isAdmin = normalizeRole(useAppStore((s) => s.user)?.role) === 'top_management'
 
   return (
     <Dialog open={open} onOpenChange={(v) => { onOpenChange(v); if (!v) { setView('list'); setEditingUser(null) } }}>
@@ -354,7 +357,8 @@ export default function CreateUserDialog({ open, onOpenChange }: CreateUserDialo
                 {users.map((u) => {
                   const role = roleLabels[u.role] || { ar: u.role, en: u.role }
                   // FIX-6.2: Use role-based check instead of hardcoded admin email
-                  const isCurrentUserAdmin = u.role === 'top_management'
+                  // v65: دور هذه القائمة يأتي من قاعدة البيانات مباشرة — التطبيع ضروري
+                  const isCurrentUserAdmin = normalizeRole(u.role) === 'top_management'
                   return (
                     <div key={u.id} className="flex items-center gap-3 p-3 rounded-lg border hover:bg-muted/30 transition">
                       <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
