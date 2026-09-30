@@ -4,7 +4,7 @@ import { db } from '@/lib/db'
 import bcrypt from 'bcryptjs'
 import { handleDbError, safeDbOp } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
-import { VALID_ROLES, normalizeRole } from '@/lib/auth'
+import { VALID_ROLES, normalizeRole, SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
 
 // FIX-3.2: Removed hardcoded ADMIN_EMAIL — now uses role-based check
 
@@ -24,7 +24,10 @@ export async function POST(req: NextRequest) {
   try {
     var authUser = await getAuthUser(req)
     // FIX-3.2: Use role check instead of hardcoded email
-    if (!authUser || authUser.role !== 'top_management') {
+    // v67: مدير النظام (العلم أو البريد) ينشئ المستخدمين أيضاً — لم يعد مقيّداً بدوره
+    var editorIsSysAdmin = authUser != null &&
+      (authUser.isSystemAdmin === true || (authUser.email || '').toLowerCase().trim() === SYSTEM_ADMIN_EMAIL)
+    if (!authUser || (normalizeRole(authUser.role) !== 'top_management' && !editorIsSysAdmin)) {
       return NextResponse.json({ error: 'forbidden', message: 'هذه العملية متاحة فقط للإدارة العليا' }, { status: 403 })
     }
 
@@ -71,8 +74,10 @@ export async function POST(req: NextRequest) {
 
     var cleanPerms: Record<string, boolean> = {}
     if (permissions && typeof permissions === 'object') {
-      for (var i = 0; i < ALL_PERMISSIONS.length; i++) {
-        var key = ALL_PERMISSIONS[i]
+      // v67: صلاحية تعديل بيانات الموظفين ('hr_manage') تُقبل هنا من مدير النظام فقط
+      var allowKeys = editorIsSysAdmin ? ALL_PERMISSIONS.concat(['hr_manage']) : ALL_PERMISSIONS
+      for (var i = 0; i < allowKeys.length; i++) {
+        var key = allowKeys[i]
         if (typeof permissions[key] === 'boolean') {
           cleanPerms[key] = permissions[key]
         }
