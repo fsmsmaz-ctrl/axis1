@@ -68,7 +68,8 @@ export default function ProfilePage() {
   const isRtl = language === 'ar'
 
   const [profile, setProfile] = useState<any | null>(null)
-  const [loading, setLoading] = useState(true)
+  // v65: أُزيلت حالة loading الميتة — لا تُقرأ في العرض ولا تُحدَّث في loadProfile
+  // (بقايا إصلاح v64 — الصفحة تعرض البيانات تدريجياً ولا تعتمد على شاشة تحميل موحدة)
 
   // صورة الملف الشخصي
   const avatarInputRef = useRef<HTMLInputElement | null>(null)
