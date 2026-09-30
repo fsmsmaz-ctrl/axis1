@@ -4,7 +4,7 @@
 // آمنة للاستخدام في العميل والخادم معاً (client-safe).
 // ============================================================
 
-import { SYSTEM_ADMIN_EMAIL } from './auth'
+import { SYSTEM_ADMIN_EMAIL, normalizeRole } from './auth'
 
 /**
  * أنواع سجلات "الرقابة العملية" — محذوفة من قسم "التنبيهات" لجميع
@@ -71,6 +71,7 @@ export function isOversightViewer(
   if (user.isSystemAdmin === true) return true
   const email = (user.email || '').toLowerCase().trim()
   if (email === SYSTEM_ADMIN_EMAIL) return true
-  return user.role === 'top_management' || user.role === 'project_manager'
+  // v65: المقارنة عبر normalizeRole — لا مقارنات دور حرفية (نفس علة v63)
+  return normalizeRole(user.role) === 'top_management' || normalizeRole(user.role) === 'project_manager'
 }
 
