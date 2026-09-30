@@ -21,7 +21,7 @@ import {
 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
-import { canWrite, SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
+import { canWrite, SYSTEM_ADMIN_EMAIL, normalizeRole } from '@/lib/auth'
 import { reportDayName } from '@/lib/day-name'
 import { toast } from 'sonner'
 
@@ -493,7 +493,8 @@ export default function DailyReportsPage() {
     canWrite(user?.role || '', 'daily_reports', user?.permissions) ||
     canWrite(user?.role || '', 'safety', user?.permissions)
   // v59: الاعتماد — مدير النظام أو الإدارة العليا (طابق توسعة نقطة النهاية approve)
-  const canApprove = isAdmin || user?.role === 'top_management'
+  // v65: المقارنة عبر normalizeRole — لا مقارنات دور حرفية (نفس علة v63)
+  const canApprove = isAdmin || normalizeRole(user?.role) === 'top_management'
   // تسميات القراءة فقط لبيانات السلامة في وضع التعديل
   const editProjectName = projects.find((p) => p.id === formData.projectId)?.name || editProjectNameFallback
   const editDriveLine = driveLines.find((l) => l.id === formData.driveLineId)
