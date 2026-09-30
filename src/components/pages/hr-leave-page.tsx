@@ -233,9 +233,11 @@ export default function HRLeavePage() {
     }
   }
 
+  // v64 إصلاح: نفس خلل hr-file-page — كان الشرط يمنع التحميل للأبد
+  // (المتجر لا يحمل توكناً منذ v14 — كوكي httpOnly فقط)
   useEffect(() => {
-    if (!token) return
     load()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token])
 
   useEffect(() => {
