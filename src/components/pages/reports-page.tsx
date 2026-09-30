@@ -13,7 +13,7 @@ import {
 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
-import { hasReportPermission, canViewPricing } from '@/lib/auth'
+import { hasReportPermission, canViewPricing, normalizeRole } from '@/lib/auth'
 import { reportDayName } from '@/lib/day-name'
 import { toast } from 'sonner'
 import {
@@ -35,7 +35,8 @@ export default function ReportsPage() {
   const [generating, setGenerating] = useState(false)
   const [mounted, setMounted] = useState(false)
   // v60: تقرير المتوسطات التشغيلية والمالية — سري للإدارة العليا ومدير النظام فقط
-  const isTopMgmt = !!(user && (user.isSystemAdmin || user.role === 'top_management'))
+  // v65: المقارنة عبر normalizeRole — لا مقارنات دور حرفية (نفس علة v63)
+  const isTopMgmt = !!(user && (user.isSystemAdmin || normalizeRole(user.role) === 'top_management'))
   const [driveLines, setDriveLines] = useState<any[]>([])
   const [selectedLine, setSelectedLine] = useState<string>('all')
   const language = useAppStore((s) => s.language)
