@@ -11,7 +11,7 @@ import { db } from '@/lib/db'
 
 export const dynamic = 'force-dynamic'
 
-var APP_VERSION = 'v64'
+var APP_VERSION = 'v66'
 
 // الجداول الحرجة لعمل الأقسام المتعثرة (السلامة + الموارد البشرية) وبقية الأقسام الأساسية
 var CRITICAL_TABLES = [
