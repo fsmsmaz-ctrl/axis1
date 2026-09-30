@@ -9,7 +9,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { handleDbError } from '@/lib/api-helpers'
-import { isHRManager } from '@/lib/auth'
+import { isHRManager, normalizeRole } from '@/lib/auth'
 import { ensureHRSupport } from '@/lib/db-selfheal'
 import { getOrCreateBalance, getPolicy, parseDay, computeCompleteness } from '@/lib/hr'
 
@@ -186,7 +186,8 @@ export async function PUT(req: NextRequest) {
           return NextResponse.json({ error: 'invalid_value', message: 'لا يمكن أن يكون الموظف مسؤولاً مباشراً عن نفسه' }, { status: 400 })
         }
         var sup = await db.user.findUnique({ where: { id: supId }, select: { id: true, role: true } })
-        if (!sup || sup.role === 'visitor') {
+        // v65: دور السجل من القاعدة — التطبيع ضروري (نفس علة v63)
+        if (!sup || normalizeRole(sup.role) === 'visitor') {
           return NextResponse.json({ error: 'invalid_reference', message: 'المسؤول المباشر المحدد غير صالح' }, { status: 400 })
         }
       }
