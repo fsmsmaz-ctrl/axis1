@@ -19,7 +19,7 @@ import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
 import { toast } from 'sonner'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { canViewPricing, canAccessDashboard } from '@/lib/auth'
+import { canViewPricing, canAccessDashboard, normalizeRole, SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
 import { reportDayName } from '@/lib/day-name'
 
 interface DashboardData {
@@ -88,10 +88,15 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
   // استثناء المشرف العام من الأسعار يبقى سارياً في بقية الأقسام كما هو.
   const seePricing = !!(user && (canViewPricing(user) || canAccessDashboard(user)))
   // v48: مراجعو الفواتير — الإدارة العليا ومدير النظام فقط
-  const canReviewInvoices = !!(user && (user.role === 'top_management' || user.isSystemAdmin))
+  const canReviewInvoices = !!(user && (user.isSystemAdmin || normalizeRole(user.role) === 'top_management' || (user.email || '').toLowerCase().trim() === SYSTEM_ADMIN_EMAIL))
   // v59: اعتماد التقارير من لوحة التحكم — مدير النظام والإدارة العليا
   // (نفس من يرى اللوحة، وطابق توسعة نقطة النهاية approve في v59)
-  const canApproveReports = !!(user && (user.isSystemAdmin || user.role === 'top_management'))
+  // v63 إصلاح: القاعدة الآن موحدة مع canAccessDashboard — من يرى اللوحة يرى قسم
+  // الاعتماد. كانت المقارنة حرفية (user.role === 'top_management') بينما الخادم
+  // يطبّع الدور، فاختفي القسم كلياً عن حساب إداري دورُه في قاعدة البيانات يحمل
+  // مسافة زائدة أو حرفاً كبيراً. أُضيف فحص بريد مدير النظام أيضاً لأن اللوحة
+  // تُفتح له بالبريد ولو كان العلم isSystemAdmin مفقوداً من قاعدته.
+  const canApproveReports = !!(user && (user.isSystemAdmin || normalizeRole(user.role) === 'top_management' || (user.email || '').toLowerCase().trim() === SYSTEM_ADMIN_EMAIL))
   const isRtl = language === 'ar'
 
   async function fetchDashboard() {
@@ -279,6 +284,15 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
         </div>
       </div>
 
+      {/* v59: قسم «تقارير بانتظار الاعتماد» — قسم كامل مستقل: فقط التقارير المسلّمة
+          تحتاج قراراً، مع كل التفاصيل والاعتماد/الرفض من هنا دون الانتقال لقسم
+          التقارير اليومية، وبعد القرار يختفي التقرير من القائمة
+          v63: أول كتلة في اللوحة قبل بطاقات الإحصاءات — يراه المعتمد فور فتح
+          اللوحة على أي جهاز دون أي تمرير */}
+      {canApproveReports && (
+        <PendingApprovalsSection isRtl={isRtl} onChanged={fetchDashboard} />
+      )}
+
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           icon={FolderKanban}
@@ -340,12 +354,9 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
         <MiniStat icon={Activity} label={isRtl ? 'أمتار الشهر' : 'Month Meters'} value={fmt(stats.metersThisMonth) + ' م'} color="text-cyan-600" />
       </div>
 
-      {/* v59: قسم «تقارير بانتظار الاعتماد» — قسم كامل مستقل: فقط التقارير المسلّمة
-          تحتاج قراراً، مع كل التفاصيل والاعتماد/الرفض من هنا دون الانتقال لقسم
-          التقارير اليومية، وبعد القرار يختفي التقرير من القائمة */}
-      {canApproveReports && (
-        <PendingApprovalsSection isRtl={isRtl} onChanged={fetchDashboard} />
-      )}
+      {/* v59: قسم «تقارير بانتظار الاعتماد» نُقل إلى أعلى اللوحة في v63 —
+          كان هنا بعد بطاقات الإحصاءات فيتطلب تمريراً طويلاً على الهاتف
+          والآيباد ويُظن غائباً */}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <Card className="lg:col-span-2">
