@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
+import { normalizeRole } from '@/lib/auth'
 import { toast } from 'sonner'
 
 const statusLabels: Record<string, { ar: string; en: string; color: string }> = {
@@ -72,9 +73,10 @@ export default function EquipmentPage() {
   const [maintenanceDialogOpen, setMaintenanceDialogOpen] = useState(false)
   const user = useAppStore((s) => s.user)
   // FIX-6.6: Use role-based check instead of hardcoded admin email
-  const isAdmin = user?.role === 'top_management'
+  // v65: المقارنة عبر normalizeRole — لا مقارنات دور حرفية (نفس علة v63)
+  const isAdmin = normalizeRole(user?.role) === 'top_management'
   // v42: تقرير الأصول المفقودة متاح للإدارة العليا ومدير المشاريع (بوابة سجل التدقيق)
-  const canSeeLost = !!user && (user.role === 'top_management' || user.role === 'project_manager')
+  const canSeeLost = !!user && (normalizeRole(user.role) === 'top_management' || normalizeRole(user.role) === 'project_manager')
   const language = useAppStore((s) => s.language)
   const isRtl = language === 'ar'
 
@@ -1406,3 +1408,5 @@ export default function EquipmentPage() {
   )
 }
 
+
+        
