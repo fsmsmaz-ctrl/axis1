@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { safeDbOp, handleDbError } from '@/lib/api-helpers'
+import { hasPermission, normalizeRole, SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
 
 export async function GET(req: NextRequest) {
   var user = await getAuthUser(req)
@@ -9,12 +10,14 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
   }
 
-  // FIX: Restrict audit logs to top_management and project_manager
-  if (user.role !== 'top_management' && user.role !== 'project_manager') {
+  // v67 REVIEW: البوابة نفسها لقسم «الرقابة العملية» في الواجهة (hasPermission) —
+  // إغلاق الصلاحية من إدارة المستخدمين يغلق السجل فعلاً، والمنح المخصص يفتحه
+  if (!hasPermission(user.role, 'oversight', user.permissions, user.email)) {
     return NextResponse.json({ error: 'forbidden', message: 'سجل المراقبة متاح فقط للإدارة' }, { status: 403 })
   }
 
-  var isTopManagement = user.role === 'top_management'
+  var isTopManagement = normalizeRole(user.role) === 'top_management' || user.isSystemAdmin === true ||
+    (user.email || '').toLowerCase().trim() === SYSTEM_ADMIN_EMAIL
 
   var searchParams = new URL(req.url).searchParams
   var entity = searchParams.get('entity')
