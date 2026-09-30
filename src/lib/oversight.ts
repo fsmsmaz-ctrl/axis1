@@ -64,13 +64,19 @@ export const OVERSIGHT_NOTIFICATION_TYPES = [
  * نفس بوابة سجل المراقبة (api/audit-logs).
  */
 export function isOversightViewer(
-  user: { role?: string; email?: string; isSystemAdmin?: boolean } | null | undefined
+  user: { role?: string; email?: string; isSystemAdmin?: boolean; permissions?: Record<string, boolean> | null } | null | undefined
 ): boolean {
   if (!user) return false
   // مدير النظام بعلم قاعدة البيانات — يرى الرقابة دائماً
   if (user.isSystemAdmin === true) return true
   const email = (user.email || '').toLowerCase().trim()
   if (email === SYSTEM_ADMIN_EMAIL) return true
+  // v67: احترام التجاوز الصريح لصلاحية القسم من إدارة المستخدمين —
+  // إغلاق «الرقابة العملية» عن مستخدم يغلقها فعلاً (القائمة والصفحة والـ API معاً)
+  const p = user.permissions
+  if (p && typeof p['oversight'] === 'boolean') {
+    return p['oversight']
+  }
   // v65: المقارنة عبر normalizeRole — لا مقارنات دور حرفية (نفس علة v63)
   return normalizeRole(user.role) === 'top_management' || normalizeRole(user.role) === 'project_manager'
 }
