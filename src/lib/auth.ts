@@ -240,7 +240,8 @@ export function isHRManager(user: { role?: string; email?: string; isSystemAdmin
   if (!user) return false
   if (user.isSystemAdmin === true) return true
   if (user.email && user.email.toLowerCase().trim() === SYSTEM_ADMIN_EMAIL) return true
-  return (HR_MANAGE_ROLES as readonly string[]).includes(user.role || '')
+  // v64: تطبيع الدور (نفس منطق v63) — لا انكسار لو كان نص الدور في القاعدة غير نظيف
+  return (HR_MANAGE_ROLES as readonly string[]).includes(normalizeRole(user.role))
 }
 
 // ─── Task Management helpers ───────────────────────────────────
