@@ -5,20 +5,24 @@
 // • الموظف يرى ملفه فقط — الإدارة ومدير النظام يرون هنا قائمة «تعبئة بيانات المستخدمين» ويمكنهم إدخال وتعديل بيانات كل مستخدم
 // • الرواتب سرية: تظهر للموظف نفسه والإدارة فقط (الخادم لا يرسلها لغيرهم أصلاً)
 // • تنبيهات انتهاء الجواز والبطاقة والإقامة والعقد (أحمر ≤30 يوماً، كهرماني ≤60)
+// • v68: استعادة دورة طلبات الإجازة التي فُقدت في إعادة هيكلة v62 (حُذفت مساراتها
+//   الخادمية بالخطأ) — تقديم طلب بحساب أيام العمل تلقائياً، إلغاء المعلق،
+//   وطلبات الفريق بانتظار الموافقة للمسؤول المباشر والإدارة (اعتماد/رفض بسبب)
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle
 } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   Briefcase, Wallet, FileCheck, Pencil, Loader2, Clock, Plane, History, AlertTriangle,
-  Search, Users, UserX, CheckCircle2
+  Search, Users, UserX, CheckCircle2, Plus, CalendarDays, Ban, XCircle, Eye
 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
@@ -294,6 +298,9 @@ export default function HRFilePage() {
   const [fillLoadingId, setFillLoadingId] = useState('')
   // v61: قيم الرصيد عند فتح النافذة — لكشف التغيير (لا نُرسل set_balance إلا عند التعديل الفعلي)
   const [balanceBaseline, setBalanceBaseline] = useState<{ annualTotal: string; carriedOver: string } | null>(null)
+  // v68: هوية المستخدم الحالي — قسم «طلبات الإجازة» يظهر للملف الذاتي فقط
+  // (عندما تعرض الإدارة ملف موظف آخر من قائمة التعبئة يختفي القسم)
+  const meId = useAppStore((s) => s.user?.id || '')
 
   async function load(userId?: string) {
     setLoading(true)
@@ -688,6 +695,9 @@ export default function HRFilePage() {
         </CardContent>
       </Card>
 
+      {/* v68: طلبات الإجازة — تقديم طلب جديد + طلباتي + طلبات الفريق بانتظار الموافقة (الملف الذاتي فقط) */}
+      {(!targetId || targetId === meId) && <LeaveFlowSection isAr={isAr} isRtl={isRtl} />}
+
       {/* تعديلات الرصيد المسجلة */}
       {data.adjustments && data.adjustments.length > 0 && (
         <Card>
@@ -855,3 +865,567 @@ export default function HRFilePage() {
   )
 }
 
+// ══════════ v68: طلبات الإجازة — تقديم ومتابعة واعتماد ══════════
+// استُعيدت الوظيفة بعد فقدانها في إعادة هيكلة v62 (حُذفت مسارات الخادم بالخطأ
+// وبقيت الصفحة القديمة يتيمة بلا استدعاء). الواجهة هنا مدمجة داخل «بياناتي
+// الوظيفية والإجازات» والخادم في /api/hr/leave + /api/hr/leave/[id]:
+// • طلب جديد: نوع + فترة (أيام العمل تُحتسب تلقائياً بعد استبعاد نهاية الأسبوع
+//   والعطلات الرسمية) + سبب اختياري + موظف بديل + مرفق (إلزامي للمرضية وفق السياسة)
+// • طلباتي: المعلق قابل للإلغاء + عرض المرفق — والقرارات في السجل أعلاه
+// • للمسؤول المباشر والإدارة: طلبات الفريق بانتظار الموافقة — الاعتماد يخصم
+//   أيام السنوية تلقائياً من رصيد الموظف، والرفض يتطلب سبباً يُبلَّغ به الموظف
+
+// مفتاح اليوم: عدد الأيام منذ البداية (نفس منطق hr.ts على الخادم)
+function dayKeyOfLeave(s: string): number {
+  var d = new Date(s + 'T00:00:00.000Z')
+  return Math.floor(d.getTime() / 86400000)
+}
+
+// معاينة أيام العمل في العميل — نفس منطق countWorkingDays على الخادم
+// (استبعاد أيام نهاية الأسبوع من السياسة والعطلات الرسمية المعتمدة)
+function countWorkingDaysLeave(start: string, end: string, weekend: Set<number>, holidayKeys: Set<number>): number {
+  if (!start || !end) return 0
+  var sK = dayKeyOfLeave(start), eK = dayKeyOfLeave(end)
+  if (eK < sK) return 0
+  var count = 0
+  var guard = 0
+  for (var k = sK; k <= eK && guard < 800; k++, guard++) {
+    var d = new Date(k * 86400000)
+    if (!weekend.has(d.getUTCDay()) && !holidayKeys.has(k)) count++
+  }
+  return count
+}
+
+// ضغط صورة المرفق في المتصفح قبل الإرسال (نفس نمط صور الفواتير)
+function compressImageLeave(file: File, maxSide: number, quality: number, cb: (dataUrl: string) => void, onErr: () => void) {
+  var reader = new FileReader()
+  reader.onload = function(ev) {
+    var result = ev.target?.result as string
+    var img = new Image()
+    img.onload = function() {
+      var w = img.width, h = img.height
+      if (w > maxSide || h > maxSide) {
+        if (w > h) { h = Math.round(h * maxSide / w); w = maxSide }
+        else { w = Math.round(w * maxSide / h); h = maxSide }
+      }
+      var canvas = document.createElement('canvas')
+      canvas.width = w
+      canvas.height = h
+      var ctx = canvas.getContext('2d')
+      if (ctx) {
+        ctx.drawImage(img, 0, 0, w, h)
+        cb(canvas.toDataURL('image/jpeg', quality))
+      } else onErr()
+    }
+    img.onerror = onErr
+    img.src = result
+  }
+  reader.onerror = onErr
+  reader.readAsDataURL(file)
+}
+
+function LeaveFlowSection({ isAr, isRtl }: { isAr: boolean; isRtl: boolean }) {
+  var [leaveData, setLeaveData] = useState<any | null>(null)
+  var [loading, setLoading] = useState(true)
+  var [loadError, setLoadError] = useState<string | null>(null)
+  // نموذج طلب جديد
+  var [newOpen, setNewOpen] = useState(false)
+  var [newForm, setNewForm] = useState({ type: 'annual', startDate: '', endDate: '', reason: '', substituteName: '', attachmentName: '', attachmentData: '' })
+  var [newSaving, setNewSaving] = useState(false)
+  var attachInputRef = useRef<HTMLInputElement | null>(null)
+  // رفض طلب (السبب إلزامي)
+  var [rejectId, setRejectId] = useState<string | null>(null)
+  var [rejectNote, setRejectNote] = useState('')
+  var [decisionLoading, setDecisionLoading] = useState(false)
+  // عرض مرفق
+  var [viewAtt, setViewAtt] = useState<{ name: string; data: string } | null>(null)
+
+  var weekendSet = new Set<number>()
+  if (leaveData?.policy?.weekendDays) {
+    String(leaveData.policy.weekendDays).split(',').forEach(function(s) {
+      var n = parseInt(s.trim(), 10)
+      if (!isNaN(n)) weekendSet.add(n)
+    })
+  }
+  var holidayKeys = new Set<number>()
+  if (leaveData?.holidays) {
+    for (var h of leaveData.holidays) {
+      if (h && h.date) holidayKeys.add(dayKeyOfLeave(String(h.date).slice(0, 10)))
+    }
+  }
+
+  async function loadLeave() {
+    setLoading(true)
+    try {
+      var r = await authedFetch('/api/hr/leave')
+      var ct = r.headers.get('content-type') || ''
+      if (ct.indexOf('application/json') === -1) {
+        var unexpected = isAr
+          ? ('رد غير متوقع من الخادم (رمز ' + r.status + ')')
+          : ('Unexpected server response (HTTP ' + r.status + ')')
+        setLoadError(unexpected)
+        setLeaveData(null)
+        setLoading(false)
+        return
+      }
+      var d = await r.json()
+      if (r.ok) { setLeaveData(d); setLoadError(null) }
+      else {
+        var msg = d.message || (isAr ? 'فشل جلب طلبات الإجازة' : 'Failed to load leave requests')
+        setLoadError(msg)
+        setLeaveData(null)
+      }
+    } catch {
+      setLoadError(isAr ? 'تعذر الاتصال بالخادم' : 'Cannot reach the server')
+      setLeaveData(null)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(function() {
+    loadLeave()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  var myRemaining = leaveData?.balance ? (leaveData.balance.annualTotal + leaveData.balance.carriedOver - leaveData.balance.used) : 0
+  // بوابة الموافقات: الإدارة/الموارد البشرية أو من لديه مرؤوسون (مسؤول مباشر)
+  var canApprove = !!(leaveData && (leaveData.isHR || leaveData.teamCount > 0))
+  var teamPending = (leaveData?.teamRequests || []).filter(function(r: any) { return r.status === 'pending' })
+  var teamDecided = (leaveData?.teamRequests || []).filter(function(r: any) { return r.status !== 'pending' })
+  var myPending = (leaveData?.requests || []).filter(function(r: any) { return r.status === 'pending' })
+  var myDecided = (leaveData?.requests || []).filter(function(r: any) { return r.status !== 'pending' }).slice(0, 5)
+
+  var previewDays = countWorkingDaysLeave(newForm.startDate, newForm.endDate, weekendSet, holidayKeys)
+  var sickNeedsAttach = !!(leaveData?.policy?.sickAttachRequired && newForm.type === 'sick')
+
+  function resetNewForm() {
+    setNewForm({ type: 'annual', startDate: '', endDate: '', reason: '', substituteName: '', attachmentName: '', attachmentData: '' })
+  }
+
+  function onPickAttachment(e: React.ChangeEvent<HTMLInputElement>) {
+    var picked = e.target.files && e.target.files[0]
+    if (!picked) return
+    var file: File = picked
+    if (file.type === 'application/pdf') {
+      if (file.size > 3.4 * 1024 * 1024) {
+        toast.error(isAr ? 'حجم ملف PDF كبير جداً (الحد 3.4 ميغابايت)' : 'PDF too large (max 3.4MB)')
+        return
+      }
+      var reader = new FileReader()
+      reader.onload = function(ev) {
+        setNewForm(function(f) { return { ...f, attachmentName: file.name, attachmentData: ev.target?.result as string } })
+      }
+      reader.readAsDataURL(file)
+      return
+    }
+    if (!file.type.startsWith('image/')) {
+      toast.error(isAr ? 'المرفق يجب أن يكون صورة أو PDF' : 'Attachment must be an image or PDF')
+      return
+    }
+    compressImageLeave(file, 1600, 0.75, function(dataUrl) {
+      setNewForm(function(f) { return { ...f, attachmentName: file.name, attachmentData: dataUrl } })
+    }, function() {
+      toast.error(isAr ? 'فشل قراءة الصورة' : 'Failed to read image')
+    })
+    if (attachInputRef.current) attachInputRef.current.value = ''
+  }
+
+  async function submitNew() {
+    if (!newForm.type || !newForm.startDate || !newForm.endDate) {
+      toast.error(isAr ? 'نوع الإجازة والتواريخ مطلوبة' : 'Type and dates are required')
+      return
+    }
+    if (sickNeedsAttach && !newForm.attachmentData) {
+      toast.error(isAr ? 'إرفاق مستند طبي إلزامي للإجازة المرضية' : 'A medical document is required for sick leave')
+      return
+    }
+    setNewSaving(true)
+    try {
+      var r = await authedFetch('/api/hr/leave', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newForm),
+      })
+      var d = await r.json()
+      if (!r.ok) {
+        toast.error(d.message || (isAr ? 'فشل إرسال الطلب' : 'Failed to submit'))
+        return
+      }
+      toast.success(isAr ? 'تم إرسال طلب الإجازة — ينتظر موافقة المسؤول المباشر' : 'Leave request submitted — awaiting supervisor approval')
+      setNewOpen(false)
+      resetNewForm()
+      loadLeave()
+    } catch {
+      toast.error(isAr ? 'خطأ في الاتصال' : 'Connection error')
+    } finally {
+      setNewSaving(false)
+    }
+  }
+
+  async function decide(id: string, action: 'approve' | 'reject' | 'cancel', note?: string) {
+    setDecisionLoading(true)
+    try {
+      var r = await authedFetch('/api/hr/leave/' + id, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, note }),
+      })
+      var d = await r.json()
+      if (!r.ok) {
+        toast.error(d.message || (isAr ? 'فشل تنفيذ الإجراء' : 'Action failed'))
+        return
+      }
+      toast.success(isAr ? 'تم تنفيذ الإجراء بنجاح' : 'Action completed')
+      setRejectId(null)
+      setRejectNote('')
+      loadLeave()
+    } catch {
+      toast.error(isAr ? 'خطأ في الاتصال' : 'Connection error')
+    } finally {
+      setDecisionLoading(false)
+    }
+  }
+
+  function cancelMine(id: string) {
+    if (!window.confirm(isAr ? 'إلغاء هذا الطلب المعلق؟' : 'Cancel this pending request?')) return
+    decide(id, 'cancel')
+  }
+
+  if (loading) {
+    return (
+      <Card>
+        <CardContent className="py-6 flex items-center justify-center text-muted-foreground">
+          <Loader2 className="h-5 w-5 animate-spin" />
+        </CardContent>
+      </Card>
+    )
+  }
+  if (!leaveData) {
+    // فشل تحميل القسم لا يعطل بقية الصفحة — رسالة مختصرة مع إعادة المحاولة
+    return (
+      <Card>
+        <CardContent className="py-5 flex flex-col items-center gap-2">
+          <AlertTriangle className="h-5 w-5 text-amber-500" />
+          <p className="text-sm text-muted-foreground">{loadError || (isAr ? 'تعذر تحميل طلبات الإجازة' : 'Failed to load leave requests')}</p>
+          <Button size="sm" variant="outline" onClick={loadLeave}>
+            <Loader2 className="h-4 w-4" />
+            {isAr ? 'إعادة المحاولة' : 'Retry'}
+          </Button>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* طلبات الفريق بانتظار الموافقة — للمسؤول المباشر والإدارة */}
+      {canApprove && teamPending.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-primary" />
+              {isAr ? 'طلبات إجازة بانتظار موافقتك' : 'Leave Requests Awaiting Your Approval'}
+              <Badge variant="destructive">{teamPending.length}</Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0 space-y-2">
+            {teamPending.map(function(r: any) {
+              var empName = r.employee ? (isRtl ? r.employee.name : (r.employee.nameEn || r.employee.name)) : '—'
+              return (
+                <div key={r.id} className="rounded-xl border p-3 space-y-2">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-semibold text-sm">{empName}</span>
+                      <Badge variant="outline">{(isRtl ? leaveTypeLabels[r.type]?.ar : leaveTypeLabels[r.type]?.en) || r.type}</Badge>
+                      <span className="text-sm">{r.days} {isAr ? 'يوم' : 'days'}</span>
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      {fmtDate(r.startDate, isAr)} ← {fmtDate(r.endDate, isAr)}
+                    </span>
+                  </div>
+                  {r.employee?.jobTitle && <p className="text-xs text-muted-foreground">{r.employee.jobTitle}</p>}
+                  {r.reason && <p className="text-xs text-muted-foreground">{isAr ? 'السبب: ' : 'Reason: '}{r.reason}</p>}
+                  {r.substituteName && <p className="text-xs text-muted-foreground">{isAr ? 'الموظف البديل: ' : 'Substitute: '}{r.substituteName}</p>}
+                  {r.type === 'annual' && r.remainingBalance !== null && (
+                    <p className="text-xs flex items-center gap-1 text-muted-foreground">
+                      <Wallet className="h-3.5 w-3.5" />
+                      {isAr ? 'رصيده المتبقي: ' : 'Their remaining balance: '}{r.remainingBalance} {isAr ? 'يوم' : 'days'}
+                    </p>
+                  )}
+                  <div className="flex items-center gap-2 flex-wrap pt-1">
+                    <Button size="sm" className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white" disabled={decisionLoading}
+                      onClick={function() { decide(r.id, 'approve') }}>
+                      <CheckCircle2 className="h-4 w-4" />
+                      {isAr ? 'موافقة' : 'Approve'}
+                    </Button>
+                    <Button size="sm" variant="outline" className="gap-1.5 text-destructive hover:text-destructive border-destructive/40" disabled={decisionLoading}
+                      onClick={function() { setRejectId(r.id); setRejectNote('') }}>
+                      <XCircle className="h-4 w-4" />
+                      {isAr ? 'رفض' : 'Reject'}
+                    </Button>
+                    {r.attachmentData && (
+                      <Button size="sm" variant="ghost" className="gap-1.5"
+                        onClick={function() { setViewAtt({ name: r.attachmentName || 'مستند', data: r.attachmentData }) }}>
+                        <FileCheck className="h-4 w-4" />
+                        {isAr ? 'عرض المستند' : 'View document'}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* طلباتي + طلب جديد */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base flex items-center justify-between flex-wrap gap-2">
+            <span className="flex items-center gap-2">
+              <Plane className="h-4 w-4 text-primary" />
+              {isAr ? 'طلبات الإجازة' : 'Leave Requests'}
+              {myPending.length > 0 && <Badge variant="secondary" className="text-xs">{myPending.length}</Badge>}
+            </span>
+            <Button size="sm" className="gap-1.5" onClick={function() { resetNewForm(); setNewOpen(true) }}>
+              <Plus className="h-4 w-4" />
+              {isAr ? 'طلب إجازة جديدة' : 'New Leave Request'}
+            </Button>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="pt-0 space-y-2">
+          <div className="flex items-center gap-2 flex-wrap pb-1">
+            <Badge variant="secondary" className="gap-1"><CalendarDays className="h-3.5 w-3.5" /> {isAr ? 'الرصيد الكلي' : 'Total'}: {leaveData.balance ? leaveData.balance.annualTotal + leaveData.balance.carriedOver : 0}</Badge>
+            <Badge variant="outline" className="gap-1"><Clock className="h-3.5 w-3.5" /> {isAr ? 'المستخدم' : 'Used'}: {leaveData.balance?.used ?? 0}</Badge>
+            <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300 border-0 gap-1">
+              <CheckCircle2 className="h-3.5 w-3.5" /> {isAr ? 'المتبقي' : 'Remaining'}: {myRemaining}
+            </Badge>
+          </div>
+          {myPending.length === 0 && myDecided.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-3 text-center">
+              {isAr ? 'لا توجد طلبات إجازة — قدّم طلبك الأول' : 'No leave requests — submit your first request'}
+            </p>
+          ) : (
+            <>
+              {myPending.map(function(r: any) {
+                return (
+                  <div key={r.id} className="rounded-xl border p-3">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Badge variant="outline">{(isRtl ? leaveTypeLabels[r.type]?.ar : leaveTypeLabels[r.type]?.en) || r.type}</Badge>
+                        <Badge className={(leaveStatus[r.status] || leaveStatus.pending).cls + ' border-0'}>{isRtl ? (leaveStatus[r.status] || leaveStatus.pending).ar : (leaveStatus[r.status] || leaveStatus.pending).en}</Badge>
+                        <span className="text-sm font-medium">{r.days} {isAr ? 'يوم عمل' : 'working days'}</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        {r.attachmentData && (
+                          <Button variant="ghost" size="icon" className="h-8 w-8" title={isAr ? 'عرض المرفق' : 'View attachment'}
+                            onClick={function() { setViewAtt({ name: r.attachmentName || 'مستند', data: r.attachmentData }) }}>
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                        )}
+                        <Button variant="ghost" size="sm" className="h-8 gap-1 text-destructive hover:text-destructive" disabled={decisionLoading}
+                          onClick={function() { cancelMine(r.id) }}>
+                          <Ban className="h-3.5 w-3.5" />
+                          {isAr ? 'إلغاء' : 'Cancel'}
+                        </Button>
+                      </div>
+                    </div>
+                    <p className="text-sm mt-1.5">
+                      {fmtDate(r.startDate, isAr)} ← {fmtDate(r.endDate, isAr)}
+                      {r.substituteName && <span className="text-muted-foreground"> · {isAr ? 'البديل: ' : 'Sub: '}{r.substituteName}</span>}
+                    </p>
+                    {r.reason && <p className="text-xs text-muted-foreground mt-0.5">{r.reason}</p>}
+                  </div>
+                )
+              })}
+              {myDecided.length > 0 && (
+                <div className="pt-1">
+                  <p className="text-xs font-semibold text-muted-foreground mb-1">{isAr ? 'آخر القرارات على طلباتك' : 'Recent decisions'}</p>
+                  {myDecided.map(function(r: any) {
+                    var st = leaveStatus[r.status] || leaveStatus.pending
+                    return (
+                      <div key={r.id} className="flex items-center justify-between gap-2 text-sm py-1.5 border-b border-border/40 last:border-0 flex-wrap">
+                        <span className="flex items-center gap-2 flex-wrap">
+                          <Badge variant="outline" className="text-xs">{(isRtl ? leaveTypeLabels[r.type]?.ar : leaveTypeLabels[r.type]?.en) || r.type}</Badge>
+                          <Badge className={st.cls + ' border-0 text-xs'}>{isRtl ? st.ar : st.en}</Badge>
+                          <span className="text-xs text-muted-foreground">{r.days} {isAr ? 'يوم' : 'd'}</span>
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {fmtDate(r.startDate, isAr)} ← {fmtDate(r.endDate, isAr)}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* طلبات الفريق تم البت فيها — ملخص مختصر */}
+      {canApprove && teamDecided.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Clock className="h-4 w-4 text-primary" />
+              {isAr ? 'طلبات الفريق — تم البت فيها' : 'Team Requests — Decided'}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0 space-y-1">
+            {teamDecided.slice(0, 10).map(function(r: any) {
+              var st = leaveStatus[r.status] || leaveStatus.pending
+              var empName = r.employee ? (isRtl ? r.employee.name : (r.employee.nameEn || r.employee.name)) : '—'
+              return (
+                <div key={r.id} className="flex items-center justify-between gap-2 text-sm py-1.5 border-b border-border/40 last:border-0 flex-wrap">
+                  <span className="flex items-center gap-2 flex-wrap">
+                    <span className="font-medium">{empName}</span>
+                    <Badge variant="outline" className="text-xs">{(isRtl ? leaveTypeLabels[r.type]?.ar : leaveTypeLabels[r.type]?.en) || r.type}</Badge>
+                    <Badge className={st.cls + ' border-0 text-xs'}>{isRtl ? st.ar : st.en}</Badge>
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {fmtDate(r.startDate, isAr)} ← {fmtDate(r.endDate, isAr)} · {r.days} {isAr ? 'يوم' : 'd'}
+                  </span>
+                </div>
+              )
+            })}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* نافذة طلب إجازة جديد */}
+      <Dialog open={newOpen} onOpenChange={setNewOpen}>
+        <DialogContent className="sm:max-w-[520px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Plane className="h-5 w-5 text-primary" />
+              {isAr ? 'طلب إجازة جديد' : 'New Leave Request'}
+            </DialogTitle>
+            <DialogDescription>
+              {isAr ? 'تُحسب أيام العمل تلقائياً بعد استبعاد نهاية الأسبوع والعطلات الرسمية' : 'Working days are calculated automatically excluding weekends and holidays'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label>{isAr ? 'نوع الإجازة' : 'Leave Type'}</Label>
+              <Select value={newForm.type} onValueChange={function(v) { setNewForm({ ...newForm, type: v }) }}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.keys(leaveTypeLabels).map(function(k) {
+                    return <SelectItem key={k} value={k}>{isAr ? leaveTypeLabels[k].ar : leaveTypeLabels[k].en}</SelectItem>
+                  })}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label>{isAr ? 'من تاريخ' : 'From'}</Label>
+                <Input type="date" value={newForm.startDate} onChange={function(e) { setNewForm({ ...newForm, startDate: e.target.value }) }} />
+              </div>
+              <div className="space-y-1">
+                <Label>{isAr ? 'إلى تاريخ' : 'To'}</Label>
+                <Input type="date" value={newForm.endDate} onChange={function(e) { setNewForm({ ...newForm, endDate: e.target.value }) }} />
+              </div>
+            </div>
+            {newForm.startDate && newForm.endDate && (
+              <div className="flex items-center gap-2 text-sm flex-wrap">
+                <Badge variant={previewDays > 0 ? 'secondary' : 'destructive'}>
+                  {previewDays > 0
+                    ? (isAr ? previewDays + ' يوم عمل' : previewDays + ' working day(s)')
+                    : (isAr ? 'لا أيام عمل في هذه الفترة' : 'No working days in this period')}
+                </Badge>
+                {newForm.type === 'annual' && (
+                  <span className="text-xs text-muted-foreground">
+                    {isAr ? 'المتبقي لديك: ' : 'Your remaining: '}{myRemaining}
+                  </span>
+                )}
+              </div>
+            )}
+            <div className="space-y-1">
+              <Label>{isAr ? 'السبب / ملاحظات (اختياري)' : 'Reason / Notes (optional)'}</Label>
+              <Textarea rows={2} value={newForm.reason} onChange={function(e) { setNewForm({ ...newForm, reason: e.target.value }) }} />
+            </div>
+            <div className="space-y-1">
+              <Label>{isAr ? 'الموظف البديل (عند الحاجة)' : 'Substitute Employee (if needed)'}</Label>
+              <Input value={newForm.substituteName} onChange={function(e) { setNewForm({ ...newForm, substituteName: e.target.value }) }} />
+            </div>
+            <div className="space-y-1">
+              <Label>
+                {isAr ? 'المستند المرفق' : 'Attachment'}
+                {sickNeedsAttach && <span className="text-destructive"> ({isAr ? 'إلزامي للمرضية' : 'required for sick leave'})</span>}
+              </Label>
+              <input ref={attachInputRef} type="file" accept="image/*,.pdf" className="hidden" onChange={onPickAttachment} />
+              <Button variant="outline" size="sm" className="gap-1.5 w-full" onClick={function() { if (attachInputRef.current) attachInputRef.current.click() }}>
+                <FileCheck className="h-4 w-4" />
+                {newForm.attachmentName ? newForm.attachmentName : (isAr ? 'اختر صورة أو PDF' : 'Pick image or PDF')}
+              </Button>
+              {newForm.attachmentData && (
+                <Button variant="ghost" size="sm" className="text-destructive h-7" onClick={function() { setNewForm({ ...newForm, attachmentName: '', attachmentData: '' }) }}>
+                  {isAr ? 'إزالة المرفق' : 'Remove attachment'}
+                </Button>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={function() { setNewOpen(false) }}>{isAr ? 'إلغاء' : 'Cancel'}</Button>
+            <Button onClick={submitNew} disabled={newSaving} className="gap-1.5">
+              {newSaving && <Loader2 className="h-4 w-4 animate-spin" />}
+              {isAr ? 'إرسال الطلب' : 'Submit Request'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* نافذة رفض طلب — السبب إلزامي */}
+      <Dialog open={!!rejectId} onOpenChange={function(v) { if (!v) { setRejectId(null); setRejectNote('') } }}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <XCircle className="h-5 w-5" />
+              {isAr ? 'رفض طلب الإجازة' : 'Reject Leave Request'}
+            </DialogTitle>
+            <DialogDescription>
+              {isAr ? 'يجب كتابة سبب الرفض — يصل الموظف إشعاراً به' : 'A rejection reason is required — the employee will be notified'}
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea rows={3} value={rejectNote} onChange={function(e) { setRejectNote(e.target.value) }} placeholder={isAr ? 'مثال: يرجى تعديل التواريخ لتغطية فترة التشغيل' : 'e.g. please adjust dates to cover the operation period'} />
+          <DialogFooter>
+            <Button variant="outline" onClick={function() { setRejectId(null); setRejectNote('') }}>{isAr ? 'تراجع' : 'Back'}</Button>
+            <Button
+              variant="destructive"
+              disabled={decisionLoading || !rejectNote.trim()}
+              onClick={function() { if (rejectId) decide(rejectId, 'reject', rejectNote.trim()) }}
+              className="gap-1.5"
+            >
+              {decisionLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+              {isAr ? 'تأكيد الرفض' : 'Confirm Rejection'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* نافذة عرض مرفق */}
+      <Dialog open={!!viewAtt} onOpenChange={function(v) { if (!v) setViewAtt(null) }}>
+        <DialogContent className="sm:max-w-[640px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileCheck className="h-5 w-5 text-primary" />
+              {viewAtt?.name}
+            </DialogTitle>
+          </DialogHeader>
+          {viewAtt && viewAtt.data.startsWith('data:image/') ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={viewAtt.data} alt={viewAtt.name} className="max-w-full rounded-xl border" />
+          ) : viewAtt ? (
+            <a href={viewAtt.data} target="_blank" rel="noreferrer" className="text-primary underline text-sm">
+              {isAr ? 'فتح المستند (PDF)' : 'Open document (PDF)'}
+            </a>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
