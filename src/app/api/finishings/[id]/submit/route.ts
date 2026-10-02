@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
-import { SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
+import { SYSTEM_ADMIN_EMAIL, normalizeRole } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 import { safeDbOp, handleDbError } from '@/lib/api-helpers'
@@ -54,7 +54,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     // الرفع: المشرف (foreman) أو مدير النظام فقط — مثل دورة التقارير اليومية
-    var isSupervisor = user!.role === 'foreman'
+    // v68: تطبيع الدور على نمط بقية المسارات (نصوص الأدوار غير النظيفة من القاعدة)
+    var isSupervisor = normalizeRole(user!.role) === 'foreman'
     var isSystemAdmin = (user!.email || '').toLowerCase().trim() === SYSTEM_ADMIN_EMAIL
     if (!isSupervisor && !isSystemAdmin) {
       return NextResponse.json({ error: 'forbidden', message: 'رفع التشطيب للإدارة متاح للمشرف (الفورمان) ومدير النظام فقط' }, { status: 403 })
@@ -121,4 +122,5 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return handleDbError(error, 'رفع التشطيب للإدارة')
   }
 }
+
 
