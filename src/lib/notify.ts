@@ -14,7 +14,7 @@
 // ============================================================
 
 import { db } from './db'
-import { hasPermission } from './auth'
+import { hasPermission, normalizeRole } from './auth'
 
 export type NotifySeverity = 'info' | 'warning' | 'critical'
 
@@ -74,7 +74,10 @@ export async function resolveRecipientIds(
         : null
 
       const allowed =
-        roles.includes(u.role) ||
+        // v68: تطبيع دور السجل قبل المقارنة — أدوار القاعدة غير النظيفة (مسافة/
+        // أحرف كبيرة) كانت تستثني صاحبها من تنبيهات دوره (مثل تسليم فواتير
+        // المشتريات للإدارة العليا) — نفس علة موجة v63/v65
+        roles.includes(normalizeRole(u.role)) ||
         permissions.some((p) => hasPermission(u.role, p, userPerms)) ||
         (includeSystemAdmin && (u.email || '').toLowerCase().trim() === SYSTEM_ADMIN_EMAIL)
 
