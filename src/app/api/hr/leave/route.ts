@@ -1,4 +1,10 @@
-// v53: طلبات الإجازة — قائمة/إنشاء
+// v68: استعادة طلبات الإجازة — القائمة وإنشاء الطلب
+// خلال إعادة هيكلة v62 (دمج قسمي «ملفي الوظيفي» و«الإجازات» في الملف الشخصي)
+// حُذفت مسارات طلبات الإجازة بالخطأ وبقيت الواجهة بلا خادم — ففقد الموظفون
+// القدرة على تقديم أي طلب إجازة، وبقيت لوحة الموارد البشرية بلا طلبات لتدقيقها.
+// هذه الاستعادة تُكمل تصميم v62: الملف الشخصي هو الموطن الوحيد — الواجهة مدمجة
+// في «بياناتي الوظيفية والإجازات» (hr-file-page) والخادم هنا.
+//
 // GET  — طلباتي + رصيدي + السياسة والعطلات (لاحتساب الأيام في النموذج) + أعلام الصلاحية
 //        ?scope=team — طلبات فريق المسؤول المباشر (أو كل الطلبات للإدارة)
 // POST — إنشاء طلب جديد بحالة «بانتظار الموافقة»:
@@ -7,18 +13,20 @@
 //   • منع التداخل مع طلب آخر (بانتظار أو معتمد) لنفس الموظف
 //   • المستند إلزامي للإجازة المرضية (وفق السياسة)
 //   • إشعار للمسؤول المباشر (أو الإدارة عند غيابه) + إشعار استلام للموظف
+//   • رابط التنبيهات «profile» — الملف الشخصي هو موطن الإجازات بعد v62
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { handleDbError } from '@/lib/api-helpers'
-import { hasPermission, isHRManager } from '@/lib/auth'
+import { isHRManager, normalizeRole } from '@/lib/auth'
 import { ensureHRSupport } from '@/lib/db-selfheal'
 import { notifyUsers } from '@/lib/notify'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 import {
   getOrCreateBalance, getPolicy, parseWeekend, parseDay, dayKey,
-  countWorkingDays, loadHolidayKeys, fmtDay, LEAVE_TYPE_LABELS_AR, computeCompleteness,
+  countWorkingDays, loadHolidayKeys, fmtDay, LEAVE_TYPE_LABELS_AR,
+  computeCompleteness,
 } from '@/lib/hr'
 
 var MAX_ATTACHMENT_CHARS = 6000000 // ~4.5MB base64 — نفس حد صور الفواتير
@@ -34,8 +42,10 @@ export async function GET(req: NextRequest) {
   if (!me) {
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
   }
-  if (!hasPermission(me.role, 'hr_leave', me.permissions, me.email)) {
-    return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية قسم الإجازات' }, { status: 403 })
+  // v68: بوابة القسم بعد حذف صلاحية hr_leave في v62 — كل موظف (غير الزائر)
+  // يرى بيانات إجازاته ويقدم طلباته من ملفه الشخصي، والزائر مستثنى
+  if (normalizeRole(me.role) === 'visitor') {
+    return NextResponse.json({ error: 'forbidden', message: 'طلبات الإجازة غير متاحة لحساب الزائر' }, { status: 403 })
   }
   var searchParams = new URL(req.url).searchParams
   var scope = searchParams.get('scope') || 'mine'
@@ -44,12 +54,6 @@ export async function GET(req: NextRequest) {
     var manager = isHRManager(me)
     var policy = await getPolicy()
     var balance = await getOrCreateBalance(me.id, policy.defaultAnnualDays)
-    // v61: اكتمال بيانات الموظف — بوابة ظهور قسم الإجازات للموظف غير المكتمل
-    var meProfile = await db.user.findUnique({
-      where: { id: me.id },
-      select: { jobTitle: true, department: true, joinDate: true },
-    })
-    var completeness = computeCompleteness(meProfile || { jobTitle: null, department: null, joinDate: null }, balance)
     var holidays = await db.holiday.findMany({
       orderBy: { date: 'asc' },
       take: 200,
@@ -123,13 +127,19 @@ export async function GET(req: NextRequest) {
       },
     })
 
+    // v68: اكتمال بيانات الموظف — نفس بوابات hr-file-page (للاتساق مع أي واجهة تستدعي هذا المسار)
+    var meRow = await db.user.findUnique({
+      where: { id: me.id },
+      select: { jobTitle: true, department: true, joinDate: true },
+    })
+    var completeness = computeCompleteness(meRow || {}, balance)
+
     return NextResponse.json({
       requests,
       teamRequests,
       teamCount,
       isHR: manager,
       balance,
-      // v61: اكتمال البيانات
       completeness,
       policy: {
         weekendDays: policy.weekendDays,
@@ -150,8 +160,8 @@ export async function POST(req: NextRequest) {
   if (!me) {
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
   }
-  if (!hasPermission(me.role, 'hr_leave', me.permissions, me.email)) {
-    return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية تقديم طلبات الإجازة' }, { status: 403 })
+  if (normalizeRole(me.role) === 'visitor') {
+    return NextResponse.json({ error: 'forbidden', message: 'تقديم طلبات الإجازة غير متاح لحساب الزائر' }, { status: 403 })
   }
   var rl = checkRateLimit(req, RateLimitPresets.write)
   if (rl.limited) {
@@ -256,14 +266,14 @@ export async function POST(req: NextRequest) {
           title: 'تم استلام طلب الإجازة',
           message: 'طلبك (' + typeLabel + ' من ' + fmtDay(start) + ' إلى ' + fmtDay(end) + ') قيد الانتظار — سيُحوَّل إلى المسؤول المباشر',
           severity: 'info',
-          link: 'hrLeave',
+          link: 'profile',
           entityType: 'leave_request',
           entityId: created.id,
         },
       })
       // 2) توجيه الطلب للمسؤول المباشر — وعند غيابه للإدارة/الموارد البشرية
-      var meRow = await db.user.findUnique({ where: { id: me.id }, select: { supervisorId: true } })
-      var supId = meRow?.supervisorId || null
+      var meRow2 = await db.user.findUnique({ where: { id: me.id }, select: { supervisorId: true } })
+      var supId = meRow2?.supervisorId || null
       if (supId) {
         await db.notification.create({
           data: {
@@ -272,7 +282,7 @@ export async function POST(req: NextRequest) {
             title: 'طلب إجازة جديد بانتظار موافقتك',
             message: periodMsg,
             severity: 'info',
-            link: 'hrLeave',
+            link: 'profile',
             entityType: 'leave_request',
             entityId: created.id,
           },
@@ -283,7 +293,7 @@ export async function POST(req: NextRequest) {
           title: 'طلب إجازة جديد (بلا مسؤول مباشر)',
           message: periodMsg,
           severity: 'info',
-          link: 'hrLeave',
+          link: 'profile',
           entityType: 'leave_request',
           entityId: created.id,
           permissions: [],
@@ -293,7 +303,7 @@ export async function POST(req: NextRequest) {
         })
       }
     } catch (notifyErr) {
-      console.warn('v53 leave notifications skipped:', notifyErr)
+      console.warn('v68 leave notifications skipped:', notifyErr)
     }
 
     return NextResponse.json({ request: created, remaining })
