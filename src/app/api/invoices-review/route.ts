@@ -7,12 +7,15 @@ import { db } from '@/lib/db'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 import { ensurePurchasesSupport } from '@/lib/db-selfheal'
 import { logProfileAudit, logOversightEvent } from '@/lib/profile-audit'
+import { normalizeRole } from '@/lib/auth'
 
 // نفس تصنيفات التكاليف المعتمدة في /api/costs
 var COST_CATEGORIES = ['labor', 'housing', 'transport', 'fuel', 'maintenance', 'parts', 'oil', 'safety', 'rental', 'other']
 
+// v68: المقارنة عبر normalizeRole — الجلسة مطبّعة أصلاً (v63) وهذا تحصين إضافي
+// على نمط بقية المسارات حتى لا يبقى أي فحص دور حرفي متأخر
 function canReview(user: { role: string; isSystemAdmin?: boolean }): boolean {
-  return user.role === 'top_management' || user.isSystemAdmin === true
+  return normalizeRole(user.role) === 'top_management' || user.isSystemAdmin === true
 }
 
 // GET: قائمة الفواتير غير المسودات — المرسلة أولاً ثم سجل المراجعة
