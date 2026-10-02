@@ -1,6 +1,11 @@
-// v53: البت في طلب إجازة — موافقة / رفض (السبب إلزامي) / إلغاء
+// v68: استعادة البت في طلبات الإجازة — موافقة / رفض (السبب إلزامي) / إلغاء
+// خلال إعادة هيكلة v62 حُذف هذا المسار بالخطأ مع قائمة الطلبات — فتعطلت
+// دورة الاعتماد كاملة. الاستعادة تُكمل تصميم v62: الواجهة مدمجة في الملف
+// الشخصي ورابط التنبيهات «profile» بدل الصفحة المستقلة المحذوفة.
+//
 // PATCH /api/hr/leave/[id]  body: { action: 'approve' | 'reject' | 'cancel', note? }
 // • الموافقة/الرفض: المسؤول المباشر (employee.supervisorId) أو الإدارة/الموارد البشرية
+//   (isHRManager يحترم مفتاح hr_manage من إدارة المستخدمين — v67)
 // • الموافقة على السنوية تخصم الأيام من الرصيد تلقائياً (مع إعادة فحص الكفاية)
 // • الإلغاء: الموظف لطلبه المعلق؛ الإدارة أي طلب — وإلغاء المعتمد السنوي يُرجع الرصيد
 // • إشعار للموظف بالقرار + نسخة للإدارة/الموارد البشرية
@@ -107,7 +112,7 @@ export async function PATCH(
               title: 'تم اعتماد طلب إجازتك',
               message: periodMsg + ' — اعتُمد من ' + me.name + (note ? ' ملاحظة: ' + note : '') + '، تم خصم الأيام من رصيدك',
               severity: 'info',
-              link: 'hrLeave',
+              link: 'profile',
               entityType: 'leave_request',
               entityId: request.id,
             },
@@ -120,7 +125,7 @@ export async function PATCH(
               title: 'تم رفض طلب إجازتك',
               message: periodMsg + ' — السبب: ' + (note || '—'),
               severity: 'warning',
-              link: 'hrLeave',
+              link: 'profile',
               entityType: 'leave_request',
               entityId: request.id,
             },
@@ -131,7 +136,7 @@ export async function PATCH(
           title: action === 'approve' ? 'اعتماد إجازة' : 'رفض إجازة',
           message: request.employee.name + ' — ' + periodMsg + ' — بواسطة ' + me.name,
           severity: 'info',
-          link: 'hrLeave',
+          link: 'profile',
           entityType: 'leave_request',
           entityId: request.id,
           permissions: [],
@@ -140,7 +145,7 @@ export async function PATCH(
           excludeUserIds: [me.id, request.employeeId],
         })
       } catch (notifyErr) {
-        console.warn('v53 leave decision notifications skipped:', notifyErr)
+        console.warn('v68 leave decision notifications skipped:', notifyErr)
       }
 
       return NextResponse.json({ ok: true, status: action === 'approve' ? 'approved' : 'rejected' })
@@ -188,7 +193,7 @@ export async function PATCH(
               title: 'تم إلغاء طلب إجازة',
               message: periodMsg + ' — أُلغي بواسطة ' + me.name + (note ? ' السبب: ' + note : ''),
               severity: 'warning',
-              link: 'hrLeave',
+              link: 'profile',
               entityType: 'leave_request',
               entityId: request.id,
             },
@@ -200,7 +205,7 @@ export async function PATCH(
             title: 'إلغاء إجازة',
             message: request.employee.name + ' — ' + periodMsg + ' — بواسطة ' + me.name,
             severity: 'info',
-            link: 'hrLeave',
+            link: 'profile',
             entityType: 'leave_request',
             entityId: request.id,
             permissions: [],
@@ -210,7 +215,7 @@ export async function PATCH(
           })
         }
       } catch (notifyErr) {
-        console.warn('v53 leave cancel notifications skipped:', notifyErr)
+        console.warn('v68 leave cancel notifications skipped:', notifyErr)
       }
 
       return NextResponse.json({ ok: true, status: 'cancelled' })
