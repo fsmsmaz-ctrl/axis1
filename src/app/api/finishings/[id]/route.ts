@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
-import { SYSTEM_ADMIN_EMAIL, canWrite, hasPermission } from '@/lib/auth'
+import { SYSTEM_ADMIN_EMAIL, canWrite, hasPermission, normalizeRole } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { handleDbError, safeDbOp } from '@/lib/api-helpers'
 
@@ -50,7 +50,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     if (!existing) return NextResponse.json({ error: 'not_found', message: 'التشطيب غير موجود' }, { status: 404 })
 
     var isSystemAdmin = (user.email || '').toLowerCase().trim() === SYSTEM_ADMIN_EMAIL
-    var isSupervisor = user.role === 'foreman'
+    // v68: تطبيع الدور على نمط بقية المسارات (نصوص الأدوار غير النظيفة من القاعدة)
+    var isSupervisor = normalizeRole(user.role) === 'foreman'
 
     // قواعد دورة الاعتماد الإدارية:
     //  - مرفوع للإدارة (submitted): مقفل بانتظار قرار الإدارة — لمدير النظام فقط
