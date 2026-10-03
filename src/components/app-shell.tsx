@@ -164,7 +164,8 @@ export default function AppShell() {
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!user || !token) return
+    // v70: كان الرمز null دائماً فتوقف جلب التنبيهات — الكوكي httpOnly هو الجلسة
+    if (!user) return
     let active = true
     const loadUnread = () => {
       authedFetch('/api/notifications?unreadOnly=true')
@@ -176,7 +177,7 @@ export default function AppShell() {
     // تحديث دوري كل 60 ثانية لمزامنة التنبيهات الجديدة
     const interval = setInterval(loadUnread, 60000)
     return () => { active = false; clearInterval(interval) }
-  }, [user, token, currentPage])
+  }, [user, currentPage])
 
   useEffect(() => {
     if (typeof document !== 'undefined') {
@@ -346,7 +347,7 @@ export default function AppShell() {
       })
       const data = await res.json()
       if (!res.ok) {
-        setCreateError(data.error || (isAr ? 'فشل إنشاء المستخدم' : 'Failed to create user'))
+        setCreateError(data.message || data.error || (isAr ? 'فشل إنشاء المستخدم' : 'Failed to create user'))
         return
       }
       toast.success(isAr ? 'تم إنشاء المستخدم بنجاح' : 'User created successfully')
@@ -478,7 +479,7 @@ export default function AppShell() {
 
         <div className="p-3 border-t border-sidebar-border">
           {/* v48: علامة الإصدار — إن لم تظهر هنا فالنشر الأخير لم يتم بعد */}
-          <p className="text-center text-[10px] text-muted-foreground/60 select-none">v68</p>
+          <p className="text-center text-[10px] text-muted-foreground/60 select-none">v70</p>
           {/* v48: بطاقة المستخدم قابلة للنقر — تفتح الملف الشخصي */}
           <div className="flex items-center gap-3 p-2 rounded-lg cursor-pointer hover:bg-sidebar-accent transition-colors"
             onClick={function() { setSidebarOpen(false); setCurrentPage('profile') }}
@@ -888,5 +889,6 @@ export default function AppShell() {
     </div>
   )
 }
+
 
 
