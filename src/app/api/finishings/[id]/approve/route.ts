@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
-import { SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
+import { SYSTEM_ADMIN_EMAIL, normalizeRole } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 import { safeDbOp, handleDbError } from '@/lib/api-helpers'
@@ -15,8 +15,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   var isSystemAdmin = (user.email || '').toLowerCase().trim() === SYSTEM_ADMIN_EMAIL
-  var isTopManagement = user.role === 'top_management'
-  var isProjectManager = user.role === 'project_manager'
+  var isTopManagement = normalizeRole(user.role) === 'top_management'
+  var isProjectManager = normalizeRole(user.role) === 'project_manager'
   if (!isSystemAdmin && !isTopManagement && !isProjectManager) {
     return NextResponse.json(
       { error: 'forbidden', message: 'اعتماد أو رفض التشطيبات متاح للإداري أو مدير المشروع أو مدير النظام فقط' },
