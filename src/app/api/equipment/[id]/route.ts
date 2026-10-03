@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 import { getAuthUser } from '@/lib/auth-server'
+import { ensureMediaSupport } from '@/lib/db-selfheal'
 import { db } from '@/lib/db'
-import { handleDbError, safeDbOp } from '@/lib/api-helpers'
+import { handleDbError, safeDbOp, validImageDataUrl } from '@/lib/api-helpers'
 import { canWrite, hasPermission } from '@/lib/auth'
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -32,6 +34,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   try {
     const user = await getAuthUser(req)
     if (!user) return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
+    var rl = checkRateLimit(req, RateLimitPresets.write)
+    if (rl.limited) {
+      return NextResponse.json({ error: 'too_many_requests', message: 'طلبات كثيرة جداً، يرجى الانتظار قليلاً' }, { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } })
+    }
     if (!canWrite(user.role, 'equipment', user.permissions)) {
       return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية لتعديل المعدات' }, { status: 403 })
     }
@@ -69,6 +75,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
           lastMaintenance: body.lastMaintenance ? new Date(body.lastMaintenance) : null,
           nextMaintenance: body.nextMaintenance ? new Date(body.nextMaintenance) : null,
           notes: body.notes ? String(body.notes).slice(0, 2000) : null,
+          image: validImageDataUrl(body.image),
           ...v42ProjectData,
         },
       }),
@@ -97,10 +104,18 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   try {
     const user = await getAuthUser(req)
     if (!user) return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
+    var rl = checkRateLimit(req, RateLimitPresets.write)
+    if (rl.limited) {
+      return NextResponse.json({ error: 'too_many_requests', message: 'طلبات كثيرة جداً، يرجى الانتظار قليلاً' }, { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } })
+    }
     if (!canWrite(user.role, 'equipment', user.permissions)) {
       return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية لحذف المعدات' }, { status: 403 })
     }
     const { id } = await params
+    // v70: فحص الوجود — حذف غير موجود كان يُسقط 500 «قاعدة البيانات غير مهيأة» مضللاً
+    const delTarget = await safeDbOp(() => db.equipment.findUnique({ where: { id }, select: { id: true } }), 'فحص المعدة')
+    if (!delTarget.success) return delTarget.response
+    if (!delTarget.data) return NextResponse.json({ error: 'not_found', message: 'المعدة غير موجودة' }, { status: 404 })
     const result = await safeDbOp(() => db.equipment.delete({ where: { id } }), 'حذف المعدة')
     if (!result.success) return result.response
     return NextResponse.json({ success: true })
