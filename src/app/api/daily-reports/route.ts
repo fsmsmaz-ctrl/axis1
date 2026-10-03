@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 import { getAuthUser } from '@/lib/auth-server'
 import { hasPermission, canWrite, canViewPricing, SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { handleDbError, validateRequired, parseNumber, safeDbOp, parseDateRange, sanitizeDailyReport } from '@/lib/api-helpers'
+import { handleDbError, validateRequired, parseNumber, safeDbOp, parseDateRange, sanitizeDailyReport, recalcProgress } from '@/lib/api-helpers'
 import { notifyUsers } from '@/lib/notify'
 
 export async function GET(req: NextRequest) {
@@ -90,6 +91,10 @@ export async function POST(req: NextRequest) {
 
   if (!user) {
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
+  }
+  var rl = checkRateLimit(req, RateLimitPresets.write)
+  if (rl.limited) {
+    return NextResponse.json({ error: 'too_many_requests', message: 'طلبات كثيرة جداً، يرجى الانتظار قليلاً' }, { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } })
   }
 
   // التقارير اليومية تُنشأ من قسم السلامة — الإنشاء المباشر من هنا لمدير النظام فقط
@@ -294,21 +299,10 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Update drive line progress
+    // v70 FIX: إعادة الحساب القياسية (أقصى قراءة عبر كل التقارير) — الكتابة المباشرة بقراءة
+    // هذا التقرير كانت تُرجع تقدم خط الحفر للخلف عند إدخال تقرير مؤرَّخ أقل قراءة
     if (body.driveLineId) {
-      updatePromises.push(
-        safeDbOp(
-          () => db.driveLine.update({
-            where: { id: body.driveLineId },
-            data: {
-              completedLength: totalMeters,
-              progress: progressPercent,
-              status: progressPercent >= 100 ? 'completed' : 'in_progress',
-            },
-          }),
-          'تحديث تقدم خط الحفر'
-        ).then(() => {})
-      )
+      updatePromises.push(recalcProgress(db, String(body.projectId), String(body.driveLineId)))
     }
 
     // Update project progress
