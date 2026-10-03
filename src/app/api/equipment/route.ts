@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 import { getAuthUser } from '@/lib/auth-server'
+import { ensureMediaSupport } from '@/lib/db-selfheal'
 import { db } from '@/lib/db'
-import { handleDbError, validateRequired, parseNumber, safeDbOp } from '@/lib/api-helpers'
+import { handleDbError, validateRequired, parseNumber, safeDbOp, validImageDataUrl } from '@/lib/api-helpers'
 import { canWrite, hasPermission } from '@/lib/auth'
 
 export async function GET(req: NextRequest) {
+  await ensureMediaSupport()
   try {
     const user = await getAuthUser(req)
     if (!user) return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
@@ -38,6 +41,10 @@ export async function POST(req: NextRequest) {
   try {
     const user = await getAuthUser(req)
     if (!user) return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
+    var rl = checkRateLimit(req, RateLimitPresets.write)
+    if (rl.limited) {
+      return NextResponse.json({ error: 'too_many_requests', message: 'طلبات كثيرة جداً، يرجى الانتظار قليلاً' }, { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } })
+    }
 
     // H-1 FIX: RBAC check
     if (!canWrite(user.role, 'equipment', user.permissions)) {
@@ -62,6 +69,7 @@ export async function POST(req: NextRequest) {
           lastMaintenance: body.lastMaintenance ? new Date(body.lastMaintenance) : null,
           nextMaintenance: body.nextMaintenance ? new Date(body.nextMaintenance) : null,
           notes: body.notes ? String(body.notes) : null,
+          image: validImageDataUrl(body.image),
         },
       }), 'إنشاء المعدة'
     )
