@@ -7,6 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
+import { normalizeRole } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { safeDbOp } from '@/lib/api-helpers'
 
@@ -50,7 +51,7 @@ export async function GET(req: NextRequest) {
   const user = await getAuthUser(req)
   if (!user) return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
   // بوابة سجل التدقيق نفسها: الإدارة العليا ومدير المشاريع فقط
-  if (user.role !== 'top_management' && user.role !== 'project_manager') {
+  if (normalizeRole(user.role) !== 'top_management' && normalizeRole(user.role) !== 'project_manager') {
     return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية عرض تقرير الاستعادة' }, { status: 403 })
   }
 
