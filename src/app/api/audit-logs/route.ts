@@ -1,117 +1,162 @@
+// Login endpoint (POST /api/auth)
+// C-6 FIX: No token in response body — relies on httpOnly cookie only
+// M-6 FIX: Minimum password length 6 (unified with all other routes)
+// C-3 FIX: No default passwords
+
 import { NextRequest, NextResponse } from 'next/server'
-import { getAuthUser } from '@/lib/auth-server'
+import { verifyCredentials, createSession, getCookieOptions, SESSION_COOKIE } from '@/lib/auth-server'
 import { db } from '@/lib/db'
-import { safeDbOp, handleDbError } from '@/lib/api-helpers'
-import { hasPermission, normalizeRole, SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
+import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
+// v50: الشفاء الذاتي على مسار الدخول — انظر الاستدعاء قبل verifyCredentials
+import { ensurePurchasesSupport, ensureHRSupport, ensureMediaSupport } from '@/lib/db-selfheal'
+// v52: إنشاء حساب الزائر تلقائياً عند أول محاولة دخول (قبل verifyCredentials)
+import { ensureVisitorAccount } from '@/lib/db-selfheal'
 
-export async function GET(req: NextRequest) {
-  var user = await getAuthUser(req)
-  if (!user) {
-    return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
-  }
-
-  // v67 REVIEW: البوابة نفسها لقسم «الرقابة العملية» في الواجهة (hasPermission) —
-  // إغلاق الصلاحية من إدارة المستخدمين يغلق السجل فعلاً، والمنح المخصص يفتحه
-  if (!hasPermission(user.role, 'oversight', user.permissions, user.email)) {
-    return NextResponse.json({ error: 'forbidden', message: 'سجل المراقبة متاح فقط للإدارة' }, { status: 403 })
-  }
-
-  var isTopManagement = normalizeRole(user.role) === 'top_management' || user.isSystemAdmin === true ||
-    (user.email || '').toLowerCase().trim() === SYSTEM_ADMIN_EMAIL
-
-  var searchParams = new URL(req.url).searchParams
-  var entity = searchParams.get('entity')
-  var action = searchParams.get('action')
-  var projectId = searchParams.get('projectId')
-  var userId = searchParams.get('userId')
-  var dateFrom = searchParams.get('dateFrom')
-  var dateTo = searchParams.get('dateTo')
-  var page = Math.max(1, parseInt(searchParams.get('page') || '1') || 1)
-  var limit = Math.min(Math.max(1, parseInt(searchParams.get('limit') || '50') || 50), 200)
-
-  var where: any = {}
-  if (entity) where.entity = entity
-  if (action) where.action = action
-  if (projectId) where.projectId = projectId
-  if (userId) where.userId = userId
-
-  // FIX: Non-top_management can only see their own project's logs
-  // SECURITY FIX: كان الفحص شكلياً — يطلب projectId فقط دون التحقق أن المشروع
-  // مُسند لهذا المدير فعلاً، فكان يستطيع قراءة سجلات أي مشروع بمعرفة معرفه
-  if (!isTopManagement) {
-    if (!projectId) {
-      // PM without projectId filter — return empty to avoid leaking other projects
-      return NextResponse.json({ logs: [], total: 0, page, totalPages: 0, entityStats: [], actionStats: [], users: [] })
-    }
-    var ownedProject = await safeDbOp(
-      () => db.project.findUnique({ where: { id: String(projectId) }, select: { managerId: true, engineerId: true } }),
-      'التحقق من ملكية المشروع'
-    )
-    var isProjectOwner = ownedProject.success && ownedProject.data &&
-      (ownedProject.data.managerId === user.id || ownedProject.data.engineerId === user.id)
-    if (!isProjectOwner) {
-      return NextResponse.json({ logs: [], total: 0, page, totalPages: 0, entityStats: [], actionStats: [], users: [] })
-    }
-  }
-
-  if (dateFrom || dateTo) {
-    where.createdAt = {}
-    // v70: حدود اليوم بتوقيت UTC — اتفاقية بقية النظام (كانت منتصف ليل خادم محلي)
-    if (dateFrom) where.createdAt.gte = new Date(dateFrom + 'T00:00:00.000Z')
-    if (dateTo) where.createdAt.lte = new Date(dateTo + 'T23:59:59.999Z')
-  }
-
-  var skip = (page - 1) * limit
-
-  var results = await Promise.all([
-    safeDbOp(
-      () => db.auditLog.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        skip,
-        take: limit,
-        include: { user: { select: { id: true, name: true, nameEn: true, email: true } }, project: { select: { id: true, name: true, code: true } } },
-      }),
-      'جلب سجلات المراقبة'
-    ),
-    safeDbOp(function() { return db.auditLog.count({ where }) }, 'عد سجلات المراقبة'),
-    safeDbOp(
-      // SECURITY FIX: البريد الإلكتروني لأعضاء الفريق لا يُكشف لغير الإدارة العليا
-      () => db.user.findMany({ where: { active: true }, select: { id: true, name: true, nameEn: true, email: isTopManagement }, orderBy: { name: 'asc' } }),
-      'جلب قائمة المستخدمين'
-    ),
+// v56: مهلة قصوى لكل خطوة قاعدة بيانات في الدخول — لو علق الاتصال (مثل مشروع
+// Supabase المتوقف paused أو بطء الشبكة) نرجع رسالة JSON واضحة تحدد السبب،
+// بدل مهلة Netlify (10 ثوانٍ → 504 HTML) التي تصل للواجهة رداً غير JSON
+// فتظهر للمستخدم رسالة «فشل الاتصال بالخادم» المضللة بلا أي تفاصيل.
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>(function (_resolve, reject) {
+      setTimeout(function () { reject(new Error('AXIS_TIMEOUT_' + label)) }, ms)
+    }),
   ])
-
-  if (!results[0].success) return results[0].response
-
-  var logs = results[0].data
-  var total = results[1].success ? results[1].data : 0
-  var users = results[2].success ? results[2].data : []
-
-  var entityStats = [
-    { entity: 'project', ar: 'المشاريع', en: 'Projects', count: logs.filter(function(l: any) { return l.entity === 'project' }).length },
-    { entity: 'daily_report', ar: 'التقارير اليومية', en: 'Daily Reports', count: logs.filter(function(l: any) { return l.entity === 'daily_report' }).length },
-    { entity: 'safety_report', ar: 'تقارير السلامة', en: 'Safety Reports', count: logs.filter(function(l: any) { return l.entity === 'safety_report' }).length },
-    { entity: 'cost', ar: 'التكاليف', en: 'Costs', count: logs.filter(function(l: any) { return l.entity === 'cost' }).length },
-    { entity: 'equipment', ar: 'المعدات', en: 'Equipment', count: logs.filter(function(l: any) { return l.entity === 'equipment' }).length },
-    { entity: 'drive_line', ar: 'خطوط الحفر', en: 'Drive Lines', count: logs.filter(function(l: any) { return l.entity === 'drive_line' }).length },
-    { entity: 'finishing', ar: 'التشطيبات', en: 'Finishings', count: logs.filter(function(l: any) { return l.entity === 'finishing' }).length },
-    // v49: المشتريات وسجلات الملفات الشخصية
-    { entity: 'purchase', ar: 'المشتريات', en: 'Purchases', count: logs.filter(function(l: any) { return l.entity === 'purchase' }).length },
-    { entity: 'user', ar: 'الملفات الشخصية', en: 'User Profiles', count: logs.filter(function(l: any) { return l.entity === 'user' }).length },
-  ]
-
-  var actionStats = [
-    { action: 'create', ar: 'إنشاء', en: 'Create', count: logs.filter(function(l: any) { return l.action === 'create' }).length },
-    { action: 'update', ar: 'تعديل', en: 'Update', count: logs.filter(function(l: any) { return l.action === 'update' }).length },
-    { action: 'delete', ar: 'حذف', en: 'Delete', count: logs.filter(function(l: any) { return l.action === 'delete' }).length },
-    { action: 'approve', ar: 'اعتماد', en: 'Approve', count: logs.filter(function(l: any) { return l.action === 'approve' }).length },
-  ]
-
-  return NextResponse.json({
-    logs, total, page,
-    totalPages: Math.ceil(total / limit),
-    entityStats, actionStats, users,
-  })
 }
 
+function isTimeoutErr(e: unknown): boolean {
+  return !!e && String((e as { message?: string }).message || '').indexOf('AXIS_TIMEOUT_') === 0
+}
+
+export async function POST(req: NextRequest) {
+  var rl = checkRateLimit(req, RateLimitPresets.auth)
+  if (rl.limited) {
+    return NextResponse.json(
+      { error: 'too_many_requests', message: 'محاولات تسجيل دخول كثيرة جداً، يرجى الانتظار قليلاً' },
+      { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } }
+    )
+  }
+
+  try {
+    var body = await req.json()
+    var email = body.email
+    var password = body.password
+
+    if (!email || !password) {
+      return NextResponse.json(
+        { error: 'missing_fields', message: 'البريد الإلكتروني وكلمة المرور مطلوبان' },
+        { status: 400 }
+      )
+    }
+
+    var emailStr = String(email).toLowerCase().trim()
+    var emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(emailStr)) {
+      return NextResponse.json(
+        { error: 'invalid_input', message: 'صيغة البريد الإلكتروني غير صحيحة' },
+        { status: 400 }
+      )
+    }
+
+    // FIX-3.1: Unified minimum 6 characters (was 4, inconsistent with user creation routes)
+    if (String(password).length < 6) {
+      return NextResponse.json(
+        { error: 'missing_fields', message: 'كلمة المرور قصيرة جداً (6 أحرف على الأقل)' },
+        { status: 400 }
+      )
+    }
+
+    // v56: فحص قاعدة البيانات بمهلة 3.5 ثوانٍ — التعليق يعطي رسالة صريحة فورية
+    try {
+      await withTimeout(db.$queryRaw`SELECT 1`, 3500, 'DB_PING')
+    } catch (dbErr) {
+      console.error('Database connection failed during login:', dbErr)
+      return NextResponse.json(
+        {
+          error: 'database_error',
+          message: isTimeoutErr(dbErr)
+            ? 'قاعدة البيانات لا تستجيب (تجاوزت المهلة). افتح لوحة Supabase وتحقق من أن المشروع نشط — المشاريع المجانية تتوقف تلقائياً بعد أسبوع من عدم الاستخدام، اضغط Resume لاستئنافها.'
+            : 'فشل الاتصال بقاعدة البيانات. يرجى المحاولة لاحقاً.',
+        },
+        { status: 503 }
+      )
+    }
+
+    // v50: شفاء ذاتي قبل التحقق من بيانات الدخول — أعمدة/جداول v48 (points/Purchase)
+    // قد لا تكون مطبقة لأن Netlify لا يشغّل prisma migrate deploy (درس v44)،
+    // وfindUnique يقرأ كل أعمدة النموذج فيفشل الدخول بـ P2022 إن نقص عمود واحد.
+    // v56: الشفاء الذاتي الثلاثة بالتوازي مع مهلة مشتركة — تعليق الشفاء لا يمنع الدخول
+    // (الأعمدة الحرجة موجودة غالباً، والشفاء يُعاد في الطلب التالي تلقائياً)
+    try {
+      await withTimeout(
+        Promise.all([
+          ensurePurchasesSupport(),
+          ensureVisitorAccount(),
+          ensureHRSupport(),
+          ensureMediaSupport(),
+        ]),
+        3000,
+        'SELF_HEAL'
+      )
+    } catch (healErr) {
+      console.error('Login self-heal timeout/error (continuing with login):', healErr)
+    }
+
+    // v56: التحقق من بيانات الدخول بمهلة 4.5 ثانية — bcrypt + جلب المستخدم
+    var user: Awaited<ReturnType<typeof verifyCredentials>>
+    try {
+      user = await withTimeout(verifyCredentials(emailStr, password), 4500, 'VERIFY')
+    } catch (verifyErr) {
+      console.error('Login verify failed:', verifyErr)
+      return NextResponse.json(
+        {
+          error: 'database_error',
+          message: isTimeoutErr(verifyErr)
+            ? 'التحقق من بيانات الدخول تجاوز المهلة — قاعدة البيانات بطيئة أو متوقفة. حاول مجدداً أو افحص لوحة Supabase.'
+            : 'حدث خطأ أثناء التحقق من بيانات الدخول. يرجى المحاولة مرة أخرى.',
+        },
+        { status: 503 }
+      )
+    }
+    if (!user) {
+      return NextResponse.json(
+        { error: 'invalidCredentials', message: 'البريد الإلكتروني أو كلمة المرور غير صحيحة' },
+        { status: 401 }
+      )
+    }
+
+    // v56: إنشاء الجلسة بمهلة — فشل JWT_SECRET يعطي رسالة صريحة بدل انهيار عام
+    var token: string
+    try {
+      token = await withTimeout(createSession(user), 2000, 'JWT')
+    } catch (jwtErr) {
+      console.error('createSession failed during login:', jwtErr)
+      return NextResponse.json(
+        {
+          error: 'internal_error',
+          message: 'تعذر إنشاء الجلسة (JWT). راجع متغير البيئة JWT_SECRET في إعدادات Netlify (لا بد أن يكون 32 حرفاً على الأقل).',
+        },
+        { status: 500 }
+      )
+    }
+
+    // v56: تحديث طابع آخر دخول دون انتظار — لا يحبس الاستجابة إن كانت قاعدة
+    // البيانات بطيئة (غير حرج — مجرد طابع updatedAt)
+    db.user
+      .update({ where: { id: user.id }, data: { updatedAt: new Date() } })
+      .catch(function () {})
+
+    // C-6 FIX: Do NOT return token in body — it's in httpOnly cookie only
+    var response = NextResponse.json({ user })
+    response.cookies.set(SESSION_COOKIE, token, getCookieOptions())
+
+    return response
+  } catch (error) {
+    console.error('Login error:', error)
+    return NextResponse.json(
+      { error: 'internal_error', message: 'حدث خطأ أثناء تسجيل الدخول. يرجى المحاولة مرة أخرى.' },
+      { status: 500 }
+    )
+  }
+}
