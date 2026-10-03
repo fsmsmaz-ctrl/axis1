@@ -75,7 +75,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         updateData.pricePerMeter = newPrice
       }
     }
-    if (body.status !== undefined) updateData.status = String(body.status)
+    // v70: قائمة سماح للحالة
+    var VALID_LINE_STATUS_ID = ['not_started', 'in_progress', 'completed', 'suspended']
+    if (body.status !== undefined) updateData.status = VALID_LINE_STATUS_ID.includes(String(body.status)) ? String(body.status) : undefined
     if (body.problems !== undefined) updateData.problems = body.problems ? String(body.problems) : null
 
     var updateResult = await safeDbOp(
