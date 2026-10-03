@@ -74,7 +74,10 @@ export function parseDay(s: any): Date | null {
   var y = Number(m[1]), mo = Number(m[2]), d = Number(m[3])
   if (mo < 1 || mo > 12 || d < 1 || d > 31) return null
   var dt = new Date(Date.UTC(y, mo - 1, d))
-  return isNaN(dt.getTime()) ? null : dt
+  if (isNaN(dt.getTime())) return null
+  // v70: فحص الارتداد — 2025-02-31 تمر فحص المجال ثم تتراجع قسرياً إلى 2 مارس
+  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== d) return null
+  return dt
 }
 
 // ── مفتاح اليوم: عدد الأيام منذ البداية (للمقارنات ومفاتيح العطلات) ──
