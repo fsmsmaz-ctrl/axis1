@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { safeDbOp, handleDbError, validateRequired, parseNumber, parseDate, buildAuditDetails, sanitizeProject } from '@/lib/api-helpers'
-import { canWrite, hasPermission, canViewPricing } from '@/lib/auth'
+import { canWrite, hasPermission, canViewPricing, normalizeRole } from '@/lib/auth'
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -87,7 +88,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     }
 
     return NextResponse.json({
-      project: { ...project, totalMetersDrilled: totalMeters, totalRevenue: canSeePrice ? totalRevenue : null, totalCost, netProfit: canSeePrice ? (totalRevenue - totalCost) : null },
+      project: { ...project, totalMetersDrilled: totalMeters, totalRevenue: canSeePrice ? totalRevenue : null, totalCost: canSeePrice ? totalCost : null, netProfit: canSeePrice ? (totalRevenue - totalCost) : null },
     })
   } catch (error) {
     return handleDbError(error, 'جلب المشروع')
@@ -99,6 +100,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     const user = await getAuthUser(req)
     if (!user) {
       return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
+    }
+    var rl = checkRateLimit(req, RateLimitPresets.write)
+    if (rl.limited) {
+      return NextResponse.json({ error: 'too_many_requests', message: 'طلبات كثيرة جداً، يرجى الانتظار قليلاً' }, { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } })
     }
 
     // FIX: Use centralized RBAC
@@ -193,8 +198,12 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     if (!user) {
       return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
     }
+    var rl = checkRateLimit(req, RateLimitPresets.write)
+    if (rl.limited) {
+      return NextResponse.json({ error: 'too_many_requests', message: 'طلبات كثيرة جداً، يرجى الانتظار قليلاً' }, { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } })
+    }
 
-    if (user.role !== 'top_management') {
+    if (normalizeRole(user.role) !== 'top_management') {
       return NextResponse.json({ error: 'forbidden', message: 'حذف المشاريع متاح فقط للإدارة العليا' }, { status: 403 })
     }
 
