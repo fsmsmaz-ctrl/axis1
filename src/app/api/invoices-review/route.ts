@@ -32,12 +32,19 @@ export async function GET(req: NextRequest) {
     var purchases = await db.purchase.findMany({
       where: { status: { not: 'draft' } },
       orderBy: { submittedAt: 'desc' },
+      // v70: سقف حمولة — قائمة المراجعة تصل 6MB لكل صورة
+      take: 300,
       include: {
         user: { select: { id: true, name: true, nameEn: true, role: true } },
         project: { select: { id: true, name: true } },
         reviewedBy: { select: { id: true, name: true, nameEn: true } },
         cost: { select: { id: true, category: true } },
       },
+    })
+    // v70: صور الفواتير تُرسل للطلبات المعلقة فقط — بعد البت تبقى الصورة في ملف صاحبها
+    purchases = purchases.map(function(p) {
+      if (p.status !== 'submitted' && p.invoiceImage) return Object.assign({}, p, { invoiceImage: null })
+      return p
     })
     // المرسلة أولاً ثم المعتمدة/المرفوضة
     purchases.sort(function(a, b) {
@@ -130,21 +137,28 @@ export async function POST(req: NextRequest) {
     // المشروع: يختاره المراجع عند الاعتماد (اختياري) — وإلا يبقى «بدون مشروع»
     var projectId = body.projectId ? String(body.projectId) : (purchase.projectId || null)
 
-    var cost = await db.cost.create({
-      data: {
-        projectId: projectId,
-        date: new Date(),
-        category: category,
-        description: ('شراء: ' + purchase.title).slice(0, 1000),
-        amount: purchase.amount,
-        notes: ('فاتورة مشتريات معتمدة — سُجلت تلقائياً من مراجعة الفواتير').slice(0, 2000),
-        recordedById: user.id,
-      },
+    // v70: التسجيل والبت في معاملة واحدة — فشل ما بعد إنشاء التكلفة كان يسمح بفاتورة مزدوجة عند إعادة المحاولة
+    var apUserId = user.id, apPurchaseId = purchase.id, apTitle = purchase.title, apAmount = purchase.amount
+    var txResult = await db.$transaction(async function (tx) {
+      var cost = await tx.cost.create({
+        data: {
+          projectId: projectId,
+          date: new Date(),
+          category: category,
+          description: ('شراء: ' + apTitle).slice(0, 1000),
+          amount: apAmount,
+          notes: ('فاتورة مشتريات معتمدة — سُجلت تلقائياً من مراجعة الفواتير').slice(0, 2000),
+          recordedById: apUserId,
+        },
+      })
+      var updated = await tx.purchase.update({
+        where: { id: apPurchaseId },
+        data: { status: 'approved', reviewNote: note, reviewedById: apUserId, reviewedAt: new Date(), costId: cost.id },
+      })
+      return { approved: updated, costId: cost.id }
     })
-    var approved = await db.purchase.update({
-      where: { id: purchase.id },
-      data: { status: 'approved', reviewNote: note, reviewedById: user.id, reviewedAt: new Date(), costId: cost.id },
-    })
+    var approved = txResult.approved
+    var approvedCostId = txResult.costId
     try {
       await db.notification.create({
         data: {
@@ -180,7 +194,7 @@ export async function POST(req: NextRequest) {
       severity: 'info',
       link: 'dashboard', entityType: 'purchase', entityId: purchase.id,
     })
-    return NextResponse.json({ ok: true, purchase: approved, costId: cost.id })
+    return NextResponse.json({ ok: true, purchase: approved, costId: approvedCostId })
   } catch (e) {
     console.error('v48 invoices-review POST failed:', e)
     return NextResponse.json({ error: 'database_error', message: 'فشل تسجيل المراجعة' }, { status: 500 })
