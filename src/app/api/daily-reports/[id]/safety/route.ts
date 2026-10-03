@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 import { getAuthUser } from '@/lib/auth-server'
 import { hasPermission, canWrite } from '@/lib/auth'
 import { db } from '@/lib/db'
@@ -38,6 +39,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+  var rl = checkRateLimit(req, RateLimitPresets.write)
+  if (rl.limited) {
+    return NextResponse.json({ error: 'too_many_requests', message: 'طلبات كثيرة جداً، يرجى الانتظار قليلاً' }, { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } })
   }
 
   // v23: حفظ السلامة متاح لمسؤولي السلامة وأي موظف مصرّح له بتعديل التقارير اليومية
@@ -95,7 +100,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       fireExtinguishers: !!body.fireExtinguishers,
       workPermit: !!body.workPermit,
       toolboxTalk: !!body.toolboxTalk,
-      hazards: body.hazards || '[]',
+      hazards: typeof body.hazards === 'string' && body.hazards.length <= 20000 ? body.hazards : '[]',
       observations: body.observations ? String(body.observations).slice(0, 5000) : null,
       violations: body.violations ? String(body.violations).slice(0, 5000) : null,
       incidentType: incidentType,
