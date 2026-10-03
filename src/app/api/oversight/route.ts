@@ -33,7 +33,7 @@ import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { safeDbOp } from '@/lib/api-helpers'
 import { OVERSIGHT_NOTIFICATION_TYPES, isOversightViewer } from '@/lib/oversight'
-import { SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
+import { SYSTEM_ADMIN_EMAIL, normalizeRole } from '@/lib/auth'
 
 // الحالات المفتوحة = كل ما ليس مغلقاً أو ملغى
 const OPEN_STATUS = { status: { notIn: ['closed', 'cancelled'] } }
@@ -66,7 +66,7 @@ export async function GET(req: NextRequest) {
   }
 
   var isTop =
-    user.role === 'top_management' ||
+    normalizeRole(user.role) === 'top_management' ||
     user.isSystemAdmin === true ||
     (user.email || '').toLowerCase().trim() === SYSTEM_ADMIN_EMAIL
 
