@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { handleDbError, safeDbOp } from '@/lib/api-helpers'
+import { normalizeRole } from '@/lib/auth'
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   var user = await getAuthUser(req)
@@ -17,7 +18,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!notifResult.data) return NextResponse.json({ error: 'not_found', message: 'التنبيه غير موجود' }, { status: 404 })
 
   // FIX: Use role check instead of email comparison
-  if (notifResult.data.userId && notifResult.data.userId !== user.id && user.role !== 'top_management') {
+  if (notifResult.data.userId && notifResult.data.userId !== user.id && normalizeRole(user.role) !== 'top_management') {
     return NextResponse.json({ error: 'forbidden', message: 'لا يمكنك تعديل تنبيهات مستخدم آخر' }, { status: 403 })
   }
 
