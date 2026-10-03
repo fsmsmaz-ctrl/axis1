@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { handleDbError } from '@/lib/api-helpers'
+import { normalizeRole } from '@/lib/auth'
 
 export async function GET(req: NextRequest) {
   const me = await getAuthUser(req)
   if (!me) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
-  if (me.role !== 'top_management') return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+  if (normalizeRole(me.role) !== 'top_management') return NextResponse.json({ error: 'forbidden' }, { status: 403 })
 
   try {
     const users = await db.user.findMany({
