@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { handleDbError, validateRequired, parseNumber, safeDbOp, sanitizeDriveLine } from '@/lib/api-helpers'
@@ -87,10 +88,16 @@ export async function GET(req: NextRequest) {
   }
 }
 
+var VALID_LINE_STATUS_CREATE = ['not_started', 'in_progress', 'completed', 'suspended']
+
 export async function POST(req: NextRequest) {
   try {
     const user = await getAuthUser(req)
     if (!user) return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
+    var rl = checkRateLimit(req, RateLimitPresets.write)
+    if (rl.limited) {
+      return NextResponse.json({ error: 'too_many_requests', message: 'طلبات كثيرة جداً، يرجى الانتظار قليلاً' }, { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } })
+    }
 
     if (!canWrite(user.role, 'drive_lines', user.permissions)) {
       return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية لإنشاء خطوط حفر' }, { status: 403 })
@@ -107,7 +114,7 @@ export async function POST(req: NextRequest) {
           startPoint: String(body.startPoint).trim(), endPoint: String(body.endPoint).trim(),
           totalLength: parseNumber(body.totalLength, 0), diameter: String(body.diameter),
           pipeType: String(body.pipeType), soilType: String(body.soilType),
-          depth: parseNumber(body.depth, 0), status: String(body.status || 'not_started'),
+          depth: parseNumber(body.depth, 0), status: VALID_LINE_STATUS_CREATE.includes(String(body.status || 'not_started')) ? String(body.status || 'not_started') : 'not_started',
           // v13: سعر المتر الخاص بهذا الخط (فارغ = بدون سعر حتى إدخاله)
           // v14.2 SECURITY: السعر يُقبل فقط من الإدارة العليا ومدير المشروع
           // (canViewPricing يستثني المشرف العام) — غيرهم يُنشأ الخط بلا سعر
