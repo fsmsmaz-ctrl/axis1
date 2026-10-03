@@ -9,7 +9,7 @@ import { VALID_ROLES, normalizeRole, SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
 // FIX-3.2: Removed hardcoded ADMIN_EMAIL — now uses role-based check
 
 var ALL_PERMISSIONS = [
-  'projects', 'drive_lines', 'daily_reports', 'safety', 'equipment', 'costs', 'finishings', 'tasks', 'performance', 'notifications',
+  'projects', 'drive_lines', 'daily_reports', 'safety', 'equipment', 'costs', 'finishings', 'tasks', 'performance', 'notifications', 'oversight',
   'rpt_daily_site', 'rpt_production', 'rpt_safety', 'rpt_attendance',
   'rpt_revenue', 'rpt_costs', 'rpt_profit', 'rpt_equipment',
   'rpt_weekly', 'rpt_monthly', 'rpt_handover',
