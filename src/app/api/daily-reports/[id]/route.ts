@@ -45,7 +45,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   }
 
   // v14.2 SECURITY: الإيراد اليومي مشتق من سعر المتر السري — يُحذف لغير المصرح لهم
-  return NextResponse.json({ report: sanitizeDailyReport(result.data, canViewPricing(user)) })
+  var report = sanitizeDailyReport(result.data, canViewPricing(user))
+  // v70 SECURITY: تكاليف التقرير المرفقة بيانات مالية — تُفرَّغ عن من لا يملك صلاحية التكاليف
+  if (!hasPermission(user.role, 'costs', user.permissions, user.email)) report.costs = []
+  return NextResponse.json({ report })
 }
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -287,7 +290,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     ).catch(function() {})
 
     // v14.2 SECURITY: الرد مُعقّم — لا إيراد لمستخدم غير مصرح له
-    return NextResponse.json({ report: sanitizeDailyReport(updateResult.data, canViewPricing(user)) })
+    var report = sanitizeDailyReport(updateResult.data, canViewPricing(user))
+    // v70: نفس بوابة التكاليف على استجابة التعديل
+    if (!hasPermission(user.role, 'costs', user.permissions, user.email)) report.costs = []
+    return NextResponse.json({ report })
   } catch (error) {
     return handleDbError(error, 'تحديث التقرير اليومي')
   }
