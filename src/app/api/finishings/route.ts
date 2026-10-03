@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
+import { ensureMediaSupport } from '@/lib/db-selfheal'
 import { db } from '@/lib/db'
 import { handleDbError, validateRequired, safeDbOp, parseDateRange } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
@@ -7,6 +8,7 @@ import { canWrite, hasPermission } from '@/lib/auth'
 import { notifyUsers } from '@/lib/notify'
 
 export async function GET(req: NextRequest) {
+  await ensureMediaSupport()
   try {
     const user = await getAuthUser(req)
     if (!user) return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
@@ -59,9 +61,12 @@ export async function POST(req: NextRequest) {
     const validationError = validateRequired(body, ['projectId', 'date'])
     if (validationError) return validationError
 
+    // v70: قائمة سماح — نسخة PUT تحصّنت سابقاً ونسيتها نسخة الإنشاء
+    var VALID_HANDOVER_CREATE = ['pending', 'accepted', 'needs_revision', 'rejected']
+    var safeHandoverStatus = VALID_HANDOVER_CREATE.includes(String(body.handoverStatus || 'pending')) ? String(body.handoverStatus || 'pending') : 'pending'
     const createResult = await safeDbOp(
       () => db.finishing.create({
-        data: { projectId: String(body.projectId), driveLineId: body.driveLineId || null, date: new Date(body.date), siteCleaned: !!body.siteCleaned, wasteRemoved: !!body.wasteRemoved, shaftClosed: !!body.shaftClosed, siteRestored: !!body.siteRestored, lineHandover: !!body.lineHandover, casingSpacer: !!body.casingSpacer, clientNotes: body.clientNotes ? String(body.clientNotes) : null, handoverStatus: String(body.handoverStatus || 'pending'), status: 'draft', submittedById: user.id, signedBy: user.name, signedById: user.id, signedAt: new Date() },
+        data: { projectId: String(body.projectId), driveLineId: body.driveLineId || null, date: new Date(body.date), siteCleaned: !!body.siteCleaned, wasteRemoved: !!body.wasteRemoved, shaftClosed: !!body.shaftClosed, siteRestored: !!body.siteRestored, lineHandover: !!body.lineHandover, casingSpacer: !!body.casingSpacer, clientNotes: body.clientNotes ? String(body.clientNotes) : null, handoverStatus: safeHandoverStatus, status: 'draft', submittedById: user.id, signedBy: user.name, signedById: user.id, signedAt: new Date() },
       }), 'إنشاء التشطيب'
     )
     if (!createResult.success) return createResult.response
