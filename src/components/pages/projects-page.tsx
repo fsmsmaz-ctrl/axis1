@@ -19,7 +19,7 @@ import {
 import { Plus, Search, FolderKanban, MapPin, Calendar, DollarSign, Edit, Trash2, Eye, Users } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch, apiRequest, getErrorMessage } from '@/lib/api-client'
-import { canViewPricing } from '@/lib/auth'
+import { canViewPricing, canWrite } from '@/lib/auth'
 import { toast } from 'sonner'
 
 const workTypeLabels: Record<string, { ar: string; en: string }> = {
@@ -54,6 +54,9 @@ export default function ProjectsPage() {
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const language = useAppStore((s) => s.language)
   const token = useAppStore((s) => s.token)
+  // v70: أزرار الإنشاء/التعديل/الحذف كانت ظاهرة لأدوار يرفضها الخادم (403)
+  const v70User = useAppStore((s) => s.user)
+  const canWriteProject = !!v70User && canWrite(v70User.role, 'projects', v70User.permissions)
   const isRtl = language === 'ar'
 
   const [formData, setFormData] = useState({
@@ -162,6 +165,12 @@ export default function ProjectsPage() {
       toast.success(isRtl ? 'تم الحذف' : 'Deleted')
       setDeleteId(null)
       fetchProjects()
+    } else {
+      // v70: فشل الحذف كان يترك الحوار مفتوحاً بلا أي رسالة
+      let msg = isRtl ? 'فشل الحذف' : 'Delete failed'
+      try { const d = await res.json(); if (d && d.message) msg = d.message } catch {}
+      toast.error(msg)
+      setDeleteId(null)
     }
   }
 
@@ -179,10 +188,12 @@ export default function ProjectsPage() {
             {isRtl ? `${projects.length} مشروع` : `${projects.length} projects`}
           </p>
         </div>
-        <Button onClick={openCreate}>
-          <Plus className="h-4 w-4 ml-2" />
-          {isRtl ? 'مشروع جديد' : 'New Project'}
-        </Button>
+        {canWriteProject && (
+          <Button onClick={openCreate}>
+            <Plus className="h-4 w-4 ml-2" />
+            {isRtl ? 'مشروع جديد' : 'New Project'}
+          </Button>
+        )}
       </div>
 
       {/* Filters */}
@@ -284,12 +295,16 @@ export default function ProjectsPage() {
                       <Eye className="h-4 w-4 ml-1" />
                       {isRtl ? 'عرض' : 'View'}
                     </Button>
-                    <Button variant="outline" size="sm" onClick={() => openEdit(p)}>
-                      <Edit className="h-4 w-4" />
-                    </Button>
-                    <Button variant="outline" size="sm" className="text-destructive" onClick={() => setDeleteId(p.id)}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    {canWriteProject && (
+                      <Button variant="outline" size="sm" onClick={() => openEdit(p)}>
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                    )}
+                    {canWriteProject && (
+                      <Button variant="outline" size="sm" className="text-destructive" onClick={() => setDeleteId(p.id)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
                   </div>
                 </CardContent>
               </Card>
