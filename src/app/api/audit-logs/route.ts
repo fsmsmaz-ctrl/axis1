@@ -56,12 +56,9 @@ export async function GET(req: NextRequest) {
 
   if (dateFrom || dateTo) {
     where.createdAt = {}
-    if (dateFrom) where.createdAt.gte = new Date(dateFrom)
-    if (dateTo) {
-      var d = new Date(dateTo)
-      d.setHours(23, 59, 59, 999)
-      where.createdAt.lte = d
-    }
+    // v70: حدود اليوم بتوقيت UTC — اتفاقية بقية النظام (كانت منتصف ليل خادم محلي)
+    if (dateFrom) where.createdAt.gte = new Date(dateFrom + 'T00:00:00.000Z')
+    if (dateTo) where.createdAt.lte = new Date(dateTo + 'T23:59:59.999Z')
   }
 
   var skip = (page - 1) * limit
