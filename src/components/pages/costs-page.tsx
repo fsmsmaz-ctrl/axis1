@@ -18,7 +18,7 @@ import {
 import { Plus, DollarSign, TrendingUp, TrendingDown, Wallet, BarChart3, Search, FileText, Filter, History } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
-import { SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
+import { SYSTEM_ADMIN_EMAIL, canViewPricing } from '@/lib/auth'
 import { toast } from 'sonner'
 
 const categoryLabels: Record<string, { ar: string; en: string }> = {
@@ -70,6 +70,8 @@ export default function CostsPage() {
   const user = useAppStore((s) => s.user)
   // v31: الاسترجاع لمدير النظام فقط
   const isAdmin = ((user && user.email) || '').toLowerCase().trim() === SYSTEM_ADMIN_EMAIL
+  // v70: الإيراد يُحسب من dailyRevenue الذي يفرغه الخادم لغير المصرح لهم — البطاقات كانت تعرض أرقاماً خاطئة (صفر/خسارة وهمية) بدل إخفائها
+  const seePricing = !!(user && canViewPricing(user))
 
   const [revenue, setRevenue] = useState(0)
   const [approvedReports, setApprovedReports] = useState<any[]>([])
@@ -382,6 +384,7 @@ export default function CostsPage() {
 
       {/* Summary Cards - Modern Design */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {seePricing && (
         <Card className="border-0 shadow-sm bg-gradient-to-br from-emerald-500 to-emerald-600 text-white">
           <CardContent className="p-4">
             <div className="flex items-center gap-2 mb-2">
@@ -399,6 +402,7 @@ export default function CostsPage() {
             </p>
           </CardContent>
         </Card>
+        )}
         <Card className="border-0 shadow-sm bg-gradient-to-br from-rose-500 to-rose-600 text-white">
           <CardContent className="p-4">
             <div className="flex items-center gap-2 mb-2">
@@ -418,6 +422,7 @@ export default function CostsPage() {
             )}
           </CardContent>
         </Card>
+        {seePricing && (
         <Card className={"border-0 shadow-sm bg-gradient-to-br text-white " + (netProfit >= 0 ? 'from-blue-500 to-blue-600' : 'from-red-500 to-red-600')}>
           <CardContent className="p-4">
             <div className="flex items-center gap-2 mb-2">
@@ -432,6 +437,8 @@ export default function CostsPage() {
             </p>
           </CardContent>
         </Card>
+        )}
+        {seePricing && (
         <Card className="border-0 shadow-sm bg-gradient-to-br from-violet-500 to-violet-600 text-white">
           <CardContent className="p-4">
             <div className="flex items-center gap-2 mb-2">
@@ -446,6 +453,7 @@ export default function CostsPage() {
             </p>
           </CardContent>
         </Card>
+        )}
       </div>
 
       {/* Project Filter */}
