@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { normalizeRole } from '@/lib/auth'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { checkRateLimit } from '@/lib/rate-limit'
@@ -31,7 +32,7 @@ export async function POST(req: NextRequest) {
   }
 
   var isSystemAdmin = (user.email || '').toLowerCase().trim() === 'admin@axis.om'
-  if (user.role !== 'top_management' && !isSystemAdmin) {
+  if (normalizeRole(user.role) !== 'top_management' && !isSystemAdmin) {
     return NextResponse.json({ error: 'forbidden', message: 'تطبيق الترقية متاح للإدارة العليا فقط' }, { status: 403 })
   }
 
