@@ -1,13 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { handleDbError, validateRequired, parseNumber, parseDate, safeDbOp, sanitizeProject } from '@/lib/api-helpers'
-import { canWrite, canViewPricing } from '@/lib/auth'
+import { canWrite, canViewPricing, normalizeRole } from '@/lib/auth'
+
+var VALID_PROJECT_STATUS_CREATE = ['not_started', 'in_progress', 'suspended', 'completed']
 
 export async function POST(req: NextRequest) {
   const user = await getAuthUser(req)
   if (!user) {
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول أولاً' }, { status: 401 })
+  }
+  var rl = checkRateLimit(req, RateLimitPresets.write)
+  if (rl.limited) {
+    return NextResponse.json({ error: 'too_many_requests', message: 'طلبات كثيرة جداً، يرجى الانتظار قليلاً' }, { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } })
   }
 
   // H-1 FIX: Check RBAC
@@ -45,8 +52,8 @@ export async function POST(req: NextRequest) {
             ? parseNumber(body.pricePerMeter, 0)
             : null, 
           soilType: String(body.soilType),
-          startDate, expectedEnd, status: String(body.status || 'not_started'),
-          progress: 0, managerId: user.role === 'project_manager' ? user.id : (body.managerId || null),
+          startDate, expectedEnd, status: VALID_PROJECT_STATUS_CREATE.includes(String(body.status || 'not_started')) ? String(body.status || 'not_started') : 'not_started',
+          progress: 0, managerId: normalizeRole(user.role) === 'project_manager' ? user.id : (body.managerId || null),
           engineerId: body.engineerId || null, notes: body.notes ? String(body.notes) : null,
         },
       }),
