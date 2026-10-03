@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
-import { handleDbError, validateRequired, parseNumber, safeDbOp } from '@/lib/api-helpers'
+import { handleDbError, validateRequired, parseNumber, safeDbOp, validImageDataUrl } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
-import { canWrite, hasPermission } from '@/lib/auth'
-import { ensureCompanyAssetFk, ensureCompanyAssetRestoreMeta } from '@/lib/db-selfheal'
+import { canWrite, hasPermission, normalizeRole } from '@/lib/auth'
+import { ensureCompanyAssetFk, ensureCompanyAssetRestoreMeta, ensureMediaSupport } from '@/lib/db-selfheal'
 
 export async function GET(req: NextRequest) {
   const user = await getAuthUser(req)
@@ -68,7 +68,7 @@ export async function POST(req: NextRequest) {
     // v43: الاستعادة تحافظ على هوية الأصل الأصلي — نفس تاريخ التسجيل واسم منشئه الأصلي،
     // ومن أجرى الاستعادة يُسجَّل في حقول منفصلة (restoredBy/restoredAt) لا تحل محل المنشئ الأصلي أبداً.
     var restoreMeta: { createdAt: Date; createdById: string | null } | null = null
-    var isRestorer = user.role === 'top_management' || user.role === 'project_manager' || user.isSystemAdmin === true
+    var isRestorer = normalizeRole(user.role) === 'top_management' || normalizeRole(user.role) === 'project_manager' || user.isSystemAdmin === true
     if (isRestorer && body.restore && typeof body.restore === 'object') {
       var origDate = new Date(String(body.restore.originalCreatedAt || ''))
       if (!isNaN(origDate.getTime()) && origDate.getTime() < Date.now()) {
@@ -83,10 +83,12 @@ export async function POST(req: NextRequest) {
 
     // v44: شفاء ذاتي قبل الإنشاء — الأعمدة restoredById/restoredAt يجب أن تكون موجودة
     await ensureCompanyAssetRestoreMeta()
+    // v70: عمود الصورة إن لم يوجد
+    await ensureMediaSupport()
 
     const createResult = await safeDbOp(
       () => db.companyAsset.create({
-        data: { projectId: body.projectId || null, name: String(body.name).trim(), itemType: String(body.itemType), quantity: parseInt(body.quantity) || 1, ownership: String(body.ownership), supplier: body.supplier ? String(body.supplier).trim() : null, rentalCost: body.rentalCost ? parseFloat(body.rentalCost) : null, rentalStart: body.rentalStart ? new Date(body.rentalStart) : null, rentalEnd: body.rentalEnd ? new Date(body.rentalEnd) : null, responsibleId: body.responsibleId || null, status: String(body.status || 'available'), notes: body.notes ? String(body.notes) : null, createdAt: restoreMeta ? restoreMeta.createdAt : undefined, createdById: restoreMeta ? restoreMeta.createdById : user.id, restoredById: restoreMeta ? user.id : null, restoredAt: restoreMeta ? new Date() : null },
+        data: { projectId: body.projectId || null, name: String(body.name).trim(), itemType: String(body.itemType), quantity: parseInt(body.quantity) || 1, ownership: String(body.ownership), supplier: body.supplier ? String(body.supplier).trim() : null, rentalCost: body.rentalCost ? parseFloat(body.rentalCost) : null, rentalStart: body.rentalStart ? new Date(body.rentalStart) : null, rentalEnd: body.rentalEnd ? new Date(body.rentalEnd) : null, responsibleId: body.responsibleId || null, status: String(body.status || 'available'), notes: body.notes ? String(body.notes) : null, createdAt: restoreMeta ? restoreMeta.createdAt : undefined, createdById: restoreMeta ? restoreMeta.createdById : user.id, restoredById: restoreMeta ? user.id : null, restoredAt: restoreMeta ? new Date() : null, image: validImageDataUrl(body.image) },
         include: { createdBy: { select: { id: true, name: true } }, restoredBy: { select: { id: true, name: true } } },
       }), 'إنشاء الأصل'
     )
