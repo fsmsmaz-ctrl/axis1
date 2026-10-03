@@ -3,6 +3,13 @@
 
 import { NextResponse } from 'next/server'
 
+// v70: فاحص صور base64 الموحد — نفس قواعد فواتير المشتريات (نوع + حجم 4MB)
+export function validImageDataUrl(v: unknown): string | null {
+  if (!v) return null
+  var s = String(v)
+  return (/^data:image\/(png|jpeg|jpg|webp);base64,/.test(s) && s.length <= 4000000) ? s : null
+}
+
 export interface ApiError {
   error: string
   message: string
