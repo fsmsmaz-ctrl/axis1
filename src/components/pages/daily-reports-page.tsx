@@ -98,7 +98,7 @@ export default function DailyReportsPage() {
   const [editingStatus, setEditingStatus] = useState<string>('draft')
   const [saveMode, setSaveMode] = useState<'draft' | 'submit'>('draft')
   const language = useAppStore((s) => s.language)
-  const token = useAppStore((s) => s.token)
+  // v70: كان الرمز من v64 يبقى null دائماً — البوابة كانت تمنع التحميل الأولي نهائياً
   const user = useAppStore((s) => s.user)
   const isRtl = language === 'ar'
 
@@ -212,11 +212,6 @@ export default function DailyReportsPage() {
   }, [])
 
   useEffect(() => {
-    if (!token) {
-      // No token = nothing to fetch. Don't leave loading=true forever.
-      setLoading(false)
-      return
-    }
     fetchReports()
     fetchProjects()
     return () => {
@@ -226,7 +221,7 @@ export default function DailyReportsPage() {
         inflightRef.current = null
       }
     }
-  }, [token, fetchReports, fetchProjects])
+  }, [fetchReports, fetchProjects])
 
   // Fetch drive lines for selected project in form (used in dialog).
   useEffect(() => {
