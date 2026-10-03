@@ -8,7 +8,7 @@ import { verifyCredentials, createSession, getCookieOptions, SESSION_COOKIE } fr
 import { db } from '@/lib/db'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 // v50: الشفاء الذاتي على مسار الدخول — انظر الاستدعاء قبل verifyCredentials
-import { ensurePurchasesSupport, ensureHRSupport } from '@/lib/db-selfheal'
+import { ensurePurchasesSupport, ensureHRSupport, ensureMediaSupport } from '@/lib/db-selfheal'
 // v52: إنشاء حساب الزائر تلقائياً عند أول محاولة دخول (قبل verifyCredentials)
 import { ensureVisitorAccount } from '@/lib/db-selfheal'
 
@@ -94,6 +94,7 @@ export async function POST(req: NextRequest) {
           ensurePurchasesSupport(),
           ensureVisitorAccount(),
           ensureHRSupport(),
+          ensureMediaSupport(),
         ]),
         3000,
         'SELF_HEAL'
