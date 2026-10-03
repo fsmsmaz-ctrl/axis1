@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
-import { hasPermission } from '@/lib/auth'
+import { hasPermission, canViewPricing } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { handleDbError, safeDbOp } from '@/lib/api-helpers'
 
@@ -15,6 +15,9 @@ export async function GET(req: NextRequest) {
   if (!hasPermission(user.role, 'performance', user.permissions, user.email)) {
     return NextResponse.json({ error: 'forbidden', message: 'تقرير الأداء متاح للإدارة فقط' }, { status: 403 })
   }
+
+  // v70 SECURITY: صلاحية الأداء لا تتجاوز قاعدة سرية الأسعار — الحقول المالية تُفرَّغ
+  var seePrice = canViewPricing(user)
 
   try {
     const { searchParams } = new URL(req.url)
@@ -260,6 +263,18 @@ export async function GET(req: NextRequest) {
       }
     }
     driveLines.sort((a: any, b: any) => b.score - a.score || b.meters - a.meters)
+
+    // v70: إفراغ الحقول المالية + إعادة ترتيب بمؤشر محايد مالياً (إنتاج 60% + سلامة 40%)
+    if (!seePrice) {
+      const stripFinancial = (o: any) => {
+        delete o.pricePerMeter; delete o.totalRevenue; delete o.totalCost
+        delete o.revenue; delete o.cost; delete o.profit; delete o.profitMargin; delete o.costPerMeter
+      }
+      performance.forEach(stripFinancial)
+      driveLines.forEach(stripFinancial)
+      driveLines.forEach((s: any) => { s.score = Math.round((s.prodScore || 0) * 0.6 + (s.safetyScore || 0) * 0.4) })
+      driveLines.sort((a: any, b: any) => b.score - a.score || b.meters - a.meters)
+    }
 
     return NextResponse.json({ performance, driveLines })
   } catch (error) {
