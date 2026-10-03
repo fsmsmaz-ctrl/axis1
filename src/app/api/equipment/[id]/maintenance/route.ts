@@ -43,33 +43,36 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: 'not_found', message: 'المعدة غير موجودة' }, { status: 404 })
     }
 
+    // v70: تكلفة غير سالبة + قائمة سماح للحالة + معاملة واحدة (كان فشل التحديث يترك السجل بلا حالة)
+    var maintCost = parseFloat(body.cost)
+    if (!Number.isFinite(maintCost) || maintCost < 0) maintCost = 0
+    var VALID_MAINT_STATUS = ['operational', 'stopped', 'maintenance_needed']
+    var maintStatus = VALID_MAINT_STATUS.includes(String(body.setStatus || 'operational')) ? String(body.setStatus || 'operational') : 'operational'
     var maintenance = await safeDbOp(
-      () => db.equipmentMaintenance.create({
-        data: {
-          equipmentId: id,
-          date: new Date(body.date),
-          type: String(body.type),
-          description: body.description ? String(body.description) : "",
-          cost: parseFloat(body.cost) || 0,
-          partsUsed: body.partsUsed ? String(body.partsUsed) : "",
-          performedById: user!.id,
-        },
+      () => db.$transaction(async function (tx) {
+        var rec = await tx.equipmentMaintenance.create({
+          data: {
+            equipmentId: id,
+            date: new Date(body.date),
+            type: String(body.type),
+            description: body.description ? String(body.description) : "",
+            cost: maintCost,
+            partsUsed: body.partsUsed ? String(body.partsUsed) : "",
+            performedById: user!.id,
+          },
+        })
+        await tx.equipment.update({
+          where: { id },
+          data: {
+            lastMaintenance: new Date(body.date),
+            status: maintStatus,
+          },
+        })
+        return rec
       }),
       'إنشاء سجل الصيانة'
     )
     if (!maintenance.success) return maintenance.response
-
-    var updateResult = await safeDbOp(
-      () => db.equipment.update({
-        where: { id },
-        data: {
-          lastMaintenance: new Date(body.date),
-          status: body.setStatus || 'operational',
-        },
-      }),
-      'تحديث حالة المعدة'
-    )
-    if (!updateResult.success) return updateResult.response
 
     safeDbOp(
       () => db.auditLog.create({ data: { userId: user!.id, action: 'create', entity: 'equipment_maintenance', entityId: maintenance.data.id, details: 'Maintenance: ' + body.type + ' for equipment ' + id } }),
