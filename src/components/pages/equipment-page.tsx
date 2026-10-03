@@ -19,7 +19,7 @@ import {
 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
-import { normalizeRole } from '@/lib/auth'
+import { normalizeRole, canWrite, SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
 import { toast } from 'sonner'
 
 const statusLabels: Record<string, { ar: string; en: string; color: string }> = {
@@ -74,23 +74,21 @@ export default function EquipmentPage() {
   const user = useAppStore((s) => s.user)
   // FIX-6.6: Use role-based check instead of hardcoded admin email
   // v65: المقارنة عبر normalizeRole — لا مقارنات دور حرفية (نفس علة v63)
-  const isAdmin = normalizeRole(user?.role) === 'top_management'
+  // v70: مدير النظام بالعلم أو البريد لا يسقط من صلاحيات المعدات
+  const isAdmin = normalizeRole(user?.role) === 'top_management' || user?.isSystemAdmin === true || ((user?.email || '').toLowerCase().trim() === SYSTEM_ADMIN_EMAIL)
+  // v70: بوابة الكتابة موحدة مع الخادم — مشرف السلامة يقرأ فقط (كانت أزرار التعديل تعطي 403)
+  const canWriteEq = !!user && canWrite(user.role, 'equipment', user.permissions)
+  const canWriteAssets = !!user && canWrite(user.role, 'company_assets', user.permissions)
   // v42: تقرير الأصول المفقودة متاح للإدارة العليا ومدير المشاريع (بوابة سجل التدقيق)
   const canSeeLost = !!user && (normalizeRole(user.role) === 'top_management' || normalizeRole(user.role) === 'project_manager')
   const language = useAppStore((s) => s.language)
   const isRtl = language === 'ar'
 
-  function canEditEq(eq: any) {
-    if (isAdmin) return true
-    if (user && eq.createdById && eq.createdById === user.id) return true
-    return false
+  function canEditEq(_eq: any) {
+    return canWriteEq
   }
-  function canEditAsset(a: any) {
-    if (isAdmin) return true
-    // v43: من استعاد الأصل يبقى قادراً على تعديله حتى لو عُدّ المنشئ الأصلي صاحب السجل
-    if (user && a.restoredById && a.restoredById === user.id) return true
-    if (user && a.createdById && a.createdById === user.id) return true
-    return false
+  function canEditAsset(_a: any) {
+    return canWriteAssets
   }
 
   const [assets, setAssets] = useState<any[]>([])
@@ -712,7 +710,8 @@ export default function EquipmentPage() {
                     {canEditEq(eq) && (
                       <Button variant="outline" size="sm" className="text-red-600 hover:text-red-700 hover:bg-red-50" onClick={function() {
                         if (confirm(isRtl ? 'هل تريد حذف هذه المعدة؟' : 'Delete this equipment?')) {
-                          authedFetch('/api/equipment?id=' + eq.id, { method: 'DELETE' }).then(function(r) { return r.json() }).then(function(d) {
+                          // v70 FIX: نقطة الحذف هي /api/equipment/[id] — النمط القديم كان يعيد 405 ولا يحذف
+                          authedFetch('/api/equipment/' + eq.id, { method: 'DELETE' }).then(function(r) { return r.json() }).then(function(d) {
                             if (d.success) {
                               toast.success(isRtl ? 'تم حذف المعدة' : 'Equipment deleted')
                               fetchEquipment()
