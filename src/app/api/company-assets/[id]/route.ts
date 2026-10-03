@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
-import { buildAuditDetails, safeDbOp, handleDbError } from '@/lib/api-helpers'
+import { buildAuditDetails, safeDbOp, handleDbError, validImageDataUrl } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 import { canWrite } from '@/lib/auth'
 
@@ -33,18 +33,36 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       }
     }
 
+    // v70: فحوصات الإدخال — الحقول الغائبة كانت تُخزن كنص «undefined» والأرقام السالبة تُقبل
+    if (body.name !== undefined && !String(body.name).trim()) {
+      return NextResponse.json({ error: 'invalid_input', message: 'اسم الأصل مطلوب' }, { status: 400 })
+    }
+    if (body.quantity !== undefined && body.quantity !== null && body.quantity !== '') {
+      var qCheck = parseInt(body.quantity)
+      if (!Number.isFinite(qCheck) || qCheck < 0) {
+        return NextResponse.json({ error: 'invalid_input', message: 'الكمية يجب أن تكون رقماً غير سالب' }, { status: 400 })
+      }
+    }
+    if (body.rentalCost !== undefined && body.rentalCost !== null && body.rentalCost !== '') {
+      var rcCheck = parseFloat(body.rentalCost)
+      if (!Number.isFinite(rcCheck) || rcCheck < 0) {
+        return NextResponse.json({ error: 'invalid_input', message: 'تكلفة الإيجار يجب أن تكون رقماً غير سالب' }, { status: 400 })
+      }
+    }
+
     var updateData: any = {
-      name: String(body.name).trim(), itemType: String(body.itemType),
+      name: body.name !== undefined ? String(body.name).trim().slice(0, 200) : undefined, itemType: body.itemType !== undefined ? String(body.itemType).slice(0, 100) : undefined,
       quantity: body.quantity !== undefined ? parseInt(body.quantity) : undefined,
-      ownership: String(body.ownership), supplier: body.supplier ? String(body.supplier).trim() : null,
+      ownership: body.ownership !== undefined ? String(body.ownership).slice(0, 50) : undefined, supplier: body.supplier ? String(body.supplier).trim() : null,
       rentalCost: body.rentalCost !== undefined && body.rentalCost !== '' ? parseFloat(body.rentalCost) : null,
       rentalStart: body.rentalStart ? new Date(body.rentalStart) : null,
       rentalEnd: body.rentalEnd ? new Date(body.rentalEnd) : null,
       responsibleId: body.responsibleId || null, projectId: body.projectId || null,
-      status: String(body.status), notes: body.notes ? String(body.notes) : null,
+      status: body.status !== undefined ? String(body.status).slice(0, 50) : undefined, notes: body.notes ? String(body.notes).slice(0, 2000) : null,
     }
     if (body.hasOwnProperty('image')) {
-      updateData.image = body.image ? String(body.image) : null
+      // v70: نفس فحص الصورة المعتاد — العمود أصبح موجوداً فعلاً الآن
+      updateData.image = body.image ? validImageDataUrl(body.image) : null
     }
 
     // v22: جلب القيم القديمة لتوثيق التغييرات قبل ← الآن
@@ -76,6 +94,10 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   var { id } = await params
 
   try {
+    // v70: فحص الوجود — 404 صادقة بدل 500 مضلل
+    var delTarget = await safeDbOp(() => db.companyAsset.findUnique({ where: { id }, select: { id: true } }), 'فحص الأصل')
+    if (!delTarget.success) return delTarget.response
+    if (!delTarget.data) return NextResponse.json({ error: 'not_found', message: 'الأصل غير موجود' }, { status: 404 })
     var deleteResult = await safeDbOp(() => db.companyAsset.delete({ where: { id } }), 'حذف الأصل')
     if (!deleteResult.success) return deleteResult.response
     return NextResponse.json({ success: true })
