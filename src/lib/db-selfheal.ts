@@ -9,6 +9,25 @@
 import bcrypt from 'bcryptjs'
 import { db } from '@/lib/db'
 
+// v70: أعمدة الوسائط وأعمدة/فهارس وُجدت في المخطط دون أثر في سجل المديشنات —
+// أي قاعدة معاد بناؤها كانت تفقد عمود Finishing.casingSpacer وعمودي الصور وفهارس
+// التنبيهات فتسقط وحدات كاملة بـ P2022. الشفاء يجعل أي قاعدة تتطابق مع المخطط.
+var v70MediaChecked = false
+
+export async function ensureMediaSupport(): Promise<void> {
+  if (v70MediaChecked) return
+  try {
+    await db.$executeRawUnsafe('ALTER TABLE "Equipment" ADD COLUMN IF NOT EXISTS "image" TEXT')
+    await db.$executeRawUnsafe('ALTER TABLE "CompanyAsset" ADD COLUMN IF NOT EXISTS "image" TEXT')
+    await db.$executeRawUnsafe('ALTER TABLE "Finishing" ADD COLUMN IF NOT EXISTS "casingSpacer" BOOLEAN NOT NULL DEFAULT false')
+    await db.$executeRawUnsafe('CREATE INDEX IF NOT EXISTS "Notification_userId_read_idx" ON "Notification"("userId", "read")')
+    await db.$executeRawUnsafe('CREATE INDEX IF NOT EXISTS "Notification_type_entityId_idx" ON "Notification"("type", "entityId")')
+    v70MediaChecked = true
+  } catch (e) {
+    console.error('v70: media support self-heal skipped (will retry):', e)
+  }
+}
+
 var v42FkChecked = false
 
 export async function ensureCompanyAssetFk(): Promise<void> {
@@ -27,6 +46,7 @@ export async function ensureCompanyAssetFk(): Promise<void> {
       console.warn('v42: CompanyAsset.projectId FK -> ON DELETE SET NULL (assets survive project deletion)')
     }
   } catch (e) {
+    v42FkChecked = false // v70: فشل مؤقت لا يُعطّل الشفاء لهذه النسخة إلى الأبد
     console.error('v42: CompanyAsset FK self-heal skipped:', e)
   }
 }
@@ -54,6 +74,7 @@ export async function ensureCompanyAssetRestoreMeta(): Promise<void> {
       console.warn('v43: CompanyAsset restore-meta columns ready (original creator/date preserved on restore)')
     }
   } catch (e) {
+    v43RestoreMetaChecked = false // v70: إعادة تسليح عند فشل مؤقت
     console.error('v43: CompanyAsset restore-meta self-heal skipped:', e)
   }
 }
