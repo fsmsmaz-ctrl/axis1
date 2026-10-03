@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
-import { canWrite, canViewPricing, SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
+import { canWrite, canViewPricing, SYSTEM_ADMIN_EMAIL, normalizeRole } from '@/lib/auth'
 import { db, invalidateCachePrefix } from '@/lib/db'
 import { buildAuditDetails, safeDbOp, handleDbError, recalcProgress, sanitizeDailyReport } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
@@ -25,7 +25,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   var userId = user.id
   var userName = user.name
   var isSystemAdmin = (user.email || '').toLowerCase().trim() === SYSTEM_ADMIN_EMAIL
-  var isTopManagement = user.role === 'top_management'
+  var isTopManagement = normalizeRole(user.role) === 'top_management'
   var canEdit = canWrite(user.role, 'daily_reports', user.permissions) || canWrite(user.role, 'safety', user.permissions)
 
   if (!isSystemAdmin && !isTopManagement && !canEdit) {
@@ -271,7 +271,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     return NextResponse.json({
       success: true,
       report: freshResult.success && freshResult.data ? sanitizeDailyReport(freshResult.data, canViewPricing(user)) : updateResult.data,
-      revenue: dailyRevenue,
+      // v70: الإيراد مشتق من سعر المتر السري — لا يُرسل لغير المصرح لهم (بقية المواضع سجلات رقابية على الخادم)
+      ...(canViewPricing(user) ? { revenue: dailyRevenue } : {}),
     })
   } catch (error) {
     return handleDbError(error, 'تعديل إسناد التقرير اليومي')
