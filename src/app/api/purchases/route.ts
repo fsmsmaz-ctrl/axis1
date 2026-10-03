@@ -27,6 +27,8 @@ export async function GET(req: NextRequest) {
     var purchases = await db.purchase.findMany({
       where: { userId: user.id },
       orderBy: { createdAt: 'desc' },
+      // v70: حد أقصى للحمولة — السجل الكامل مع صور الفواتير قد يبلغ مئات الميغابايت
+      take: 100,
       include: {
         project: { select: { id: true, name: true } },
         reviewedBy: { select: { id: true, name: true, nameEn: true } },
