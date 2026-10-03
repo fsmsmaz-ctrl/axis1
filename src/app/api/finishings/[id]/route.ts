@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 import { getAuthUser } from '@/lib/auth-server'
 import { SYSTEM_ADMIN_EMAIL, canWrite, hasPermission, normalizeRole } from '@/lib/auth'
 import { db } from '@/lib/db'
@@ -32,6 +33,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   try {
     const user = await getAuthUser(req)
     if (!user) return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
+    var rl = checkRateLimit(req, RateLimitPresets.write)
+    if (rl.limited) {
+      return NextResponse.json({ error: 'too_many_requests', message: 'طلبات كثيرة جداً، يرجى الانتظار قليلاً' }, { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } })
+    }
     if (!canWrite(user.role, 'finishings', user.permissions)) {
       return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية لتعديل التشطيبات' }, { status: 403 })
     }
