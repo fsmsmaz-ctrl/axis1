@@ -56,6 +56,8 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ safetyReports: result.data })
 }
 
+var VALID_INCIDENT_CREATE = ['none', 'near_miss', 'incident', 'accident']
+
 export async function POST(req: NextRequest) {
   var user = await getAuthUser(req)
 
@@ -233,10 +235,11 @@ export async function POST(req: NextRequest) {
       fireExtinguishers: !!body.fireExtinguishers,
       workPermit: !!body.workPermit,
       toolboxTalk: !!body.toolboxTalk,
-      hazards: body.hazards || '[]',
-      observations: body.observations || null,
-      violations: body.violations || null,
-      incidentType: body.incidentType || 'none',
+      // v70: قوائم سماح وحدود — مطابقة نسخة [id] المصلحة
+      hazards: typeof body.hazards === 'string' && body.hazards.length <= 20000 ? body.hazards : '[]',
+      observations: body.observations ? String(body.observations).slice(0, 5000) : null,
+      violations: body.violations ? String(body.violations).slice(0, 5000) : null,
+      incidentType: VALID_INCIDENT_CREATE.includes(String(body.incidentType)) ? String(body.incidentType) : 'none',
       incidentDescription: body.incidentDescription || null,
       signedBy: userName,
       signedById: userId,
