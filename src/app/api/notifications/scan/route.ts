@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
+import { normalizeRole } from '@/lib/auth'
 import { runScanThrottled } from '@/lib/report-watch'
 import { runTaskScanThrottled } from '@/lib/task-watch'
 
@@ -26,7 +27,7 @@ export async function POST(req: NextRequest) {
     force = false
   }
 
-  if (force && user.role !== 'top_management') {
+  if (force && normalizeRole(user.role) !== 'top_management') {
     var isSystemAdmin = (user.email || '').toLowerCase().trim() === 'admin@axis.om'
     if (!isSystemAdmin) {
       return NextResponse.json({ error: 'forbidden', message: 'فرض الفحص متاح لمدير النظام والإدارة العليا فقط' }, { status: 403 })
