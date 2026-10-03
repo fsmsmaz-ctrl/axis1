@@ -122,6 +122,8 @@ export async function runScanNow(): Promise<{ created: number }> {
     const workReports = await db.dailyReport.findMany({
       where: {
         reportDate: { gte: threeDaysAgo, lt: startOfTodayUTC() },
+        // v70: المسودات لم تُسلَّم بعد — تنبيه «سلامة ناقصة» عليها إنذار كاذب كل صباح
+        status: { in: ['submitted', 'approved'] },
         // يوم عمل فعلي: حفر مسجل أو ساعات تشغيل
         OR: [{ dailyMeters: { gt: 0 } }, { operatingHours: { gt: 0 } }],
       },
