@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { normalizeRole } from '@/lib/auth'
 import { getAuthUser } from '@/lib/auth-server'
 import { db, invalidateCachePrefix } from '@/lib/db'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
@@ -24,7 +25,7 @@ export async function POST(req: NextRequest) {
     // SECURITY FIX: كان مدير المشروع مسموحاً — عملية عالمية تعيد كتابة المبالغ
     // المالية لكل التقارير (بما فيها المعتمدة) أصبحت للإدارة العليا ومدير النظام فقط
     var isSystemAdmin = (user.email || '').toLowerCase().trim() === 'admin@axis.om'
-    if (user.role !== 'top_management' && !isSystemAdmin) {
+    if (normalizeRole(user.role) !== 'top_management' && !isSystemAdmin) {
       return NextResponse.json(
         { error: 'forbidden', message: 'إعادة الحساب الشاملة متاحة للإدارة العليا فقط' },
         { status: 403 }
