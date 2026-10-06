@@ -11,6 +11,7 @@
 //   adjust_balance  { userId, delta, reason } — السبب إلزامي ويُسجَّل للتدقيق
 
 import { NextRequest, NextResponse } from 'next/server'
+import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { handleDbError } from '@/lib/api-helpers'
@@ -183,6 +184,11 @@ export async function POST(req: NextRequest) {
   }
   if (!isHRManager(me)) {
     return NextResponse.json({ error: 'forbidden', message: 'فقط الإدارة/الموارد البشرية يمكنها تنفيذ هذا الإجراء' }, { status: 403 })
+  }
+  // v71: تحصين v69 الذي فات هذا الملف في الرفع اليدوي — حد كتابة 30 طلباً/دقيقة/IP
+  var rl = checkRateLimit(req, RateLimitPresets.write)
+  if (rl.limited) {
+    return NextResponse.json({ error: 'too_many_requests', message: 'طلبات كثيرة جداً، يرجى الانتظار قليلاً' }, { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } })
   }
   try {
     await ensureHRSupport()
