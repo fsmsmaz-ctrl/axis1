@@ -22,12 +22,13 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   Briefcase, Wallet, FileCheck, Pencil, Loader2, Clock, Plane, History, AlertTriangle,
-  Search, Users, UserX, CheckCircle2, Plus, CalendarDays, Ban, XCircle, Eye
+  Search, Users, UserX, CheckCircle2, Plus, CalendarDays, Ban, XCircle, Eye, Undo2
 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
 import { SystemDiagnosticsButton } from '@/components/system-diagnostics'
 import { toast } from 'sonner'
+import { normalizeRole } from '@/lib/auth'
 
 const roleLabels: Record<string, { ar: string; en: string }> = {
   top_management: { ar: 'الإدارة العليا', en: 'Top Management' },
@@ -164,7 +165,7 @@ function RosterCard({
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-sm font-medium truncate">{empName}</span>
-                    <Badge variant="secondary">{(isRtl ? roleLabels[emp.role]?.ar : roleLabels[emp.role]?.en) || emp.role}</Badge>
+                    <Badge variant="secondary">{(isRtl ? roleLabels[normalizeRole(emp.role)]?.ar : roleLabels[normalizeRole(emp.role)]?.en) || emp.role}</Badge>
                     {emp.complete ? (
                       <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300 border-0 gap-1">
                         <CheckCircle2 className="h-3 w-3" />
@@ -460,6 +461,26 @@ export default function HRFilePage() {
           load(targetId || undefined)
           return
         }
+      } else if (balChanged) {
+        // v72: تعديل «الرصيد المرحّل» وحده — الخادم يشترط الرصيد السنوي معه،
+        // فنسحب القيمة الأساسية المحمّلة بدل إهمال التغيير بصمت مع رسالة نجاح كاذبة
+        var baseAnnual = balanceBaseline && balanceBaseline.annualTotal !== '' ? parseFloat(balanceBaseline.annualTotal) : NaN
+        if (isNaN(baseAnnual)) {
+          toast.error(isAr ? 'تعديل الرصيد المرحّل يتطلب إدخال الرصيد السنوي أيضاً — لم يُحفظ الرصيد' : 'Carried-over edit requires the annual balance too — balance not saved')
+          load(targetId || undefined)
+          return
+        }
+        const r3 = await authedFetch('/api/hr/admin', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'set_balance', userId: data.profile.id, annualTotal: baseAnnual, carriedOver: carriedNum }),
+        })
+        const d3 = await r3.json().catch(() => null)
+        if (!r3.ok || !d3) {
+          toast.error((d3 && d3.message) || (isAr ? 'تم حفظ البيانات الوظيفية لكن فشل حفظ رصيد الإجازة' : 'File saved but leave balance failed'))
+          load(targetId || undefined)
+          return
+        }
       }
       toast.success(isAr ? 'تم حفظ بيانات الموظف بنجاح' : 'Employee data saved successfully')
       setEditOpen(false)
@@ -518,6 +539,16 @@ export default function HRFilePage() {
 
   return (
     <div className="space-y-4">
+      {/* v72: زر العودة لملفي — بعد أن يفتح المدير ملف موظف من قائمة التعبئة
+          كان يبقى عالقاً في ملف الموظف حتى تحديث الصفحة كلياً */}
+      {targetId && targetId !== meId && (
+        <div className="flex justify-end">
+          <Button size="sm" variant="outline" className="gap-1.5" onClick={function() { setTargetId('') }}>
+            <Undo2 className="h-4 w-4" />
+            {isAr ? 'العودة إلى ملفي' : 'Back to my file'}
+          </Button>
+        </div>
+      )}
       {/* v61: تعبئة بيانات المستخدمين — الإدارة فقط: قائمة الموظفين بحالة الاكتمال ونموذج التعبئة */}
       {data.canEdit && data.roster && data.roster.length > 0 && (
         <RosterCard
