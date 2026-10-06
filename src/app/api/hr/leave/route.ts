@@ -127,6 +127,27 @@ export async function GET(req: NextRequest) {
       },
     })
 
+    // v72: بيانات المرفقات الثقيلة تُجلب للطلبات المعلقة فقط — كان يُرسل مرفق
+    // كل الطلبات الستين (حتى 4.5MB لكل مرفق) في كل زيارة للملف الشخصي فتتجمد الصفحة
+    // على الأجهزة الضعيفة (نفس نمط تحسين teamRequests أعلاه)
+    var pendingWithMyAtt: string[] = []
+    for (var ri = 0; ri < requests.length; ri++) {
+      if (requests[ri].status === 'pending' && requests[ri].attachmentName) pendingWithMyAtt.push(requests[ri].id)
+    }
+    var myAttMap: Record<string, string> = {}
+    if (pendingWithMyAtt.length > 0) {
+      var myAttRows = await db.leaveRequest.findMany({
+        where: { id: { in: pendingWithMyAtt } },
+        select: { id: true, attachmentData: true },
+      })
+      for (var ma of myAttRows) {
+        if (ma.attachmentData) myAttMap[ma.id] = ma.attachmentData
+      }
+    }
+    var requestsOut = requests.map(function(r: any) {
+      return { ...r, attachmentData: myAttMap[r.id] || null }
+    })
+
     // v68: اكتمال بيانات الموظف — نفس بوابات hr-file-page (للاتساق مع أي واجهة تستدعي هذا المسار)
     var meRow = await db.user.findUnique({
       where: { id: me.id },
@@ -135,7 +156,7 @@ export async function GET(req: NextRequest) {
     var completeness = computeCompleteness(meRow || {}, balance)
 
     return NextResponse.json({
-      requests,
+      requests: requestsOut,
       teamRequests,
       teamCount,
       isHR: manager,
