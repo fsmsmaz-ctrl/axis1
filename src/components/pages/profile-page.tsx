@@ -22,7 +22,7 @@ import {
 import { useAppStore } from '@/lib/store'
 import { authedFetch, clearStoredToken } from '@/lib/api-client'
 import { toast } from 'sonner'
-import { MODULE_PERMISSIONS, REPORT_PERMISSIONS, TOGGLABLE_PERMISSION_LABELS, hasPermission } from '@/lib/auth'
+import { MODULE_PERMISSIONS, REPORT_PERMISSIONS, TOGGLABLE_PERMISSION_LABELS, hasPermission, normalizeRole } from '@/lib/auth'
 import HRFilePage from './hr-file-page'
 
 const purchaseStatus: Record<string, { ar: string; en: string; color: any }> = {
@@ -172,8 +172,12 @@ export default function ProfilePage() {
         setProfile((p: any) => ({ ...(p || {}), avatar: null }))
         if (user) setUser({ ...user, avatar: null })
         toast.success(isRtl ? 'تمت إزالة الصورة' : 'Picture removed')
+      } else {
+        toast.error(d.message || (isRtl ? 'فشل إزالة الصورة' : 'Failed to remove picture'))
       }
-    } catch {} finally {
+    } catch {
+      toast.error(isRtl ? 'خطأ في الاتصال' : 'Connection error')
+    } finally {
       setSavingAvatar(false)
     }
   }
@@ -324,7 +328,8 @@ export default function ProfilePage() {
   }
 
   var displayName = profile ? (isRtl ? profile.name : (profile.nameEn || profile.name)) : (user ? user.name : '')
-  var roleKey = profile ? profile.role : (user ? user.role : '')
+  // v72: تطبيع الدور من القاعدة قبل أي مقارنة أو تسمية (درس v63 — الدور قد يحمل مسافات/حروف كبيرة)
+  var roleKey = normalizeRole(profile ? profile.role : (user ? user.role : ''))
   var roleLabel = roleKey === 'top_management' ? (isRtl ? 'الإدارة العليا' : 'Top Management')
     : roleKey === 'project_manager' ? (isRtl ? 'مدير المشروع' : 'Project Manager')
     : roleKey === 'site_engineer' ? (isRtl ? 'مهندس الموقع' : 'Site Engineer')
