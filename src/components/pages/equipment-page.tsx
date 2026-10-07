@@ -1071,19 +1071,6 @@ export default function EquipmentPage() {
           </div>
         </div>
 
-        {/* v75: تنبيه ثنائي اللغة — كل التغييرات تُسجل في المفكرة */}
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-1 mb-3">
-          <div className="flex items-start gap-2 text-sm text-amber-900">
-            <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
-            <span>{isRtl
-              ? 'تنبيه: جميع التغييرات على بيانات المعدات — إضافةً وتعديلاً وحذفاً واستعادةً — تُسجَّل في هذه المفكرة تلقائياً مع اسم المستخدم والتاريخ والوقت. الحذف غير نهائي: المعدة المحذوفة تبقى في أرشيف النظام ومرئية لمدير النظام فقط.'
-              : 'Notice: all changes to equipment data — create, edit, delete, restore — are automatically recorded in this log with the user name, date and time.'}</span>
-          </div>
-          <div className="text-xs text-amber-700" dir="ltr">
-            Notice: All changes to equipment data (add / edit / delete / restore) are recorded in this log with the user name, date and time. Deletion is never permanent — deleted equipment stays in the system archive, visible to the system administrator only.
-          </div>
-        </div>
-
         {eqLogsOpen && (
           eqLogsLoading && eqLogs.length === 0 ? (
             <div className="flex items-center justify-center py-8 text-muted-foreground">
