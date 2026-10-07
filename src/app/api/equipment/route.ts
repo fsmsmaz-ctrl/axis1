@@ -24,14 +24,36 @@ export async function GET(req: NextRequest) {
     if (projectId === 'none') where.projectId = null
     else if (projectId) where.projectId = projectId
 
+    // v74: إصلاح قنبلة الحمولة — القائمة كانت تُرسل صور المعدات (base64) مع كل سجل
+    // (نحو 100-200KB مضغوطة × 100 معدة ≈ عشرات الميغابايت). الآن: القائمة خفيفة
+    // بلا صور + علم hasImage، والصورة تُجلب عند الطلب من GET /api/equipment/[id]
     const result = await safeDbOp(
       () => db.equipment.findMany({
-        where, include: { project: { select: { id: true, name: true, code: true } }, maintenance: { orderBy: { date: 'desc' }, take: 3 } },
+        where,
         orderBy: { name: 'asc' }, take: 100,
+        select: {
+          id: true, projectId: true, name: true, number: true, type: true,
+          status: true, dailyHours: true, breakdowns: true, lastMaintenance: true,
+          nextMaintenance: true, spareParts: true, notes: true,
+          createdById: true, createdAt: true, updatedAt: true,
+          project: { select: { id: true, name: true, code: true } },
+          createdBy: { select: { id: true, name: true, nameEn: true } },
+          maintenance: { orderBy: { date: 'desc' }, take: 3, include: { performedBy: { select: { id: true, name: true, nameEn: true } } } },
+        },
       }), 'جلب المعدات'
     )
     if (!result.success) return result.response
-    return NextResponse.json({ equipment: result.data })
+    // v74: أي المعدات تملك صورة؟ — استعلام خفيف بالمعرفات فقط
+    var rows: any[] = result.data as any[]
+    var imgRows = rows.length > 0 ? await db.equipment.findMany({
+      where: { id: { in: rows.map(function(e) { return e.id }) }, image: { not: null } },
+      select: { id: true },
+    }) : []
+    var imgSet = new Set(imgRows.map(function(r) { return r.id }))
+    var equipment = rows.map(function(e) {
+      return Object.assign({}, e, { hasImage: imgSet.has(e.id) })
+    })
+    return NextResponse.json({ equipment })
   } catch (error: any) {
     return handleDbError(error, 'جلب المعدات')
   }
