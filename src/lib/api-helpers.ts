@@ -2,6 +2,7 @@
 // H-3 FIX: Removed 'details' field from all error responses in production
 
 import { NextResponse } from 'next/server'
+import { db } from '@/lib/db'
 
 // v70: فاحص صور base64 الموحد — نفس قواعد فواتير المشتريات (نوع + حجم 4MB)
 export function validImageDataUrl(v: unknown): string | null {
@@ -479,3 +480,50 @@ export function buildAuditDetails(
   return JSON.stringify(diff)
 }
 
+
+// ─── v75: كاتب مفكرة المعدات + سجل التدقيق معاً ──────────────────────
+// كل تغيير على المعدة (إنشاء/تعديل/حذف/استعادة) يُسجل في EquipmentLog
+// (ثنائي اللغة للعرض في المفكرة أسفل صفحة المعدات) وفي AuditLog (سجل
+// التدقيق العام بالتوقيت). فشل التسجيل لا يُفشل العملية الأساسية أبداً.
+export type EquipmentLogAction = 'create' | 'update' | 'delete' | 'restore'
+
+export async function logEquipmentChange(entry: {
+  equipmentId: string
+  equipmentName?: string | null
+  user: { id: string; name?: string | null; nameEn?: string | null }
+  action: EquipmentLogAction
+  changesAr?: string
+  changesEn?: string
+  projectId?: string | null
+}): Promise<void> {
+  try {
+    await db.equipmentLog.create({
+      data: {
+        equipmentId: entry.equipmentId,
+        equipmentName: entry.equipmentName || null,
+        userId: entry.user.id,
+        userName: entry.user.name || null,
+        userNameEn: entry.user.nameEn || null,
+        action: entry.action,
+        changesAr: entry.changesAr || null,
+        changesEn: entry.changesEn || null,
+      },
+    })
+  } catch (e) {
+    console.error('v75: equipment log write failed:', e)
+  }
+  try {
+    await db.auditLog.create({
+      data: {
+        userId: entry.user.id,
+        projectId: entry.projectId || null,
+        action: entry.action,
+        entity: 'equipment',
+        entityId: entry.equipmentId,
+        details: entry.changesAr || entry.action,
+      },
+    })
+  } catch (e) {
+    console.error('v75: equipment audit write failed:', e)
+  }
+}
