@@ -3,9 +3,39 @@ import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { buildAuditDetails, safeDbOp, handleDbError, validImageDataUrl } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
-import { canWrite } from '@/lib/auth'
+import { canWrite, hasPermission } from '@/lib/auth'
 
 var MAX_IMAGE_SIZE = 700000
+
+// v74: جلب الأصل الكامل مع الصورة عند الطلب — القائمة خفيفة بلا صور (نمط v73)
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const user = await getAuthUser(req)
+  if (!user) return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
+  var canRead = hasPermission(user.role, 'equipment', user.permissions, user.email)
+    || hasPermission(user.role, 'costs', user.permissions, user.email)
+  if (!canRead) {
+    return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية عرض أصول الشركة' }, { status: 403 })
+  }
+  try {
+    var { id } = await params
+    var result = await safeDbOp(
+      () => db.companyAsset.findUnique({
+        where: { id },
+        include: {
+          project: { select: { id: true, name: true, code: true } },
+          responsible: { select: { id: true, name: true, nameEn: true } },
+          createdBy: { select: { id: true, name: true } },
+          restoredBy: { select: { id: true, name: true } },
+        },
+      }), 'جلب الأصل'
+    )
+    if (!result.success) return result.response
+    if (!result.data) return NextResponse.json({ error: 'not_found', message: 'الأصل غير موجود' }, { status: 404 })
+    return NextResponse.json({ asset: result.data })
+  } catch (error) {
+    return handleDbError(error, 'جلب الأصل')
+  }
+}
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const user = await getAuthUser(req)
