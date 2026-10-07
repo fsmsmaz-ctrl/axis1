@@ -1,4 +1,5 @@
 // v48: إدارة عملية شراء واحدة من الملف الشخصي
+// GET: جلب السجل الكامل مع صورة الفاتورة عند الطلب — للمالك فقط (نمط v73: القائمة خفيفة والصورة عند الحاجة)
 // PATCH: تعديل مسودة خاصة بالموظف (قبل التسليم فقط)
 // DELETE: حذف مسودة خاصة بالموظف
 // POST: تسليم المسودة للمراجعة — يشترط وجود صورة الفاتورة (شرط المستخدم)
@@ -15,6 +16,35 @@ var MAX_INVOICE_CHARS = 6000000
 
 function validInvoiceImage(s: string): boolean {
   return /^data:image\/(png|jpeg|jpg|webp);base64,/.test(s) && s.length <= MAX_INVOICE_CHARS
+}
+
+// GET: السجل الكامل مع الصورة — عرض الفاتورة أو تعبئة نموذج التعديل
+export async function GET(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  var user = await getAuthUser(req)
+  if (!user) {
+    return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
+  }
+  try {
+    await ensurePurchasesSupport()
+    var { id } = await params
+    var purchase = await db.purchase.findUnique({
+      where: { id: String(id) },
+      include: {
+        project: { select: { id: true, name: true } },
+        reviewedBy: { select: { id: true, name: true, nameEn: true } },
+      },
+    })
+    if (!purchase || purchase.userId !== user.id) {
+      return NextResponse.json({ error: 'not_found', message: 'عملية الشراء غير موجودة' }, { status: 404 })
+    }
+    return NextResponse.json({ purchase })
+  } catch (e) {
+    console.error('v73 purchase GET failed:', e)
+    return NextResponse.json({ error: 'database_error', message: 'فشل جلب عملية الشراء' }, { status: 500 })
+  }
 }
 
 function statusMessage(status: string, isOwnerAr: boolean): string {
