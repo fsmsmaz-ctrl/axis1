@@ -267,6 +267,8 @@ model Equipment {
   notes           String?
   image           String?  // v70: صورة المعدة (base64) — كانت الواجهة ترسلها والخادم يهملها
   createdById     String?
+  deletedAt       DateTime? // v75: حذف ناعم — المحذوفة تختفي عن الجميع وتبقى مرئية لمدير النظام فقط
+  deletedById     String?   // v75: من نفّذ الحذف (نص مجرد بلا علاقة لتجنب قيود FK)
 
   project         Project? @relation(fields: [projectId], references: [id])
   maintenance     EquipmentMaintenance[]
@@ -274,6 +276,24 @@ model Equipment {
 
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+}
+
+// v75: مفكرة المعدات — سجل تغييرات ثنائي اللغة (عربي/إنجليزي) بلا علاقات FK
+// أسماء المستخدمين تُخزن كلقطة لحظية لتبقى المفكرة صالحة حتى بعد حذف أي مستخدم
+model EquipmentLog {
+  id            String   @id @default(cuid())
+  equipmentId   String
+  equipmentName String?
+  userId        String?
+  userName      String?
+  userNameEn    String?
+  action        String   // create, update, delete, restore
+  changesAr     String?
+  changesEn     String?
+  createdAt     DateTime @default(now())
+
+  @@index([equipmentId, createdAt])
+  @@index([createdAt])
 }
 
 model EquipmentMaintenance {
