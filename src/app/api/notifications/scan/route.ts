@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { normalizeRole } from '@/lib/auth'
+import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 import { runScanThrottled } from '@/lib/report-watch'
 import { runTaskScanThrottled } from '@/lib/task-watch'
 
@@ -17,6 +18,11 @@ export async function POST(req: NextRequest) {
   var user = await getAuthUser(req)
   if (!user) {
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
+  }
+  // v74: تحصين — الفحص اليدوي (خصوصاً force) مكلف خادمياً ولا ينبغي استدعاؤه بلا حد
+  var rl = checkRateLimit(req, RateLimitPresets.write)
+  if (rl.limited) {
+    return NextResponse.json({ error: 'too_many_requests', message: 'طلبات كثيرة جداً، يرجى الانتظار قليلاً' }, { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } })
   }
 
   var force = false
@@ -47,4 +53,3 @@ export async function POST(req: NextRequest) {
     skipped: reports.skipped === true && tasks.skipped === true,
   })
 }
-
