@@ -255,6 +255,14 @@ export function isHRManager(user: { role?: string; email?: string; isSystemAdmin
   return (HR_MANAGE_ROLES as readonly string[]).includes(normalizeRole(user.role))
 }
 
+// ─── v75: مدير النظام — الوحيد الذي يرى أرشيف المعدات المحذوفة ──────────
+// (نفس تعريف canAccessDashboard/isHRManager: العلم من القاعدة أو البريد الرئيسي)
+export function isSystemAdminAccount(user: { email?: string; isSystemAdmin?: boolean } | null | undefined): boolean {
+  if (!user) return false
+  if (user.isSystemAdmin === true) return true
+  return !!user.email && user.email.toLowerCase().trim() === SYSTEM_ADMIN_EMAIL
+}
+
 // ─── Task Management helpers ───────────────────────────────────
 // مدير المهام: ينشئ ويعدّل ويعيد ويعتمد ويغلق ويرى الكل
 // (الإدارة العليا + مدير المشروع + مدير النظام admin@axis.om)
