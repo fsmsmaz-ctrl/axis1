@@ -65,6 +65,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     // SECURITY FIX: قائمة سماح لحالة المعدة — كانت تقبل أي نص يكتب في بطاقة المعدة
     var VALID_EQUIP_STATUS = ['operational', 'stopped', 'maintenance_needed']
     var safeStatus = VALID_EQUIP_STATUS.includes(String(body.status)) ? String(body.status) : undefined
+    // v74: إصلاح مسح الصورة الصامت — كانت الصورة تُصفَّر (null) حتى عندما يكون مفتاح
+    // image غائباً عن الطلب كلياً؛ الآن تُلمس فقط إذا أُرسل المفتاح فعلاً
+    var v74ImageData: Record<string, any> = {}
+    if ('image' in body) v74ImageData.image = validImageDataUrl(body.image)
     const result = await safeDbOp(
       () => db.equipment.update({
         where: { id },
@@ -75,7 +79,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
           lastMaintenance: body.lastMaintenance ? new Date(body.lastMaintenance) : null,
           nextMaintenance: body.nextMaintenance ? new Date(body.nextMaintenance) : null,
           notes: body.notes ? String(body.notes).slice(0, 2000) : null,
-          image: validImageDataUrl(body.image),
+          ...v74ImageData,
           ...v42ProjectData,
         },
       }),
