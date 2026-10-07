@@ -90,6 +90,9 @@ export default function ProfilePage() {
   const [savingPurchase, setSavingPurchase] = useState(false)
   const [submittingId, setSubmittingId] = useState<string | null>(null)
   const [viewInvoice, setViewInvoice] = useState<string | null>(null)
+  // v73: الصورة تُجلب عند الطلب — القائمة خفيفة بلا صور (إصلاح قنبلة الحمولة)
+  const [viewLoadingId, setViewLoadingId] = useState<string | null>(null)
+  const [editInvoiceLoading, setEditInvoiceLoading] = useState(false)
   const invoiceInputRef = useRef<HTMLInputElement | null>(null)
 
   async function loadProfile() {
@@ -223,15 +226,48 @@ export default function ProfilePage() {
     setPurchaseDialogOpen(true)
   }
 
-  function openEditPurchase(p: any) {
+  // v73: جلب صورة فاتورة واحدة عند الطلب من GET /api/purchases/[id]
+  async function fetchInvoiceImage(id: string): Promise<string | null> {
+    try {
+      const r = await authedFetch('/api/purchases/' + id)
+      const d = await r.json()
+      if (r.ok && d.purchase && d.purchase.invoiceImage) return d.purchase.invoiceImage as string
+      toast.error(d.message || (isRtl ? 'تعذر جلب صورة الفاتورة' : 'Failed to load invoice image'))
+      return null
+    } catch {
+      toast.error(isRtl ? 'خطأ في الاتصال' : 'Connection error')
+      return null
+    }
+  }
+
+  async function viewInvoiceFor(p: any) {
+    if (!p.hasInvoice) {
+      toast.error(isRtl ? 'لا توجد صورة فاتورة لهذه العملية' : 'No invoice image for this purchase')
+      return
+    }
+    setViewLoadingId(p.id)
+    var img = await fetchInvoiceImage(p.id)
+    setViewLoadingId(null)
+    if (img) setViewInvoice(img)
+  }
+
+  // v73: التعديل يفتح فوراً بالبيانات النصية، والصورة تُجلب بالخلفية —
+  // وإن فشل جلبها يبقى الحفظ ممكناً (تبقى فاتورة المسودة الأصلية كما هي)
+  async function openEditPurchase(p: any) {
     setEditingPurchase(p)
     setPurchaseForm({
       title: p.title || '',
       amount: String(p.amount || ''),
       notes: p.notes || '',
-      invoiceImage: p.invoiceImage || '',
+      invoiceImage: '',
     })
     setPurchaseDialogOpen(true)
+    if (p.hasInvoice) {
+      setEditInvoiceLoading(true)
+      const fetched = await fetchInvoiceImage(p.id)
+      if (fetched) setPurchaseForm(function(prev) { return { ...prev, invoiceImage: fetched } })
+      setEditInvoiceLoading(false)
+    }
   }
 
   function onPickInvoice(e: React.ChangeEvent<HTMLInputElement>) {
@@ -251,7 +287,10 @@ export default function ProfilePage() {
 
   async function savePurchase(e: React.FormEvent) {
     e.preventDefault()
-    if (!purchaseForm.invoiceImage) {
+    // v73: صورة جديدة إلزامية للعملية الجديدة — وعند تعديل مسودة تملك فاتورة على
+    // الخادم يجوز الحفظ بلا رفع بديل (يبقى الخادم يحتفظ بالفاتورة الأصلية)
+    var canKeepExisting = !!(editingPurchase && editingPurchase.hasInvoice)
+    if (!purchaseForm.invoiceImage && !canKeepExisting) {
       toast.error(isRtl ? 'صورة الفاتورة مطلوبة' : 'Invoice image is required')
       return
     }
@@ -261,8 +300,8 @@ export default function ProfilePage() {
         title: purchaseForm.title,
         amount: purchaseForm.amount,
         notes: purchaseForm.notes,
-        invoiceImage: purchaseForm.invoiceImage,
       }
+      if (purchaseForm.invoiceImage) payload.invoiceImage = purchaseForm.invoiceImage
       const r = editingPurchase
         ? await authedFetch('/api/purchases/' + editingPurchase.id, {
             method: 'PATCH',
@@ -290,7 +329,8 @@ export default function ProfilePage() {
   }
 
   async function submitPurchase(p: any) {
-    if (!p.invoiceImage) {
+    // v73: العلم hasInvoice يبدّل فحص الصورة (الصورة لم تعد في القائمة)
+    if (!p.hasInvoice) {
       toast.error(isRtl ? 'صورة الفاتورة مطلوبة قبل التسليم' : 'Invoice image required before submission')
       return
     }
@@ -559,8 +599,11 @@ export default function ProfilePage() {
                 var st = purchaseStatus[p.status] || purchaseStatus.draft
                 return (
                   <div key={p.id} className="flex items-center gap-3 p-3 rounded-lg border hover:bg-muted/30 transition">
-                    {p.invoiceImage ? (
-                      <img src={p.invoiceImage} alt="invoice" className="h-14 w-14 rounded-lg object-cover border cursor-pointer shrink-0" onClick={function() { setViewInvoice(p.invoiceImage) }} />
+                    {/* v73: بلا مصغرات ثقيلة — القائمة خفيفة والفاتورة تُفتح عند الطلب */}
+                    {p.hasInvoice ? (
+                      <button type="button" title={isRtl ? 'عرض الفاتورة' : 'View invoice'} className="h-14 w-14 rounded-lg border bg-muted flex items-center justify-center shrink-0 hover:bg-muted/70 transition" onClick={function() { viewInvoiceFor(p) }}>
+                        {viewLoadingId === p.id ? <Loader2 className="h-5 w-5 text-muted-foreground animate-spin" /> : <FileText className="h-5 w-5 text-muted-foreground" />}
+                      </button>
                     ) : (
                       <div className="h-14 w-14 rounded-lg bg-muted flex items-center justify-center shrink-0">
                         <FileText className="h-5 w-5 text-muted-foreground" />
@@ -600,8 +643,8 @@ export default function ProfilePage() {
                           </Button>
                         </>
                       )}
-                      <Button variant="outline" size="sm" className="h-8 w-8 p-0" title={isRtl ? 'عرض الفاتورة' : 'View invoice'} onClick={function() { setViewInvoice(p.invoiceImage) }}>
-                        <Eye className="h-4 w-4" />
+                      <Button variant="outline" size="sm" className="h-8 w-8 p-0" title={isRtl ? 'عرض الفاتورة' : 'View invoice'} disabled={viewLoadingId === p.id} onClick={function() { viewInvoiceFor(p) }}>
+                        {viewLoadingId === p.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />}
                       </Button>
                     </div>
                   </div>
@@ -618,7 +661,9 @@ export default function ProfilePage() {
           <DialogHeader>
             <DialogTitle>{editingPurchase ? (isRtl ? 'تعديل عملية الشراء' : 'Edit Purchase') : (isRtl ? 'إضافة عملية شراء' : 'Add Purchase')}</DialogTitle>
             <DialogDescription>
-              {isRtl ? 'صورة الفاتورة إلزامية لحفظ العملية' : 'Invoice image is required'}
+              {editingPurchase
+                ? (isRtl ? 'صورة الفاتورة إلزامية — تُبقى فاتورة المسودة الحالية إن لم ترفع بديلاً' : 'Invoice image is required — the current one is kept unless replaced')
+                : (isRtl ? 'صورة الفاتورة إلزامية لحفظ العملية' : 'Invoice image is required')}
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={savePurchase} className="space-y-3">
@@ -643,17 +688,22 @@ export default function ProfilePage() {
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 </div>
+              ) : editInvoiceLoading ? (
+                <div className="w-full h-24 rounded-lg border bg-muted flex flex-col items-center justify-center gap-1 text-muted-foreground">
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                  <span className="text-xs">{isRtl ? 'جارٍ تحميل فاتورة المسودة...' : 'Loading draft invoice...'}</span>
+                </div>
               ) : (
                 <button type="button" className="w-full h-24 rounded-lg border-2 border-dashed flex flex-col items-center justify-center gap-1 text-muted-foreground hover:border-primary/50 hover:text-primary transition" onClick={function() { if (invoiceInputRef.current) invoiceInputRef.current.click() }}>
                   <ImageUp className="h-5 w-5" />
-                  <span className="text-xs">{isRtl ? 'ارفع صورة الفاتورة' : 'Upload invoice photo'}</span>
+                  <span className="text-xs">{editingPurchase && editingPurchase.hasInvoice ? (isRtl ? 'ارفع بديلاً للفاتورة الحالية (اختياري)' : 'Replace current invoice (optional)') : (isRtl ? 'ارفع صورة الفاتورة' : 'Upload invoice photo')}</span>
                 </button>
               )}
               <input ref={invoiceInputRef} type="file" accept="image/*" className="hidden" onChange={onPickInvoice} />
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={function() { setPurchaseDialogOpen(false) }}>{isRtl ? 'إلغاء' : 'Cancel'}</Button>
-              <Button type="submit" disabled={savingPurchase || !purchaseForm.invoiceImage}>
+              <Button type="submit" disabled={savingPurchase || (!purchaseForm.invoiceImage && !(editingPurchase && editingPurchase.hasInvoice))}>
                 {savingPurchase ? <Loader2 className="h-4 w-4 animate-spin ml-1" /> : null}
                 {isRtl ? 'حفظ' : 'Save'}
               </Button>
