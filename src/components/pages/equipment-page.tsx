@@ -15,7 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Plus, Wrench, Clock, AlertTriangle, Cpu, Settings, Calendar, DollarSign,
   Package, Building2, ArrowDownToLine, ArrowRightLeft, Trash2, Pencil, Eye, UserCircle, Camera, X,
-  History, RotateCcw
+  History, RotateCcw, Loader2
 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
@@ -99,6 +99,8 @@ export default function EquipmentPage() {
   const [assetFilter, setAssetFilter] = useState<string>('all')
   const [viewAsset, setViewAsset] = useState<any | null>(null)
   const [viewAssetDialogOpen, setViewAssetDialogOpen] = useState(false)
+  // v74: الصور تُجلب عند الطلب — القائمة خفيفة بلا صور (نمط v73)
+  const [editImageLoading, setEditImageLoading] = useState(false)
   // v42: الأصول المفقودة القابلة للاستعادة من سجل التدقيق
   const [lostAssets, setLostAssets] = useState<any[]>([])
   const [lostOpen, setLostOpen] = useState(true)
@@ -131,9 +133,9 @@ export default function EquipmentPage() {
   function handleImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
     var file = e.target.files && e.target.files[0]
     if (!file) return
-    // Limit to 2MB
-    if (file.size > 2 * 1024 * 1024) {
-      toast.error(isRtl ? 'حجم الصورة كبير جداً (الحد الأقصى 2 ميجا)' : 'Image too large (max 2MB)')
+    // v74: حد الملف الأصلي 50MB — الصورة تُضغط في المتصفح (800px/JPEG) قبل الرفع فلا يتغير حجم المرفوع
+    if (file.size > 50 * 1024 * 1024) {
+      toast.error(isRtl ? 'حجم الصورة كبير جداً (الحد الأقصى 50 ميجا)' : 'Image too large (max 50MB)')
       return
     }
     // Validate file type
@@ -173,7 +175,8 @@ export default function EquipmentPage() {
   }
 
   function removeImage() {
-    if (editingAsset && editingAsset.image) {
+    // v74: قرار الإزالة عبر hasImage — الصورة لم تعد محمّلة في القائمة
+    if (editingAsset && editingAsset.hasImage) {
       // Editing: send null to remove existing image
       setAssetForm(function(prev) { return { ...prev, image: 'REMOVE' } })
     } else {
@@ -185,8 +188,9 @@ export default function EquipmentPage() {
   function handleEqImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
     var file = e.target.files && e.target.files[0]
     if (!file) return
-    if (file.size > 2 * 1024 * 1024) {
-      toast.error(isRtl ? 'حجم الصورة كبير جداً (الحد الأقصى 2 ميجا)' : 'Image too large (max 2MB)')
+    // v74: حد الملف الأصلي 50MB — الصورة تُضغط في المتصفح (800px/JPEG) قبل الرفع فلا يتغير حجم المرفوع
+    if (file.size > 50 * 1024 * 1024) {
+      toast.error(isRtl ? 'حجم الصورة كبير جداً (الحد الأقصى 50 ميجا)' : 'Image too large (max 50MB)')
       return
     }
     if (!file.type.startsWith('image/')) {
@@ -219,11 +223,32 @@ export default function EquipmentPage() {
   }
 
   function removeEqImage() {
-    if (editingEquipment && editingEquipment.image) {
+    // v74: قرار الإزالة عبر hasImage — الصورة لم تعد محمّلة في القائمة
+    if (editingEquipment && editingEquipment.hasImage) {
       setFormData(function(prev) { return { ...prev, image: 'REMOVE' } })
     } else {
       setFormData(function(prev) { return { ...prev, image: '' } })
     }
+  }
+
+  // v74: جلب صورة واحدة عند الطلب — المعدة (GET موجود أصلاً)
+  async function fetchEqImage(id: string): Promise<string | null> {
+    try {
+      const r = await authedFetch('/api/equipment/' + id + '?_t=' + Date.now(), { cache: 'no-store' })
+      const d = await r.json()
+      if (r.ok && d.equipment && d.equipment.image) return d.equipment.image as string
+      return null
+    } catch { return null }
+  }
+
+  // v74: جلب صورة أصل عند الطلب — GET جديد على company-assets/[id]
+  async function fetchAssetImage(id: string): Promise<string | null> {
+    try {
+      const r = await authedFetch('/api/company-assets/' + id + '?_t=' + Date.now(), { cache: 'no-store' })
+      const d = await r.json()
+      if (r.ok && d.asset && d.asset.image) return d.asset.image as string
+      return null
+    } catch { return null }
   }
 
   async function fetchEquipment() {
@@ -412,8 +437,16 @@ export default function EquipmentPage() {
         rentalEnd: asset.rentalEnd ? asset.rentalEnd.split('T')[0] : '',
         responsibleId: asset.responsibleId || '',
         status: asset.status, notes: asset.notes || '',
-        image: asset.image || '',
+        image: '',
       })
+      // v74: الصورة تُجلب بالخلفية — والحفظ بلا رفع بديل يُبقي صورة الأصل (الخادم لا يلمس المفتاح الغائب)
+      if (asset.hasImage) {
+        setEditImageLoading(true)
+        fetchAssetImage(asset.id).then(function(img) {
+          if (img) setAssetForm(function(prev) { return { ...prev, image: img } })
+          setEditImageLoading(false)
+        })
+      }
     } else {
       setEditingAsset(null)
       setAssetForm({
@@ -429,6 +462,11 @@ export default function EquipmentPage() {
   function openViewAsset(a: any) {
     setViewAsset(a)
     setViewAssetDialogOpen(true)
+    // v74: جلب السجل الكامل (بما فيه الصورة) عند الطلب — نفس نمط openView للمعدات
+    authedFetch('/api/company-assets/' + a.id + '?_t=' + Date.now(), { cache: 'no-store' })
+      .then(function(r) { return r.ok ? r.json() : null })
+      .then(function(d) { if (d && d.asset) setViewAsset(d.asset) })
+      .catch(function() {})
   }
 
   // v42: إعادة إنشاء أصل مفقود من بيانات سجل التدقيق — تعبئة مسبقة ثم يكمل المستخدم الناقص
@@ -466,9 +504,17 @@ export default function EquipmentPage() {
       lastMaintenance: eq.lastMaintenance ? eq.lastMaintenance.split('T')[0] : '',
       nextMaintenance: eq.nextMaintenance ? eq.nextMaintenance.split('T')[0] : '',
       notes: eq.notes || '',
-      image: eq.image || '',
+      image: '',
     })
     setEditEqDialogOpen(true)
+    // v74: الصورة تُجلب بالخلفية — والحفظ بلا رفع بديل يُبقي صورة المعدة (إصلاح الخادم v74)
+    if (eq.hasImage) {
+      setEditImageLoading(true)
+      fetchEqImage(eq.id).then(function(img) {
+        if (img) setFormData(function(prev) { return { ...prev, image: img } })
+        setEditImageLoading(false)
+      })
+    }
   }
 
   async function handleEditEquipmentSubmit(e: React.FormEvent) {
@@ -636,13 +682,15 @@ export default function EquipmentPage() {
               <Card key={eq.id} className="hover:shadow-sm transition">
                 <CardContent className="p-4">
                   <div className="flex items-start gap-3 mb-3">
-                    {eq.image ? (
+                    {/* v74: بلا مصغرات ثقيلة — أيقونة كاميرا تفتح التفاصيل (تُجلب بالصورة) */}
+                    {eq.hasImage ? (
                       <div
-                        className="w-10 h-10 rounded-lg object-cover shrink-0 cursor-pointer border"
-                        style={{ backgroundImage: 'url(' + eq.image + ')', backgroundSize: 'cover', backgroundPosition: 'center' }}
+                        className="w-10 h-10 rounded-lg shrink-0 cursor-pointer border bg-muted flex items-center justify-center hover:bg-muted/70 transition"
                         onClick={() => openView(eq)}
-                        title={isRtl ? 'عرض التفاصيل' : 'View details'}
-                      />
+                        title={isRtl ? 'عرض التفاصيل والصورة' : 'View details & photo'}
+                      >
+                        <Camera className="h-4.5 w-4.5 text-muted-foreground" />
+                      </div>
                     ) : (
                     <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
                       eq.status === 'operational' ? 'bg-emerald-50' :
@@ -856,14 +904,15 @@ export default function EquipmentPage() {
                 <Card key={a.id} className="hover:shadow-sm transition">
                   <CardContent className="p-3">
                     <div className="flex items-center gap-3">
-                      {/* Thumbnail: show image or icon */}
-                      {a.image ? (
+                      {/* v74: بلا مصغرات ثقيلة — أيقونة كاميرا تفتح التفاصيل (تُجلب بالصورة) */}
+                      {a.hasImage ? (
                         <div
-                          className="w-14 h-14 rounded-lg object-cover shrink-0 cursor-pointer border"
-                          style={{ backgroundImage: 'url(' + a.image + ')', backgroundSize: 'cover', backgroundPosition: 'center' }}
+                          className="w-14 h-14 rounded-lg shrink-0 cursor-pointer border bg-muted flex items-center justify-center hover:bg-muted/70 transition"
                           onClick={() => openViewAsset(a)}
-                          title={isRtl ? 'عرض التفاصيل' : 'View details'}
-                        />
+                          title={isRtl ? 'عرض التفاصيل والصورة' : 'View details & photo'}
+                        >
+                          <Camera className="h-5 w-5 text-muted-foreground" />
+                        </div>
                       ) : (
                         <div className={`w-14 h-14 rounded-lg flex items-center justify-center shrink-0 ${own.color.split(' ')[0]}`}>
                           <OwnIcon className={`h-6 w-6 ${own.color.split(' ')[1]}`} />
@@ -964,7 +1013,7 @@ export default function EquipmentPage() {
                       : (isRtl ? 'اختر صورة' : 'Choose Image')
                     }
                   </Button>
-                  <p className="text-[10px] text-muted-foreground mt-1">{isRtl ? 'JPG, PNG - الحد الأقصى 2 ميجا' : 'JPG, PNG - Max 2MB'}</p>
+                  <p className="text-[10px] text-muted-foreground mt-1">{isRtl ? 'JPG, PNG - الحد الأقصى 50 ميجا (تُضغط تلقائياً)' : 'JPG, PNG - Max 50MB (auto-compressed)'}</p>
                 </div>
               </div>
             </div>
@@ -1040,6 +1089,11 @@ export default function EquipmentPage() {
                       <X className="h-3.5 w-3.5" />
                     </button>
                   </div>
+                ) : editImageLoading ? (
+                  <div className="w-24 h-24 rounded-lg border bg-muted flex flex-col items-center justify-center shrink-0">
+                    <Loader2 className="h-5 w-5 text-muted-foreground animate-spin" />
+                    <span className="text-[10px] text-muted-foreground mt-1">{isRtl ? 'جارٍ التحميل...' : 'Loading...'}</span>
+                  </div>
                 ) : (
                   <div
                     className="w-24 h-24 rounded-lg border-2 border-dashed border-muted-foreground/30 flex flex-col items-center justify-center cursor-pointer hover:border-primary/50 hover:bg-muted/30 transition shrink-0"
@@ -1069,7 +1123,7 @@ export default function EquipmentPage() {
                       : (isRtl ? 'اختر صورة' : 'Choose Image')
                     }
                   </Button>
-                  <p className="text-[10px] text-muted-foreground mt-1">{isRtl ? 'JPG, PNG - الحد الأقصى 2 ميجا' : 'JPG, PNG - Max 2MB'}</p>
+                  <p className="text-[10px] text-muted-foreground mt-1">{isRtl ? 'JPG, PNG - الحد الأقصى 50 ميجا (تُضغط تلقائياً)' : 'JPG, PNG - Max 50MB (auto-compressed)'}</p>
                 </div>
               </div>
             </div>
@@ -1153,6 +1207,11 @@ export default function EquipmentPage() {
                       <X className="h-3.5 w-3.5" />
                     </button>
                   </div>
+                ) : editImageLoading ? (
+                  <div className="w-24 h-24 rounded-lg border bg-muted flex flex-col items-center justify-center shrink-0">
+                    <Loader2 className="h-5 w-5 text-muted-foreground animate-spin" />
+                    <span className="text-[10px] text-muted-foreground mt-1">{isRtl ? 'جارٍ التحميل...' : 'Loading...'}</span>
+                  </div>
                 ) : (
                   <div
                     className="w-24 h-24 rounded-lg border-2 border-dashed border-muted-foreground/30 flex flex-col items-center justify-center cursor-pointer hover:border-primary/50 hover:bg-muted/30 transition shrink-0"
@@ -1182,7 +1241,7 @@ export default function EquipmentPage() {
                       : (isRtl ? 'اختر صورة' : 'Choose Image')
                     }
                   </Button>
-                  <p className="text-[10px] text-muted-foreground mt-1">{isRtl ? 'JPG, PNG - الحد الأقصى 2 ميجا' : 'JPG, PNG - Max 2MB'}</p>
+                  <p className="text-[10px] text-muted-foreground mt-1">{isRtl ? 'JPG, PNG - الحد الأقصى 50 ميجا (تُضغط تلقائياً)' : 'JPG, PNG - Max 50MB (auto-compressed)'}</p>
                 </div>
               </div>
             </div>
@@ -1405,7 +1464,4 @@ export default function EquipmentPage() {
       </Dialog>
     </div>
   )
-}
-
-
-        
+}        
