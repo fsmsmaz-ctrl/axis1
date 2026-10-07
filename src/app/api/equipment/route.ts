@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 import { getAuthUser } from '@/lib/auth-server'
-import { ensureMediaSupport } from '@/lib/db-selfheal'
+import { ensureMediaSupport, ensureEquipmentLogSupport } from '@/lib/db-selfheal'
 import { db } from '@/lib/db'
-import { handleDbError, validateRequired, parseNumber, safeDbOp, validImageDataUrl } from '@/lib/api-helpers'
-import { canWrite, hasPermission } from '@/lib/auth'
+import { handleDbError, validateRequired, parseNumber, safeDbOp, validImageDataUrl, logEquipmentChange } from '@/lib/api-helpers'
+import { canWrite, hasPermission, isSystemAdminAccount } from '@/lib/auth'
 
 export async function GET(req: NextRequest) {
   await ensureMediaSupport()
+  // v75: يضمن عمودي الحذف الناعم + جدول المفكرة قبل أي استعلام
+  await ensureEquipmentLogSupport()
   try {
     const user = await getAuthUser(req)
     if (!user) return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
@@ -23,6 +25,8 @@ export async function GET(req: NextRequest) {
     // v42: projectId=none → المعدات اليتيمة التي فقدت مشروعها (قيد SetNull يُبقيها في القاعدة)
     if (projectId === 'none') where.projectId = null
     else if (projectId) where.projectId = projectId
+    // v75: الحذف الناعم — المحذوفة تختفي عن الجميع (الأرشيف يُعاد منفصلاً لمدير النظام فقط)
+    where.deletedAt = null
 
     // v74: إصلاح قنبلة الحمولة — القائمة كانت تُرسل صور المعدات (base64) مع كل سجل
     // (نحو 100-200KB مضغوطة × 100 معدة ≈ عشرات الميغابايت). الآن: القائمة خفيفة
@@ -53,7 +57,28 @@ export async function GET(req: NextRequest) {
     var equipment = rows.map(function(e) {
       return Object.assign({}, e, { hasImage: imgSet.has(e.id) })
     })
-    return NextResponse.json({ equipment })
+    // v75: أرشيف المعدات المحذوفة — مرئي لمدير النظام فقط (لا يُحذف شيء نهائياً)
+    var deletedEquipment: any[] = []
+    if (isSystemAdminAccount(user)) {
+      try {
+        var delWhere: any = { deletedAt: { not: null } }
+        if (projectId === 'none') delWhere.projectId = null
+        else if (projectId) delWhere.projectId = projectId
+        var delRows = await safeDbOp(
+          () => db.equipment.findMany({
+            where: delWhere,
+            orderBy: { updatedAt: 'desc' }, take: 50,
+            select: {
+              id: true, projectId: true, name: true, number: true, type: true,
+              status: true, deletedAt: true, deletedById: true,
+              project: { select: { id: true, name: true, code: true } },
+            },
+          }), 'جلب أرشيف المحذوفات'
+        )
+        if (delRows.success) deletedEquipment = delRows.data as any[]
+      } catch { deletedEquipment = [] }
+    }
+    return NextResponse.json({ equipment, deletedEquipment })
   } catch (error: any) {
     return handleDbError(error, 'جلب المعدات')
   }
@@ -79,7 +104,11 @@ export async function POST(req: NextRequest) {
 
     const dupResult = await safeDbOp(() => db.equipment.findUnique({ where: { number: String(body.number).trim() } }), 'فحص الرمز المكرر')
     if (dupResult.success && dupResult.data) {
-      return NextResponse.json({ error: 'duplicate_number', message: `المعدة برقم "${body.number}" موجودة بالفعل` }, { status: 400 })
+      // v75: رسالة أوضح إذا كان الرقم محتجزاً بمعدة في الأرشيف (الحذف ناعم)
+      var isArchivedDup = !!(dupResult.data as any).deletedAt
+      return NextResponse.json({ error: 'duplicate_number', message: isArchivedDup
+        ? `الرقم "${body.number}" محتجز بمعدة في أرشيف المحذوفات — يمكن لمدير النظام استعادتها أو اختر رقماً آخر`
+        : `المعدة برقم "${body.number}" موجودة بالفعل` }, { status: 400 })
     }
 
     const createResult = await safeDbOp(
@@ -96,6 +125,15 @@ export async function POST(req: NextRequest) {
       }), 'إنشاء المعدة'
     )
     if (!createResult.success) return createResult.response
+    // v75: تسجيل الإنشاء في مفكرة المعدات + سجل التدقيق (بالتوقيت واسم المستخدم)
+    var v75Created = createResult.data as any
+    await logEquipmentChange({
+      equipmentId: v75Created.id, equipmentName: v75Created.name, user,
+      action: 'create',
+      changesAr: `تم إنشاء المعدة «${v75Created.name}» (الرقم ${v75Created.number})`,
+      changesEn: `Created equipment "${v75Created.name}" (No. ${v75Created.number})`,
+      projectId: v75Created.projectId || null,
+    })
     return NextResponse.json({ equipment: createResult.data, success: true })
   } catch (error: any) {
     return handleDbError(error, 'إنشاء المعدة')
