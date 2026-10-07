@@ -3,9 +3,12 @@ import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { handleDbError, safeDbOp } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
-import { canWrite } from '@/lib/auth'
+import { canWrite, isSystemAdminAccount } from '@/lib/auth'
+import { ensureEquipmentLogSupport } from '@/lib/db-selfheal'
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  // v75: يضمن عمودي الحذف الناعم قبل أي استعلام
+  await ensureEquipmentLogSupport()
   var user = await getAuthUser(req)
   if (!user) {
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
@@ -35,11 +38,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   try {
     // FIX: Validate equipment exists
     var eqResult = await safeDbOp(
-      () => db.equipment.findUnique({ where: { id }, select: { id: true } }),
+      () => db.equipment.findUnique({ where: { id }, select: { id: true, deletedAt: true } }),
       'فحص المعدة'
     )
     if (!eqResult.success) return eqResult.response
     if (!eqResult.data) {
+      return NextResponse.json({ error: 'not_found', message: 'المعدة غير موجودة' }, { status: 404 })
+    }
+    // v75: المعدة المحذوفة مخفية عن غير مدير النظام — لا صيانة عليها
+    if ((eqResult.data as any).deletedAt && !isSystemAdminAccount(user)) {
       return NextResponse.json({ error: 'not_found', message: 'المعدة غير موجودة' }, { status: 404 })
     }
 
