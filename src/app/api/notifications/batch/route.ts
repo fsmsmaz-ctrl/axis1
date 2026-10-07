@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { safeDbOp } from '@/lib/api-helpers'
+import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 import { OVERSIGHT_NOTIFICATION_TYPES } from '@/lib/oversight'
 
 // تعليم كل تنبيهات المستخدم الحالية كمقروءة في طلب واحد.
@@ -11,6 +12,11 @@ export async function PUT(req: NextRequest) {
   var user = await getAuthUser(req)
   if (!user) {
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
+  }
+  // v74: تحصين — كتابة جماعية على التنبيهات بلا حد معدل سابقاً
+  var rl = checkRateLimit(req, RateLimitPresets.write)
+  if (rl.limited) {
+    return NextResponse.json({ error: 'too_many_requests', message: 'طلبات كثيرة جداً، يرجى الانتظار قليلاً' }, { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } })
   }
 
   // تعليم التنبيهات الموجهة للمستخدم نفسه فقط (userId = user.id)
@@ -37,4 +43,4 @@ export async function PUT(req: NextRequest) {
   return NextResponse.json({ success: true, updated: updateResult.data.count })
 }
 
-                                     
+                                    
