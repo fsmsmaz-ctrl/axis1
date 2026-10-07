@@ -15,7 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Plus, Wrench, Clock, AlertTriangle, Cpu, Settings, Calendar, DollarSign,
   Package, Building2, ArrowDownToLine, ArrowRightLeft, Trash2, Pencil, Eye, UserCircle, Camera, X,
-  History, RotateCcw, Loader2
+  History, RotateCcw, Loader2, Archive
 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
@@ -59,6 +59,14 @@ const assetStatusLabels: Record<string, { ar: string; en: string; color: string 
   damaged: { ar: 'متلف', en: 'Damaged', color: 'bg-red-50 text-red-700' },
 }
 
+// v75: تسميات إجراءات مفكرة المعدات — ثنائية اللغة
+const eqLogActionLabels: Record<string, { ar: string; en: string; cls: string }> = {
+  create: { ar: 'إنشاء', en: 'Created', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  update: { ar: 'تعديل', en: 'Updated', cls: 'bg-blue-50 text-blue-700 border-blue-200' },
+  delete: { ar: 'حذف', en: 'Deleted', cls: 'bg-red-50 text-red-700 border-red-200' },
+  restore: { ar: 'استعادة', en: 'Restored', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+}
+
 export default function EquipmentPage() {
   const [equipment, setEquipment] = useState<any[]>([])
   const [projects, setProjects] = useState<any[]>([])
@@ -83,6 +91,8 @@ export default function EquipmentPage() {
   const canSeeLost = !!user && (normalizeRole(user.role) === 'top_management' || normalizeRole(user.role) === 'project_manager')
   const language = useAppStore((s) => s.language)
   const isRtl = language === 'ar'
+  // v75: مدير النظام بدقة (العلم من القاعدة أو البريد الرئيسي) — هو الوحيد الذي يرى أرشيف المحذوفة
+  const isSystemAdminUser = user?.isSystemAdmin === true || ((user?.email || '').toLowerCase().trim() === SYSTEM_ADMIN_EMAIL)
 
   function canEditEq(_eq: any) {
     return canWriteEq
@@ -106,6 +116,12 @@ export default function EquipmentPage() {
   const [lostOpen, setLostOpen] = useState(true)
   // v43: هوية الأصل الأصلي أثناء الاستعادة (تاريخ التسجيل + المنشئ الأصلي)
   const [restoringMeta, setRestoringMeta] = useState<any>(null)
+  // v75: مفكرة المعدات (سجل ثنائي اللغة) + أرشيف المحذوفة (مدير النظام فقط)
+  const [eqLogs, setEqLogs] = useState<any[]>([])
+  const [eqLogsLoading, setEqLogsLoading] = useState(false)
+  const [eqLogsOpen, setEqLogsOpen] = useState(true)
+  const [deletedEquipment, setDeletedEquipment] = useState<any[]>([])
+  const [restoringEqId, setRestoringEqId] = useState<string | null>(null)
 
   const [formData, setFormData] = useState({
     projectId: '', name: '', number: '', type: 'jacking_machine',
@@ -260,10 +276,45 @@ export default function EquipmentPage() {
       if (!res.ok) { setEquipment([]); setLoading(false); return }
       var data = await res.json()
       setEquipment(data.equipment || [])
+      // v75: أرشيف المحذوفة يصل منفصلاً — واجهة الواجهة ترميه للمستخدمين غير المديرين
+      setDeletedEquipment(data.deletedEquipment || [])
     } catch {
       setEquipment([])
     }
     setLoading(false)
+  }
+
+  // v75: جلب مفكرة المعدات — سجل التغييرات ثنائي اللغة (عربي/إنجليزي)
+  async function fetchEquipmentLogs() {
+    setEqLogsLoading(true)
+    try {
+      var res = await authedFetch('/api/equipment/logs?take=40&_t=' + Date.now(), { cache: 'no-store' })
+      var data = res.ok ? await res.json() : null
+      setEqLogs((data && data.logs) || [])
+    } catch {
+      setEqLogs([])
+    }
+    setEqLogsLoading(false)
+  }
+
+  // v75: استعادة معدة من أرشيف المحذوفة — لمدير النظام فقط
+  async function restoreEquipment(id: string) {
+    if (!confirm(isRtl ? 'استعادة هذه المعدة من الأرشيف وإعادتها ظاهرة للمستخدمين؟' : 'Restore this equipment from the archive and make it visible again?')) return
+    setRestoringEqId(id)
+    try {
+      var res = await authedFetch('/api/equipment/' + id + '/restore', { method: 'POST' })
+      var data = await res.json().catch(function() { return {} })
+      if (res.ok && data.success) {
+        toast.success(isRtl ? 'تم استعادة المعدة — سُجّلت العملية في المفكرة' : 'Equipment restored — logged in the equipment log')
+        fetchEquipment()
+        fetchEquipmentLogs()
+      } else {
+        toast.error(data.message || (isRtl ? 'فشلت الاستعادة' : 'Restore failed'))
+      }
+    } catch {
+      toast.error(isRtl ? 'حدث خطأ' : 'Error')
+    }
+    setRestoringEqId(null)
   }
 
   const fetchAssets = useCallback(async () => {
@@ -325,6 +376,8 @@ export default function EquipmentPage() {
     fetchProjectList()
     fetchUserList()
     fetchLostAssets()
+    // v75: مفكرة المعدات تُجلب عند فتح القسم
+    fetchEquipmentLogs()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user])
 
@@ -351,9 +404,11 @@ export default function EquipmentPage() {
         body: JSON.stringify(payload),
       })
       if (res.ok) {
-        toast.success(isRtl ? 'تم إنشاء المعدة' : 'Equipment created')
+        toast.success(isRtl ? 'تم إنشاء المعدة — سُجّلت العملية في المفكرة' : 'Equipment created — logged in the equipment log')
         setDialogOpen(false)
         fetchEquipment()
+        // v75: تحديث المفكرة بعد الإنشاء
+        fetchEquipmentLogs()
       } else {
         var errData = await res.json().catch(function() { return {} })
         toast.error(errData.message || (isRtl ? 'فشل الإنشاء' : 'Failed to create'))
@@ -533,10 +588,12 @@ export default function EquipmentPage() {
         body: JSON.stringify(eqPayload),
       })
       if (res.ok) {
-        toast.success(isRtl ? 'تم تحديث المعدة' : 'Equipment updated')
+        toast.success(isRtl ? 'تم تحديث المعدة — سُجّلت التغييرات في المفكرة' : 'Equipment updated — changes logged')
         setEditEqDialogOpen(false)
         setEditingEquipment(null)
         fetchEquipment()
+        // v75: تحديث المفكرة بعد التعديل
+        fetchEquipmentLogs()
       } else {
         var errData = await res.json().catch(function() { return {} })
         toast.error(errData.message || (isRtl ? 'فشل التحديث' : 'Update failed'))
@@ -757,12 +814,14 @@ export default function EquipmentPage() {
                     )}
                     {canEditEq(eq) && (
                       <Button variant="outline" size="sm" className="text-red-600 hover:text-red-700 hover:bg-red-50" onClick={function() {
-                        if (confirm(isRtl ? 'هل تريد حذف هذه المعدة؟' : 'Delete this equipment?')) {
+                        if (confirm(isRtl ? 'هل تريد حذف هذه المعدة؟ ستُخفى عن المستخدمين وتبقى محفوظة في أرشيف النظام (يمكن لمدير النظام استعادتها) — وتُسجّل العملية في المفكرة بالتوقيت واسمك.' : 'Delete this equipment? It will be hidden from users but kept in the system archive (restorable by the system admin) — the action will be logged with your name and time.')) {
                           // v70 FIX: نقطة الحذف هي /api/equipment/[id] — النمط القديم كان يعيد 405 ولا يحذف
                           authedFetch('/api/equipment/' + eq.id, { method: 'DELETE' }).then(function(r) { return r.json() }).then(function(d) {
                             if (d.success) {
-                              toast.success(isRtl ? 'تم حذف المعدة' : 'Equipment deleted')
+                              // v75: حذف ناعم — تختفي عن المستخدمين وتبقى في أرشيف مدير النظام
+                              toast.success(isRtl ? 'تم حذف المعدة — أُرشفت وسُجّلت العملية في المفكرة' : 'Equipment deleted — archived and logged')
                               fetchEquipment()
+                              fetchEquipmentLogs()
                             } else {
                               toast.error(d.message || (isRtl ? 'فشل الحذف' : 'Delete failed'))
                             }
@@ -957,6 +1016,108 @@ export default function EquipmentPage() {
               )
             })}
           </div>
+        )}
+      </div>
+
+      {/* ==================== v75: أرشيف المعدات المحذوفة — مدير النظام فقط ==================== */}
+      {isSystemAdminUser && deletedEquipment.length > 0 && (
+        <div className="pt-4 border-t mt-8">
+          <div className="flex items-center justify-between flex-wrap gap-3 mb-3">
+            <div className="flex items-center gap-2">
+              <Archive className="h-5 w-5 text-red-500" />
+              <h2 className="text-lg font-bold">{isRtl ? 'أرشيف المعدات المحذوفة' : 'Deleted Equipment Archive'}</h2>
+              <Badge variant="destructive">{deletedEquipment.length}</Badge>
+            </div>
+            <span className="text-xs text-muted-foreground">{isRtl ? 'محذوفة لا يراها الموظفون — تبقى محفوظة في النظام ولا تُحذف نهائياً' : 'Hidden from employees — kept in the system, never permanently deleted'}</span>
+          </div>
+          <div className="space-y-2">
+            {deletedEquipment.map(function(d: any) {
+              return (
+                <div key={d.id} className="flex items-center justify-between gap-3 rounded-lg border border-red-100 bg-red-50/40 p-3 flex-wrap">
+                  <div className="space-y-0.5">
+                    <div className="font-medium text-sm">{d.name} <span className="text-muted-foreground">({d.number})</span></div>
+                    <div className="text-xs text-muted-foreground">
+                      {d.project ? d.project.name : (isRtl ? 'بدون مشروع' : 'No project')}
+                      {d.deletedAt ? ' • ' + (isRtl ? 'حُذفت' : 'Deleted') + ' ' + new Date(d.deletedAt).toLocaleString(isRtl ? 'ar-EG' : 'en-GB', { dateStyle: 'medium', timeStyle: 'short' }) : ''}
+                    </div>
+                  </div>
+                  <Button size="sm" variant="outline" className="text-emerald-700 border-emerald-200 hover:bg-emerald-50" disabled={restoringEqId === d.id} onClick={function() { restoreEquipment(d.id) }}>
+                    {restoringEqId === d.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+                    <span className="ml-1">{isRtl ? 'استعادة' : 'Restore'}</span>
+                  </Button>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ==================== v75: مفكرة المعدات — سجل التغييرات ثنائي اللغة ==================== */}
+      <div className="pt-4 border-t mt-8">
+        <div className="flex items-center justify-between flex-wrap gap-3 mb-3">
+          <div className="flex items-center gap-2">
+            <History className="h-5 w-5" />
+            <h2 className="text-lg font-bold">{isRtl ? 'مفكرة المعدات — سجل التغييرات' : 'Equipment Log — Change History'}</h2>
+            {eqLogs.length > 0 && <Badge variant="secondary">{eqLogs.length}</Badge>}
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" disabled={eqLogsLoading} onClick={function() { fetchEquipmentLogs() }}>
+              {eqLogsLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+              <span className="ml-1">{isRtl ? 'تحديث' : 'Refresh'}</span>
+            </Button>
+            <Button variant="outline" size="sm" onClick={function() { setEqLogsOpen(!eqLogsOpen) }}>
+              {eqLogsOpen ? (isRtl ? 'إخفاء' : 'Hide') : (isRtl ? 'إظهار' : 'Show')}
+            </Button>
+          </div>
+        </div>
+
+        {/* v75: تنبيه ثنائي اللغة — كل التغييرات تُسجل في المفكرة */}
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-1 mb-3">
+          <div className="flex items-start gap-2 text-sm text-amber-900">
+            <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+            <span>{isRtl
+              ? 'تنبيه: جميع التغييرات على بيانات المعدات — إضافةً وتعديلاً وحذفاً واستعادةً — تُسجَّل في هذه المفكرة تلقائياً مع اسم المستخدم والتاريخ والوقت. الحذف غير نهائي: المعدة المحذوفة تبقى في أرشيف النظام ومرئية لمدير النظام فقط.'
+              : 'Notice: all changes to equipment data — create, edit, delete, restore — are automatically recorded in this log with the user name, date and time.'}</span>
+          </div>
+          <div className="text-xs text-amber-700" dir="ltr">
+            Notice: All changes to equipment data (add / edit / delete / restore) are recorded in this log with the user name, date and time. Deletion is never permanent — deleted equipment stays in the system archive, visible to the system administrator only.
+          </div>
+        </div>
+
+        {eqLogsOpen && (
+          eqLogsLoading && eqLogs.length === 0 ? (
+            <div className="flex items-center justify-center py-8 text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin ml-2" />
+              <span className="text-sm">{isRtl ? 'جلب المفكرة...' : 'Loading log...'}</span>
+            </div>
+          ) : eqLogs.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground text-sm">
+              {isRtl ? 'لا توجد تغييرات مسجلة بعد — ستظهر هنا فور تعديل أي معدة' : 'No changes recorded yet — entries appear here as soon as any equipment is modified'}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {eqLogs.map(function(log: any) {
+                var act = eqLogActionLabels[log.action] || { ar: log.action, en: log.action, cls: 'bg-gray-50 text-gray-700 border-gray-200' }
+                return (
+                  <div key={log.id} className="rounded-lg border p-3 space-y-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className={'text-xs font-medium px-2 py-0.5 rounded-full border ' + act.cls}>{isRtl ? act.ar : act.en}</span>
+                      <span className="font-medium text-sm">{log.equipmentName || '—'}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(log.createdAt).toLocaleString(isRtl ? 'ar-EG' : 'en-GB', { dateStyle: 'medium', timeStyle: 'short' })}
+                      </span>
+                    </div>
+                    {log.changesAr && <div className="text-sm">{log.changesAr}</div>}
+                    {log.changesEn && <div className="text-xs text-muted-foreground" dir="ltr">{log.changesEn}</div>}
+                    <div className="text-xs text-muted-foreground flex items-center gap-1">
+                      <UserCircle className="h-3.5 w-3.5" />
+                      <span>{log.userName || '—'}{log.userNameEn && log.userNameEn !== log.userName ? ' · ' + log.userNameEn : ''}</span>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )
         )}
       </div>
 
