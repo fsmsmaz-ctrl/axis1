@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/dialog'
 import {
   ListChecks, Plus, Paperclip, History, Play, PauseCircle, Send, CheckCircle2,
-  Undo2, XCircle, Loader2, Clock, AlertTriangle, Filter, BarChart3, Download
+  Undo2, XCircle, Loader2, Clock, AlertTriangle, Filter, BarChart3, Download, ShieldCheck
 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
@@ -191,8 +191,11 @@ export default function TasksPage() {
 
   useEffect(() => {
     fetchTasks()
-    fetchUsers()
   }, [])
+
+  // v77: قائمة الموظفين تُجلب للمديرين فقط —
+  // تستخدم في فلتر الإسناد ونوافذ الإنشاء/التعديل، والموظف لا يحتاجها
+  useEffect(() => { if (viewer.isManager) fetchUsers() }, [viewer.isManager])
 
   useEffect(() => { if (tab === 'perf') fetchPerf(perfMonth) }, [tab])
 
@@ -212,6 +215,10 @@ export default function TasksPage() {
   const filtered = useMemo(() => {
     const now = Date.now()
     return tasks.filter((t) => {
+      // v77: نظام حماية عرض المهام — طبقة دفاعية ثانية في الواجهة:
+      // للموظف (غير المدير) لا تُعرض أبداً مهام غير المسندة إليه،
+      // حتى لو أرجع الخادم قائمة أوسع بسبب أي خلل مستقبلي.
+      if (!viewer.isManager && viewer.userId && t.assigneeId !== viewer.userId) return false
       if (f.assigneeId && t.assigneeId !== f.assigneeId) return false
       if (f.status && t.status !== f.status) return false
       if (f.priority && t.priority !== f.priority) return false
@@ -226,7 +233,7 @@ export default function TasksPage() {
       }
       return true
     })
-  }, [tasks, f])
+  }, [tasks, f, viewer])
 
   // ─── الملخص السريع ───
   const summary = useMemo(() => {
@@ -474,7 +481,7 @@ export default function TasksPage() {
           <div>
             <h1 className="text-xl lg:text-2xl font-bold">
               {t('إدارة المهام', 'Task Management')}
-              <span className="ms-2 align-middle text-[10px] font-mono font-normal text-muted-foreground border border-border rounded px-1.5 py-0.5" title="Build version marker">v12.6</span>
+              <span className="ms-2 align-middle text-[10px] font-mono font-normal text-muted-foreground border border-border rounded px-1.5 py-0.5" title="Build version marker">v12.7</span>
             </h1>
             <p className="text-xs text-muted-foreground">{t('تنظيم مهام الموظفين ومتابعة الإنجاز والتأخير', 'Assign, track and evaluate employee tasks')}</p>
           </div>
@@ -507,6 +514,17 @@ export default function TasksPage() {
               <span className="font-mono" dir="ltr">{apiError.message}</span>
             </p>
             <p>{t('حاول تحديث الصفحة، وإن تكرر الخطأ تواصل مع مسؤول النظام', 'Try refreshing the page; if the error persists contact the system administrator')}</p>
+          </div>
+        </div>
+      )}
+
+      {/* v77: نظام حماية عرض المهام — لافتة للموظف: يرى المهام الموكّلة إليه فقط */}
+      {!loading && !viewer.isManager && (
+        <div className="flex items-start gap-2.5 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2.5 text-xs leading-relaxed text-emerald-800 dark:text-emerald-300">
+          <ShieldCheck className="h-4 w-4 shrink-0 mt-0.5" />
+          <div className="space-y-0.5">
+            <p className="font-semibold">{t('خصوصية المهام مفعّلة', 'Task privacy is active')}</p>
+            <p>{t('تُعرض عليك المهام الموكّلة إليك فقط، ومهام الموظفين الآخرين مخفية عنك — يراها المسؤولون والإدارة فقط. الحماية مطبقة على الخادم نفسه.', 'You only see tasks assigned to you — tasks of other employees are hidden and visible to supervisors and management only. Enforced on the server itself.')}</p>
           </div>
         </div>
       )}
@@ -615,7 +633,7 @@ export default function TasksPage() {
           {loading ? (
             <div className="flex justify-center py-16"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>
           ) : filtered.length === 0 ? (
-            <Card><CardContent className="py-16 text-center text-muted-foreground">{t('لا توجد مهام مطابقة', 'No matching tasks')}</CardContent></Card>
+            <Card><CardContent className="py-16 text-center text-muted-foreground">{viewer.isManager ? t('لا توجد مهام مطابقة', 'No matching tasks') : t('لا توجد مهام موكّلة إليك حالياً — ستظهر هنا فور إسناد مهمة جديدة إليك', 'No tasks assigned to you yet — new assignments will appear here')}</CardContent></Card>
           ) : (
             <>
               {/* جدول الحاسوب */}
