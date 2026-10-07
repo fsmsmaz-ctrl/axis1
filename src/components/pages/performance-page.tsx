@@ -15,6 +15,13 @@ import { authedFetch } from '@/lib/api-client'
 
 const tooltipStyle = { borderRadius: 8, fontSize: 12 }
 
+// v78 FIX: الحقول المالية تُحذف من استجابة الخادم لمن لا يرى الأسعار (حماية v70 —
+// ومدير النظام لا يرى الأسعار أبداً). أي .toFixed() مباشر على حقل محذوف كان يرمي
+// TypeError أثناء الرسم فتسقط الصفحة كلها عبر error.tsx («حدث خطأ غير متوقع»).
+// n0: رقم آمن للحساب (0 إن غاب) — has: هل القيمة المالية موجودة فعلاً (لعرض «—» بدل أصفار مضللة)
+function n0(v: any) { return typeof v === 'number' && isFinite(v) ? v : 0 }
+function has(v: any) { return typeof v === 'number' && isFinite(v) }
+
 export default function PerformancePage() {
   const [performance, setPerformance] = useState<any[]>([])
   // v40: إحصاءات خطوط الحفر من الخادم (مرتبة بالمؤشر تنازلياً)
@@ -46,21 +53,23 @@ export default function PerformancePage() {
   }, [selectedProject])
 
   // Memoize all derived computations
+  // v78: هل الحقول المالية محذوفة من الاستجابة؟ (مدير النظام لا يرى الأسعار — تُعرض «—» بدل الأرقام)
+  const finHidden = useMemo(() => performance.length > 0 && !has(performance[0].totalRevenue), [performance])
   const { totals, avgDailyMeters, overallProfitMargin, avgSafety, avgWorkHours } = useMemo(() => {
     const t = performance.reduce((acc, p) => ({
-      totalMeters: acc.totalMeters + p.totalMeters,
-      totalRevenue: acc.totalRevenue + p.totalRevenue,
-      totalCost: acc.totalCost + p.totalCost,
-      totalProfit: acc.totalProfit + (p.totalRevenue - p.totalCost),
-      totalDays: acc.totalDays + p.daysCount,
-      totalWorkers: acc.totalWorkers + p.totalWorkers,
+      totalMeters: acc.totalMeters + n0(p.totalMeters),
+      totalRevenue: acc.totalRevenue + n0(p.totalRevenue),
+      totalCost: acc.totalCost + n0(p.totalCost),
+      totalProfit: acc.totalProfit + (n0(p.totalRevenue) - n0(p.totalCost)),
+      totalDays: acc.totalDays + n0(p.daysCount),
+      totalWorkers: acc.totalWorkers + n0(p.totalWorkers),
     }), { totalMeters: 0, totalRevenue: 0, totalCost: 0, totalProfit: 0, totalDays: 0, totalWorkers: 0 })
 
     return {
       totals: t,
       avgDailyMeters: t.totalDays > 0 ? t.totalMeters / t.totalDays : 0,
       overallProfitMargin: t.totalRevenue > 0 ? (t.totalProfit / t.totalRevenue) * 100 : 0,
-      avgSafety: performance.length > 0 ? performance.reduce((s, p) => s + p.safetyRate, 0) / performance.length : 0,
+      avgSafety: performance.length > 0 ? performance.reduce((s, p) => s + n0(p.safetyRate), 0) / performance.length : 0,
       // v41 FIX: كفاءة ساعات العمل الحقيقية بدل «نسبة الحضور» الشكلية (كانت 100% دائمًا)
       avgWorkHours: performance.length > 0 ? performance.reduce((s, p) => s + (p.workHoursRate || 0), 0) / performance.length : 0,
     }
@@ -68,17 +77,17 @@ export default function PerformancePage() {
 
   const comparisonData = useMemo(() => performance.map(p => ({
     name: p.projectCode,
-    meters: Number(p.totalMeters.toFixed(0)),
-    revenue: Number(p.totalRevenue.toFixed(0)),
-    profit: Number((p.totalRevenue - p.totalCost).toFixed(0)),
-    safety: Number(p.safetyRate.toFixed(0)),
+    meters: Number(n0(p.totalMeters).toFixed(0)),
+    revenue: Number(n0(p.totalRevenue).toFixed(0)),
+    profit: Number((n0(p.totalRevenue) - n0(p.totalCost)).toFixed(0)),
+    safety: Number(n0(p.safetyRate).toFixed(0)),
   })), [performance])
 
   const radarData = useMemo(() => performance[0] ? [
-    { metric: isRtl ? 'الإنتاج' : 'Production', value: Math.min(100, (performance[0].avgDaily / 10) * 100) },
-    { metric: isRtl ? 'السلامة' : 'Safety', value: performance[0].safetyRate },
+    { metric: isRtl ? 'الإنتاج' : 'Production', value: Math.min(100, (n0(performance[0].avgDaily) / 10) * 100) },
+    { metric: isRtl ? 'السلامة' : 'Safety', value: n0(performance[0].safetyRate) },
     { metric: isRtl ? 'ساعات العمل' : 'Work Hours', value: Math.max(0, Math.min(100, performance[0].workHoursRate || 0)) },
-    { metric: isRtl ? 'الربحية' : 'Profitability', value: Math.max(0, performance[0].profitMargin) },
+    { metric: isRtl ? 'الربحية' : 'Profitability', value: Math.max(0, n0(performance[0].profitMargin)) },
     { metric: isRtl ? 'كفاءة المعدات' : 'Equipment', value: 85 },
     { metric: isRtl ? 'الالتزام' : 'Compliance', value: 90 },
   ] : [], [performance, isRtl])
@@ -104,8 +113,8 @@ export default function PerformancePage() {
 
   const lineFinancialData = useMemo(() => lineStats.filter((l: any) => l.reportDays > 0).slice(0, 12).map((l: any) => ({
     name: l.lineNumber,
-    revenue: Number(l.revenue.toFixed(0)),
-    cost: Number(l.cost.toFixed(0)),
+    revenue: Number(n0(l.revenue).toFixed(0)),
+    cost: Number(n0(l.cost).toFixed(0)),
   })), [lineStats])
 
   const lineScoreData = useMemo(() => lineStats.filter((l: any) => l.reportDays > 0).slice(0, 12).map((l: any) => ({
@@ -199,7 +208,7 @@ export default function PerformancePage() {
               <span className="text-xs text-muted-foreground">{isRtl ? 'هامش الربح' : 'Profit Margin'}</span>
             </div>
             <p className={`text-xl font-bold ${overallProfitMargin >= 0 ? 'text-orange-700' : 'text-red-700'}`}>
-              {overallProfitMargin.toFixed(1)}%
+              {finHidden ? '—' : `${overallProfitMargin.toFixed(1)}%`}
             </p>
           </CardContent>
         </Card>
@@ -230,17 +239,17 @@ export default function PerformancePage() {
               valueText={`${lineSuper?.worst ? lineSuper.worst.score : 0}/100`}
               subText={lineSuper?.worst ? (isRtl ? `${Math.round(lineSuper.worst.meters)} متر — يحتاج خطة تحسين` : `${Math.round(lineSuper.worst.meters)} m — needs improvement`) : ''} />
             <LineSuperCard icon={Flame} tone="text-orange-600" title={isRtl ? 'أكثر خط مكلفاً' : 'Most Costly Line'} line={lineSuper?.mostCostly}
-              valueText={lineSuper?.mostCostly ? `${Math.round(lineSuper.mostCostly.cost).toLocaleString()} ر.ع` : '—'}
-              subText={lineSuper?.mostCostly ? (isRtl ? `تكلفة المتر: ${lineSuper.mostCostly.costPerMeter.toFixed(2)} ر.ع` : `Cost/m: ${lineSuper.mostCostly.costPerMeter.toFixed(2)} OMR`) : ''} />
+              valueText={lineSuper?.mostCostly && has(lineSuper.mostCostly.cost) ? `${Math.round(lineSuper.mostCostly.cost).toLocaleString()} ر.ع` : '—'}
+              subText={lineSuper?.mostCostly && has(lineSuper.mostCostly.costPerMeter) ? (isRtl ? `تكلفة المتر: ${lineSuper.mostCostly.costPerMeter.toFixed(2)} ر.ع` : `Cost/m: ${lineSuper.mostCostly.costPerMeter.toFixed(2)} OMR`) : ''} />
             <LineSuperCard icon={PiggyBank} tone="text-emerald-600" title={isRtl ? 'أقل خط مكلفاً' : 'Least Costly Line'} line={lineSuper?.leastCostly}
-              valueText={lineSuper?.leastCostly ? `${Math.round(lineSuper.leastCostly.cost).toLocaleString()} ر.ع` : '—'}
-              subText={lineSuper?.leastCostly ? (isRtl ? `تكلفة المتر: ${lineSuper.leastCostly.costPerMeter.toFixed(2)} ر.ع` : `Cost/m: ${lineSuper.leastCostly.costPerMeter.toFixed(2)} OMR`) : ''} />
+              valueText={lineSuper?.leastCostly && has(lineSuper.leastCostly.cost) ? `${Math.round(lineSuper.leastCostly.cost).toLocaleString()} ر.ع` : '—'}
+              subText={lineSuper?.leastCostly && has(lineSuper.leastCostly.costPerMeter) ? (isRtl ? `تكلفة المتر: ${lineSuper.leastCostly.costPerMeter.toFixed(2)} ر.ع` : `Cost/m: ${lineSuper.leastCostly.costPerMeter.toFixed(2)} OMR`) : ''} />
             <LineSuperCard icon={TrendingUp} tone="text-blue-600" title={isRtl ? 'أكثر خط إيراداً' : 'Highest Revenue Line'} line={lineSuper?.mostRevenue}
-              valueText={lineSuper?.mostRevenue ? `${Math.round(lineSuper.mostRevenue.revenue).toLocaleString()} ر.ع` : '—'}
-              subText={lineSuper?.mostRevenue ? (isRtl ? `ربح: ${Math.round(lineSuper.mostRevenue.profit).toLocaleString()} ر.ع` : `Profit: ${Math.round(lineSuper.mostRevenue.profit).toLocaleString()} OMR`) : ''} />
+              valueText={lineSuper?.mostRevenue && has(lineSuper.mostRevenue.revenue) ? `${Math.round(lineSuper.mostRevenue.revenue).toLocaleString()} ر.ع` : '—'}
+              subText={lineSuper?.mostRevenue && has(lineSuper.mostRevenue.profit) ? (isRtl ? `ربح: ${Math.round(lineSuper.mostRevenue.profit).toLocaleString()} ر.ع` : `Profit: ${Math.round(lineSuper.mostRevenue.profit).toLocaleString()} OMR`) : ''} />
             <LineSuperCard icon={Medal} tone="text-amber-600" title={isRtl ? 'أعلى خط ربحية' : 'Best Margin Line'} line={lineSuper?.mostProfitable}
-              valueText={lineSuper?.mostProfitable ? `${lineSuper.mostProfitable.profitMargin.toFixed(1)}%` : '—'}
-              subText={lineSuper?.mostProfitable ? (isRtl ? `ربح: ${Math.round(lineSuper.mostProfitable.profit).toLocaleString()} ر.ع` : `Profit: ${Math.round(lineSuper.mostProfitable.profit).toLocaleString()} OMR`) : ''} />
+              valueText={lineSuper?.mostProfitable && has(lineSuper.mostProfitable.profitMargin) ? `${lineSuper.mostProfitable.profitMargin.toFixed(1)}%` : '—'}
+              subText={lineSuper?.mostProfitable && has(lineSuper.mostProfitable.profit) ? (isRtl ? `ربح: ${Math.round(lineSuper.mostProfitable.profit).toLocaleString()} ر.ع` : `Profit: ${Math.round(lineSuper.mostProfitable.profit).toLocaleString()} OMR`) : ''} />
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -252,9 +261,9 @@ export default function PerformancePage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                {lineFinancialData.length === 0 ? (
+                {lineFinancialData.length === 0 || finHidden ? (
                   <div className="h-64 flex items-center justify-center text-muted-foreground text-sm">
-                    {isRtl ? 'لا توجد تقارير معتمدة بعد' : 'No approved reports yet'}
+                    {isRtl ? (finHidden ? 'البيانات المالية غير متاحة لصلاحيتك الحالية' : 'لا توجد تقارير معتمدة بعد') : (finHidden ? 'Financial data is not available for your current permission' : 'No approved reports yet')}
                   </div>
                 ) : (
                   <ResponsiveContainer width="100%" height={300}>
@@ -344,12 +353,12 @@ export default function PerformancePage() {
                           </div>
                         </td>
                         <td className="p-2 text-xs">{Math.round(l.meters)}<span className="text-muted-foreground"> / {Math.round(l.totalLength)}</span></td>
-                        <td className="p-2 text-xs text-emerald-700 font-medium">{Math.round(l.revenue).toLocaleString()}</td>
-                        <td className="p-2 text-xs text-red-700 font-medium">{Math.round(l.cost).toLocaleString()}</td>
-                        <td className={`p-2 text-xs font-medium ${l.profit >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>{Math.round(l.profit).toLocaleString()}</td>
+                        <td className="p-2 text-xs text-emerald-700 font-medium">{has(l.revenue) ? Math.round(l.revenue).toLocaleString() : '—'}</td>
+                        <td className="p-2 text-xs text-red-700 font-medium">{has(l.cost) ? Math.round(l.cost).toLocaleString() : '—'}</td>
+                        <td className={`p-2 text-xs font-medium ${has(l.profit) ? (l.profit >= 0 ? 'text-emerald-700' : 'text-red-700') : ''}`}>{has(l.profit) ? Math.round(l.profit).toLocaleString() : '—'}</td>
                         <td className="p-2">
-                          <Badge variant={l.profitMargin >= 20 ? 'default' : l.profitMargin >= 0 ? 'secondary' : 'destructive'} className="text-xs">
-                            {l.profitMargin.toFixed(1)}%
+                          <Badge variant={has(l.profitMargin) ? (l.profitMargin >= 20 ? 'default' : l.profitMargin >= 0 ? 'secondary' : 'destructive') : 'outline'} className="text-xs">
+                            {has(l.profitMargin) ? `${l.profitMargin.toFixed(1)}%` : '—'}
                           </Badge>
                         </td>
                         <td className="p-2 text-xs">{l.costPerMeter > 0 ? l.costPerMeter.toFixed(2) : '—'}</td>
@@ -467,7 +476,7 @@ export default function PerformancePage() {
                           <p className="text-xs text-muted-foreground font-mono">{p.projectCode}</p>
                         </div>
                       </td>
-                      <td className="p-2 text-xs">{p.avgDaily.toFixed(1)} م</td>
+                      <td className="p-2 text-xs">{n0(p.avgDaily).toFixed(1)} م</td>
                       <td className="p-2 text-xs text-emerald-600 font-medium">{p.bestDay} م</td>
                       <td className="p-2 text-xs text-orange-600 font-medium">{p.worstDay} م</td>
                       <td className="p-2 text-xs">
@@ -479,14 +488,14 @@ export default function PerformancePage() {
                       </td>
                       <td className="p-2">
                         <div className="flex items-center gap-1.5">
-                          <Progress value={p.safetyRate} className="h-1.5 w-12" />
-                          <span className="text-xs">{p.safetyRate.toFixed(0)}%</span>
+                          <Progress value={n0(p.safetyRate)} className="h-1.5 w-12" />
+                          <span className="text-xs">{n0(p.safetyRate).toFixed(0)}%</span>
                         </div>
                       </td>
-                      <td className="p-2 text-xs">{p.costPerMeter.toFixed(1)} ر.ع</td>
+                      <td className="p-2 text-xs">{has(p.costPerMeter) ? `${p.costPerMeter.toFixed(1)} ر.ع` : '—'}</td>
                       <td className="p-2">
-                        <Badge variant={p.profitMargin >= 20 ? 'default' : p.profitMargin >= 0 ? 'secondary' : 'destructive'} className="text-xs">
-                          {p.profitMargin.toFixed(1)}%
+                        <Badge variant={has(p.profitMargin) ? (p.profitMargin >= 20 ? 'default' : p.profitMargin >= 0 ? 'secondary' : 'destructive') : 'outline'} className="text-xs">
+                          {has(p.profitMargin) ? `${p.profitMargin.toFixed(1)}%` : '—'}
                         </Badge>
                       </td>
                     </tr>
