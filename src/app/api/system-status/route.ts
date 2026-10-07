@@ -11,7 +11,7 @@ import { db } from '@/lib/db'
 
 export const dynamic = 'force-dynamic'
 
-var APP_VERSION = 'v77'
+var APP_VERSION = 'v78'
 
 // الجداول الحرجة لعمل الأقسام المتعثرة (السلامة + الموارد البشرية) وبقية الأقسام الأساسية
 var CRITICAL_TABLES = [
@@ -128,3 +128,4 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(result)
   }
 }
+
