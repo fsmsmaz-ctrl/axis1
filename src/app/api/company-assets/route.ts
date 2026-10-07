@@ -33,15 +33,37 @@ export async function GET(req: NextRequest) {
   else if (projectId) where.projectId = projectId
   if (ownership) where.ownership = ownership
 
+  // v74: إصلاح قنبلة الحمولة — القائمة كانت تُرسل صور الأصول (base64) مع كل سجل
+  // (حتى 200 سجل × نحو 150KB ≈ عشرات الميغابايت). الآن: القائمة خفيفة بلا صور
+  // + علم hasImage، والصورة تُجلب عند الطلب من GET /api/company-assets/[id]
   const result = await safeDbOp(
     () => db.companyAsset.findMany({
       where, orderBy: { createdAt: 'desc' }, take: 200,
-      include: { project: { select: { id: true, name: true, code: true } }, responsible: { select: { id: true, name: true, nameEn: true } }, createdBy: { select: { id: true, name: true } }, restoredBy: { select: { id: true, name: true } } },
+      select: {
+        id: true, projectId: true, name: true, itemType: true, quantity: true,
+        ownership: true, supplier: true, rentalCost: true, rentalStart: true,
+        rentalEnd: true, responsibleId: true, status: true, notes: true,
+        createdById: true, restoredById: true, restoredAt: true,
+        createdAt: true, updatedAt: true,
+        project: { select: { id: true, name: true, code: true } },
+        responsible: { select: { id: true, name: true, nameEn: true } },
+        createdBy: { select: { id: true, name: true } },
+        restoredBy: { select: { id: true, name: true } },
+      },
     }), 'جلب الأصول والمستأجرات'
   )
   if (!result.success) return result.response
 
-  const assets = result.data
+  // v74: أي الأصول تملك صورة؟ — استعلام خفيف بالمعرفات فقط
+  var rows: any[] = (result.data as any[]) || []
+  var imgRows = rows.length > 0 ? await db.companyAsset.findMany({
+    where: { id: { in: rows.map(function(a) { return a.id }) }, image: { not: null } },
+    select: { id: true },
+  }) : []
+  var imgSet = new Set(imgRows.map(function(r) { return r.id }))
+  const assets = rows.map(function(a) {
+    return Object.assign({}, a, { hasImage: imgSet.has(a.id) })
+  })
   const ownedCount = assets.filter(function(a: any) { return a.ownership === 'owned' }).length
   const rentedCount = assets.filter(function(a: any) { return a.ownership === 'rented' }).length
   const borrowedCount = assets.filter(function(a: any) { return a.ownership === 'borrowed' }).length
