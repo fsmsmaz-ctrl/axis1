@@ -447,3 +447,34 @@ export async function ensureDailyReportSafety(): Promise<void> {
     console.error('v57 safety self-heal skipped (will retry):', e)
   }
 }
+
+// ─── v75: مفكرة المعدات + الحذف الناعم ────────────────────────────────
+// deletedAt/deletedById على Equipment + جدول EquipmentLog (سجل ثنائي اللغة)
+var v75EqLogChecked = false
+
+export async function ensureEquipmentLogSupport(): Promise<void> {
+  if (v75EqLogChecked) return
+  try {
+    await db.$executeRawUnsafe('ALTER TABLE "Equipment" ADD COLUMN IF NOT EXISTS "deletedAt" TIMESTAMP(3)')
+    await db.$executeRawUnsafe('ALTER TABLE "Equipment" ADD COLUMN IF NOT EXISTS "deletedById" TEXT')
+    await db.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "EquipmentLog" (
+  "id" TEXT NOT NULL,
+  "equipmentId" TEXT NOT NULL,
+  "equipmentName" TEXT,
+  "userId" TEXT,
+  "userName" TEXT,
+  "userNameEn" TEXT,
+  "action" TEXT NOT NULL,
+  "changesAr" TEXT,
+  "changesEn" TEXT,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT "EquipmentLog_pkey" PRIMARY KEY ("id")
+)`)
+    await db.$executeRawUnsafe('CREATE INDEX IF NOT EXISTS "EquipmentLog_equipmentId_createdAt_idx" ON "EquipmentLog"("equipmentId", "createdAt")')
+    await db.$executeRawUnsafe('CREATE INDEX IF NOT EXISTS "EquipmentLog_createdAt_idx" ON "EquipmentLog"("createdAt")')
+    v75EqLogChecked = true
+  } catch (e) {
+    // لا نُثبّت العلم عند الفشل — تُعاد المحاولة في الطلب التالي
+    console.error('v75: equipment log self-heal skipped (will retry):', e)
+  }
+}
