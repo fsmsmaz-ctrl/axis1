@@ -167,16 +167,24 @@ export async function PATCH(
       }
 
       if (request.status === 'approved' && request.type === 'annual') {
-        await db.$transaction([
-          db.leaveRequest.update({
+        // v72: معاملة تفاعلية — إرجاع الرصيد مع منع النزول تحت الصفر
+        // (تعديل إداري لاحق قد يكون صفّر used، والخصم الأعمى كان يجعله سالباً = رصيد زائف)
+        var cancelEmpId = request.employeeId
+        var cancelDays = request.days
+        var deciderId = me.id
+        await db.$transaction(async function(tx) {
+          await tx.leaveRequest.update({
             where: { id },
-            data: { status: 'cancelled', reviewedById: me.id, reviewedAt: new Date(), reviewNote: note },
-          }),
-          db.leaveBalance.update({
-            where: { userId: request.employeeId },
-            data: { used: { decrement: request.days } },
-          }),
-        ])
+            data: { status: 'cancelled', reviewedById: deciderId, reviewedAt: new Date(), reviewNote: note },
+          })
+          var bal = await tx.leaveBalance.findUnique({ where: { userId: cancelEmpId } })
+          if (bal) {
+            var restored = Math.max(0, bal.used - cancelDays)
+            if (restored !== bal.used) {
+              await tx.leaveBalance.update({ where: { userId: cancelEmpId }, data: { used: restored } })
+            }
+          }
+        })
       } else {
         await db.leaveRequest.update({
           where: { id },
