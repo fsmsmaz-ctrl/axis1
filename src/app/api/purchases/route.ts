@@ -17,6 +17,10 @@ function validInvoiceImage(s: string): boolean {
 }
 
 // GET: مشتريات المستخدم الحالي مرتبة من الأحدث
+// v73: إصلاح قنبلة الحمولة — القائمة كانت تُرسل invoiceImage (حتى 4.5MB لكل فاتورة)
+// لكل السجلات المئة في كل زيارة للملف الشخصي فتتجمد الصفحة على الأجهزة الضعيفة
+// وتنفق بيانات الجوال. الآن: القائمة خفيفة بلا صور + علم hasInvoice، والصورة
+// تُجلب عند الطلب من GET /api/purchases/[id] (عرض الفاتورة أو تعديل المسودة)
 export async function GET(req: NextRequest) {
   var user = await getAuthUser(req)
   if (!user) {
@@ -24,15 +28,29 @@ export async function GET(req: NextRequest) {
   }
   try {
     await ensurePurchasesSupport()
-    var purchases = await db.purchase.findMany({
+    var rows = await db.purchase.findMany({
       where: { userId: user.id },
       orderBy: { createdAt: 'desc' },
       // v70: حد أقصى للحمولة — السجل الكامل مع صور الفواتير قد يبلغ مئات الميغابايت
       take: 100,
-      include: {
+      // v73: بلا invoiceImage — العمود الثقيل يبقى في القاعدة ويُجلب عند الطلب
+      select: {
+        id: true, title: true, notes: true, amount: true,
+        status: true, projectId: true, reviewNote: true,
+        reviewedById: true, reviewedAt: true, costId: true,
+        submittedAt: true, createdAt: true, updatedAt: true,
         project: { select: { id: true, name: true } },
         reviewedBy: { select: { id: true, name: true, nameEn: true } },
       },
+    })
+    // v73: أيّ السجلات تملك صورة فاتورة؟ — استعلام خفيف بالمعرفات فقط
+    var imgRows = await db.purchase.findMany({
+      where: { userId: user.id, id: { in: rows.map(function(p) { return p.id }) }, invoiceImage: { not: null } },
+      select: { id: true },
+    })
+    var imgSet = new Set(imgRows.map(function(r) { return r.id }))
+    var purchases = rows.map(function(p) {
+      return Object.assign({}, p, { hasInvoice: imgSet.has(p.id) })
     })
     return NextResponse.json({ purchases })
   } catch (e) {
