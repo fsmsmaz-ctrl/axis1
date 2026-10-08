@@ -3,7 +3,7 @@ import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { handleDbError, safeDbOp } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
-import { hasPermission, isTaskManager } from '@/lib/auth'
+import { hasPermission, isTaskManager , SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
 import { notifyUsers } from '@/lib/notify'
 
 const OPEN_STATUSES = ['new', 'in_progress', 'waiting', 'returned']
@@ -189,7 +189,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (action === 'return') {
       if (!manager) return NextResponse.json({ error: 'forbidden', message: 'إعادة المهمة للتعديل متاحة للإدارة فقط' }, { status: 403 })
       // SECURITY FIX: منع الإدارة الذاتية للمهام المسندة للمدير نفسه
-      var sysAdminReturner = (user.email || '').toLowerCase().trim() === 'admin@axis.om'
+      var sysAdminReturner = (user.email || '').toLowerCase().trim() === SYSTEM_ADMIN_EMAIL
       if (task.assigneeId === user.id && !sysAdminReturner) {
         return NextResponse.json({ error: 'forbidden', message: 'لا يمكنك إعادة مهمة مسندة إليك — اطلب من مدير آخر مراجعتها' }, { status: 403 })
       }
@@ -225,7 +225,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       if (!manager) return NextResponse.json({ error: 'forbidden', message: 'اعتماد المهمة متاح للإدارة فقط' }, { status: 403 })
       // SECURITY FIX: منع الاعتماد الذاتي — المدير يعتمد مهمته المسندة نفسه فيضخم
       // مؤشر closedOnFirstReview في تقرير الأداء (فصل المهام)
-      var sysAdminApprover = (user.email || '').toLowerCase().trim() === 'admin@axis.om'
+      var sysAdminApprover = (user.email || '').toLowerCase().trim() === SYSTEM_ADMIN_EMAIL
       if (task.assigneeId === user.id && !sysAdminApprover) {
         return NextResponse.json({ error: 'forbidden', message: 'لا يمكنك اعتماد مهمة مسندة إليك — اطلب من مدير آخر اعتمادها' }, { status: 403 })
       }
@@ -361,4 +361,4 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 }
 
-                                      
+                                    
