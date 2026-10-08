@@ -3,7 +3,8 @@ import { getAuthUser } from '@/lib/auth-server'
 import { SYSTEM_ADMIN_EMAIL, canViewPricing } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
-import { safeDbOp, handleDbError, sanitizeDailyReport } from '@/lib/api-helpers'
+import { safeDbOp, handleDbError, sanitizeDailyReport, recalcDrillingDates } from '@/lib/api-helpers'
+import { ensureDriveLineDates } from '@/lib/db-selfheal'
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   var user = await getAuthUser(req)
@@ -29,6 +30,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   var { id } = await params
+
+  // v79: ضمان جاهزية عمودَي تواريخ الحفر — الاعتماد هو لحظة انضمام التقرير للمنشور
+  await ensureDriveLineDates()
 
   try {
     var existingResult = await safeDbOp(
@@ -125,6 +129,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       'اعتماد التقرير'
     )
     if (!updateResult.success) return updateResult.response
+
+    // v79: اعتماد التقرير ينضم به لمنشور الخط — تاريخا بدء/آخر يوم حفر يتحدثان تلقائياً
+    // (أول تقرير معتمد = بدء الحفر، آخر تقرير معتمد = آخر يوم حفر حتى اكتماله)
+    if (existingReport.driveLineId) {
+      await recalcDrillingDates(db, existingReport.driveLineId)
+    }
 
     safeDbOp(
       () => db.auditLog.create({
