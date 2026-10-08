@@ -37,10 +37,12 @@ export async function GET(req: NextRequest) {
   if (dateRange.gte || dateRange.lt) where.date = dateRange
 
   // Try full query with includes first
+  // v80: سقف استرجاع 5000 — كان بلا حد إطلاقاً (حمل/ذاكرة مع نمو الجدول)
   var costsResult = await safeDbOp(
     () => db.cost.findMany({
       where,
       orderBy: { date: 'desc' },
+      take: 5000,
       include: {
         project: { select: { id: true, name: true, code: true } },
         dailyReport: { select: { id: true, reportDate: true } },
@@ -57,6 +59,7 @@ export async function GET(req: NextRequest) {
       () => db.cost.findMany({
         where,
         orderBy: { date: 'desc' },
+        take: 5000,
         include: {
           project: { select: { id: true, name: true, code: true } },
         },
@@ -72,6 +75,7 @@ export async function GET(req: NextRequest) {
       () => db.cost.findMany({
         where,
         orderBy: { date: 'desc' },
+        take: 5000,
       }),
       'جلب التكاليف (بسيط)'
     )
@@ -253,4 +257,3 @@ export async function POST(req: NextRequest) {
     return handleDbError(error, 'إنشاء التكلفة')
   }
 }
-
