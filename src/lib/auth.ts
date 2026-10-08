@@ -217,6 +217,10 @@ export function canModifyDriveLines(
 // قرار صاحب الموقع (v82): مسؤول السلامة يستطيع إضافة معدة جديدة أو أصل/مستأجر
 // جديد — إنشاء فقط بلا تعديل/حذف. نفس نمط خطوط الحفر v81: canWrite تقبل دوره
 // في الإنشاء، وcanModifyEquipment/canModifyCompanyAsset ترفضانه في التعديل والحذف.
+// v84 (قرار صاحب الموقع الجديد): التعديل فُتح للجميع عبر canEditAnyEquipment /
+// canEditAnyCompanyAsset — أدوار «الإنشاء فقط» الآن تعدّل أي معدة/أصل،
+// وتظهر كل تغييراتها في السجل المصغر على المعدة نفسها. canModify* أعيد
+// تخصيصها لبوابة الحذف فقط (الإدارة حصراً).
 // قرار صاحب الموقع (v83 — توسعة ورفع الحظر المالي):
 //   1) المشرف (foreman) يُضاف لدورَي «الإنشاء فقط» في المعدات والأصول.
 //   2) مَن سجّل المعدة/الأصل يستطيع تعديل ما سجّله هو — بوابة المُنشئ
@@ -235,7 +239,7 @@ export function canModifyEquipment(
   if (!user) return false
   if (user.isSystemAdmin === true) return true
   if (user.email && user.email.toLowerCase().trim() === SYSTEM_ADMIN_EMAIL) return true
-  // أدوار الإنشاء فقط: إنشاء نعم — تعديل/حذف/صيانة لا
+  // أدوار الإنشاء فقط: إنشاء نعم — حذف/إدارة لا (v84: التعديل عبر canEditAnyEquipment)
   if ((EQUIPMENT_CREATE_ONLY_ROLES as readonly string[]).includes(normalizeRole(user.role))) return false
   return canWrite(user.role || '', 'equipment', user.permissions)
 }
@@ -246,8 +250,34 @@ export function canModifyCompanyAsset(
   if (!user) return false
   if (user.isSystemAdmin === true) return true
   if (user.email && user.email.toLowerCase().trim() === SYSTEM_ADMIN_EMAIL) return true
-  // أدوار الإنشاء فقط: إنشاء نعم — تعديل/حذف لا
+  // أدوار الإنشاء فقط: إنشاء نعم — حذف/إدارة لا (v84: التعديل عبر canEditAnyCompanyAsset)
   if ((COMPANY_ASSET_CREATE_ONLY_ROLES as readonly string[]).includes(normalizeRole(user.role))) return false
+  return canWrite(user.role || '', 'company_assets', user.permissions)
+}
+
+// ─── v84: أي موظف يملك صلاحية الكتابة يستطيع تعديل أي معدة/أصل ──────────
+// قرار صاحب الموقع: أي معدة أو أصل سجّله موظف يمكن لأي موظف آخر تعديل
+// بياناته — تُضمن حقوق الجميع عبر المساءلة: كل تعديل يُسجَّل على المعدة/الأصل
+// نفسه (سجل مصغر بنقاط صغيرة باسم صاحبه وتوقيته)، والمفكرة الكاملة لمدير
+// النظام وحده. الفرق عن canModify*: هنا يتجاوز فحص «أدوار الإنشاء فقط» —
+// كل من يجتاز فحص الكتابة (canWrite) على المورد يستطيع التعديل، ومدير
+// النظام (العلم من القاعدة أو البريد الرئيسي) يتجاوز دائماً.
+// الحذف يبقى محصوراً بـ canModify* (الإدارة) كما هو.
+export function canEditAnyEquipment(
+  user: { role?: string; email?: string; isSystemAdmin?: boolean; permissions?: Record<string, boolean> | null } | null | undefined
+): boolean {
+  if (!user) return false
+  if (user.isSystemAdmin === true) return true
+  if (user.email && user.email.toLowerCase().trim() === SYSTEM_ADMIN_EMAIL) return true
+  return canWrite(user.role || '', 'equipment', user.permissions)
+}
+
+export function canEditAnyCompanyAsset(
+  user: { role?: string; email?: string; isSystemAdmin?: boolean; permissions?: Record<string, boolean> | null } | null | undefined
+): boolean {
+  if (!user) return false
+  if (user.isSystemAdmin === true) return true
+  if (user.email && user.email.toLowerCase().trim() === SYSTEM_ADMIN_EMAIL) return true
   return canWrite(user.role || '', 'company_assets', user.permissions)
 }
 
