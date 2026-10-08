@@ -154,7 +154,9 @@ export async function ensureVisitorAccount(): Promise<void> {
   try {
     var existing = await db.user.findUnique({ where: { email: 'visitor@axis.om' }, select: { id: true } })
     if (existing) return
-    var passwordHash = await bcrypt.hash('visitor123', 12)
+    // v80 SECURITY: كلمة المرور الافتراضية 'visitor123' تظل للتوافق مع الحساب القائم،
+    // ويمكن للمدير تجاوزها بضبط متغير البيئة VISITOR_PASSWORD في Netlify قبل أول إنشاء
+    var passwordHash = await bcrypt.hash(process.env.VISITOR_PASSWORD || 'visitor123', 12)
     await db.user.create({
       data: {
         email: 'visitor@axis.om',
@@ -536,3 +538,4 @@ export async function ensureDriveLineDates(): Promise<void> {
     console.error('v79: drive line dates self-heal skipped (will retry):', e)
   }
 }
+
