@@ -4,7 +4,7 @@ import { getAuthUser } from '@/lib/auth-server'
 import { ensureMediaSupport, ensureEquipmentLogSupport } from '@/lib/db-selfheal'
 import { db } from '@/lib/db'
 import { handleDbError, safeDbOp, validImageDataUrl, logEquipmentChange } from '@/lib/api-helpers'
-import { hasPermission, isSystemAdminAccount, canModifyEquipment, hideEquipmentMoney } from '@/lib/auth'
+import { hasPermission, isSystemAdminAccount, canModifyEquipment } from '@/lib/auth'
 
 // ─── v75: تسميات ثنائية اللغة لتغييرات المعدة في المفكرة ──────────────
 var EQ_FIELD_LABELS: Record<string, { ar: string; en: string }> = {
@@ -56,7 +56,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const result = await safeDbOp(
       () => db.equipment.findUnique({
         where: { id },
-        include: { project: true, maintenance: { include: { performedBy: { select: { name: true, nameEn: true } } }, orderBy: { date: 'desc' }, take: 10 } },
+        // v83: createdBy يُضمَّن في التفاصيل — نافذة العرض تُظهر مَن سجّل المعدة
+        include: { project: true, createdBy: { select: { id: true, name: true, nameEn: true } }, maintenance: { include: { performedBy: { select: { name: true, nameEn: true } } }, orderBy: { date: 'desc' }, take: 10 } },
       }),
       'جلب المعدة'
     )
@@ -66,13 +67,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     if ((result.data as any).deletedAt && !isSystemAdminAccount(user)) {
       return NextResponse.json({ error: 'not_found', message: 'المعدة غير موجودة' }, { status: 404 })
     }
-    // v82: مسؤول السلامة لا يرى أي شيء يخص الأسعار — تكاليف الصيانة تُعقم من التفاصيل
-    if (hideEquipmentMoney(user)) {
-      var v82Detail = result.data as any
-      if (v82Detail.maintenance) {
-        v82Detail.maintenance = (v82Detail.maintenance as any[]).map(function(x) { return Object.assign({}, x, { cost: 0 }) })
-      }
-    }
+    // v83: أُلغي تعقيم تكاليف الصيانة عن مسؤول السلامة — قرار صاحب الموقع:
+    // مَن يسجّل معدة يرى كافة بياناتها ومن ضمنها الأسعار، والمساءلة عبر المفكرة
     return NextResponse.json({ equipment: result.data })
   } catch (error) {
     return handleDbError(error, 'جلب المعدة')
@@ -87,12 +83,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     if (rl.limited) {
       return NextResponse.json({ error: 'too_many_requests', message: 'طلبات كثيرة جداً، يرجى الانتظار قليلاً' }, { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } })
     }
-    // v82: التعديل محجوب عن أدوار «الإنشاء فقط» (مسؤول السلامة)
-    if (!canModifyEquipment(user)) {
-      return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية لتعديل المعدات — إنشاء المعدات متاح لك فقط' }, { status: 403 })
-    }
     const { id } = await params
-    const body = await req.json()
     // v75: جلب السجل القديم كاملاً — للحذف الناعم (حارس الظهور) ولمفكرة التغييرات (قبل ← الآن)
     var v75Old: any = null
     try {
@@ -103,6 +94,15 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     if (v75Old.deletedAt && !isSystemAdminAccount(user)) {
       return NextResponse.json({ error: 'not_found', message: 'المعدة غير موجودة' }, { status: 404 })
     }
+    // v82: التعديل محجوب عن أدوار «الإنشاء فقط» (مسؤول السلامة/المشرف)…
+    // v83 …إلا إذا كان هو مَن سجّل هذه المعدة — قرار صاحب الموقع:
+    // مَن سجّل معدة يستطيع تعديل كافة بياناتها (ومن ضمنها الأسعار) لاحقاً،
+    // وكل تعديله يظهر باسمه في مفكرة المعدات أسفل الصفحة
+    var v83IsCreator = !!v75Old.createdById && v75Old.createdById === user.id
+    if (!canModifyEquipment(user) && !v83IsCreator) {
+      return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية لتعديل هذه المعدة — التعديل متاح لمَن سجّلها وللإدارة فقط' }, { status: 403 })
+    }
+    const body = await req.json()
     // v42: السماح بإسناد المعدة لمشروع (استعادة المعدات اليتيمة بعد حذف مشاريعها)
     var v42OldProjectId: string | null = v75Old.projectId || null
     var v42ProjectData: Record<string, any> = {}
@@ -237,9 +237,10 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     if (rl.limited) {
       return NextResponse.json({ error: 'too_many_requests', message: 'طلبات كثيرة جداً، يرجى الانتظار قليلاً' }, { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } })
     }
-    // v82: الحذف محجوب عن أدوار «الإنشاء فقط» (مسؤول السلامة)
+    // v82: الحذف محجوب عن أدوار «الإنشاء فقط» (مسؤول السلامة/المشرف) —
+    // v83: بوابة المُنشئ تُخوّل التعديل فقط، أما الحذف فللإدارة حصراً
     if (!canModifyEquipment(user)) {
-      return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية لحذف المعدات — إنشاء المعدات متاح لك فقط' }, { status: 403 })
+      return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية لحذف المعدات — الحذف متاح للإدارة فقط' }, { status: 403 })
     }
     const { id } = await params
     // v70: فحص الوجود — حذف غير موجود كان يُسقط 500 «قاعدة البيانات غير مهيأة» مضللاً
