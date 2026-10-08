@@ -3,7 +3,7 @@ import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { buildAuditDetails, safeDbOp, handleDbError, validImageDataUrl } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
-import { canWrite, hasPermission } from '@/lib/auth'
+import { hasPermission, canModifyCompanyAsset, hideEquipmentMoney } from '@/lib/auth'
 
 var MAX_IMAGE_SIZE = 700000
 
@@ -40,8 +40,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const user = await getAuthUser(req)
   if (!user) return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
-  if (!canWrite(user.role, 'company_assets', user.permissions)) {
-    return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية لتعديل الأصول' }, { status: 403 })
+  // v82: التعديل محجوب عن أدوار «الإنشاء فقط» (مسؤول السلامة)
+  if (!canModifyCompanyAsset(user)) {
+    return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية لتعديل الأصول — إضافة الأصول متاحة لك فقط' }, { status: 403 })
   }
 
   var rl = checkRateLimit(req, RateLimitPresets.write)
@@ -90,6 +91,13 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       responsibleId: body.responsibleId || null, projectId: body.projectId || null,
       status: body.status !== undefined ? String(body.status).slice(0, 50) : undefined, notes: body.notes ? String(body.notes).slice(0, 2000) : null,
     }
+    // v82: مسؤول السلامة لا يخصم أي شيء يخص الأسعار — تُشطب قيم الإيجار من طلباته دفاعياً
+    if (hideEquipmentMoney(user)) {
+      updateData.supplier = null
+      updateData.rentalCost = null
+      updateData.rentalStart = null
+      updateData.rentalEnd = null
+    }
     if (body.hasOwnProperty('image')) {
       // v70: نفس فحص الصورة المعتاد — العمود أصبح موجوداً فعلاً الآن
       updateData.image = body.image ? validImageDataUrl(body.image) : null
@@ -114,8 +122,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const user = await getAuthUser(req)
   if (!user) return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
-  if (!canWrite(user.role, 'company_assets', user.permissions)) {
-    return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية لحذف الأصول' }, { status: 403 })
+  // v82: الحذف محجوب عن أدوار «الإنشاء فقط» (مسؤول السلامة)
+  if (!canModifyCompanyAsset(user)) {
+    return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية لحذف الأصول — إضافة الأصول متاحة لك فقط' }, { status: 403 })
   }
 
   var rl = checkRateLimit(req, RateLimitPresets.write)
