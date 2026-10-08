@@ -422,7 +422,7 @@ export default function DriveLinesPage() {
               </div>
               <div className="space-y-1.5">
                 <Label>{isRtl ? 'الطول الكلي (م)' : 'Total Length (m)'} *</Label>
-                <Input type="number" step="0.1" value={formData.totalLength} onChange={(e) => setFormData({ ...formData, totalLength: e.target.value })} required />
+                <Input type="number" step="0.1" min="0.1" value={formData.totalLength} onChange={(e) => setFormData({ ...formData, totalLength: e.target.value })} required />
               </div>
               <div className="space-y-1.5">
                 <Label>{isRtl ? 'نقطة البداية' : 'Start Point'} *</Label>
@@ -476,7 +476,7 @@ export default function DriveLinesPage() {
               </div>
               <div className="space-y-1.5">
                 <Label>{isRtl ? 'العمق (م)' : 'Depth (m)'}</Label>
-                <Input type="number" step="0.1" value={formData.depth} onChange={(e) => setFormData({ ...formData, depth: e.target.value })} />
+                <Input type="number" step="0.1" min="0" value={formData.depth} onChange={(e) => setFormData({ ...formData, depth: e.target.value })} />
               </div>
               <div className="space-y-1.5">
                 <Label>{isRtl ? 'الحالة' : 'Status'}</Label>
@@ -537,4 +537,3 @@ export default function DriveLinesPage() {
     </div>
   )
 }
-
