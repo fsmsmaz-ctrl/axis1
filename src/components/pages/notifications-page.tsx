@@ -134,10 +134,18 @@ export default function NotificationsPage() {
 
   async function markAllAsRead() {
     // طلب دفعي واحد — يُحدّث تنبيهات المستخدم الحالي فقط
-    const res = await authedFetch('/api/notifications/batch', { method: 'PUT' })
-    if (res.ok) {
-      toast.success(isRtl ? 'تم تعليم الكل كمقروء' : 'All marked as read')
-      fetchNotifications()
+    try {
+      const res = await authedFetch('/api/notifications/batch', { method: 'PUT' })
+      if (res.ok) {
+        toast.success(isRtl ? 'تم تعليم الكل كمقروء' : 'All marked as read')
+        fetchNotifications()
+      } else {
+        // v80 إصلاح: فشل الخادم كان يمرّ بصمت — الزر يبدو معطلاً
+        toast.error(isRtl ? 'فشل التحديث — حاول مجدداً' : 'Update failed — try again')
+      }
+    } catch {
+      // v80 إصلاح: لا try/catch — فشل الشبكة كان يستدعي unhandled rejection
+      toast.error(isRtl ? 'فشل الاتصال' : 'Connection failed')
     }
   }
 
