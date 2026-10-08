@@ -18,12 +18,13 @@ import { authedFetch } from '@/lib/api-client'
 import { SystemDiagnosticsButton } from '@/components/system-diagnostics'
 import { canWrite } from '@/lib/auth'
 import { reportDayName } from '@/lib/day-name'
-import { cn } from '@/lib/utils'
+import { cn, localTodayISO } from '@/lib/utils'
 import { toast } from 'sonner'
 
 const incidentLabels: Record<string, { ar: string; en: string; color: string }> = {
   none: { ar: 'لا يوجد', en: 'None', color: 'secondary' },
-  near_miss: { ar: 'Near miss', en: 'Near miss', color: 'default' },
+  // v80 إصلاح: التسمية العربية كانت 'Near miss' بالإنجليزية — الصحيح «شبه حادث» (كما في report-labels.ts)
+  near_miss: { ar: 'شبه حادث', en: 'Near miss', color: 'default' },
   incident: { ar: 'حادث', en: 'Incident', color: 'destructive' },
   accident: { ar: 'إصابة', en: 'Accident', color: 'destructive' },
 }
@@ -61,7 +62,7 @@ function reassignLineLabel(dl: any, isRtl: boolean): string {
 const emptyForm = {
   projectId: '',
   driveLineId: '',
-  reportDate: new Date().toISOString().split('T')[0],
+  reportDate: localTodayISO(),
   ppeAvailable: false,
   helmetCheck: false,
   bootsCheck: false,
@@ -477,7 +478,7 @@ export default function SafetyPage() {
         : (isEdit ? 'Changes saved — visible in Daily Reports and Oversight' : 'Safety report saved successfully'))
       setSheetOpen(false)
       setEditingSafety(null)
-      setForm({ ...emptyForm, reportDate: new Date().toISOString().split('T')[0] })
+      setForm({ ...emptyForm, reportDate: localTodayISO() })
       fetchReports()
     } catch (e: any) {
       toast.error(e.message || (isRtl ? 'حدث خطأ' : 'Error'))
@@ -487,7 +488,9 @@ export default function SafetyPage() {
   }
 
   function goToDailyReports() {
-    useAppStore.getState().setPage('dailyReports')
+    // v80 إصلاح عطل: setPage في store فارغة (no-op) فكان زر «إكمال بيانات التقرير اليومي» لا يفعل شيئاً —
+    // الآلية الصحيحة المستخدمة في بقية الصفحات: حدث axis:goto-page يلتقطه app-shell
+    window.dispatchEvent(new CustomEvent('axis:goto-page', { detail: 'dailyReports' }))
   }
 
   // Calculate stats
@@ -507,14 +510,15 @@ export default function SafetyPage() {
   var avgCompliance = uniqueReports.length > 0
     ? uniqueReports.reduce(function(sum, r) {
         var passed = checklistItems.filter(function(item) { return r[item.key as keyof any] }).length
-        return sum + (passed / 15) * 100
+        // v80 إصلاح: المقام كان 15 ثابتاً — الصحيح طول قائمة الفحص الفعلي حتى لا ينكسر الحساب عند تغير القائمة
+        return sum + (passed / checklistItems.length) * 100
       }, 0) / uniqueReports.length
     : 0
 
   var formPassed = checklistItems.filter(function(item) { return !!form[item.key as keyof typeof form] }).length
-  var formCompliance = (formPassed / 15) * 100
+  var formCompliance = (formPassed / checklistItems.length) * 100
 
-  var today = new Date().toISOString().split('T')[0]
+  var today = localTodayISO()
   var todayReportExists = selectedProject !== 'all' && reports.some(function(r) {
     return r.projectId === selectedProject && r.reportDate && r.reportDate.split('T')[0] === today
   })
@@ -554,7 +558,7 @@ export default function SafetyPage() {
           {/* v57: تشخيص النظام في متناول اليد — عند تعذر الإنشاء أو العرض يكشف السبب فوراً */}
           <SystemDiagnosticsButton isAr={isRtl} variant="outline" />
           <Button onClick={function() {
-            setForm({ ...emptyForm, reportDate: new Date().toISOString().split('T')[0] })
+            setForm({ ...emptyForm, reportDate: localTodayISO() })
             setDriveLines([])
             setDriveLinesError(false)
             driveLinesLoaded.current = null
@@ -658,7 +662,7 @@ export default function SafetyPage() {
             <SelectContent>
               <SelectItem value="all">{isRtl ? 'كل الأنواع' : 'All types'}</SelectItem>
               <SelectItem value="none">{isRtl ? 'لا يوجد' : 'None'}</SelectItem>
-              <SelectItem value="near_miss">Near miss</SelectItem>
+              <SelectItem value="near_miss">{isRtl ? 'شبه حادث' : 'Near miss'}</SelectItem>
               <SelectItem value="incident">{isRtl ? 'حادث' : 'Incident'}</SelectItem>
               <SelectItem value="accident">{isRtl ? 'إصابة' : 'Accident'}</SelectItem>
             </SelectContent>
