@@ -3,7 +3,7 @@ import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { buildAuditDetails, getChangesDiff, safeDbOp, handleDbError, validImageDataUrl, logAssetChange } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
-import { hasPermission, canModifyCompanyAsset } from '@/lib/auth'
+import { hasPermission, canModifyCompanyAsset, canEditAnyCompanyAsset } from '@/lib/auth'
 import { ensureEquipmentLogSupport } from '@/lib/db-selfheal'
 
 var MAX_IMAGE_SIZE = 700000
@@ -32,7 +32,19 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     )
     if (!result.success) return result.response
     if (!result.data) return NextResponse.json({ error: 'not_found', message: 'الأصل غير موجود' }, { status: 404 })
-    return NextResponse.json({ asset: result.data })
+    // v84: سجل هذا الأصل الكامل يُعاد مع تفاصيله — نقاط التغييرات باسم أصحابها
+    // متاحة لكل من يعرض الأصل (ضمان حقوق الجميع) بينما المفكرة الموحدة لمدير النظام
+    var v84Logs: any[] = []
+    try {
+      await ensureEquipmentLogSupport()
+      v84Logs = await db.equipmentLog.findMany({
+        where: { assetId: id },
+        orderBy: { createdAt: 'desc' },
+        take: 15,
+        select: { id: true, action: true, changesAr: true, changesEn: true, userName: true, userNameEn: true, createdAt: true },
+      })
+    } catch { v84Logs = [] }
+    return NextResponse.json({ asset: result.data, logs: v84Logs })
   } catch (error) {
     return handleDbError(error, 'جلب الأصل')
   }
@@ -44,14 +56,11 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
   var { id } = await params
 
-  // v83: بوابة المُنشئ — مَن سجّل الأصل يستطيع تعديل كافة بياناته (ومن ضمنها
-  // الأسعار) لاحقاً، وكل تعديله يظهر باسمه في مفكرة المعدات أسفل الصفحة
-  var gateAsset = await safeDbOp(() => db.companyAsset.findUnique({ where: { id }, select: { id: true, createdById: true } }), 'فحص الأصل')
-  var gateData = gateAsset.success ? gateAsset.data as any : null
-  var v83IsCreator = !!gateData && !!gateData.createdById && gateData.createdById === user.id
-  // v82: التعديل محجوب عن أدوار «الإنشاء فقط»… v83 …إلا لمَن سجّل الأصل نفسه
-  if (!canModifyCompanyAsset(user) && !v83IsCreator) {
-    return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية لتعديل هذا الأصل — التعديل متاح لمَن سجّله وللإدارة فقط' }, { status: 403 })
+  // v84 (قرار صاحب الموقع): أي أصل سجّله أي موظف يمكن لأي موظف آخر تعديل
+  // بياناته — كل من يجتاز فحص الكتابة على أصول الشركة يعدّل أي أصل، وكل تعديل
+  // يُسجَّل على الأصل نفسه (السجل المصغر بنقاط صغيرة) وباسم صاحبه وتوقيته
+  if (!canEditAnyCompanyAsset(user)) {
+    return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية لتعديل أصول الشركة' }, { status: 403 })
   }
 
   var rl = checkRateLimit(req, RateLimitPresets.write)
@@ -175,4 +184,3 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     return handleDbError(error, 'حذف الأصل')
   }
 }
-
