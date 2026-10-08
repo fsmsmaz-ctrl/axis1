@@ -4,7 +4,7 @@ import { getAuthUser } from '@/lib/auth-server'
 import { ensureMediaSupport, ensureEquipmentLogSupport } from '@/lib/db-selfheal'
 import { db } from '@/lib/db'
 import { handleDbError, safeDbOp, validImageDataUrl, logEquipmentChange } from '@/lib/api-helpers'
-import { hasPermission, isSystemAdminAccount, canModifyEquipment } from '@/lib/auth'
+import { hasPermission, isSystemAdminAccount, canModifyEquipment, canEditAnyEquipment } from '@/lib/auth'
 
 // ─── v75: تسميات ثنائية اللغة لتغييرات المعدة في المفكرة ──────────────
 var EQ_FIELD_LABELS: Record<string, { ar: string; en: string }> = {
@@ -69,7 +69,19 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     }
     // v83: أُلغي تعقيم تكاليف الصيانة عن مسؤول السلامة — قرار صاحب الموقع:
     // مَن يسجّل معدة يرى كافة بياناتها ومن ضمنها الأسعار، والمساءلة عبر المفكرة
-    return NextResponse.json({ equipment: result.data })
+    // v84: سجل هذه المعدة الكامل يُعاد مع تفاصيلها — نقاط التغييرات باسم
+    // أصحابها متاحة لكل من يعرض المعدة (ضمان حقوق الجميع) بينما المفكرة
+    // الموحدة الكاملة بقيت لمدير النظام حصراً
+    var v84Logs: any[] = []
+    try {
+      v84Logs = await db.equipmentLog.findMany({
+        where: { equipmentId: id },
+        orderBy: { createdAt: 'desc' },
+        take: 15,
+        select: { id: true, action: true, changesAr: true, changesEn: true, userName: true, userNameEn: true, createdAt: true },
+      })
+    } catch { v84Logs = [] }
+    return NextResponse.json({ equipment: result.data, logs: v84Logs })
   } catch (error) {
     return handleDbError(error, 'جلب المعدة')
   }
@@ -95,12 +107,12 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: 'not_found', message: 'المعدة غير موجودة' }, { status: 404 })
     }
     // v82: التعديل محجوب عن أدوار «الإنشاء فقط» (مسؤول السلامة/المشرف)…
-    // v83 …إلا إذا كان هو مَن سجّل هذه المعدة — قرار صاحب الموقع:
-    // مَن سجّل معدة يستطيع تعديل كافة بياناتها (ومن ضمنها الأسعار) لاحقاً،
-    // وكل تعديله يظهر باسمه في مفكرة المعدات أسفل الصفحة
-    var v83IsCreator = !!v75Old.createdById && v75Old.createdById === user.id
-    if (!canModifyEquipment(user) && !v83IsCreator) {
-      return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية لتعديل هذه المعدة — التعديل متاح لمَن سجّلها وللإدارة فقط' }, { status: 403 })
+    // v83 …إلا إذا كان هو مَن سجّل هذه المعدة
+    // v84 (قرار صاحب الموقع): أي معدة سجّلها أي موظف يمكن لأي موظف آخر تعديل
+    // بياناتها — كل من يجتاز فحص الكتابة على المعدات يعدّل أي معدة، وكل تعديل
+    // يُسجّل على المعدة نفسها (السجل المصغر بنقاط صغيرة) وباسم صاحبه وتوقيته
+    if (!canEditAnyEquipment(user)) {
+      return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية لتعديل المعدات' }, { status: 403 })
     }
     const body = await req.json()
     // v42: السماح بإسناد المعدة لمشروع (استعادة المعدات اليتيمة بعد حذف مشاريعها)
