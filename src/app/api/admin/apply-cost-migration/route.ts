@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { normalizeRole } from '@/lib/auth'
+import { normalizeRole , SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { checkRateLimit } from '@/lib/rate-limit'
@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
   }
 
-  var isSystemAdmin = (user.email || '').toLowerCase().trim() === 'admin@axis.om'
+  var isSystemAdmin = (user.email || '').toLowerCase().trim() === SYSTEM_ADMIN_EMAIL
   if (normalizeRole(user.role) !== 'top_management' && !isSystemAdmin) {
     return NextResponse.json({ error: 'forbidden', message: 'تطبيق الترقية متاح للإدارة العليا فقط' }, { status: 403 })
   }
@@ -108,3 +108,5 @@ export async function POST(req: NextRequest) {
     )
   }
 }
+
+      
