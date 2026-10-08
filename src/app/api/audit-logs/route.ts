@@ -70,7 +70,9 @@ export async function GET(req: NextRequest) {
         orderBy: { createdAt: 'desc' },
         skip,
         take: limit,
-        include: { user: { select: { id: true, name: true, nameEn: true, email: true } }, project: { select: { id: true, name: true, code: true } } },
+        // v80 SECURITY FIX: صفوف السجل نفسها كانت تكشف بريد المنفّذ لغير الإدارة العليا
+        // رغم أن قائمة المستخدمين أسفلها تحجبه — نفس السياسة: email فقط للإدارة العليا
+        include: { user: { select: { id: true, name: true, nameEn: true, email: isTopManagement } }, project: { select: { id: true, name: true, code: true } } },
       }),
       'جلب سجلات المراقبة'
     ),
