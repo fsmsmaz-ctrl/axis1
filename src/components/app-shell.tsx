@@ -30,6 +30,7 @@ import {
   ShieldAlert, Eye, UserCircle
 } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
+import { SectionErrorBoundary } from '@/components/section-error-boundary'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import dynamic from 'next/dynamic'
@@ -248,7 +249,7 @@ export default function AppShell() {
     await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
     clearStoredToken()
     setUser(null)
-    toast.success('تم تسجيل الخروج')
+    toast.success(isAr ? 'تم تسجيل الخروج' : 'Logged out') // v80 إصلاح: كانت عربية فقط
   }
 
   // النقر على أي مكان فارغ (الخلفية المعتمة أو فراغ القائمة نفسها) يغلقها فوراً — للهاتف
@@ -351,7 +352,7 @@ export default function AppShell() {
         return
       }
       toast.success(isAr ? 'تم إنشاء المستخدم بنجاح' : 'User created successfully')
-      setRemainingSlots(data.remainingSlots)
+      if (typeof data.remainingSlots === 'number') setRemainingSlots(data.remainingSlots) // v80: حماية NaN
       setDialogTab('list')
       loadUserList()
     } catch {
@@ -385,7 +386,7 @@ export default function AppShell() {
         return
       }
       toast.success(isAr ? 'تم حذف المستخدم بنجاح' : 'User deleted successfully')
-      setRemainingSlots(data.remainingSlots)
+      if (typeof data.remainingSlots === 'number') setRemainingSlots(data.remainingSlots) // v80: حماية NaN
       setDeleteConfirm(null)
       loadUserList()
     } catch {
@@ -575,7 +576,13 @@ export default function AppShell() {
         </header>
 
         <main className="p-3 pb-24 lg:p-6 max-w-[1600px] mx-auto">
-          {renderPage()}
+          {/* v80: حدود خطأ لكل قسم — خطأ رسم في صفحة واحدة لا يأسقط التطبيق كله */}
+          <SectionErrorBoundary
+            key={effectivePage}
+            sectionName={(isRtl ? navItems.find(i => i.id === effectivePage)?.labelAr : navItems.find(i => i.id === effectivePage)?.labelEn) || effectivePage}
+          >
+            {renderPage()}
+          </SectionErrorBoundary>
         </main>
       </div>
 
