@@ -16,6 +16,7 @@ import { Plus, CheckCircle2, XCircle, AlertCircle, Send, Pencil, Check, X } from
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
 import { SYSTEM_ADMIN_EMAIL, canWrite, normalizeRole } from '@/lib/auth'
+import { localTodayISO } from '@/lib/utils'
 import { toast } from 'sonner'
 
 // حالة تسليم العميل (كما كانت) — منفصلة عن حالة اعتماد الإدارة
@@ -59,7 +60,7 @@ export default function FinishingsPage() {
   const canWriteFin = !!user && (isAdmin || canWrite(user.role, 'finishings', user.permissions))
 
   const [formData, setFormData] = useState({
-    projectId: '', driveLineId: '', date: new Date().toISOString().split('T')[0],
+    projectId: '', driveLineId: '', date: localTodayISO(),
     siteCleaned: false, wasteRemoved: false, shaftClosed: false,
     siteRestored: false, lineHandover: false, casingSpacer: false,
     clientNotes: '', handoverStatus: 'pending',
@@ -80,21 +81,30 @@ export default function FinishingsPage() {
   }
 
   useEffect(() => {
+    // v80 إصلاح: سلاسل fetch بلا catch ولا فحص ok — فشل الشبكة كان يمرّ بصمت
+    // + سباق التبديل السريع للمشروع في نافذة الإضافة (استجابة قديمة تعرض خطوط مشروع سابق)
+    const ctrl = new AbortController()
     fetchFinishings()
-    authedFetch('/api/projects/list').then(r => r.json()).then(d => setProjects(d.projects || []))
+    authedFetch('/api/projects/list', { signal: ctrl.signal })
+      .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json() })
+      .then(d => setProjects(d.projects || []))
+      .catch((e) => { if (e.name !== 'AbortError') console.warn('projects load failed:', e?.message || e) })
+    return () => ctrl.abort()
   }, [])
 
   useEffect(() => {
-    if (formData.projectId) {
-      authedFetch(`/api/drive-lines?projectId=${formData.projectId}`)
-        .then(r => r.json())
-        .then(d => setDriveLines(d.driveLines || []))
-    }
+    if (!formData.projectId) return
+    const ctrl = new AbortController()
+    authedFetch(`/api/drive-lines?projectId=${formData.projectId}`, { signal: ctrl.signal })
+      .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json() })
+      .then(d => setDriveLines(d.driveLines || []))
+      .catch((e) => { if (e.name !== 'AbortError') console.warn('drive-lines load failed:', e?.message || e) })
+    return () => ctrl.abort()
   }, [formData.projectId])
 
   function resetForm() {
     setFormData({
-      projectId: projects[0]?.id || '', driveLineId: '', date: new Date().toISOString().split('T')[0],
+      projectId: projects[0]?.id || '', driveLineId: '', date: localTodayISO(),
       siteCleaned: false, wasteRemoved: false, shaftClosed: false,
       siteRestored: false, lineHandover: false, casingSpacer: false,
       clientNotes: '', handoverStatus: 'pending',
@@ -131,7 +141,7 @@ export default function FinishingsPage() {
     setFormData({
       projectId: f.projectId || '',
       driveLineId: f.driveLineId || '',
-      date: f.date ? new Date(f.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+      date: f.date ? new Date(f.date).toISOString().split('T')[0] : localTodayISO(),
       siteCleaned: !!f.siteCleaned,
       wasteRemoved: !!f.wasteRemoved,
       shaftClosed: !!f.shaftClosed,
