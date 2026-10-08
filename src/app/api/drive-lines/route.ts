@@ -47,7 +47,7 @@ export async function GET(req: NextRequest) {
     // v14.2 SECURITY FIX (الثغرة الرئيسية): كان هذا المسار يُرجع سعر المتر لكل من
     // يفتح صفحة خطوط الحفر — بما في ذلك المشرف العام. التعقيم هنا يحذف
     // pricePerMeter من كل خط ومن المشروع المضمّن فيه قبل الإرسال،
-    // إلا للإدارة العليا ومدير المشروع فقط (canViewPricing يستثني admin@axis.om صراحةً).
+    // إلا للإدارة العليا ومدير المشروع ومدير النظام (v78 — حسب canViewPricing).
     var canSeePrice = canViewPricing(user)
     for (var k = 0; k < driveLines.length; k++) {
       sanitizeDriveLine(driveLines[k], canSeePrice)
@@ -117,7 +117,7 @@ export async function POST(req: NextRequest) {
           depth: parseNumber(body.depth, 0), status: VALID_LINE_STATUS_CREATE.includes(String(body.status || 'not_started')) ? String(body.status || 'not_started') : 'not_started',
           // v13: سعر المتر الخاص بهذا الخط (فارغ = بدون سعر حتى إدخاله)
           // v14.2 SECURITY: السعر يُقبل فقط من الإدارة العليا ومدير المشروع
-          // (canViewPricing يستثني المشرف العام) — غيرهم يُنشأ الخط بلا سعر
+          // (المسموح لهم عبر canViewPricing — v78 تشمل مدير النظام) — غيرهم يُنشأ الخط بلا سعر
           pricePerMeter: canViewPricing(user) && (body.pricePerMeter !== undefined && body.pricePerMeter !== null && String(body.pricePerMeter) !== '')
             ? parseNumber(body.pricePerMeter, 0)
             : null,
