@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import {
   Eye, RefreshCw, CheckCircle2, AlertTriangle, XCircle, Info,
   Activity, Clock, ListChecks, ShieldAlert, Bell, ChevronRight, ChevronLeft,
+  LogIn, Smartphone, Tablet, Monitor,
 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
@@ -105,7 +106,18 @@ const priorityConfig: Record<string, { ar: string; en: string; cls: string }> = 
   low: { ar: 'منخفضة', en: 'Low', cls: 'bg-secondary text-secondary-foreground' },
 }
 
-type TabKey = 'logs' | 'warnings' | 'tasks' | 'critical'
+// v78: تبويب دخول الزائر — أسماء الأشهر بالعربية والإنجليزية (الرقم من الخادم 0-11)
+const MONTHS_AR = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر']
+const MONTHS_EN = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+
+// v78: أنواع الأجهزة الثلاثة لكشف User-Agent على الخادم — الأيقونة واللون هنا
+const deviceConfig: Record<string, { ar: string; en: string; icon: any; cls: string }> = {
+  mobile: { ar: 'هاتف', en: 'Mobile', icon: Smartphone, cls: 'bg-blue-50 text-blue-700' },
+  tablet: { ar: 'تابلت', en: 'Tablet', icon: Tablet, cls: 'bg-purple-50 text-purple-700' },
+  desktop: { ar: 'كمبيوتر', en: 'Desktop', icon: Monitor, cls: 'bg-emerald-50 text-emerald-700' },
+}
+
+type TabKey = 'logs' | 'warnings' | 'tasks' | 'critical' | 'visitor'
 
 export default function OversightPage() {
   const language = useAppStore((s) => s.language)
@@ -126,6 +138,13 @@ export default function OversightPage() {
   const [fEntity, setFEntity] = useState('all')
   const [fAction, setFAction] = useState('all')
   const [fProject, setFProject] = useState('all')
+
+  // v78: تبويب دخول الزائر — بياناته من /api/oversight/visitor-logins
+  // جلب كسول: لا يُطلب شيء إلا عند فتح التبويب لأول مرة — لا ثِقَل على بقية التبويبات
+  const [visitorData, setVisitorData] = useState<any>(null)
+  const [visitorLoading, setVisitorLoading] = useState(false)
+  const [visitorLoaded, setVisitorLoaded] = useState(false)
+  const [visitorError, setVisitorError] = useState(false)
 
   // v21: تُعيد true عند النجاح — تستخدمها اللافتة أدناه لإعادة المحاولة التلقائية
   const fetchOverview = useCallback(async (): Promise<boolean> => {
@@ -209,8 +228,37 @@ export default function OversightPage() {
     fetchLogs(1)
   }, [fetchLogs])
 
+  // v78: جلب بيانات دخول الزائر عند فتح التبويب لأول مرة
+  const fetchVisitorLogins = useCallback(async function () {
+    setVisitorLoading(true)
+    setVisitorError(false)
+    try {
+      const res = await authedFetch('/api/oversight/visitor-logins')
+      const d = await res.json()
+      if (!res.ok) {
+        setVisitorError(true)
+        setVisitorData(null)
+        return
+      }
+      setVisitorData(d)
+      setVisitorLoaded(true)
+    } catch {
+      setVisitorError(true)
+      setVisitorData(null)
+    } finally {
+      setVisitorLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (tab === 'visitor' && !visitorLoaded && !visitorLoading && !visitorError) fetchVisitorLogins()
+  }, [tab, visitorLoaded, visitorLoading, visitorError, fetchVisitorLogins])
+
   async function refreshAll() {
-    await Promise.all([fetchOverview(), fetchLogs(1)])
+    const jobs: Promise<unknown>[] = [fetchOverview(), fetchLogs(1)]
+    // v78: تحديث بيانات دخول الزائر معها إن كان التبويب قد فُتح من قبل
+    if (visitorLoaded) jobs.push(fetchVisitorLogins())
+    await Promise.all(jobs)
   }
 
   function markAsRead(id: string) {
@@ -419,6 +467,8 @@ export default function OversightPage() {
     { key: 'warnings', ar: 'التحذيرات الرقابية', en: 'Supervisory Warnings', count: warningsUnread },
     { key: 'tasks', ar: 'متابعة المهام', en: 'Task Follow-up', count: (stats.lateTasks || 0) + (stats.readyReviewTasks || 0) },
     { key: 'critical', ar: 'التحذيرات الحرجة', en: 'Critical Alerts', count: criticalUnread },
+    // v78: قسم جديد مخصص لمتابعة الدخول لحساب الزائر فقط
+    { key: 'visitor', ar: 'دخول الزائر', en: 'Visitor Logins' },
   ]
 
   return (
@@ -432,8 +482,8 @@ export default function OversightPage() {
           <div>
             <h1 className="text-2xl font-bold">{t('الرقابة العملية', 'Operational Control')}</h1>
             <p className="text-sm text-muted-foreground mt-0.5">
-              {t('عمليات البيانات، التحذيرات الرقابية، متابعة المهام، والتحذيرات الحرجة — في مكان واحد',
-                 'Data operations, supervisory warnings, task follow-up and critical alerts — in one place')}
+              {t('عمليات البيانات، التحذيرات الرقابية، متابعة المهام، التحذيرات الحرجة، ودخول الزائر — في مكان واحد',
+                 'Data operations, supervisory warnings, task follow-up, critical alerts and visitor logins — in one place')}
             </p>
           </div>
         </div>
@@ -819,6 +869,131 @@ export default function OversightPage() {
                 </Card>
               ) : (
                 criticalItems.map((n: any) => <NotifCard key={n.id} n={n} />)
+              )}
+            </div>
+          )}
+
+          {/* ═══ 5) دخول الزائر — v78: متابعة حصرية لدخولات حساب الزائر ═══ */}
+          {tab === 'visitor' && (
+            <div className="space-y-3">
+              {visitorError && (
+                <Card>
+                  <CardContent className="py-8 text-center">
+                    <ShieldAlert className="h-10 w-10 mx-auto text-destructive" />
+                    <p className="mt-2 text-sm text-destructive">
+                      {t('تعذر جلب بيانات دخول الزائر', 'Failed to load visitor login data')}
+                    </p>
+                    <Button variant="outline" size="sm" className="mt-3" onClick={fetchVisitorLogins}>
+                      {t('إعادة المحاولة', 'Retry')}
+                    </Button>
+                  </CardContent>
+                </Card>
+              )}
+
+              {!visitorError && visitorLoading && !visitorData && <RowsSkeleton n={4} />}
+
+              {!visitorError && visitorData && (
+                <>
+                  {/* العدادات الأربعة */}
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                    <Card>
+                      <CardContent className="p-4 flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
+                          <LogIn className="h-5 w-5 text-blue-600" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-2xl font-bold leading-none">{visitorData.thisMonth ?? 0}</p>
+                          <p className="text-xs text-muted-foreground mt-1">{t('دخول هذا الشهر', 'Logins this month')}</p>
+                        </div>
+                      </CardContent>
+                    </Card>
+                    <Card>
+                      <CardContent className="p-4 flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-lg bg-indigo-50 flex items-center justify-center shrink-0">
+                          <Clock className="h-5 w-5 text-indigo-600" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-2xl font-bold leading-none">{visitorData.last24h ?? 0}</p>
+                          <p className="text-xs text-muted-foreground mt-1">{t('آخر 24 ساعة', 'Last 24 hours')}</p>
+                        </div>
+                      </CardContent>
+                    </Card>
+                    <Card>
+                      <CardContent className="p-4 flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-lg bg-amber-50 flex items-center justify-center shrink-0">
+                          <Activity className="h-5 w-5 text-amber-600" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-2xl font-bold leading-none">{visitorData.last30 ?? 0}</p>
+                          <p className="text-xs text-muted-foreground mt-1">{t('آخر 30 يوماً', 'Last 30 days')}</p>
+                        </div>
+                      </CardContent>
+                    </Card>
+                    <Card>
+                      <CardContent className="p-4 flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0">
+                          <Clock className="h-5 w-5 text-emerald-600" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-bold leading-none">{visitorData.lastLogin ? formatFull(visitorData.lastLogin) : '—'}</p>
+                          <p className="text-xs text-muted-foreground mt-1">{t('آخر دخول', 'Last login')}</p>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+
+                  {/* توزيع آخر 6 أشهر */}
+                  <Card>
+                    <CardContent className="p-4">
+                      <p className="text-sm font-semibold mb-3">{t('دخول آخر 6 أشهر', 'Logins over the last 6 months')}</p>
+                      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                        {(visitorData.months || []).map((m: any) => (
+                          <div key={m.key} className={`rounded-lg border p-2 text-center ${m.count > 0 ? 'bg-primary/5 border-primary/20' : 'bg-muted/30'}`}>
+                            <p className="text-lg font-bold leading-none">{m.count}</p>
+                            <p className="text-[11px] text-muted-foreground mt-1">
+                              {t(`${MONTHS_AR[m.month]} ${m.year}`, `${MONTHS_EN[m.month]} ${m.year}`)}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* سجل الدخولات */}
+                  <p className="text-sm font-semibold">
+                    {t('سجل الدخولات (آخر 50 دخولاً)', 'Login log (latest 50)')}
+                  </p>
+                  {(visitorData.logins || []).length === 0 ? (
+                    <EmptyCard
+                      icon={LogIn}
+                      text={t('لا توجد تسجيلات دخول لحساب الزائر بعد — يبدأ التسجيل من تاريخ نشر هذا التحديث',
+                              'No visitor logins recorded yet — tracking starts when this update is deployed')}
+                    />
+                  ) : (
+                    <div className="space-y-2">
+                      {(visitorData.logins || []).map((l: any) => {
+                        const dc = deviceConfig[l.device] || deviceConfig.desktop
+                        const DIc = dc.icon
+                        return (
+                          <Card key={l.id}>
+                            <CardContent className="p-3 flex items-center gap-3">
+                              <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center shrink-0">
+                                <DIc className="h-4 w-4 text-muted-foreground" />
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <p className="text-sm font-medium">{formatFull(l.createdAt)}</p>
+                                <p className="text-xs text-muted-foreground">{formatTime(l.createdAt)}</p>
+                              </div>
+                              <span className={`px-2.5 py-1 rounded-full text-xs font-medium shrink-0 ${dc.cls}`}>
+                                {t(dc.ar, dc.en)}
+                              </span>
+                            </CardContent>
+                          </Card>
+                        )
+                      })}
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}
