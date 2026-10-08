@@ -27,7 +27,7 @@ export default function ReportsPage() {
   const [selectedReport, setSelectedReport] = useState<string>('')
   const [selectedProject, setSelectedProject] = useState<string>('all')
   const user = useAppStore((s) => s.user)
-  // v14.2: تقارير الإيراد والربح وأرقامها — سرية مالية (المشرف العام مستثنى داخل canViewPricing)
+  // v14.2: تقارير الإيراد والربح وأرقامها — سرية مالية (المسموح لهم حسب canViewPricing — v78 تشمل مدير النظام)
   const seePricing = !!(user && canViewPricing(user))
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
@@ -1068,4 +1068,5 @@ function OperationalAveragesPreview({ report, isRtl }: { report: any; isRtl: boo
     </div>
   )
 }
+
 
