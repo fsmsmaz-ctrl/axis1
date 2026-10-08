@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
           soilType: String(body.soilType),
           startDate, expectedEnd, status: VALID_PROJECT_STATUS_CREATE.includes(String(body.status || 'not_started')) ? String(body.status || 'not_started') : 'not_started',
           progress: 0, managerId: normalizeRole(user.role) === 'project_manager' ? user.id : (body.managerId || null),
-          engineerId: body.engineerId || null, notes: body.notes ? String(body.notes) : null,
+          engineerId: body.engineerId || null, notes: body.notes ? String(body.notes).slice(0, 2000) : null,
         },
       }),
       'إنشاء المشروع'
@@ -73,4 +73,3 @@ export async function POST(req: NextRequest) {
     return handleDbError(error, 'إنشاء المشروع')
   }
 }
-
