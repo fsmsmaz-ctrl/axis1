@@ -4,7 +4,7 @@ import { getAuthUser } from '@/lib/auth-server'
 import { ensureMediaSupport, ensureEquipmentLogSupport } from '@/lib/db-selfheal'
 import { db } from '@/lib/db'
 import { handleDbError, validateRequired, parseNumber, safeDbOp, validImageDataUrl, logEquipmentChange } from '@/lib/api-helpers'
-import { canWrite, hasPermission, isSystemAdminAccount, hideEquipmentMoney } from '@/lib/auth'
+import { canWrite, hasPermission, isSystemAdminAccount } from '@/lib/auth'
 
 export async function GET(req: NextRequest) {
   try {
@@ -59,14 +59,8 @@ export async function GET(req: NextRequest) {
     var equipment = rows.map(function(e) {
       return Object.assign({}, e, { hasImage: imgSet.has(e.id) })
     })
-    // v82: مسؤول السلامة لا يرى أي شيء يخص الأسعار — تكاليف الصيانة تُعقم من القائمة
-    if (hideEquipmentMoney(user)) {
-      equipment = equipment.map(function(e) {
-        var m = (e as any).maintenance
-        if (!m) return e
-        return Object.assign({}, e, { maintenance: (m as any[]).map(function(x) { return Object.assign({}, x, { cost: 0 }) }) })
-      })
-    }
+    // v83: أُلغي تعقيم تكاليف الصيانة عن مسؤول السلامة — قرار صاحب الموقع:
+    // مَن يسجّل معدة يرى كافة بياناتها ومن ضمنها الأسعار، والمساءلة عبر المفكرة
     // v75: أرشيف المعدات المحذوفة — مرئي لمدير النظام فقط (لا يُحذف شيء نهائياً)
     var deletedEquipment: any[] = []
     if (isSystemAdminAccount(user)) {
@@ -105,6 +99,7 @@ export async function POST(req: NextRequest) {
 
     // H-1 FIX: RBAC check
     // v82: مسؤول السلامة مُنح الإنشاء فقط — canWrite تقبل دوره هنا
+    // v83: المشرف (foreman) أيضاً يسجّل معدات جديدة — canWrite تقبل دوره
     if (!canWrite(user.role, 'equipment', user.permissions)) {
       return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية لإضافة معدات' }, { status: 403 })
     }
