@@ -4,6 +4,7 @@ import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { handleDbError, validateRequired, parseNumber, safeDbOp, sanitizeDriveLine } from '@/lib/api-helpers'
 import { canWrite, hasPermission, canViewPricing } from '@/lib/auth'
+import { ensureDriveLineDates } from '@/lib/db-selfheal'
 import { notifyUsers } from '@/lib/notify'
 
 export async function GET(req: NextRequest) {
@@ -31,6 +32,10 @@ export async function GET(req: NextRequest) {
     const projectId = searchParams.get('projectId')
     const where: any = {}
     if (projectId) where.projectId = projectId
+
+    // v79: ضمان جاهزية عمودَي تواريخ الحفر قبل القراءة — أول استدعاء بعد النشر
+    // يُكمل المعالجة الشاملة (كل الخطوط الموجودة من تقاريرها المعتمدة) قبل العرض
+    await ensureDriveLineDates()
 
     const result = await safeDbOp(
       () => db.driveLine.findMany({
@@ -160,5 +165,3 @@ export async function POST(req: NextRequest) {
     return handleDbError(error, 'إنشاء خط الحفر')
   }
 }
-
-
