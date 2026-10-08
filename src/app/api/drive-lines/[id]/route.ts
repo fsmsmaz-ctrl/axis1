@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { buildAuditDetails, handleDbError, parseNumber, safeDbOp, sanitizeDriveLine } from '@/lib/api-helpers'
-import { canWrite } from '@/lib/auth'
+import { canModifyDriveLines } from '@/lib/auth'
 import { notifyUsers } from '@/lib/notify'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 
@@ -17,8 +17,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   try {
     const user = await getAuthUser(req)
     if (!user) return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
-    if (!canWrite(user.role, 'drive_lines', user.permissions)) {
-      return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية لتعديل خطوط الحفر' }, { status: 403 })
+    // v81: مسؤول السلامة — إنشاء فقط: لا تعديل لخطوط قائمة
+    if (!canModifyDriveLines(user)) {
+      return NextResponse.json({ error: 'forbidden', message: 'مسؤول السلامة يمكنه إنشاء خطوط حفر جديدة فقط — تعديل الخطوط متاح للإدارة ومدير المشروع ومهندس الموقع' }, { status: 403 })
     }
 
     var rl = checkRateLimit(req, RateLimitPresets.write)
@@ -164,8 +165,9 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   try {
     const user = await getAuthUser(req)
     if (!user) return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
-    if (!canWrite(user.role, 'drive_lines', user.permissions)) {
-      return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية لحذف خطوط الحفر' }, { status: 403 })
+    // v81: مسؤول السلامة — إنشاء فقط: لا حذف لخطوط قائمة
+    if (!canModifyDriveLines(user)) {
+      return NextResponse.json({ error: 'forbidden', message: 'مسؤول السلامة يمكنه إنشاء خطوط حفر جديدة فقط — حذف الخطوط متاح للإدارة ومدير المشروع ومهندس الموقع' }, { status: 403 })
     }
 
     var { id } = await params
