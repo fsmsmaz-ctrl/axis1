@@ -19,7 +19,7 @@ import {
 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
-import { normalizeRole, SYSTEM_ADMIN_EMAIL, canModifyEquipment, canModifyCompanyAsset, hideEquipmentMoney } from '@/lib/auth'
+import { normalizeRole, SYSTEM_ADMIN_EMAIL, canModifyEquipment, canModifyCompanyAsset } from '@/lib/auth'
 import { localTodayISO } from '@/lib/utils'
 import { toast } from 'sonner'
 
@@ -61,11 +61,13 @@ const assetStatusLabels: Record<string, { ar: string; en: string; color: string 
 }
 
 // v75: تسميات إجراءات مفكرة المعدات — ثنائية اللغة
+// v83: أُضيف إجراء «صيانة» — تسجيل الصيانة يظهر الآن في المفكرة الموحدة
 const eqLogActionLabels: Record<string, { ar: string; en: string; cls: string }> = {
   create: { ar: 'إنشاء', en: 'Created', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
   update: { ar: 'تعديل', en: 'Updated', cls: 'bg-blue-50 text-blue-700 border-blue-200' },
   delete: { ar: 'حذف', en: 'Deleted', cls: 'bg-red-50 text-red-700 border-red-200' },
   restore: { ar: 'استعادة', en: 'Restored', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+  maintenance: { ar: 'صيانة', en: 'Maintenance', cls: 'bg-purple-50 text-purple-700 border-purple-200' },
 }
 
 export default function EquipmentPage() {
@@ -86,8 +88,8 @@ export default function EquipmentPage() {
   // v70: مدير النظام بالعلم أو البريد لا يسقط من صلاحيات المعدات
   const isAdmin = normalizeRole(user?.role) === 'top_management' || user?.isSystemAdmin === true || ((user?.email || '').toLowerCase().trim() === SYSTEM_ADMIN_EMAIL)
   // v82: مسؤول السلامة — إنشاء معدات/أصول جديد نعم، تعديل/حذف/صيانة لا
-  // (نفس نمط خطوط الحفر v81 — البوابة موحدة مع الخادم)
-  const hideMoney = hideEquipmentMoney(user)
+  // v83 (قرار صاحب الموقع): أُلغي إخفاء الأسعار عنه كلياً (حُذفت hideEquipmentMoney)
+  // — مَن يسجّل معدة يُدخل كافة بياناتها ومن ضمنها الأسعار، والمساءلة عبر المفكرة
   // v42: تقرير الأصول المفقودة متاح للإدارة العليا ومدير المشاريع (بوابة سجل التدقيق)
   const canSeeLost = !!user && (normalizeRole(user.role) === 'top_management' || normalizeRole(user.role) === 'project_manager')
   const language = useAppStore((s) => s.language)
@@ -95,12 +97,21 @@ export default function EquipmentPage() {
   // v75: مدير النظام بدقة (العلم من القاعدة أو البريد الرئيسي) — هو الوحيد الذي يرى أرشيف المحذوفة
   const isSystemAdminUser = user?.isSystemAdmin === true || ((user?.email || '').toLowerCase().trim() === SYSTEM_ADMIN_EMAIL)
 
-  function canEditEq(_eq: any) {
-    // v82: فصل التعديل عن الإنشاء — مسؤول السلامة يضيف معدة جديدة لكن لا يعدّل
+  function canEditEq(eq: any) {
+    // v82: فصل التعديل عن الإنشاء — أدوار «الإنشاء فقط» لا تعدّل معدات الآخرين
+    // v83: قرار صاحب الموقع — مَن سجّل المعدة يستطيع تعديل كافة بياناتها لاحقاً
+    return !!user && (canModifyEquipment(user) || (!!eq?.createdById && eq.createdById === user.id))
+  }
+  function canDeleteEq() {
+    // v83: الحذف للإدارة حصراً — بوابة المُنشئ تخوّل التعديل فقط (مطابق للخادم)
     return !!user && canModifyEquipment(user)
   }
-  function canEditAsset(_a: any) {
-    // v82: فصل التعديل عن الإنشاء — مسؤول السلامة يضيف أصلاً جديداً لكن لا يعدّل
+  function canEditAsset(a: any) {
+    // v83: مَن سجّل الأصل يستطيع تعديل كافة بياناته (ومن ضمنها الأسعار)
+    return !!user && (canModifyCompanyAsset(user) || (!!a?.createdById && a.createdById === user.id))
+  }
+  function canDeleteAsset() {
+    // v83: الحذف للإدارة حصراً (مطابق للخادم)
     return !!user && canModifyCompanyAsset(user)
   }
 
@@ -783,7 +794,7 @@ export default function EquipmentPage() {
                     {eq.createdBy && (
                       <div className="flex items-center gap-2 text-muted-foreground">
                         <UserCircle className="h-3.5 w-3.5" />
-                        <span className="text-xs truncate">{eq.createdBy.name}</span>
+                        <span className="text-xs truncate">{isRtl ? 'سجّلها: ' : 'By: '}{eq.createdBy.name}</span>
                       </div>
                     )}
                     <div className="flex items-center gap-2 text-muted-foreground">
@@ -817,7 +828,7 @@ export default function EquipmentPage() {
                         <Pencil className="h-4 w-4" />
                       </Button>
                     )}
-                    {canEditEq(eq) && (
+                    {canDeleteEq() && (
                       <Button variant="outline" size="sm" className="text-red-600 hover:text-red-700 hover:bg-red-50" onClick={function() {
                         if (confirm(isRtl ? 'هل تريد حذف هذه المعدة؟ ستُخفى عن المستخدمين وتبقى محفوظة في أرشيف النظام (يمكن لمدير النظام استعادتها) — وتُسجّل العملية في المفكرة بالتوقيت واسمك.' : 'Delete this equipment? It will be hidden from users but kept in the system archive (restorable by the system admin) — the action will be logged with your name and time.')) {
                           // v70 FIX: نقطة الحذف هي /api/equipment/[id] — النمط القديم كان يعيد 405 ولا يحذف
@@ -950,7 +961,7 @@ export default function EquipmentPage() {
             <CardContent className="p-3">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-lg bg-orange-50 flex items-center justify-center"><DollarSign className="h-4 w-4 text-orange-600" /></div>
-                <div><p className="text-lg font-bold">{hideMoney ? '—' : assetStats.totalRentalCost.toFixed(0)}</p><p className="text-xs text-muted-foreground">{isRtl ? 'إجمالي الإيجار/شهر' : 'Rental/Month'}</p></div>
+                <div><p className="text-lg font-bold">{assetStats.totalRentalCost.toFixed(0)}</p><p className="text-xs text-muted-foreground">{isRtl ? 'إجمالي الإيجار/شهر' : 'Rental/Month'}</p></div>
               </div>
             </CardContent>
           </Card>
@@ -1002,7 +1013,7 @@ export default function EquipmentPage() {
                         <div className="flex items-center gap-4 mt-1 text-xs text-muted-foreground flex-wrap">
                           {a.project ? <span>{a.project.name}</span> : <span className="text-amber-600 font-medium">{isRtl ? 'بدون مشروع' : 'No project'}</span>}
                           {a.responsible && <span className="flex items-center gap-1"><UserCircle className="h-3 w-3" />{a.responsible.name}</span>}
-                          {!hideMoney && a.ownership === 'rented' && a.rentalCost > 0 && <span className="text-orange-600 font-medium">{a.rentalCost} {isRtl ? 'ر.ع/شهر' : 'OMR/mo'}</span>}
+                          {a.ownership === 'rented' && a.rentalCost > 0 && <span className="text-orange-600 font-medium">{a.rentalCost} {isRtl ? 'ر.ع/شهر' : 'OMR/mo'}</span>}
                           {a.ownership === 'borrowed' && a.rentalEnd && <span>{isRtl ? 'إرجاع' : 'Return'}: {new Date(a.rentalEnd).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')}</span>}
                           {a.supplier && <span>{isRtl ? 'الجهة' : 'From'}: {a.supplier}</span>}
                           {a.createdBy && <span>{isRtl ? 'بواسطة' : 'By'}: {a.createdBy.name}{a.createdAt ? ' • ' + new Date(a.createdAt).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US') : ''}</span>}
@@ -1014,7 +1025,7 @@ export default function EquipmentPage() {
                         {canEditAsset(a) && (
                           <Button variant="ghost" size="sm" onClick={() => openAssetDialog(a)}><Pencil className="h-3.5 w-3.5" /></Button>
                         )}
-                        {canEditAsset(a) && (
+                        {canDeleteAsset() && (
                           <Button variant="ghost" size="sm" onClick={() => deleteAsset(a.id)}><Trash2 className="h-3.5 w-3.5 text-red-500" /></Button>
                         )}
                       </div>
@@ -1065,7 +1076,7 @@ export default function EquipmentPage() {
         <div className="flex items-center justify-between flex-wrap gap-3 mb-3">
           <div className="flex items-center gap-2">
             <History className="h-5 w-5" />
-            <h2 className="text-lg font-bold">{isRtl ? 'مفكرة المعدات — سجل التغييرات' : 'Equipment Log — Change History'}</h2>
+            <h2 className="text-lg font-bold">{isRtl ? 'مفكرة المعدات والأصول — سجل التغييرات' : 'Equipment & Assets Log — Change History'}</h2>
             {eqLogs.length > 0 && <Badge variant="secondary">{eqLogs.length}</Badge>}
           </div>
           <div className="flex gap-2">
@@ -1093,11 +1104,14 @@ export default function EquipmentPage() {
             <div className="space-y-2">
               {eqLogs.map(function(log: any) {
                 var act = eqLogActionLabels[log.action] || { ar: log.action, en: log.action, cls: 'bg-gray-50 text-gray-700 border-gray-200' }
+                // v83: المفكرة الموحدة — صفوف الأصول تُعرض بجانب المعدات (targetType يفصل النوعين)
+                var isAsset = log.targetType === 'company_asset' || !!log.assetId
                 return (
                   <div key={log.id} className="rounded-lg border p-3 space-y-1">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className={'text-xs font-medium px-2 py-0.5 rounded-full border ' + act.cls}>{isRtl ? act.ar : act.en}</span>
-                      <span className="font-medium text-sm">{log.equipmentName || '—'}</span>
+                      <span className="font-medium text-sm">{isAsset ? (log.assetName || '—') : (log.equipmentName || '—')}</span>
+                      {isAsset && <Badge variant="outline" className="text-xs text-slate-600 border-slate-300">{isRtl ? 'أصل/مستأجر' : 'Asset'}</Badge>}
                       <span className="text-xs text-muted-foreground">
                         {new Date(log.createdAt).toLocaleString(isRtl ? 'ar-EG' : 'en-GB', { dateStyle: 'medium', timeStyle: 'short' })}
                       </span>
@@ -1473,7 +1487,7 @@ export default function EquipmentPage() {
                 <p className="text-sm font-medium mb-2">{assetForm.ownership === 'rented' ? (isRtl ? 'تفاصيل الإيجار' : 'Rental Details') : (isRtl ? 'تفاصيل الإعارة' : 'Borrow Details')}</p>
                 <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-3">
                   <div className="space-y-1.5"><Label>{isRtl ? 'الجهة المانحة/المؤجرة' : 'Supplier/Lender'}</Label><Input value={assetForm.supplier} onChange={(e) => setAssetForm({ ...assetForm, supplier: e.target.value })} /></div>
-                  {assetForm.ownership === 'rented' && !hideMoney && (
+                  {assetForm.ownership === 'rented' && (
                     <div className="space-y-1.5"><Label>{isRtl ? 'تكلفة الإيجار الشهري (ر.ع)' : 'Monthly Rent (OMR)'}</Label><Input type="number" step="0.01" min="0" value={assetForm.rentalCost} onChange={(e) => setAssetForm({ ...assetForm, rentalCost: e.target.value })} /></div>
                   )}
                   <div className="space-y-1.5"><Label>{isRtl ? 'بداية الإيجار/الإعارة' : 'Start Date'}</Label><Input type="date" value={assetForm.rentalStart} onChange={(e) => setAssetForm({ ...assetForm, rentalStart: e.target.value })} /></div>
@@ -1510,6 +1524,7 @@ export default function EquipmentPage() {
                 <div><p className="text-xs text-muted-foreground">{isRtl ? 'الحالة' : 'Status'}</p><Badge className={(assetStatusLabels[viewAsset.status] || assetStatusLabels.available).color + ' border-0'}>{(assetStatusLabels[viewAsset.status] || assetStatusLabels.available)[isRtl ? 'ar' : 'en']}</Badge></div>
                 {viewAsset.project && (<div><p className="text-xs text-muted-foreground">{isRtl ? 'المشروع' : 'Project'}</p><p className="font-medium">{viewAsset.project.name}</p></div>)}
                 {viewAsset.responsible && (<div><p className="text-xs text-muted-foreground">{isRtl ? 'المسؤول' : 'Responsible'}</p><p className="font-medium">{viewAsset.responsible.name}</p></div>)}
+                {viewAsset.createdBy && (<div><p className="text-xs text-muted-foreground">{isRtl ? 'سجّله' : 'Registered by'}</p><p className="font-medium">{viewAsset.createdBy.name}{viewAsset.createdAt ? ' • ' + new Date(viewAsset.createdAt).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US') : ''}</p></div>)}
               </div>
               {viewAsset.restoredBy && (
                 <div className="p-3 rounded-lg bg-indigo-50 border border-indigo-200 text-sm">
@@ -1528,7 +1543,7 @@ export default function EquipmentPage() {
               {(viewAsset.ownership === 'rented' || viewAsset.ownership === 'borrowed') && (
                 <div className="p-3 rounded-lg bg-muted/30 border text-sm space-y-1.5">
                   {viewAsset.supplier && (<div><span className="text-muted-foreground">{isRtl ? 'الجهة' : 'From'}: </span><span className="font-medium">{viewAsset.supplier}</span></div>)}
-                  {!hideMoney && viewAsset.ownership === 'rented' && viewAsset.rentalCost > 0 && (<div><span className="text-muted-foreground">{isRtl ? 'الإيجار' : 'Rent'}: </span><span className="font-medium text-orange-600">{viewAsset.rentalCost} {isRtl ? 'ر.ع/شهر' : 'OMR/mo'}</span></div>)}
+                  {viewAsset.ownership === 'rented' && viewAsset.rentalCost > 0 && (<div><span className="text-muted-foreground">{isRtl ? 'الإيجار' : 'Rent'}: </span><span className="font-medium text-orange-600">{viewAsset.rentalCost} {isRtl ? 'ر.ع/شهر' : 'OMR/mo'}</span></div>)}
                   {viewAsset.rentalStart && (<div><span className="text-muted-foreground">{isRtl ? 'البداية' : 'Start'}: </span><span className="font-medium">{new Date(viewAsset.rentalStart).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')}</span></div>)}
                   {viewAsset.rentalEnd && (<div><span className="text-muted-foreground">{isRtl ? 'النهاية' : 'End'}: </span><span className="font-medium">{new Date(viewAsset.rentalEnd).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')}</span></div>)}
                 </div>
@@ -1554,6 +1569,7 @@ export default function EquipmentPage() {
                 <div><p className="text-xs text-muted-foreground">{isRtl ? 'الرقم' : 'Number'}</p><p className="font-medium font-mono">{viewEquipment.number}</p></div>
                 <div><p className="text-xs text-muted-foreground">{isRtl ? 'النوع' : 'Type'}</p><p className="font-medium">{viewEquipment.type}</p></div>
                 <div><p className="text-xs text-muted-foreground">{isRtl ? 'الحالة' : 'Status'}</p><Badge variant={statusLabels[viewEquipment.status]?.color as any}>{isRtl ? statusLabels[viewEquipment.status]?.ar : statusLabels[viewEquipment.status]?.en}</Badge></div>
+                {viewEquipment.createdBy && (<div><p className="text-xs text-muted-foreground">{isRtl ? 'سجّلها' : 'Registered by'}</p><p className="font-medium">{viewEquipment.createdBy.name}{viewEquipment.createdAt ? ' • ' + new Date(viewEquipment.createdAt).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US') : ''}</p></div>)}
                 {viewEquipment.lastMaintenance && (<div><p className="text-xs text-muted-foreground">{isRtl ? 'آخر صيانة' : 'Last Maintenance'}</p><p className="font-medium">{new Date(viewEquipment.lastMaintenance).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')}</p></div>)}
                 {viewEquipment.nextMaintenance && (<div><p className="text-xs text-muted-foreground">{isRtl ? 'الصيانة القادمة' : 'Next Maintenance'}</p><p className="font-medium">{new Date(viewEquipment.nextMaintenance).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')}</p></div>)}
               </div>
@@ -1566,7 +1582,7 @@ export default function EquipmentPage() {
                         <div className="flex items-center justify-between mb-1"><Badge variant="outline" className="text-xs">{m.type}</Badge><span className="text-xs text-muted-foreground">{new Date(m.date).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')}</span></div>
                         <p className="text-sm">{m.description}</p>
                         {m.partsUsed && <p className="text-xs text-muted-foreground mt-1">{isRtl ? 'قطع الغيار' : 'Parts'}: {m.partsUsed}</p>}
-                        {!hideMoney && m.cost > 0 && (<p className="text-xs text-emerald-600 mt-1 flex items-center gap-1"><DollarSign className="h-3 w-3" />{m.cost} {isRtl ? 'ر.ع' : 'OMR'}</p>)}
+                        {m.cost > 0 && (<p className="text-xs text-emerald-600 mt-1 flex items-center gap-1"><DollarSign className="h-3 w-3" />{m.cost} {isRtl ? 'ر.ع' : 'OMR'}</p>)}
                       </div>
                     ))}
                   </div>
@@ -1597,7 +1613,7 @@ export default function EquipmentPage() {
             </div>
             <div className="space-y-1.5"><Label>{isRtl ? 'الوصف' : 'Description'} *</Label><Textarea value={maintenanceForm.description} onChange={(e) => setMaintenanceForm({ ...maintenanceForm, description: e.target.value })} rows={3} required /></div>
             <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-3">
-              {!hideMoney && (<div className="space-y-1.5"><Label>{isRtl ? 'التكلفة (ر.ع)' : 'Cost (OMR)'}</Label><Input type="number" step="0.01" value={maintenanceForm.cost} onChange={(e) => setMaintenanceForm({ ...maintenanceForm, cost: e.target.value })} /></div>)}
+              <div className="space-y-1.5"><Label>{isRtl ? 'التكلفة (ر.ع)' : 'Cost (OMR)'}</Label><Input type="number" step="0.01" value={maintenanceForm.cost} onChange={(e) => setMaintenanceForm({ ...maintenanceForm, cost: e.target.value })} /></div>
               <div className="space-y-1.5">
                 <Label>{isRtl ? 'الحالة بعد الصيانة' : 'Status After'}</Label>
                 <Select value={maintenanceForm.setStatus} onValueChange={(v) => setMaintenanceForm({ ...maintenanceForm, setStatus: v })}>
