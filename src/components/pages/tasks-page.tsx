@@ -313,24 +313,33 @@ export default function TasksPage() {
           category: data.task.category || '', description: data.task.description || '',
         })
       }
+    } catch {
+      // v80 إصلاح: فشل الشبكة كان unhandled rejection والنافذة تبقى عالقة
+      toast.error(isAr ? 'فشل الاتصال — تعذر فتح التفاصيل' : 'Connection failed — could not open details')
+      setDetailId(null)
     } finally {
       setDetailLoading(false)
     }
   }
 
   async function refreshDetail(id: string) {
-    const res = await authedFetch('/api/tasks/' + id, { noCache: true })
-    const data = await res.json()
-    if (res.ok) {
-      setDetail(data.task)
-      if (data.viewer?.isManager && data.task) {
-        setEdit({
-          title: data.task.title, assigneeId: data.task.assigneeId,
-          dueDate: toLocalInput(new Date(data.task.dueDate)),
-          priority: data.task.priority, size: data.task.size,
-          category: data.task.category || '', description: data.task.description || '',
-        })
+    try {
+      const res = await authedFetch('/api/tasks/' + id, { noCache: true })
+      const data = await res.json()
+      if (res.ok) {
+        setDetail(data.task)
+        if (data.viewer?.isManager && data.task) {
+          setEdit({
+            title: data.task.title, assigneeId: data.task.assigneeId,
+            dueDate: toLocalInput(new Date(data.task.dueDate)),
+            priority: data.task.priority, size: data.task.size,
+            category: data.task.category || '', description: data.task.description || '',
+          })
+        }
       }
+    } catch {
+      // v80 إصلاح: لا try على الإطلاق — فشل الشبكة كان unhandled rejection
+      toast.error(isAr ? 'فشل تحديث التفاصيل' : 'Failed to refresh details')
     }
     fetchTasks()
   }
@@ -453,7 +462,8 @@ export default function TasksPage() {
   }
 
   function Chip({ id }: { id: string }) {
-    const s = STATUS[id]
+    // v80 إصلاح: حالة غير متوقعة كانت تكسر الجدول والنافذة (s.chip على undefined) — بديل آمن
+    const s = STATUS[id] || { chip: 'border-slate-200 bg-slate-50 text-slate-600', dot: 'bg-slate-400', ar: id, en: id }
     return (
       <span className={'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium whitespace-nowrap ' + s.chip}>
         <span className={'h-1.5 w-1.5 rounded-full ' + s.dot} />
@@ -773,7 +783,7 @@ export default function TasksPage() {
                         <th className="p-3 text-start font-medium">{t('الموظف', 'Employee')}</th>
                         <th className="p-3 text-start font-medium">{t('المستحقة', 'Due')}</th>
                         <th className="p-3 text-start font-medium">{t('المغلقة', 'Closed')}</th>
-                        <th className="p-3 text-start font-medium">{t('بال موعد %', 'On-time %')}</th>
+                        <th className="p-3 text-start font-medium">{t('في الموعد %', 'On-time %')}</th>
                         <th className="p-3 text-start font-medium">{t('متأخرة', 'Late')}</th>
                         <th className="p-3 text-start font-medium">{t('متوسط التأخير', 'Avg delay')}</th>
                         <th className="p-3 text-start font-medium">{t('متوسط الإنجاز', 'Avg completion')}</th>
