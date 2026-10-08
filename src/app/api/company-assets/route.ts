@@ -3,8 +3,9 @@ import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { handleDbError, validateRequired, parseNumber, safeDbOp, validImageDataUrl } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
-import { canWrite, hasPermission, normalizeRole, hideEquipmentMoney } from '@/lib/auth'
-import { ensureCompanyAssetFk, ensureCompanyAssetRestoreMeta, ensureMediaSupport } from '@/lib/db-selfheal'
+import { canWrite, hasPermission, normalizeRole } from '@/lib/auth'
+import { ensureCompanyAssetFk, ensureCompanyAssetRestoreMeta, ensureMediaSupport, ensureEquipmentLogSupport } from '@/lib/db-selfheal'
+import { logAssetChange } from '@/lib/api-helpers'
 
 export async function GET(req: NextRequest) {
   const user = await getAuthUser(req)
@@ -69,16 +70,10 @@ export async function GET(req: NextRequest) {
   const borrowedCount = assets.filter(function(a: any) { return a.ownership === 'borrowed' }).length
   var totalRentalCost = assets.reduce(function(s: number, a: any) { return s + (a.rentalCost || 0) }, 0)
 
-  // v82: مسؤول السلامة لا يرى أي شيء يخص الأسعار — قيمة الإيجار تُعقم من كل سجل
-  // وإجمالي الإيجار الشهري يُصفر في الإحصائيات (الباقي أسماء وتواريخ تشغيلية)
-  var hideMoney = hideEquipmentMoney(user)
-  var safeAssets = assets
-  if (hideMoney) {
-    safeAssets = assets.map(function(a: any) { return Object.assign({}, a, { rentalCost: null }) })
-    totalRentalCost = 0
-  }
+  // v83: أُلغي تعقيم قيم الإيجار عن مسؤول السلامة — قرار صاحب الموقع:
+  // مَن يسجّل معدة/أصلاً يُدخل كافة بياناتها ومن ضمنها الأسعار، والمساءلة عبر المفكرة
 
-  return NextResponse.json({ assets: safeAssets, stats: { ownedCount, rentedCount, borrowedCount, totalRentalCost } })
+  return NextResponse.json({ assets, stats: { ownedCount, rentedCount, borrowedCount, totalRentalCost } })
 }
 
 export async function POST(req: NextRequest) {
@@ -96,14 +91,8 @@ export async function POST(req: NextRequest) {
     const validationError = validateRequired(body, ['name', 'itemType', 'ownership'])
     if (validationError) return validationError
 
-    // v82: مسؤول السلامة لا يسجل أي شيء يخص الأسعار — تُشطب قيم الإيجار
-    // (المؤجّر والتكلفة والتواريخ) من طلباته خادمياً حتى لو وصلت بطلب مزوّر
-    if (hideEquipmentMoney(user)) {
-      body.supplier = null
-      body.rentalCost = null
-      body.rentalStart = null
-      body.rentalEnd = null
-    }
+    // v83: أُلغي شطب حقول الإيجار من طلبات أدوار «الإنشاء فقط» — قرار صاحب الموقع:
+    // مَن يسجّل الأصل يُدخل كافة بياناته ومن ضمنها الأسعار، والمساءلة عبر المفكرة
 
     // v43: الاستعادة تحافظ على هوية الأصل الأصلي — نفس تاريخ التسجيل واسم منشئه الأصلي،
     // ومن أجرى الاستعادة يُسجَّل في حقول منفصلة (restoredBy/restoredAt) لا تحل محل المنشئ الأصلي أبداً.
@@ -125,6 +114,8 @@ export async function POST(req: NextRequest) {
     await ensureCompanyAssetRestoreMeta()
     // v70: عمود الصورة إن لم يوجد
     await ensureMediaSupport()
+    // v83: شفاء جدول المفكرة الموحدة قبل أي كتابة فيها
+    await ensureEquipmentLogSupport()
 
     const createResult = await safeDbOp(
       () => db.companyAsset.create({
@@ -135,6 +126,25 @@ export async function POST(req: NextRequest) {
     if (!createResult.success) return createResult.response
 
     safeDbOp(() => db.auditLog.create({ data: { userId: user.id, projectId: body.projectId, action: 'create', entity: 'company_asset', entityId: createResult.data.id, details: 'Added asset: ' + body.name } }), 'سجل التدقيق').catch(() => {})
+
+    // v83: الأصل الجديد في مفكرة المعدات الموحدة — باسم مَن سجّله وتوقيته
+    var v83OwnAr = String(body.ownership) === 'owned' ? 'ملك الشركة' : String(body.ownership) === 'rented' ? 'مستأجر' : 'معار'
+    var v83OwnEn = String(body.ownership) === 'owned' ? 'Company Owned' : String(body.ownership) === 'rented' ? 'Rented' : 'Borrowed'
+    if (restoreMeta) {
+      await logAssetChange({
+        assetId: createResult.data.id, assetName: createResult.data.name, user,
+        action: 'restore',
+        changesAr: 'أعاد إنشاء الأصل «' + createResult.data.name + '» من سجل التدقيق (نوع الملكية: ' + v83OwnAr + ') — حُفظ تاريخ التسجيل واسم المنشئ الأصلي',
+        changesEn: 'Re-created asset "' + createResult.data.name + '" from the audit log (' + v83OwnEn + ') — original date and creator preserved',
+      })
+    } else {
+      await logAssetChange({
+        assetId: createResult.data.id, assetName: createResult.data.name, user,
+        action: 'create',
+        changesAr: 'سجّل أصلاً جديداً «' + createResult.data.name + '» (نوع الملكية: ' + v83OwnAr + ')',
+        changesEn: 'Registered new asset "' + createResult.data.name + '" (' + v83OwnEn + ')',
+      })
+    }
 
     return NextResponse.json({ asset: createResult.data, success: true })
   } catch (error: any) {
