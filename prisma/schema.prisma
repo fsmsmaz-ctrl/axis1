@@ -296,6 +296,20 @@ model EquipmentLog {
   @@index([createdAt])
 }
 
+// v78: متابعة دخول الزائر — سجل كل دخول ناجح لحساب الزائر (دور visitor) فقط.
+// الجدول يُنشأ ذاتياً على الإنتاج عبر ensureVisitorLoginSupport (درس v44:
+// Netlify لا يشغّل prisma migrate deploy — الشفاء الذاتي هو الآلية المعتمدة).
+model VisitorLogin {
+  id        String   @id @default(cuid())
+  userId    String?
+  email     String?
+  device    String   @default("desktop") // mobile | tablet | desktop
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
 model EquipmentMaintenance {
   id            String   @id @default(cuid())
   equipmentId   String
