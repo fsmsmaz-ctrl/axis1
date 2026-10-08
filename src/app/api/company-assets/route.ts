@@ -3,7 +3,7 @@ import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { handleDbError, validateRequired, parseNumber, safeDbOp, validImageDataUrl } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
-import { canWrite, hasPermission, normalizeRole } from '@/lib/auth'
+import { canWrite, hasPermission, normalizeRole, hideEquipmentMoney } from '@/lib/auth'
 import { ensureCompanyAssetFk, ensureCompanyAssetRestoreMeta, ensureMediaSupport } from '@/lib/db-selfheal'
 
 export async function GET(req: NextRequest) {
@@ -67,9 +67,18 @@ export async function GET(req: NextRequest) {
   const ownedCount = assets.filter(function(a: any) { return a.ownership === 'owned' }).length
   const rentedCount = assets.filter(function(a: any) { return a.ownership === 'rented' }).length
   const borrowedCount = assets.filter(function(a: any) { return a.ownership === 'borrowed' }).length
-  const totalRentalCost = assets.reduce(function(s: number, a: any) { return s + (a.rentalCost || 0) }, 0)
+  var totalRentalCost = assets.reduce(function(s: number, a: any) { return s + (a.rentalCost || 0) }, 0)
 
-  return NextResponse.json({ assets, stats: { ownedCount, rentedCount, borrowedCount, totalRentalCost } })
+  // v82: مسؤول السلامة لا يرى أي شيء يخص الأسعار — قيمة الإيجار تُعقم من كل سجل
+  // وإجمالي الإيجار الشهري يُصفر في الإحصائيات (الباقي أسماء وتواريخ تشغيلية)
+  var hideMoney = hideEquipmentMoney(user)
+  var safeAssets = assets
+  if (hideMoney) {
+    safeAssets = assets.map(function(a: any) { return Object.assign({}, a, { rentalCost: null }) })
+    totalRentalCost = 0
+  }
+
+  return NextResponse.json({ assets: safeAssets, stats: { ownedCount, rentedCount, borrowedCount, totalRentalCost } })
 }
 
 export async function POST(req: NextRequest) {
@@ -86,6 +95,15 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     const validationError = validateRequired(body, ['name', 'itemType', 'ownership'])
     if (validationError) return validationError
+
+    // v82: مسؤول السلامة لا يسجل أي شيء يخص الأسعار — تُشطب قيم الإيجار
+    // (المؤجّر والتكلفة والتواريخ) من طلباته خادمياً حتى لو وصلت بطلب مزوّر
+    if (hideEquipmentMoney(user)) {
+      body.supplier = null
+      body.rentalCost = null
+      body.rentalStart = null
+      body.rentalEnd = null
+    }
 
     // v43: الاستعادة تحافظ على هوية الأصل الأصلي — نفس تاريخ التسجيل واسم منشئه الأصلي،
     // ومن أجرى الاستعادة يُسجَّل في حقول منفصلة (restoredBy/restoredAt) لا تحل محل المنشئ الأصلي أبداً.
