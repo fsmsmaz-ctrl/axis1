@@ -8,7 +8,7 @@ import { verifyCredentials, createSession, getCookieOptions, SESSION_COOKIE } fr
 import { db } from '@/lib/db'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 // v50: الشفاء الذاتي على مسار الدخول — انظر الاستدعاء قبل verifyCredentials
-import { ensurePurchasesSupport, ensureHRSupport, ensureMediaSupport } from '@/lib/db-selfheal'
+import { ensurePurchasesSupport, ensureHRSupport, ensureMediaSupport, ensureDriveLineDates } from '@/lib/db-selfheal'
 // v52: إنشاء حساب الزائر تلقائياً عند أول محاولة دخول (قبل verifyCredentials)
 import { ensureVisitorAccount } from '@/lib/db-selfheal'
 // v78: متابعة دخول الزائر — تسجيل كل دخول ناجح لحساب الزائر (دور visitor)
@@ -99,6 +99,8 @@ export async function POST(req: NextRequest) {
           ensureMediaSupport(),
           // v78: جدول متابعة دخول الزائر — يُنشأ ذاتياً قبل أول تسجيل
           ensureVisitorLoginSupport(),
+          // v79: عمودا تواريخ الحفر على DriveLine + المعالجة الشاملة من التقارير المعتمدة
+          ensureDriveLineDates(),
         ]),
         3000,
         'SELF_HEAL'
