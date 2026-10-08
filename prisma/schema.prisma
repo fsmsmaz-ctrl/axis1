@@ -149,6 +149,11 @@ model DriveLine {
   progress      Float    @default(0) // 0-100
   problems      String?
 
+  // v79: تواريخ الحفر تُحسب تلقائياً من التقارير اليومية المعتمدة (المنشورة) لهذا الخط —
+  // drillingStartDate = تاريخ أول تقرير معتمد، drillingEndDate = تاريخ آخر تقرير معتمد (آخر يوم حفر)
+  drillingStartDate DateTime?
+  drillingEndDate   DateTime?
+
   project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   dailyReports  DailyReport[]
 
