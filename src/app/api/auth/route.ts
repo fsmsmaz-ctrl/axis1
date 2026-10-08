@@ -45,6 +45,16 @@ export async function POST(req: NextRequest) {
     var email = body.email
     var password = body.password
 
+
+    // v80: طبقة حد ثانية لكل حساب (لا لكل IP فقط) — تدوير X-Forwarded-For لا يكسر مهل
+    // 5 محاولات/دقيقة لكل بريد مستهدف، فلا حصار جماعي ولا تخمين بلا حدود
+    var rlAcct = checkRateLimit(req, Object.assign({}, RateLimitPresets.auth, { keyPrefix: 'auth-acct', staticKey: String(email).toLowerCase().trim().slice(0, 120) }))
+    if (rlAcct.limited) {
+      return NextResponse.json(
+        { error: 'too_many_requests', message: 'محاولات كثيرة جداً لهذا الحساب — انتظر دقيقة ثم أعد المحاولة' },
+        { status: 429, headers: { 'Retry-After': String(rlAcct.retryAfter) } }
+      )
+    }
     if (!email || !password) {
       return NextResponse.json(
         { error: 'missing_fields', message: 'البريد الإلكتروني وكلمة المرور مطلوبان' },
