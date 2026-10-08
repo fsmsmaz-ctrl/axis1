@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { normalizeRole } from '@/lib/auth'
+import { normalizeRole , SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
 import { getAuthUser } from '@/lib/auth-server'
 import { db, invalidateCachePrefix } from '@/lib/db'
 import { checkRateLimit } from '@/lib/rate-limit'
@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
   }
 
   // للإدارة العليا ومدير النظام فقط — العملية تُنشئ سجلات مالية
-  var isSystemAdmin = (user.email || '').toLowerCase().trim() === 'admin@axis.om'
+  var isSystemAdmin = (user.email || '').toLowerCase().trim() === SYSTEM_ADMIN_EMAIL
   if (normalizeRole(user.role) !== 'top_management' && !isSystemAdmin) {
     return NextResponse.json({ error: 'forbidden', message: 'استرجاع الفواتير متاح للإدارة العليا فقط' }, { status: 403 })
   }
@@ -271,7 +271,8 @@ export async function POST(req: NextRequest) {
           },
         }).catch(function() {})
       } catch (err: any) {
-        errors.push(cand.key + ': ' + (err && err.message ? err.message : 'فشل الإنشاء'))
+      // v80 SECURITY FIX: نص خطأ Prisma الخام كان يُعاد في الاستجابة — رسالة عامة فقط
+      errors.push(cand.key + ': فشل إنشاء السجل — راجع سجلات الخادم للتفاصيل')
       }
     }
 
