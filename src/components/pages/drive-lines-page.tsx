@@ -21,7 +21,7 @@ import { Plus, GitBranch, MapPin, Ruler, Layers, AlertCircle, Pencil, Trash2, Lo
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
 import { toast } from 'sonner'
-import { canWrite, canViewPricing } from '@/lib/auth'
+import { canWrite, canModifyDriveLines, canViewPricing } from '@/lib/auth'
 
 const statusLabels: Record<string, { ar: string; en: string; color: string }> = {
   not_started: { ar: 'لم يبدأ', en: 'Not Started', color: 'secondary' },
@@ -62,7 +62,12 @@ export default function DriveLinesPage() {
 
   // Permission check — server also enforces this, but we hide the buttons
   // for users without write access to drive_lines for a cleaner UI.
-  const canEdit = !!(user && canWrite(user.role, 'drive_lines', user.permissions))
+  // v81: فصل الصلاحيتين بقرار صاحب الموقع:
+  //  - canCreate: الإنشاء (زر «خط حفر جديد») — يشمل مسؤول السلامة (hse_officer)
+  //  - canEdit:   التعديل والحذف — مسؤول السلامة مستثنى (إنشاء فقط) والأزرار تُخفى عنه
+  //    والخادم أيضاً يرفض تعديله/حذفه بـ 403 (canModifyDriveLines في مسار [id])
+  const canCreate = !!(user && canWrite(user.role, 'drive_lines', user.permissions))
+  const canEdit = !!(user && canModifyDriveLines(user))
   // v14.2: سعر المتر سري — يظهر فقط للإدارة العليا ومدير المشروع.
   // المشرف العام (admin@axis.om) يرى الأسعار منذ v78 داخل canViewPricing — مثل الإدارة العليا
   // ولا حقل إدخال السعر (الخادم أيضاً يحذف السعر من الردود — حماية مزدوجة).
@@ -216,7 +221,7 @@ export default function DriveLinesPage() {
             {isRtl ? `${driveLines.length} خط حفر` : `${driveLines.length} drive lines`}
           </p>
         </div>
-        {canEdit && (
+        {canCreate && (
           <Button onClick={openCreate}>
             <Plus className="h-4 w-4 ml-2" />
             {isRtl ? 'خط حفر جديد' : 'New Drive Line'}
