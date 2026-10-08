@@ -163,8 +163,8 @@ export async function POST(req: NextRequest) {
       () => db.task.create({
         data: {
           title: String(body.title).trim(),
-          description: body.description ? String(body.description).trim() : null,
-          category: body.category ? String(body.category).trim() : null,
+          description: body.description ? String(body.description).trim().slice(0, 5000) : null,
+          category: body.category ? String(body.category).trim().slice(0, 100) : null,
           priority,
           size,
           status: 'new',
