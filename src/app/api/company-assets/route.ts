@@ -110,7 +110,7 @@ export async function POST(req: NextRequest) {
 
     const createResult = await safeDbOp(
       () => db.companyAsset.create({
-        data: { projectId: body.projectId || null, name: String(body.name).trim(), itemType: String(body.itemType), quantity: parseInt(body.quantity) || 1, ownership: String(body.ownership), supplier: body.supplier ? String(body.supplier).trim() : null, rentalCost: body.rentalCost ? parseFloat(body.rentalCost) : null, rentalStart: body.rentalStart ? new Date(body.rentalStart) : null, rentalEnd: body.rentalEnd ? new Date(body.rentalEnd) : null, responsibleId: body.responsibleId || null, status: String(body.status || 'available'), notes: body.notes ? String(body.notes) : null, createdAt: restoreMeta ? restoreMeta.createdAt : undefined, createdById: restoreMeta ? restoreMeta.createdById : user.id, restoredById: restoreMeta ? user.id : null, restoredAt: restoreMeta ? new Date() : null, image: validImageDataUrl(body.image) },
+        data: { projectId: body.projectId || null, name: String(body.name).trim(), itemType: String(body.itemType), quantity: parseInt(body.quantity) || 1, ownership: String(body.ownership), supplier: body.supplier ? String(body.supplier).trim() : null, rentalCost: body.rentalCost ? parseFloat(body.rentalCost) : null, rentalStart: body.rentalStart ? new Date(body.rentalStart) : null, rentalEnd: body.rentalEnd ? new Date(body.rentalEnd) : null, responsibleId: body.responsibleId || null, status: String(body.status || 'available'), notes: body.notes ? String(body.notes).slice(0, 2000) : null, createdAt: restoreMeta ? restoreMeta.createdAt : undefined, createdById: restoreMeta ? restoreMeta.createdById : user.id, restoredById: restoreMeta ? user.id : null, restoredAt: restoreMeta ? new Date() : null, image: validImageDataUrl(body.image) },
         include: { createdBy: { select: { id: true, name: true } }, restoredBy: { select: { id: true, name: true } } },
       }), 'إنشاء الأصل'
     )
@@ -123,4 +123,3 @@ export async function POST(req: NextRequest) {
     return handleDbError(error, 'إنشاء الأصل')
   }
 }
-
