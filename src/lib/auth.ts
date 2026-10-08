@@ -100,17 +100,21 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
   ],
   // v81: مسؤول السلامة (hse_officer) — أُضيفت صلاحية «خطوط الحفر» بقرار صاحب الموقع:
   // يرى القسم ويُدخل البيانات ويُنشئ خطوط حفر جديدة فقط (إنشاء بلا تعديل/حذف —
-  // انظر DRIVE_LINES_CREATE_ONLY_ROLES أدناه)، وبلا أي أسعار إطلاقاً
-  // (ليس في PRICING_ALLOWED_ROLES — الحظر السرّي الصارم يبقى كما هو).
-  // v82: أُضيفت صلاحية «المعدات» الكتابة — يستطيع الآن إضافة معدة/أصل جديد
-  // (ملك الشركة أو غيره) — إنشاء فقط بلا تعديل/حذف/صيانة (انظر
-  // EQUIPMENT_CREATE_ONLY_ROLES و COMPANY_ASSET_CREATE_ONLY_ROLES أدناه)،
-  // وتبقى كل الأموال مخفية عنه (hideEquipmentMoney أدناه).
+  // انظر DRIVE_LINES_CREATE_ONLY_ROLES أدناه).
+  // v82: أُضيفت صلاحية «المعدات» الكتابة — يستطيع إضافة معدة/أصل جديد.
+  // v83 (قرار صاحب الموقع الجديد): مَن يسجّل معدة يُدخل كافة بياناتها ومن ضمنها
+  // الأسعار — أُلغي إخفاء الأموال في قسم المعدات عنه كلياً (حُذفت hideEquipmentMoney)
+  // وتستبدلت بالمساءلة: من سجّل يظهر مع كل معدة، وكل تغيير يُسجّل في المفكرة أسفل الصفحة.
   hse_officer: [
     'projects', 'drive_lines', 'equipment', 'safety', 'tasks', 'reports', 'notifications',
   ],
+  // v83 (قرار صاحب الموقع): المشرف (الفورمان) يرى قسم المعدات ويسجّل معدات
+  // وأصولاً جديدة بكافة بياناتها ومن ضمنها الأسعار — إنشاء فقط (انظر
+  // EQUIPMENT_CREATE_ONLY_ROLES و COMPANY_ASSET_CREATE_ONLY_ROLES أدناه)،
+  // ويستطيع تعديل ما سجّله هو فقط (بوابة المُنشئ في مسارات المعدات)،
+  // وكل ما يفعله يظهر باسمه في مفكرة المعدات أسفل الصفحة.
   foreman: [
-    'projects', 'daily_reports', 'finishings', 'tasks', 'reports', 'notifications',
+    'projects', 'daily_reports', 'finishings', 'equipment', 'tasks', 'reports', 'notifications',
   ],
   accountant: [
     'projects', 'costs', 'tasks', 'reports', 'notifications',
@@ -160,18 +164,19 @@ export const WRITE_ROLES: Record<string, string[]> = {
   drive_lines: ['top_management', 'project_manager', 'site_engineer', 'hse_officer'],
   daily_reports: ['top_management', 'project_manager', 'site_engineer', 'foreman'],
   safety: ['top_management', 'project_manager', 'site_engineer', 'hse_officer'],
-  // v82: مسؤول السلامة يستطيع «إضافة» معدة جديدة (إنشاء فقط) —
-  // التعديل والحذف والصيانة محجوبة عنه عبر canModifyEquipment
-  equipment: ['top_management', 'project_manager', 'site_engineer', 'hse_officer'],
+  // v82: مسؤول السلامة يستطيع «إضافة» معدة جديدة (إنشاء فقط).
+  // v83: المشرف (foreman) أيضاً يسجّل معدات جديدة — إنشاء فقط، ويعدّل ما سجّله
+  // هو فقط، والتعديل الإداري للقائمة يبقى عبر canModifyEquipment
+  equipment: ['top_management', 'project_manager', 'site_engineer', 'hse_officer', 'foreman'],
   costs: ['top_management', 'project_manager', 'accountant'],
   finishings: ['top_management', 'project_manager', 'site_engineer', 'foreman'],
   // إدارة المهام: الإنشاء والتعديل والاعتماد للإدارة العليا ومدير المشروع
   // (مدير النظام admin@axis.om يتجاوز الفحص عبر isTaskManager)
   tasks: ['top_management', 'project_manager'],
-  // v82: مسؤول السلامة يستطيع «إضافة» أصل/مستأجر جديد (إنشاء فقط) —
-  // التعديل والحذف محجوبان عنه عبر canModifyCompanyAsset،
-  // وتُشطب الحقول المالية (الإيجار) من طلباته خادمياً
-  company_assets: ['top_management', 'project_manager', 'site_engineer', 'accountant', 'hse_officer'],
+  // v82: مسؤول السلامة يستطيع «إضافة» أصل/مستأجر جديد (إنشاء فقط).
+  // v83: المشرف (foreman) أيضاً — ويُدخل الأسعار (أُلغي الشطب المالي عنهما)،
+  // ويعدّل كلٌّ منهما ما سجّله هو فقط، وكل تغيير يظهر في المفكرة الموحدة
+  company_assets: ['top_management', 'project_manager', 'site_engineer', 'accountant', 'hse_officer', 'foreman'],
   // v14: سجلات العمال — الإدارة ومهندسو الموقع والمشرفون
   workers: ['top_management', 'project_manager', 'site_engineer', 'foreman'],
 }
@@ -208,15 +213,21 @@ export function canModifyDriveLines(
   return canWrite(user.role || '', 'drive_lines', user.permissions)
 }
 
-// ─── v82: المعدات وأصول الشركة — أدوار «الإنشاء فقط» ────────────
-// قرار صاحب الموقع: مسؤول السلامة يستطيع إضافة معدة جديدة أو أصل/مستأجر
-// جديد (ملك الشركة أو غيره — إدخال بيانات فقط)، لكنه لا يعدّل ولا يحذف
-// ولا يسجل صيانة (الصيانة تحمل تكلفة مالية). نفس نمط خطوط الحفر v81:
-// canWrite تقبل دوره في الإنشاء، وcanModifyEquipment/canModifyCompanyAsset
-// ترفضانه في التعديل والحذف. مدير النظام (admin@axis.om أو علم
-// isSystemAdmin) يتجاوز دائماً.
-export const EQUIPMENT_CREATE_ONLY_ROLES = ['hse_officer'] as const
-export const COMPANY_ASSET_CREATE_ONLY_ROLES = ['hse_officer'] as const
+// ─── v82/v83: المعدات وأصول الشركة — أدوار «الإنشاء فقط» ──────────
+// قرار صاحب الموقع (v82): مسؤول السلامة يستطيع إضافة معدة جديدة أو أصل/مستأجر
+// جديد — إنشاء فقط بلا تعديل/حذف. نفس نمط خطوط الحفر v81: canWrite تقبل دوره
+// في الإنشاء، وcanModifyEquipment/canModifyCompanyAsset ترفضانه في التعديل والحذف.
+// قرار صاحب الموقع (v83 — توسعة ورفع الحظر المالي):
+//   1) المشرف (foreman) يُضاف لدورَي «الإنشاء فقط» في المعدات والأصول.
+//   2) مَن سجّل المعدة/الأصل يستطيع تعديل ما سجّله هو — بوابة المُنشئ
+//      (createdById === user.id) في مسارات المعدات والأصول والصيانة.
+//   3) أُلغي إخفاء الأسعار عن هذين الدورين كلياً (حُذفت hideEquipmentMoney
+//      التي كانت تُعقّم الردود وتشطب الحقول المالية) — البديل مساءلة كاملة:
+//      كل معدة تُظهر مَن سجّلها، وكل تغيير (إنشاء/تعديل/حذف/صيانة/أصل)
+//      يُسجّل باسم صاحبه وتوقيته في مفكرة المعدات أسفل الصفحة.
+// مدير النظام (admin@axis.om أو علم isSystemAdmin) يتجاوز دائماً.
+export const EQUIPMENT_CREATE_ONLY_ROLES = ['hse_officer', 'foreman'] as const
+export const COMPANY_ASSET_CREATE_ONLY_ROLES = ['hse_officer', 'foreman'] as const
 
 export function canModifyEquipment(
   user: { role?: string; email?: string; isSystemAdmin?: boolean; permissions?: Record<string, boolean> | null } | null | undefined
@@ -240,20 +251,9 @@ export function canModifyCompanyAsset(
   return canWrite(user.role || '', 'company_assets', user.permissions)
 }
 
-// ─── v82: إخفاء الأموال في قسم المعدات عن مسؤول السلامة ─────────
-// قرار صاحب الموقع (تمديد قاعدة v81): مسؤول السلامة لا يرى أي شيء يخص
-// الأسعار في قسم المعدات — لا تكلفة الإيجار الشهرية للأصول المستأجرة،
-// ولا إجمالي الإيجار، ولا تكاليف الصيانة. والخادم يُعقّم ردوده من هذه
-// القيم ويُشطبها من طلباته (لا يستطيع تسجيل سعر حتى بطلب مزوّر).
-// ملاحظة: باقي الأدوار غير المالية (كمهندس الموقع) لم تتغير صلاحياتها
-// القديمة في رؤية تكاليف المعدات — الإخفاء الجديد يخص مسؤول السلامة حصراً.
-export function hideEquipmentMoney(
-  user: { role?: string; email?: string; isSystemAdmin?: boolean } | null | undefined
-): boolean {
-  if (!user) return false
-  if (canViewPricing(user)) return false
-  return (EQUIPMENT_CREATE_ONLY_ROLES as readonly string[]).includes(normalizeRole(user.role))
-}
+// v83: حُذفت hideEquipmentMoney التي كانت تُعقّم الأسعار عن مسؤول السلامة —
+// قرار صاحب الموقع: مَن يسجّل معدة يُدخل كافة بياناتها ومن ضمنها الأسعار،
+// والمساءلة تكون عبر مفكرة المعدات (كل تغيير باسم صاحبه وتوقيته).
 
 export function hasPermission(
   role: string,
@@ -356,5 +356,3 @@ export function isTaskManager(user: { role?: string; email?: string } | null | u
   // v65: تطبيع الدور (نفس منطق v63/v64) — كل فحوصات الدور تمر من normalizeRole
   return (TASK_MANAGE_ROLES as readonly string[]).includes(normalizeRole(user.role))
 }
-
-
