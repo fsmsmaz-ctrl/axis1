@@ -7,12 +7,14 @@ import { handleDbError, validateRequired, parseNumber, safeDbOp, validImageDataU
 import { canWrite, hasPermission, isSystemAdminAccount } from '@/lib/auth'
 
 export async function GET(req: NextRequest) {
-  await ensureMediaSupport()
-  // v75: يضمن عمودي الحذف الناعم + جدول المفكرة قبل أي استعلام
-  await ensureEquipmentLogSupport()
   try {
     const user = await getAuthUser(req)
     if (!user) return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
+    // v80 SECURITY FIX: أوامر DDL (الشفاء الذاتي) كانت تنفذ قبل فحص الهوية —
+    // أي طلب مجهول كان يطلق إنشاء جداول/أعمدة. الآن بعد التحقق فقط.
+    await ensureMediaSupport()
+    // v75: يضمن عمودي الحذف الناعم + جدول المفكرة قبل أي استعلام
+    await ensureEquipmentLogSupport()
 
     // SECURITY FIX: قائمة المعدات تتضمن سجلات الصيانة وتكاليفها — بوابة قراءة
     if (!hasPermission(user.role, 'equipment', user.permissions, user.email)) {
@@ -119,7 +121,7 @@ export async function POST(req: NextRequest) {
           dailyHours: parseNumber(body.dailyHours, 0),
           lastMaintenance: body.lastMaintenance ? new Date(body.lastMaintenance) : null,
           nextMaintenance: body.nextMaintenance ? new Date(body.nextMaintenance) : null,
-          notes: body.notes ? String(body.notes) : null,
+          notes: body.notes ? String(body.notes).slice(0, 2000) : null,
           image: validImageDataUrl(body.image),
         },
       }), 'إنشاء المعدة'
