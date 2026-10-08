@@ -7,11 +7,12 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
+import { normalizeRole } from '@/lib/auth'
 import { db } from '@/lib/db'
 
 export const dynamic = 'force-dynamic'
 
-var APP_VERSION = 'v79'
+var APP_VERSION = 'v80'
 
 // الجداول الحرجة لعمل الأقسام المتعثرة (السلامة + الموارد البشرية) وبقية الأقسام الأساسية
 var CRITICAL_TABLES = [
@@ -63,6 +64,10 @@ export async function GET(req: NextRequest) {
   if (!me) {
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
   }
+
+  // v80 SECURITY FIX: الزائر لا يحتاج التشخيص التفصيلي — لا يرى جرد الجداول/الأعمدة ولا أسماء البنية
+  var _role = normalizeRole(me.role)
+  var _isVisitor = _role === 'visitor'
 
   var result: any = {
     version: APP_VERSION,
@@ -122,9 +127,19 @@ export async function GET(req: NextRequest) {
       }
       result.summary = 'وجدنا سبب المشكلة — ' + parts.join(' — ') + '. افتح القسم المتعثر مرة أخرى: نظام الشفاء الذاتي سينشئ الناقص تلقائياً عند أول محاولة، ثم أعد فحص التشخيص للتأكد.'
     }
+    // v80: للزائر خلاصة مبسطة فقط — بلا جرد الجداول/الأعمدة ولا تفاصيل الاتصال
+    if (_isVisitor) {
+      return NextResponse.json({ version: APP_VERSION, time: result.time, db: { connected: result.db.connected }, ok: result.ok, summary: result.ok ? 'كل شيء سليم' : 'يوجد خلل تقني مؤقت — تواصل مع الإدارة' })
+    }
     return NextResponse.json(result)
   } catch (e) {
-    result.db.error = 'فشل فحص بنية قاعدة البيانات — ' + String((e as { message?: string })?.message || e).slice(0, 200)
+    // v80 SECURITY FIX: نص الاستثناء الخام كان يُعاد للعميل (معلومات عن البنية/المزود)
+    // — رسالة بشرية ثابتة فقط، والتفاصيل في سجلات الخادم
+    result.db.error = 'فشل فحص بنية قاعدة البيانات — أعد المحاولة بعد قليل، فإن استمرت المشكلة فالسبب مؤقت من المنصة غالباً'
+    if (_isVisitor) {
+      // للزائر: خلاصة فقط بلا جرد ولا تفاصيل
+      return NextResponse.json({ version: APP_VERSION, time: result.time, db: { connected: result.db.connected }, ok: result.ok, summary: 'النظام يعمل — للمشاكل التقنية تواصل مع الإدارة' })
+    }
     return NextResponse.json(result)
   }
 }
