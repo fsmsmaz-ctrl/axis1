@@ -25,7 +25,7 @@ export function handleDbError(error: any, operation: string = 'operation'): Next
   const errorMsg = String(error?.message || error)
   // H-3 FIX: Log internally but never expose to client
   if (isDev) {
-    console.debug('[DB Error Detail]', errorMsg)
+    console.warn('[DB Error Detail]', errorMsg) // v80: debug → warn (سياسة eslint: warn/error فقط)
   }
 
   if (errorMsg.includes('does not exist') || errorMsg.includes('no such table') || errorMsg.includes('relation')) {
@@ -557,3 +557,4 @@ export async function logEquipmentChange(entry: {
     console.error('v75: equipment audit write failed:', e)
   }
 }
+
