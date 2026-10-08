@@ -3,6 +3,7 @@
 // POST: إنشاء عملية شراء جديدة — صورة الفاتورة إلزامية (شرط المستخدم)
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
+import { normalizeRole } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { validateRequired, parseNumber } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
@@ -64,6 +65,10 @@ export async function POST(req: NextRequest) {
   var user = await getAuthUser(req)
   if (!user) {
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
+  }
+  // v80 SECURITY FIX: الزائر حساب تصفّح فقط — كان يستطيع إنشاء فواتير مشتريات وإثقال النظام
+  if (normalizeRole(user.role) === 'visitor') {
+    return NextResponse.json({ error: 'forbidden', message: 'حساب الزائر مخصص للتصفح فقط — لا يمكن إنشاء مشتريات' }, { status: 403 })
   }
   var rl = checkRateLimit(req, RateLimitPresets.write)
   if (rl.limited) {
