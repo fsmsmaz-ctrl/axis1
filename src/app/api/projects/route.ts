@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
           workType: String(body.workType), pipeDiameter: String(body.pipeDiameter),
           totalLength, 
           // v14.2 SECURITY: سعر المشروع يُقبل فقط من الإدارة العليا ومدير المشروع
-          // (canViewPricing يستثني المشرف العام admin@axis.om) — غيرهم يُنشأ المشروع بلا سعر
+          // (canViewPricing — v78 تُضم مدير النظام) — غيرهم يُنشأ المشروع بلا سعر
           pricePerMeter: canViewPricing(user) && (body.pricePerMeter !== undefined && body.pricePerMeter !== null && String(body.pricePerMeter) !== '')
             ? parseNumber(body.pricePerMeter, 0)
             : null, 
