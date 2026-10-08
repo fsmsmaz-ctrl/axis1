@@ -203,27 +203,28 @@ export function hasPermission(
 
 export const hasReportPermission = hasPermission
 
-// ─── Pricing confidentiality (v14.1) ───────────────────────────
+// ─── Pricing confidentiality (v14.1 — محدَّثة في v78) ──────────
 // سعر خط الحفر (pricePerMeter) وسعر المشروع الاحتياطي والإيرادات المشتقة
-// (dailyRevenue) بيانات مالية سرية — تظهر فقط لدورين حصرياً:
+// (dailyRevenue) بيانات مالية سرية — تظهر فقط لمن يسمح بهذه الدالة:
 //   1) الإدارة العليا (top_management)
 //   2) مدير المشروع (project_manager)
-// ⚠️ استثناء صريح: المشرف العام (admin@axis.om) لا يرى الأسعار إطلاقاً —
-// حتى لو كان دوره الرسمي top_management (قرار صاحب الموقع: الفصل التام
-// بين إدارة النظام والبيانات المالية).
-// هذا حظر سرية صارم — لا تخضع الصلاحيات المخصصة (permissions) هنا،
-// فحتى لو مُنحت صلاحية drive_lines أو costs لمستخدم آخر يبقى السعر مخفياً.
+//   3) v78 — مدير النظام (علم isSystemAdmin في القاعدة أو البريد الرئيسي):
+//      قرار صاحب الموقع الجديد — رفع الحجز السابق (v15) وإظهار كل الأسعار
+//      لمدير النظام وحده، دون أي تغيير في حجبها عن بقية الأدوار.
+// هذا حظر سرية صارم لغير الثلاثة أعلاه — لا تخضع الصلاحيات المخصصة
+// (permissions) هنا، فحتى لو مُنحت صلاحية drive_lines أو costs لمستخدم
+// آخر تبقى الأسعار مخفية عنه.
 export const PRICING_ALLOWED_ROLES = ['top_management', 'project_manager'] as const
 
 export function canViewPricing(user: { role?: string; email?: string; isSystemAdmin?: boolean } | null | undefined): boolean {
   if (!user) return false
-  // v15 HARDENING (الطبقة الأولى): علم قاعدة البيانات — لا علاقة له بالبريد ولا التوكن.
-  // الحساب المعلَّم كمدير نظام لا يرى الأسعار مهما كان دوره أو بريده.
-  if (user.isSystemAdmin === true) return false
+  // v78 (قرار صاحب الموقع): مدير النظام يرى كل الأسعار — عكس قاعدة v15
+  // السابقة التي حجبتها عنه تماماً. الطبقة الأولى: علم قاعدة البيانات.
+  if (user.isSystemAdmin === true) return true
   var email = (user.email || '').toLowerCase().trim()
-  // الطبقة الثانية: رفض صريح ببريد مدير النظام
-  if (email === SYSTEM_ADMIN_EMAIL) return false
-  // v15 HARDENING (الطبقة الثالثة): جلسة بلا بريد = لا أسعار أبداً
+  // الطبقة الثانية: البريد الرئيسي لمدير النظام
+  if (email === SYSTEM_ADMIN_EMAIL) return true
+  // جلسة بلا بريد = لا أسعار (طبقة v15 تبقى كما هي لغير مدير النظام)
   if (!email) return false
   // v63: تطبيع الدور قبل المقارنة
   return (PRICING_ALLOWED_ROLES as readonly string[]).includes(normalizeRole(user.role))
