@@ -11,6 +11,8 @@ import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 import { ensurePurchasesSupport, ensureHRSupport, ensureMediaSupport } from '@/lib/db-selfheal'
 // v52: إنشاء حساب الزائر تلقائياً عند أول محاولة دخول (قبل verifyCredentials)
 import { ensureVisitorAccount } from '@/lib/db-selfheal'
+// v78: متابعة دخول الزائر — تسجيل كل دخول ناجح لحساب الزائر (دور visitor)
+import { recordVisitorLogin, ensureVisitorLoginSupport } from '@/lib/visitor-login'
 
 // v56: مهلة قصوى لكل خطوة قاعدة بيانات في الدخول — لو علق الاتصال (مثل مشروع
 // Supabase المتوقف paused أو بطء الشبكة) نرجع رسالة JSON واضحة تحدد السبب،
@@ -95,6 +97,8 @@ export async function POST(req: NextRequest) {
           ensureVisitorAccount(),
           ensureHRSupport(),
           ensureMediaSupport(),
+          // v78: جدول متابعة دخول الزائر — يُنشأ ذاتياً قبل أول تسجيل
+          ensureVisitorLoginSupport(),
         ]),
         3000,
         'SELF_HEAL'
@@ -125,6 +129,11 @@ export async function POST(req: NextRequest) {
         { status: 401 }
       )
     }
+
+    // v78: متابعة دخول الزائر — يُسجَّل الدخول الناجح لحساب الزائر فقط (دور visitor)
+    // بتاريخه ووقته ونوع الجهاز من User-Agent. إطلاق غير حاجب: التسجيل داخل
+    // recordVisitorLogin مُحاط بـ catch خاص به، وفشلُه لا يعطل الدخول ولا يبطئه أبداً.
+    recordVisitorLogin(user, req.headers.get('user-agent') || '').catch(function () {})
 
     // v56: إنشاء الجلسة بمهلة — فشل JWT_SECRET يعطي رسالة صريحة بدل انهيار عام
     var token: string
