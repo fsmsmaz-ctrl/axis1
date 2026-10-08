@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
-import { buildAuditDetails, safeDbOp, handleDbError, validImageDataUrl } from '@/lib/api-helpers'
+import { buildAuditDetails, getChangesDiff, safeDbOp, handleDbError, validImageDataUrl, logAssetChange } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
-import { hasPermission, canModifyCompanyAsset, hideEquipmentMoney } from '@/lib/auth'
+import { hasPermission, canModifyCompanyAsset } from '@/lib/auth'
+import { ensureEquipmentLogSupport } from '@/lib/db-selfheal'
 
 var MAX_IMAGE_SIZE = 700000
 
@@ -40,15 +41,21 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const user = await getAuthUser(req)
   if (!user) return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
-  // v82: التعديل محجوب عن أدوار «الإنشاء فقط» (مسؤول السلامة)
-  if (!canModifyCompanyAsset(user)) {
-    return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية لتعديل الأصول — إضافة الأصول متاحة لك فقط' }, { status: 403 })
+
+  var { id } = await params
+
+  // v83: بوابة المُنشئ — مَن سجّل الأصل يستطيع تعديل كافة بياناته (ومن ضمنها
+  // الأسعار) لاحقاً، وكل تعديله يظهر باسمه في مفكرة المعدات أسفل الصفحة
+  var gateAsset = await safeDbOp(() => db.companyAsset.findUnique({ where: { id }, select: { id: true, createdById: true } }), 'فحص الأصل')
+  var gateData = gateAsset.success ? gateAsset.data as any : null
+  var v83IsCreator = !!gateData && !!gateData.createdById && gateData.createdById === user.id
+  // v82: التعديل محجوب عن أدوار «الإنشاء فقط»… v83 …إلا لمَن سجّل الأصل نفسه
+  if (!canModifyCompanyAsset(user) && !v83IsCreator) {
+    return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية لتعديل هذا الأصل — التعديل متاح لمَن سجّله وللإدارة فقط' }, { status: 403 })
   }
 
   var rl = checkRateLimit(req, RateLimitPresets.write)
   if (rl.limited) return NextResponse.json({ error: 'too_many_requests', message: 'طلبات كثيرة جداً' }, { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } })
-
-  var { id } = await params
 
   try {
     const body = await req.json()
@@ -91,13 +98,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       responsibleId: body.responsibleId || null, projectId: body.projectId || null,
       status: body.status !== undefined ? String(body.status).slice(0, 50) : undefined, notes: body.notes ? String(body.notes).slice(0, 2000) : null,
     }
-    // v82: مسؤول السلامة لا يخصم أي شيء يخص الأسعار — تُشطب قيم الإيجار من طلباته دفاعياً
-    if (hideEquipmentMoney(user)) {
-      updateData.supplier = null
-      updateData.rentalCost = null
-      updateData.rentalStart = null
-      updateData.rentalEnd = null
-    }
+    // v83: أُلغي شطب حقول الإيجار من طلبات أدوار «الإنشاء فقط» — قرار صاحب الموقع:
+    // مَن سجّل الأصل يُدخل كافة بياناته ومن ضمنها الأسعار، والمساءلة عبر المفكرة
     if (body.hasOwnProperty('image')) {
       // v70: نفس فحص الصورة المعتاد — العمود أصبح موجوداً فعلاً الآن
       updateData.image = body.image ? validImageDataUrl(body.image) : null
@@ -113,6 +115,21 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     // v22: توثيق دقيق — القيمة قبل ← القيمة الآن
     safeDbOp(() => db.auditLog.create({ data: { userId: user.id, projectId: updateResult.data.projectId, action: 'update', entity: 'company_asset', entityId: id, details: oldAsset ? buildAuditDetails(oldAsset as unknown as Record<string, any>, updateData, 'تعديل أصل شركة: ' + updateResult.data.name, { skipFields: ['id', 'createdAt', 'updatedAt', 'projectId', 'cuid', 'image', 'responsibleId'] }) : ('تعديل أصل شركة: ' + updateResult.data.name) } }), 'سجل التدقيق').catch(() => {})
 
+    // v83: التعديل في مفكرة المعدات الموحدة — «أي تغيّر يظهر في السجل في الأسفل»
+    if (oldAsset) {
+      var v83Diff = getChangesDiff(oldAsset as unknown as Record<string, any>, updateData, { skipFields: ['id', 'createdAt', 'updatedAt', 'projectId', 'cuid', 'image', 'responsibleId'] })
+      if (v83Diff.changes.length > 0) {
+        var v83ArParts = v83Diff.changes.map(function(c) { return c.field + ': من «' + c.old + '» إلى «' + c.new + '»' })
+        var v83EnParts = v83Diff.changes.map(function(c) { return c.fieldEn + ': from "' + c.old + '" to "' + c.new + '"' })
+        await logAssetChange({
+          assetId: id, assetName: updateResult.data.name, user,
+          action: 'update',
+          changesAr: 'عدّل بيانات الأصل «' + updateResult.data.name + '» — ' + v83ArParts.join('؛ '),
+          changesEn: 'Updated asset "' + updateResult.data.name + '" — ' + v83EnParts.join('; '),
+        })
+      }
+    }
+
     return NextResponse.json({ asset: updateResult.data, success: true })
   } catch (error: any) {
     return handleDbError(error, 'تحديث الأصل')
@@ -122,9 +139,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const user = await getAuthUser(req)
   if (!user) return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
-  // v82: الحذف محجوب عن أدوار «الإنشاء فقط» (مسؤول السلامة)
+  // v82: الحذف محجوب عن أدوار «الإنشاء فقط» — v83: بوابة المُنشئ تخوّل التعديل فقط، والحذف للإدارة حصراً
   if (!canModifyCompanyAsset(user)) {
-    return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية لحذف الأصول — إضافة الأصول متاحة لك فقط' }, { status: 403 })
+    return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية لحذف الأصول — الحذف متاح للإدارة فقط' }, { status: 403 })
   }
 
   var rl = checkRateLimit(req, RateLimitPresets.write)
@@ -134,11 +151,25 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
 
   try {
     // v70: فحص الوجود — 404 صادقة بدل 500 مضلل
-    var delTarget = await safeDbOp(() => db.companyAsset.findUnique({ where: { id }, select: { id: true } }), 'فحص الأصل')
+    // v83: الاسم يُجلب أيضاً لتسجيل الحذف في المفكرة
+    var delTarget = await safeDbOp(() => db.companyAsset.findUnique({ where: { id }, select: { id: true, name: true, projectId: true } }), 'فحص الأصل')
     if (!delTarget.success) return delTarget.response
     if (!delTarget.data) return NextResponse.json({ error: 'not_found', message: 'الأصل غير موجود' }, { status: 404 })
     var deleteResult = await safeDbOp(() => db.companyAsset.delete({ where: { id } }), 'حذف الأصل')
     if (!deleteResult.success) return deleteResult.response
+
+    // v83: حذف الأصل لم يكن يُسجل إطلاقاً — الآن في المفكرة الموحدة وسجل التدقيق
+    // باسم مَن حذفه وتوقيته («أي تغيّر يظهر في السجل في الأسفل»)
+    await ensureEquipmentLogSupport()
+    var v83DelName = (delTarget.data as any).name || '—'
+    await logAssetChange({
+      assetId: id, assetName: v83DelName, user,
+      action: 'delete',
+      changesAr: 'حذف الأصل «' + v83DelName + '» نهائياً من النظام',
+      changesEn: 'Permanently deleted asset "' + v83DelName + '"',
+    })
+    safeDbOp(() => db.auditLog.create({ data: { userId: user.id, projectId: (delTarget.data as any).projectId || null, action: 'delete', entity: 'company_asset', entityId: id, details: 'Deleted asset: ' + v83DelName } }), 'سجل التدقيق').catch(() => {})
+
     return NextResponse.json({ success: true })
   } catch (error: any) {
     return handleDbError(error, 'حذف الأصل')
