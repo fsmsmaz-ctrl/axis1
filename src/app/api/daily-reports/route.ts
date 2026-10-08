@@ -3,7 +3,8 @@ import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 import { getAuthUser } from '@/lib/auth-server'
 import { hasPermission, canWrite, canViewPricing, SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { handleDbError, validateRequired, parseNumber, safeDbOp, parseDateRange, sanitizeDailyReport, recalcProgress } from '@/lib/api-helpers'
+import { handleDbError, validateRequired, parseNumber, safeDbOp, parseDateRange, sanitizeDailyReport, recalcProgress, recalcDrillingDates } from '@/lib/api-helpers'
+import { ensureDriveLineDates } from '@/lib/db-selfheal'
 import { notifyUsers } from '@/lib/notify'
 
 export async function GET(req: NextRequest) {
@@ -105,6 +106,9 @@ export async function POST(req: NextRequest) {
       { status: 403 }
     )
   }
+
+  // v79: ضمان جاهزية عمودَي تواريخ الحفر قبل أي كتابة عليهما (علم مخزّن — استدعاءات لاحقة شبه مجانية)
+  await ensureDriveLineDates()
 
   try {
     const body = await req.json()
@@ -303,6 +307,8 @@ export async function POST(req: NextRequest) {
     // هذا التقرير كانت تُرجع تقدم خط الحفر للخلف عند إدخال تقرير مؤرَّخ أقل قراءة
     if (body.driveLineId) {
       updatePromises.push(recalcProgress(db, String(body.projectId), String(body.driveLineId)))
+      // v79: تحديث تاريخَي بدء/آخر يوم حفر للخط تلقائياً (من التقارير المعتمدة — غير حاجب)
+      updatePromises.push(recalcDrillingDates(db, String(body.driveLineId)))
     }
 
     // Update project progress
