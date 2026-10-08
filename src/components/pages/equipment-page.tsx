@@ -20,6 +20,7 @@ import {
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
 import { normalizeRole, canWrite, SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
+import { localTodayISO } from '@/lib/utils'
 import { toast } from 'sonner'
 
 const statusLabels: Record<string, { ar: string; en: string; color: string }> = {
@@ -130,7 +131,7 @@ export default function EquipmentPage() {
   })
 
   const [maintenanceForm, setMaintenanceForm] = useState({
-    equipmentId: '', date: new Date().toISOString().split('T')[0],
+    equipmentId: '', date: localTodayISO(),
     type: 'routine', description: '', cost: '', partsUsed: '', setStatus: 'operational',
   })
 
@@ -372,13 +373,13 @@ export default function EquipmentPage() {
 
   useEffect(() => {
     if (!user) return
-    fetchEquipment()
     fetchProjectList()
     fetchUserList()
     fetchLostAssets()
     // v75: مفكرة المعدات تُجلب عند فتح القسم
     fetchEquipmentLogs()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // v80 إصلاح: fetchEquipment حُذفت من هنا — تأثير selectedProject أسفلها ينفذها أصلاً عند التحميل
+    // فكانت تُستدعى مرتين متتاليتين عند فتح الصفحة (طلب مكرر على الخادم)
   }, [user])
 
   useEffect(() => {
@@ -733,7 +734,8 @@ export default function EquipmentPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {equipment.map((eq) => {
-            const status = statusLabels[eq.status]
+            // v80 إصلاح: حالة غير متوقعة كانت تكسر الصفحة كلها (status.color على undefined) — بديل آمن
+            const status = statusLabels[eq.status] || { ar: eq.status, en: eq.status, color: 'secondary' as const }
             const type = typeLabels[eq.type] || typeLabels.other
             return (
               <Card key={eq.id} className="hover:shadow-sm transition">
@@ -801,7 +803,8 @@ export default function EquipmentPage() {
                     </Button>
                     {canEditEq(eq) && (
                       <Button variant="outline" size="sm" onClick={() => {
-                        setMaintenanceForm({ ...maintenanceForm, equipmentId: eq.id, setStatus: eq.status === 'maintenance_needed' ? 'operational' : 'operational' })
+                        // v80 تنظيف: الشرط كان يعيد 'operational' في الحالتين — عُدّل للقيمة مباشرة
+                        setMaintenanceForm({ ...maintenanceForm, equipmentId: eq.id, setStatus: 'operational' })
                         setMaintenanceDialogOpen(true)
                       }}>
                         <Settings className="h-4 w-4" />
@@ -825,6 +828,9 @@ export default function EquipmentPage() {
                             } else {
                               toast.error(d.message || (isRtl ? 'فشل الحذف' : 'Delete failed'))
                             }
+                          }).catch(function() {
+                            // v80 إصلاح: فشل الشبكة كان يمرّ بصمت — المستخدم لا يعرف أن الحذف لم يتم
+                            toast.error(isRtl ? 'فشل الاتصال — لم يتم الحذف، حاول مجدداً' : 'Connection failed — not deleted, try again')
                           })
                         }
                       }}>
@@ -1192,7 +1198,7 @@ export default function EquipmentPage() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-1.5"><Label>{isRtl ? 'ساعات التشغيل اليومية' : 'Daily Hours'}</Label><Input type="number" step="0.1" value={formData.dailyHours} onChange={(e) => setFormData({ ...formData, dailyHours: e.target.value })} /></div>
+              <div className="space-y-1.5"><Label>{isRtl ? 'ساعات التشغيل اليومية' : 'Daily Hours'}</Label><Input type="number" step="0.1" min="0" value={formData.dailyHours} onChange={(e) => setFormData({ ...formData, dailyHours: e.target.value })} /></div>
               <div className="space-y-1.5">
                 <Label>{isRtl ? 'المشروع' : 'Project'}</Label>
                 <Select value={formData.projectId} onValueChange={(v) => setFormData({ ...formData, projectId: v })}>
@@ -1302,7 +1308,7 @@ export default function EquipmentPage() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-1.5"><Label>{isRtl ? 'ساعات التشغيل اليومية' : 'Daily Hours'}</Label><Input type="number" step="0.1" value={formData.dailyHours} onChange={(e) => setFormData({ ...formData, dailyHours: e.target.value })} /></div>
+              <div className="space-y-1.5"><Label>{isRtl ? 'ساعات التشغيل اليومية' : 'Daily Hours'}</Label><Input type="number" step="0.1" min="0" value={formData.dailyHours} onChange={(e) => setFormData({ ...formData, dailyHours: e.target.value })} /></div>
               <div className="space-y-1.5">
                 <Label>{isRtl ? 'المشروع' : 'Project'}</Label>
                 <Select value={formData.projectId} onValueChange={(v) => setFormData({ ...formData, projectId: v })}>
@@ -1466,7 +1472,7 @@ export default function EquipmentPage() {
                 <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-3">
                   <div className="space-y-1.5"><Label>{isRtl ? 'الجهة المانحة/المؤجرة' : 'Supplier/Lender'}</Label><Input value={assetForm.supplier} onChange={(e) => setAssetForm({ ...assetForm, supplier: e.target.value })} /></div>
                   {assetForm.ownership === 'rented' && (
-                    <div className="space-y-1.5"><Label>{isRtl ? 'تكلفة الإيجار الشهري (ر.ع)' : 'Monthly Rent (OMR)'}</Label><Input type="number" step="0.01" value={assetForm.rentalCost} onChange={(e) => setAssetForm({ ...assetForm, rentalCost: e.target.value })} /></div>
+                    <div className="space-y-1.5"><Label>{isRtl ? 'تكلفة الإيجار الشهري (ر.ع)' : 'Monthly Rent (OMR)'}</Label><Input type="number" step="0.01" min="0" value={assetForm.rentalCost} onChange={(e) => setAssetForm({ ...assetForm, rentalCost: e.target.value })} /></div>
                   )}
                   <div className="space-y-1.5"><Label>{isRtl ? 'بداية الإيجار/الإعارة' : 'Start Date'}</Label><Input type="date" value={assetForm.rentalStart} onChange={(e) => setAssetForm({ ...assetForm, rentalStart: e.target.value })} /></div>
                   <div className="space-y-1.5"><Label>{isRtl ? (assetForm.ownership === 'rented' ? 'نهاية الإيجار' : 'تاريخ الإرجاع المتوقع') : (assetForm.ownership === 'rented' ? 'End Date' : 'Expected Return Date')}</Label><Input type="date" value={assetForm.rentalEnd} onChange={(e) => setAssetForm({ ...assetForm, rentalEnd: e.target.value })} /></div>
