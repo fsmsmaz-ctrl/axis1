@@ -206,14 +206,14 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       projectId: existingReport.projectId,
       driveLineId: finalDriveLineId,
       reportDate: existingReport.reportDate,
-      weather: fromSafety ? existingReport.weather : (body.weather || null),
-      workStartTime: body.workStartTime || null,
-      workEndTime: body.workEndTime || null,
+      weather: fromSafety ? existingReport.weather : (body.weather ? String(body.weather).slice(0, 50) : null),
+      workStartTime: (body.workStartTime ? String(body.workStartTime).slice(0, 20) : null),
+      workEndTime: (body.workEndTime ? String(body.workEndTime).slice(0, 20) : null),
       operatingHours: Math.max(0, parseFloat(body.operatingHours) || 0),
       stoppageHours: Math.max(0, parseFloat(body.stoppageHours) || 0),
-      stoppageReason: body.stoppageReason || null,
+      stoppageReason: (body.stoppageReason ? String(body.stoppageReason).slice(0, 1000) : null),
       workersCount: Math.max(0, parseInt(body.workersCount) || 0),
-      attendees: body.attendees || null,
+      attendees: (body.attendees ? String(body.attendees).slice(0, 2000) : null),
       startReading: startReading,
       endReading: endReading,
       dailyMeters: dailyMeters,
@@ -221,10 +221,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       totalMeters: totalMeters,
       remainingMeters: remainingMeters,
       progressPercent: progressPercent,
-      soilExcavated: body.soilExcavated || null,
+      soilExcavated: (body.soilExcavated ? String(body.soilExcavated).slice(0, 50) : null),
       pipesInstalled: Math.max(0, parseInt(body.pipesInstalled) || 0),
-      productionNotes: body.productionNotes || null,
-      problems: body.problems || null,
+      productionNotes: (body.productionNotes ? String(body.productionNotes).slice(0, 2000) : null),
+      problems: (body.problems ? String(body.problems).slice(0, 2000) : null),
       // SECURITY FIX: التسليم حصراً عبر المسار المخصص /submit — كان قبول
       // status:'submitted' هنا يتخطى إشعار المعتمدين وسجل تدقيق التسليم
       status: body.status === 'draft' ? 'draft' : existingReport.status,
@@ -410,4 +410,3 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     return handleDbError(error, 'حذف التقرير اليومي')
   }
 }
-
