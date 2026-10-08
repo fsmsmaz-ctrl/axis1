@@ -62,8 +62,27 @@ export async function GET(req: NextRequest) {
     select: { id: true },
   }) : []
   var imgSet = new Set(imgRows.map(function(r) { return r.id }))
+  // v84: السجل المصغر لكل أصل — آخر 3 تغييرات تُعاد مع كل صف كنقاط صغيرة
+  // تُعرض على صف الأصل نفسه (باسم صاحبها وتوقيتها) لضمان حقوق الجميع
+  var v84RecentLogs: Record<string, any[]> = {}
+  try {
+    if (rows.length > 0) {
+      await ensureEquipmentLogSupport()
+      var v84LogRows = await db.equipmentLog.findMany({
+        where: { assetId: { in: rows.map(function(a) { return a.id }) } },
+        orderBy: { createdAt: 'desc' },
+        take: Math.min(rows.length * 6, 300),
+        select: { id: true, assetId: true, action: true, changesAr: true, changesEn: true, userName: true, userNameEn: true, createdAt: true },
+      })
+      v84LogRows.forEach(function(l: any) {
+        if (!l.assetId) return
+        var arr = v84RecentLogs[l.assetId] || (v84RecentLogs[l.assetId] = [])
+        if (arr.length < 3) arr.push(l)
+      })
+    }
+  } catch { v84RecentLogs = {} }
   const assets = rows.map(function(a) {
-    return Object.assign({}, a, { hasImage: imgSet.has(a.id) })
+    return Object.assign({}, a, { hasImage: imgSet.has(a.id), recentLogs: v84RecentLogs[a.id] || [] })
   })
   const ownedCount = assets.filter(function(a: any) { return a.ownership === 'owned' }).length
   const rentedCount = assets.filter(function(a: any) { return a.ownership === 'rented' }).length
