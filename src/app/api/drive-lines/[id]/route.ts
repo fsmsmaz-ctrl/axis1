@@ -8,9 +8,9 @@ import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 
 // أدوار مسموح لها بتغيير الأسعار — SECURITY FIX: كان مهندس الموقع ومسؤول السلامة
 // يستطيعان تغيير سعر المتر فيُعاد حساب إيرادات التقارير المعتمدة بصمت
-// v14.2: الحكم النهائي عبر canViewPricing — تستثني المشرف العام (admin@axis.om)
-// صراحةً حتى لو كان دوره top_management، فتغيير السعر فعل مالي إداري محصور
-// بالإدارة العليا ومدير المشروع حصراً.
+// v14.2: الحكم النهائي عبر canViewPricing — v78 تُضم مدير النظام
+// (admin@axis.om أو علم isSystemAdmin) إلى المسموح لهم، وتغيير السعر يبقى
+// فعلاً مالياً إدارياً محصوراً بالإدارة العليا ومدير المشروع ومدير النظام.
 import { canViewPricing as canChangePricing } from '@/lib/auth'
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
