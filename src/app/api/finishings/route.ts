@@ -66,7 +66,7 @@ export async function POST(req: NextRequest) {
     var safeHandoverStatus = VALID_HANDOVER_CREATE.includes(String(body.handoverStatus || 'pending')) ? String(body.handoverStatus || 'pending') : 'pending'
     const createResult = await safeDbOp(
       () => db.finishing.create({
-        data: { projectId: String(body.projectId), driveLineId: body.driveLineId || null, date: new Date(body.date), siteCleaned: !!body.siteCleaned, wasteRemoved: !!body.wasteRemoved, shaftClosed: !!body.shaftClosed, siteRestored: !!body.siteRestored, lineHandover: !!body.lineHandover, casingSpacer: !!body.casingSpacer, clientNotes: body.clientNotes ? String(body.clientNotes) : null, handoverStatus: safeHandoverStatus, status: 'draft', submittedById: user.id, signedBy: user.name, signedById: user.id, signedAt: new Date() },
+        data: { projectId: String(body.projectId), driveLineId: body.driveLineId || null, date: new Date(body.date), siteCleaned: !!body.siteCleaned, wasteRemoved: !!body.wasteRemoved, shaftClosed: !!body.shaftClosed, siteRestored: !!body.siteRestored, lineHandover: !!body.lineHandover, casingSpacer: !!body.casingSpacer, clientNotes: body.clientNotes ? String(body.clientNotes).slice(0, 5000) : null, handoverStatus: safeHandoverStatus, status: 'draft', submittedById: user.id, signedBy: user.name, signedById: user.id, signedAt: new Date() },
       }), 'إنشاء التشطيب'
     )
     if (!createResult.success) return createResult.response
