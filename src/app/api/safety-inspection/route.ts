@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
-import { hasPermission, canWrite } from '@/lib/auth'
+import { hasPermission, canWrite, SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { handleDbError, validateRequired, safeDbOp } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
@@ -240,7 +240,7 @@ export async function POST(req: NextRequest) {
       observations: body.observations ? String(body.observations).slice(0, 5000) : null,
       violations: body.violations ? String(body.violations).slice(0, 5000) : null,
       incidentType: VALID_INCIDENT_CREATE.includes(String(body.incidentType)) ? String(body.incidentType) : 'none',
-      incidentDescription: body.incidentDescription || null,
+      incidentDescription: (body.incidentDescription ? String(body.incidentDescription).slice(0, 5000) : null),
       signedBy: userName,
       signedById: userId,
       signedAt: new Date(),
@@ -279,7 +279,7 @@ export async function POST(req: NextRequest) {
   }
 }
 
-var ADMIN_EMAIL = 'admin@axis.om'
+// v80: الثابت المكتوب يدوياً استُبدل بـ SYSTEM_ADMIN_EMAIL الموحد من lib/auth
 
 export async function DELETE(req: NextRequest) {
   var user = await getAuthUser(req)
@@ -290,7 +290,7 @@ export async function DELETE(req: NextRequest) {
 
   // v38: الحذف متاح لمدير النظام والإدارة العليا
   var userRoleNorm = String(user.role || '').toLowerCase().trim()
-  if (userRoleNorm !== 'top_management' && user.email.toLowerCase().trim() !== ADMIN_EMAIL) {
+  if (userRoleNorm !== 'top_management' && user.email.toLowerCase().trim() !== SYSTEM_ADMIN_EMAIL) {
     return NextResponse.json({ error: 'forbidden', message: 'هذه العملية متاحة لمدير النظام والإدارة العليا فقط' }, { status: 403 })
   }
 
@@ -372,6 +372,3 @@ export async function DELETE(req: NextRequest) {
     return handleDbError(error, 'حذف تقرير السلامة')
   }
 }
-
-
-
