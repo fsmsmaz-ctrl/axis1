@@ -98,8 +98,12 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
     'projects', 'drive_lines', 'daily_reports', 'safety',
     'equipment', 'finishings', 'tasks', 'notifications',
   ],
+  // v81: مسؤول السلامة (hse_officer) — أُضيفت صلاحية «خطوط الحفر» بقرار صاحب الموقع:
+  // يرى القسم ويُدخل البيانات ويُنشئ خطوط حفر جديدة فقط (إنشاء بلا تعديل/حذف —
+  // انظر DRIVE_LINES_CREATE_ONLY_ROLES أدناه)، وبلا أي أسعار إطلاقاً
+  // (ليس في PRICING_ALLOWED_ROLES — الحظر السرّي الصارم يبقى كما هو).
   hse_officer: [
-    'projects', 'equipment', 'safety', 'tasks', 'reports', 'notifications',
+    'projects', 'drive_lines', 'equipment', 'safety', 'tasks', 'reports', 'notifications',
   ],
   foreman: [
     'projects', 'daily_reports', 'finishings', 'tasks', 'reports', 'notifications',
@@ -172,6 +176,27 @@ export function canWrite(userRole: string, resource: string, userPermissions?: R
   if (!allowed) return false
   // v63: تطبيع الدور قبل المقارنة (نفس سبب canAccessDashboard)
   return allowed.includes(normalizeRole(userRole))
+}
+
+// ─── v81: خطوط الحفر — أدوار «الإنشاء فقط» ─────────────────────
+// قرار صاحب الموقع: مسؤول السلامة يُنشئ خطوط حفر جديدة ويُدخل بياناتها،
+// لكنه لا يعدّل ولا يحذف خطوطاً قائمة (هذه للإدارة العليا ومدير المشروع
+// ومهندس الموقع). الفرق بين canWrite (تشمل الإنشاء) و canModifyDriveLines
+// (تعديل/حذف): أدوار هذه القائمة تُقبل في الأولى وتُرفض في الثانية.
+// مدير النظام (admin@axis.om أو علم isSystemAdmin) يتجاوز دائماً.
+// الأسعار مستقلة تماماً عن هذا الملف: مسؤول السلامة لا يرى أي سعر
+// (canViewPricing لا تمنحه شيئاً) والخادم يُعقّم ردوده من السعر أصلاً.
+export const DRIVE_LINES_CREATE_ONLY_ROLES = ['hse_officer'] as const
+
+export function canModifyDriveLines(
+  user: { role?: string; email?: string; isSystemAdmin?: boolean; permissions?: Record<string, boolean> | null } | null | undefined
+): boolean {
+  if (!user) return false
+  if (user.isSystemAdmin === true) return true
+  if (user.email && user.email.toLowerCase().trim() === SYSTEM_ADMIN_EMAIL) return true
+  // أدوار الإنشاء فقط: إنشاء نعم — تعديل/حذف لا
+  if ((DRIVE_LINES_CREATE_ONLY_ROLES as readonly string[]).includes(normalizeRole(user.role))) return false
+  return canWrite(user.role || '', 'drive_lines', user.permissions)
 }
 
 export function hasPermission(
