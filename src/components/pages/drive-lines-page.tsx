@@ -57,7 +57,7 @@ export default function DriveLinesPage() {
   // for users without write access to drive_lines for a cleaner UI.
   const canEdit = !!(user && canWrite(user.role, 'drive_lines', user.permissions))
   // v14.2: سعر المتر سري — يظهر فقط للإدارة العليا ومدير المشروع.
-  // المشرف العام (admin@axis.om) مستثنى صراحةً داخل canViewPricing — لا يرى أي سعر
+  // المشرف العام (admin@axis.om) يرى الأسعار منذ v78 داخل canViewPricing — مثل الإدارة العليا
   // ولا حقل إدخال السعر (الخادم أيضاً يحذف السعر من الردود — حماية مزدوجة).
   const seePricing = !!(user && canViewPricing(user))
 
@@ -513,3 +513,4 @@ export default function DriveLinesPage() {
     </div>
   )
 }
+
