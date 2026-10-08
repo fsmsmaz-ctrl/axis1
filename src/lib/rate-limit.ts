@@ -31,6 +31,9 @@ export interface RateLimitConfig {
   maxRequests: number
   windowSeconds: number
   keyPrefix?: string
+  // v80: مفتاح ثابت يتجاهل IP — يُستعمل لحد الدخول لكل حساب على حدة
+  // حتى لا يتحايل المهاجم بتدوير ترويسة X-Forwarded-For
+  staticKey?: string
 }
 
 export var RateLimitPresets = {
@@ -50,7 +53,7 @@ export function checkRateLimit(
     || req.headers.get('cf-connecting-ip')
     || 'unknown'
 
-  var key = (config.keyPrefix || 'rl') + ':' + ip
+  var key = (config.keyPrefix || 'rl') + ':' + (config.staticKey || ip)
   var now = Date.now()
   var windowMs = config.windowSeconds * 1000
 
