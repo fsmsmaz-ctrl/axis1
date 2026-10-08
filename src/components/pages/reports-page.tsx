@@ -14,6 +14,7 @@ import {
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
 import { hasReportPermission, canViewPricing, normalizeRole } from '@/lib/auth'
+import { localTodayISO } from '@/lib/utils'
 import { reportDayName } from '@/lib/day-name'
 import { toast } from 'sonner'
 import {
@@ -65,13 +66,21 @@ export default function ReportsPage() {
       .then(r => r.json())
       .then(d => setProjects(d.projects || []))
       .catch(() => setProjects([]))
-    // Default to last 30 days
-    const today = new Date()
+    // Default to last 30 days — v80: توقيت محلي بدل UTC (عُمان +4، بين 00:00 و04:00 كان النطاق ينزلق يوماً)
     const thirtyAgo = new Date()
     thirtyAgo.setDate(thirtyAgo.getDate() - 30)
-    setToDate(today.toISOString().split('T')[0])
-    setFromDate(thirtyAgo.toISOString().split('T')[0])
+    setToDate(localTodayISO())
+    setFromDate(new Date(thirtyAgo.getTime() - thirtyAgo.getTimezoneOffset() * 60000).toISOString().split('T')[0])
   }, [])
+
+  // v80 إصلاح: مساعد موحد — يفشل صراحة عند ردود غير سليمة (403/500/HTML)
+  // بدل «تم توليد التقرير» بنجاح وتقرير فارغ يُطبع رسمياً!
+  async function jget(url: string): Promise<any> {
+    const res = await authedFetch(url)
+    const body = await res.json().catch(() => null)
+    if (!res.ok || !body || typeof body !== 'object') throw new Error('HTTP ' + res.status)
+    return body
+  }
 
   async function generateReport() {
     if (!selectedReport) {
@@ -103,23 +112,19 @@ export default function ReportsPage() {
         selectedReport === 'revenue'
       ) {
         // All of these come from the daily reports log (filters: project + period)
-        const res = await authedFetch('/api/daily-reports?' + qs)
-        data = await res.json()
+        data = await jget('/api/daily-reports?' + qs)
         // تقرير الإيراد: التقارير المعتمدة فقط — الإيراد لا يُعترف به قبل الاعتماد
         if (selectedReport === 'revenue') {
           data.reports = (data.reports || []).filter((r: any) => r.status === 'approved')
         }
       } else if (selectedReport === 'costs') {
-        const res = await authedFetch('/api/costs?' + qs)
-        data = await res.json()
+        data = await jget('/api/costs?' + qs)
       } else if (selectedReport === 'profit') {
         // Profit = revenue (approved daily reports) − costs for the same period
-        const [revRes, costRes] = await Promise.all([
-          authedFetch('/api/daily-reports?' + qs),
-          authedFetch('/api/costs?' + qs),
+        const [rev, cost] = await Promise.all([
+          jget('/api/daily-reports?' + qs),
+          jget('/api/costs?' + qs),
         ])
-        const rev = await revRes.json()
-        const cost = await costRes.json()
         const reports = rev.reports || []
         // الإيراد في تقرير الربح: من التقارير المعتمدة فقط
         const approvedReports = reports.filter((r: any) => r.status === 'approved')
@@ -140,20 +145,16 @@ export default function ReportsPage() {
         if (body.error) throw new Error(body.message || body.error)
         data = body
       } else if (selectedReport === 'equipment') {
-        const res = await authedFetch('/api/equipment?' + params.toString())
-        data = await res.json()
+        data = await jget('/api/equipment?' + params.toString())
       } else if (selectedReport === 'handover') {
-        const res = await authedFetch('/api/finishings?' + qs)
-        data = await res.json()
+        data = await jget('/api/finishings?' + qs)
       } else if (selectedReport === 'monthly' || selectedReport === 'weekly') {
         // Period aggregates (meters/revenue/costs) computed from the filtered
         // data itself — NOT from /api/dashboard which ignores project/date filters.
-        const [revRes, costRes] = await Promise.all([
-          authedFetch('/api/daily-reports?' + qs),
-          authedFetch('/api/costs?' + qs),
+        const [rev, cost] = await Promise.all([
+          jget('/api/daily-reports?' + qs),
+          jget('/api/costs?' + qs),
         ])
-        const rev = await revRes.json()
-        const cost = await costRes.json()
         const reports = rev.reports || []
         const totalMeters = reports.reduce((s: number, r: any) => s + (Number(r.dailyMeters) || 0), 0)
         // الإيراد في التقرير الشهري/الأسبوعي: من التقارير المعتمدة فقط
@@ -174,8 +175,7 @@ export default function ReportsPage() {
         }
       } else {
         // Fallback (shouldn't happen — every type is handled above)
-        const res = await authedFetch('/api/dashboard')
-        data = await res.json()
+        data = await jget('/api/dashboard')
       }
 
       setReportData({ type: selectedReport, data, project: projects.find(p => p.id === selectedProject), fromDate, toDate })
