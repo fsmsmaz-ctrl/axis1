@@ -56,8 +56,27 @@ export async function GET(req: NextRequest) {
       select: { id: true },
     }) : []
     var imgSet = new Set(imgRows.map(function(r) { return r.id }))
+    // v84: السجل المصغر لكل معدة — آخر 4 تغييرات تُعاد مع كل صف كنقاط صغيرة
+    // تُعرض على البطاقة نفسها (باسم صاحبها وتوقيتها) لضمان حقوق الجميع،
+    // استعلام واحد خفيف بالمعرفات فقط ثم توزيع في الذاكرة (4 لكل معدة كحد أقصى)
+    var v84RecentLogs: Record<string, any[]> = {}
+    try {
+      if (rows.length > 0) {
+        var v84LogRows = await db.equipmentLog.findMany({
+          where: { equipmentId: { in: rows.map(function(e) { return e.id }) } },
+          orderBy: { createdAt: 'desc' },
+          take: Math.min(rows.length * 8, 400),
+          select: { id: true, equipmentId: true, action: true, changesAr: true, changesEn: true, userName: true, userNameEn: true, createdAt: true },
+        })
+        v84LogRows.forEach(function(l: any) {
+          if (!l.equipmentId) return
+          var arr = v84RecentLogs[l.equipmentId] || (v84RecentLogs[l.equipmentId] = [])
+          if (arr.length < 4) arr.push(l)
+        })
+      }
+    } catch { v84RecentLogs = {} }
     var equipment = rows.map(function(e) {
-      return Object.assign({}, e, { hasImage: imgSet.has(e.id) })
+      return Object.assign({}, e, { hasImage: imgSet.has(e.id), recentLogs: v84RecentLogs[e.id] || [] })
     })
     // v83: أُلغي تعقيم تكاليف الصيانة عن مسؤول السلامة — قرار صاحب الموقع:
     // مَن يسجّل معدة يرى كافة بياناتها ومن ضمنها الأسعار، والمساءلة عبر المفكرة
@@ -145,4 +164,3 @@ export async function POST(req: NextRequest) {
     return handleDbError(error, 'إنشاء المعدة')
   }
 }
-
