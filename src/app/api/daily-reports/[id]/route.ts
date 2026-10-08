@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { canWrite, hasPermission, canViewPricing, SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { buildAuditDetails, safeDbOp, handleDbError, recalcProgress, sanitizeDailyReport } from '@/lib/api-helpers'
+import { buildAuditDetails, safeDbOp, handleDbError, recalcProgress, recalcDrillingDates, sanitizeDailyReport } from '@/lib/api-helpers'
+import { ensureDriveLineDates } from '@/lib/db-selfheal'
 
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 
@@ -76,6 +77,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   }
 
   var { id } = await params
+
+  // v79: ضمان جاهزية عمودَي تواريخ الحفر قبل أي كتابة عليهما
+  await ensureDriveLineDates()
 
   try {
     // Fetch the report first to verify ownership and status
@@ -242,11 +246,17 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       // If drive line changed, also recalc the old one
       if (existingReport.driveLineId && existingReport.driveLineId !== newDriveLineId) {
         await recalcProgress(db, existingReport.projectId, existingReport.driveLineId)
+        // v79: تواريخ الخط القديم أيضاً — التقرير المعدّل قد يكون معتمداً (الإدارة العليا تعدّل بأي حالة)
+        await recalcDrillingDates(db, existingReport.driveLineId)
       }
       await recalcProgress(db, existingReport.projectId, String(newDriveLineId))
+      // v79: تحديث بدء/آخر يوم حفر للخط المستهدف (التاريخ أو الخط أو القراءات ربما تغيّرت)
+      await recalcDrillingDates(db, String(newDriveLineId))
     } else if (existingReport.driveLineId) {
       // Drive line was removed from report, recalc the old one
       await recalcProgress(db, existingReport.projectId, existingReport.driveLineId)
+      // v79: التقريرُ المعتمد فُصل عن الخط — تواريخه تُعاد بالحساب (قد تصير null إن لم يبقَ معتمد)
+      await recalcDrillingDates(db, existingReport.driveLineId)
     } else {
       // No drive line involved, recalc all lines in project
       await recalcProgress(db, existingReport.projectId, null)
@@ -324,6 +334,9 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
 
   var { id } = await params
 
+  // v79: ضمان جاهزية عمودَي تواريخ الحفر قبل إعادة الحساب بعد الحذف
+  await ensureDriveLineDates()
+
   try {
     // Get report details before deleting (include driveLineId for progress recalc)
     var reportResult = await safeDbOp(
@@ -357,6 +370,10 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
 
     // CRITICAL: Recalculate progress after deleting a report
     await recalcProgress(db, deletedProjectId, deletedDriveLineId)
+    // v79: حذف تقرير معتمد يُخرجه من المنشور — تواريخ الخط تُعاد بالحساب (قد تُصفَّر إن لم يبقَ شيء)
+    if (deletedDriveLineId) {
+      await recalcDrillingDates(db, deletedDriveLineId)
+    }
 
     // Audit log + delete notification (non-critical, fire-and-forget)
     Promise.all([
