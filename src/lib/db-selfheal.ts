@@ -474,6 +474,13 @@ export async function ensureEquipmentLogSupport(): Promise<void> {
 )`)
     await db.$executeRawUnsafe('CREATE INDEX IF NOT EXISTS "EquipmentLog_equipmentId_createdAt_idx" ON "EquipmentLog"("equipmentId", "createdAt")')
     await db.$executeRawUnsafe('CREATE INDEX IF NOT EXISTS "EquipmentLog_createdAt_idx" ON "EquipmentLog"("createdAt")')
+    // v83: المفكرة الموحدة — أعمدة الأصول + تخفيف NOT NULL عن equipmentId
+    // (ALTER DROP NOT NULL آمن التكرار: ينجح صامتاً إن كان العمود يقبل null أصلاً)
+    await db.$executeRawUnsafe('ALTER TABLE "EquipmentLog" ALTER COLUMN "equipmentId" DROP NOT NULL')
+    await db.$executeRawUnsafe('ALTER TABLE "EquipmentLog" ADD COLUMN IF NOT EXISTS "targetType" TEXT')
+    await db.$executeRawUnsafe('ALTER TABLE "EquipmentLog" ADD COLUMN IF NOT EXISTS "assetId" TEXT')
+    await db.$executeRawUnsafe('ALTER TABLE "EquipmentLog" ADD COLUMN IF NOT EXISTS "assetName" TEXT')
+    await db.$executeRawUnsafe('CREATE INDEX IF NOT EXISTS "EquipmentLog_assetId_createdAt_idx" ON "EquipmentLog"("assetId", "createdAt")')
     v75EqLogChecked = true
   } catch (e) {
     // لا نُثبّت العلم عند الفشل — تُعاد المحاولة في الطلب التالي
