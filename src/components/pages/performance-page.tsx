@@ -15,8 +15,8 @@ import { authedFetch } from '@/lib/api-client'
 
 const tooltipStyle = { borderRadius: 8, fontSize: 12 }
 
-// v78 FIX: الحقول المالية تُحذف من استجابة الخادم لمن لا يرى الأسعار (حماية v70 —
-// ومدير النظام لا يرى الأسعار أبداً). أي .toFixed() مباشر على حقل محذوف كان يرمي
+// v78 FIX: الحقول المالية تُحذف من استجابة الخادم لمن لا تسمح له canViewPricing بالرؤية
+// (حماية v70 — المشرفون وغيرهم من الأدوار غير المالية). أي .toFixed() مباشر على حقل محذوف كان يرمي
 // TypeError أثناء الرسم فتسقط الصفحة كلها عبر error.tsx («حدث خطأ غير متوقع»).
 // n0: رقم آمن للحساب (0 إن غاب) — has: هل القيمة المالية موجودة فعلاً (لعرض «—» بدل أصفار مضللة)
 function n0(v: any) { return typeof v === 'number' && isFinite(v) ? v : 0 }
@@ -53,7 +53,7 @@ export default function PerformancePage() {
   }, [selectedProject])
 
   // Memoize all derived computations
-  // v78: هل الحقول المالية محذوفة من الاستجابة؟ (مدير النظام لا يرى الأسعار — تُعرض «—» بدل الأرقام)
+  // v78: هل الحقول المالية محذوفة من الاستجابة؟ (لمن لا يسمح له بالرؤية — تُعرض «—» بدل الأرقام)
   const finHidden = useMemo(() => performance.length > 0 && !has(performance[0].totalRevenue), [performance])
   const { totals, avgDailyMeters, overallProfitMargin, avgSafety, avgWorkHours } = useMemo(() => {
     const t = performance.reduce((acc, p) => ({
@@ -509,3 +509,4 @@ export default function PerformancePage() {
     </div>
   )
 }
+
