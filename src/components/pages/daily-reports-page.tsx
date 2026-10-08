@@ -23,6 +23,7 @@ import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
 import { canWrite, SYSTEM_ADMIN_EMAIL, normalizeRole } from '@/lib/auth'
 import { reportDayName } from '@/lib/day-name'
+import { localTodayISO } from '@/lib/utils'
 import { toast } from 'sonner'
 
 const statusLabels: Record<string, { ar: string; en: string; color: string }> = {
@@ -255,19 +256,20 @@ export default function DailyReportsPage() {
     setFormData({
       projectId: report.projectId || '',
       driveLineId: report.driveLineId || '',
-      reportDate: report.reportDate ? report.reportDate.split('T')[0] : new Date().toISOString().split('T')[0],
+      reportDate: report.reportDate ? report.reportDate.split('T')[0] : localTodayISO(),
       weather: report.weather || 'sunny',
       workStartTime: report.workStartTime || '06:30',
       workEndTime: report.workEndTime || '17:00',
-      operatingHours: String(report.operatingHours || '8.5'),
-      stoppageHours: String(report.stoppageHours || '0'),
+      // v80 إصلاح: ?? بدل || — القيمة 0 صحيحة (توقف كامل = 0 ساعة تشغيل، 0 عمال) فلا تمسح عند التعديل
+      operatingHours: String(report.operatingHours ?? '8.5'),
+      stoppageHours: String(report.stoppageHours ?? '0'),
       stoppageReason: report.stoppageReason || '',
-      workersCount: String(report.workersCount || '12'),
+      workersCount: String(report.workersCount ?? '12'),
       attendees: report.attendees || '',
-      startReading: String(report.startReading || ''),
-      endReading: String(report.endReading || ''),
+      startReading: String(report.startReading ?? ''),
+      endReading: String(report.endReading ?? ''),
       soilExcavated: report.soilExcavated || 'mixed',
-      pipesInstalled: String(report.pipesInstalled || '0'),
+      pipesInstalled: String(report.pipesInstalled ?? '0'),
       productionNotes: report.productionNotes || '',
       problems: report.problems || '',
     })
@@ -663,7 +665,8 @@ export default function DailyReportsPage() {
       ) : (
         <div className="space-y-2">
           {filteredReports.map((r) => {
-            const status = statusLabels[r.status]
+            // v80: بديل آمن للحالة غير المتوقعة بدل متغير قد يكون undefined
+            const status = statusLabels[r.status] || statusLabels.draft
             return (
               <Card key={r.id} className="hover:shadow-sm transition">
                 <CardContent className="p-4">
@@ -682,8 +685,9 @@ export default function DailyReportsPage() {
                             {r.project?.name || '-'}
                           </Badge>
                         )}
-                        <Badge variant={status.color as any} className="text-xs">
-                          {isRtl ? status.ar : status.en}
+                        {/* v80 إصلاح: قيمة غير متوقعة للحالة كانت تكسر الصفحة كلها — الآن بديل آمن */}
+                        <Badge variant={(statusLabels[r.status] || statusLabels.draft).color as any} className="text-xs">
+                          {isRtl ? (statusLabels[r.status] || statusLabels.draft).ar : (statusLabels[r.status] || statusLabels.draft).en}
                         </Badge>
                       </div>
                       <p className="text-xs text-muted-foreground mt-0.5">
@@ -864,7 +868,7 @@ export default function DailyReportsPage() {
                         <SelectTrigger><SelectValue /></SelectTrigger>
                         <SelectContent>
                           <SelectItem value="none">{isRtl ? 'لا يوجد' : 'None'}</SelectItem>
-                          <SelectItem value="near_miss">{isRtl ? 'Near miss' : 'Near miss'}</SelectItem>
+                          <SelectItem value="near_miss">{isRtl ? 'شبه حادث' : 'Near miss'}</SelectItem>
                           <SelectItem value="incident">{isRtl ? 'حادث' : 'Incident'}</SelectItem>
                           <SelectItem value="accident">{isRtl ? 'إصابة' : 'Accident'}</SelectItem>
                         </SelectContent>
