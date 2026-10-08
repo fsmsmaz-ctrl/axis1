@@ -75,7 +75,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
     // v14.2 SECURITY: سعر المتر والإيراد المشتق وصافي الربح أرقام سرية —
     // تُحذف/تُصفّر لكل من ليس من الإدارة العليا أو مدير المشروع
-    // (canViewPricing يستثني المشرف العام admin@axis.om صراحةً)
+    // (canViewPricing — v78 تُضم مدير النظام إلى المسموح لهم)
     var canSeePrice = canViewPricing(user)
     if (!canSeePrice) {
       if (project.pricePerMeter !== undefined) delete project.pricePerMeter
@@ -129,7 +129,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     var totalLength = parseNumber(body.totalLength, 0)
     // v13: سعر المشروع أصبح احتياطياً — لا نصفره إذا لم يُرسل النموذج
     // v14.2 SECURITY: السعر يُقبل فقط من الإدارة العليا ومدير المشروع
-    // (canViewPricing يستثني المشرف العام admin@axis.om) — غيرهم يُتجاهل طلبه للسعر بصمت
+    // (المسموح لهم عبر canViewPricing — v78 تشمل مدير النظام) — غيرهم يُتجاهل طلبه للسعر بصمت
     var pricePerMeter: number | null | undefined = undefined
     if (canViewPricing(user) && body.pricePerMeter !== undefined) {
       pricePerMeter = (body.pricePerMeter !== null && String(body.pricePerMeter) !== '')
