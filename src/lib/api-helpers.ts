@@ -284,6 +284,36 @@ export async function recalcProgress(
   }
 }
 
+// ==================== Drilling Dates Recalculation (v79) ====================
+// تواريخ الحفر لخط واحد تُحسب حصراً من تقاريره اليومية المعتمدة (المنشورة):
+//   drillingStartDate = تاريخ أول تقرير معتمد (بداية الحفر)
+//   drillingEndDate   = تاريخ آخر تقرير معتمد (آخر يوم حفر حتى اكتماله)
+// تُستدعى عند كل حدث يمس تقارير الخط (إنشاء/تعديل/اعتماد/حذف) — فشلها غير
+// حاجب (القيم معلوماتية فقط، نمط v21) والقاعدة تصحح ذاتياً في التشغيل التالي.
+export async function recalcDrillingDates(
+  db: any,
+  driveLineId: string | null | undefined
+): Promise<void> {
+  try {
+    if (!driveLineId) return
+    var agg = await db.dailyReport.aggregate({
+      where: { driveLineId: String(driveLineId), status: 'approved' },
+      _min: { reportDate: true },
+      _max: { reportDate: true },
+    })
+    await db.driveLine.update({
+      where: { id: String(driveLineId) },
+      data: {
+        drillingStartDate: agg._min?.reportDate || null,
+        drillingEndDate: agg._max?.reportDate || null,
+      },
+    })
+  } catch (err) {
+    // غير حاجب — أعمدة v79 قد لا تكون جاهزة بعد على نسخة باردة؛ الشفاء الذاتي يصححها لاحقاً
+    console.error('[recalcDrillingDates] Error:', err)
+  }
+}
+
 // ==================== Change Tracking for Audit Logs ====================
 
 export interface FieldLabel {
