@@ -27,6 +27,8 @@ export async function GET(req: NextRequest) {
     () => db.worker.findMany({
       where,
       orderBy: { createdAt: 'desc' },
+      // v80: سقف استرجاع 5000 — كان بلا حد إطلاقاً
+      take: 5000,
       include: {
         project: { select: { id: true, name: true, code: true } },
       },
