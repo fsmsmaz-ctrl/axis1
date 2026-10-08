@@ -20,6 +20,7 @@ import { Plus, Search, FolderKanban, MapPin, Calendar, DollarSign, Edit, Trash2,
 import { useAppStore } from '@/lib/store'
 import { authedFetch, apiRequest, getErrorMessage } from '@/lib/api-client'
 import { canViewPricing, canWrite } from '@/lib/auth'
+import { localTodayISO } from '@/lib/utils'
 import { toast } from 'sonner'
 
 const workTypeLabels: Record<string, { ar: string; en: string }> = {
@@ -94,8 +95,9 @@ export default function ProjectsPage() {
       name: '', client: '', location: '', contractNumber: '',
       workType: 'pipe_jacking', pipeDiameter: '1200mm', totalLength: '',
       soilType: 'mixed',
-      startDate: today.toISOString().split('T')[0],
-      expectedEnd: defaultEnd.toISOString().split('T')[0],
+      // v80: تاريخ محلي بدل UTC — بين 00:00 و04:00 فجراً كان يقترح تاريخ أمس
+      startDate: localTodayISO(),
+      expectedEnd: new Date(defaultEnd.getTime() - defaultEnd.getTimezoneOffset() * 60000).toISOString().split('T')[0],
       status: 'not_started', notes: '',
     })
     setDialogOpen(true)
@@ -174,8 +176,13 @@ export default function ProjectsPage() {
     }
   }
 
+  // v80 إصلاح: البحث كان حساساً لحالة الأحرف (axis لا تجد AXIS) وقد ينهار على قيمة ناقصة
+  const q = search.trim().toLowerCase()
   const filtered = projects.filter(p =>
-    p.name.includes(search) || p.code.includes(search) || p.client.includes(search)
+    !q ||
+    (p.name || '').toLowerCase().includes(q) ||
+    (p.code || '').toLowerCase().includes(q) ||
+    (p.client || '').toLowerCase().includes(q)
   )
 
   return (
@@ -242,9 +249,10 @@ export default function ProjectsPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filtered.map((p) => {
-            const status = statusLabels[p.status]
-            const workType = workTypeLabels[p.workType]
-            const soilType = soilTypeLabels[p.soilType]
+            // v80 إصلاح: قيم غير متوقعة كانت تكسر الصفحة كلها — بدائل آمنة لكل الخرائط الثلاثة
+            const status = statusLabels[p.status] || { ar: p.status, en: p.status, color: 'secondary' as const }
+            const workType = workTypeLabels[p.workType] || { ar: p.workType, en: p.workType }
+            const soilType = soilTypeLabels[p.soilType] || { ar: p.soilType, en: p.soilType }
             return (
               <Card key={p.id} className="hover:shadow-md transition">
                 <CardContent className="p-5">
@@ -467,10 +475,19 @@ function ProjectDetails({ id }: { id: string | null }) {
 
   useEffect(() => {
     if (!id) return
-    authedFetch(`/api/projects/${id}`)
-      .then(r => r.json())
+    const ctrl = new AbortController()
+    authedFetch(`/api/projects/${id}`, { signal: ctrl.signal })
+      .then(r => {
+        // v80 إصلاح: لم يكن يفحص res.ok — 404/403 كان يجعل النافذة فارغة تماماً بلا رسالة
+        if (!r.ok) throw new Error('HTTP ' + r.status)
+        return r.json()
+      })
       .then(d => setProject(d.project))
+      .catch((e) => {
+        if (e.name !== 'AbortError') console.warn('تفاصيل المشروع فشلت:', e.message)
+      })
       .finally(() => setLoading(false))
+    return () => ctrl.abort()
   }, [id])
 
   if (loading) return <div className="h-40 bg-muted animate-pulse rounded" />
