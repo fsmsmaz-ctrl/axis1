@@ -81,7 +81,7 @@ export async function GET(req: NextRequest) {
   if (!result.success) return result.response
   return NextResponse.json({
     // v14.2 SECURITY: الإيراد اليومي مشتق من سعر المتر السري — يُحذف من كل تقرير
-    // إلا للإدارة العليا ومدير المشروع (canViewPricing يستثني admin@axis.om صراحةً)
+    // إلا للإدارة العليا ومدير المشروع ومدير النظام (v78 — حسب canViewPricing)
     reports: (result.data || []).map(function(r: any) { return sanitizeDailyReport(r, canViewPricing(user)) }),
   })
 }
@@ -360,3 +360,4 @@ export async function POST(req: NextRequest) {
     return handleDbError(error, 'إنشاء التقرير اليومي')
   }
 }
+
