@@ -478,3 +478,61 @@ export async function ensureEquipmentLogSupport(): Promise<void> {
     console.error('v75: equipment log self-heal skipped (will retry):', e)
   }
 }
+
+// ─── v79: تواريخ الحفر على خطوط الحفر ────────────────────────────────
+// عمودان جديدان: drillingStartDate (أول تقرير يومي معتمد/منشور للخط)
+// و drillingEndDate (آخر تقرير معتمد = آخر يوم حفر).
+// درس v44: لا migrations — الشفاء الذاتي مرتبط بالمسارات المستخدمة فعلياً.
+// المعالجة الشاملة (النسخ الأولى): كل خطوط الحفر الموجودة — المكتملة والجارية —
+// تُحسب تواريخها من تقاريرها المعتمدة سابقاً في استعلام groupBy واحد،
+// ويُصحَّح فقط ما اختلفت قيمه المخزنة (مسار سريع دائم بعد أول تشغيل).
+var v79DatesChecked = false
+
+export async function ensureDriveLineDates(): Promise<void> {
+  if (v79DatesChecked) return
+  try {
+    // 1) العمودان في أمر ALTER واحد مجمّع (درس v53: دورة شبكة واحدة)
+    await db.$executeRawUnsafe('ALTER TABLE "DriveLine" ADD COLUMN IF NOT EXISTS "drillingStartDate" TIMESTAMP(3), ADD COLUMN IF NOT EXISTS "drillingEndDate" TIMESTAMP(3)')
+    // 2) المعالجة الشاملة: تواريخ كل خط = أول/آخر تقرير معتمد (المنشور) له
+    var grouped = await (db.dailyReport.groupBy as any)({
+      by: ['driveLineId'],
+      where: { status: 'approved', driveLineId: { not: null } },
+      _min: { reportDate: true },
+      _max: { reportDate: true },
+    })
+    var dateMap: Record<string, { start: any; end: any }> = {}
+    for (var i = 0; i < (grouped || []).length; i++) {
+      var g = grouped[i]
+      if (g && g.driveLineId) {
+        dateMap[String(g.driveLineId)] = { start: g._min?.reportDate || null, end: g._max?.reportDate || null }
+      }
+    }
+    var lines = await db.driveLine.findMany({ select: { id: true, drillingStartDate: true, drillingEndDate: true } })
+    var fixes = 0
+    for (var j = 0; j < (lines || []).length; j++) {
+      var line = lines[j]
+      var want = dateMap[String(line.id)] || null
+      var same = false
+      if (want && line.drillingStartDate && line.drillingEndDate) {
+        same = new Date(want.start).getTime() === new Date(line.drillingStartDate).getTime()
+          && new Date(want.end).getTime() === new Date(line.drillingEndDate).getTime()
+      } else if (!want && !line.drillingStartDate && !line.drillingEndDate) {
+        same = true
+      }
+      if (!same) {
+        fixes++
+        await db.driveLine.update({
+          where: { id: String(line.id) },
+          data: want
+            ? { drillingStartDate: new Date(want.start), drillingEndDate: new Date(want.end) }
+            : { drillingStartDate: null, drillingEndDate: null },
+        }).catch(function() {})
+      }
+    }
+    v79DatesChecked = true
+    if (fixes > 0) console.warn('v79: drive line drilling dates backfilled for ' + fixes + ' line(s) from approved reports')
+  } catch (e) {
+    // لا نُثبّت العلم عند الفشل — تُعاد المحاولة في الطلب التالي
+    console.error('v79: drive line dates self-heal skipped (will retry):', e)
+  }
+}
