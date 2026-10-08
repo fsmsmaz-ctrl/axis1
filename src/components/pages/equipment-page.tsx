@@ -19,7 +19,7 @@ import {
 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
-import { normalizeRole, SYSTEM_ADMIN_EMAIL, canModifyEquipment, canModifyCompanyAsset } from '@/lib/auth'
+import { normalizeRole, SYSTEM_ADMIN_EMAIL, canModifyEquipment, canModifyCompanyAsset, canEditAnyEquipment, canEditAnyCompanyAsset } from '@/lib/auth'
 import { localTodayISO } from '@/lib/utils'
 import { toast } from 'sonner'
 
@@ -99,16 +99,20 @@ export default function EquipmentPage() {
 
   function canEditEq(eq: any) {
     // v82: فصل التعديل عن الإنشاء — أدوار «الإنشاء فقط» لا تعدّل معدات الآخرين
-    // v83: قرار صاحب الموقع — مَن سجّل المعدة يستطيع تعديل كافة بياناتها لاحقاً
-    return !!user && (canModifyEquipment(user) || (!!eq?.createdById && eq.createdById === user.id))
+    // v83: مَن سجّل المعدة يعدّلها لاحقاً
+    // v84 (قرار صاحب الموقع): أي معدة سجّلها أي موظف يمكن لأي موظف آخر تعديلها
+    // — كل من يملك صلاحية كتابة المعدات يعدّل أي معدة، وكل تعديل يُسجّل على
+    // المعدة نفسها (نقاط صغيرة باسم صاحبه) فتُضمن حقوق الجميع
+    return !!eq?.id && !!user && canEditAnyEquipment(user)
   }
   function canDeleteEq() {
     // v83: الحذف للإدارة حصراً — بوابة المُنشئ تخوّل التعديل فقط (مطابق للخادم)
     return !!user && canModifyEquipment(user)
   }
   function canEditAsset(a: any) {
-    // v83: مَن سجّل الأصل يستطيع تعديل كافة بياناته (ومن ضمنها الأسعار)
-    return !!user && (canModifyCompanyAsset(user) || (!!a?.createdById && a.createdById === user.id))
+    // v84 (قرار صاحب الموقع): أي أصل سجّله أي موظف يمكن لأي موظف آخر تعديله
+    // — والسجل المصغر على الأصل نفسه يوثّق كل تغيير باسم صاحبه
+    return !!a?.id && !!user && canEditAnyCompanyAsset(user)
   }
   function canDeleteAsset() {
     // v83: الحذف للإدارة حصراً (مطابق للخادم)
@@ -299,7 +303,10 @@ export default function EquipmentPage() {
   }
 
   // v75: جلب مفكرة المعدات — سجل التغييرات ثنائي اللغة (عربي/إنجليزي)
+  // v84: المفكرة الكاملة لمدير النظام فقط — الأدوار الأخرى لا تجلبها أصلاً
+  // (لا طلب ولا رفض) — مكانها عندهم السجل المصغر على كل معدة/أصل
   async function fetchEquipmentLogs() {
+    if (!isSystemAdminUser) { setEqLogs([]); return }
     setEqLogsLoading(true)
     try {
       var res = await authedFetch('/api/equipment/logs?take=40&_t=' + Date.now(), { cache: 'no-store' })
@@ -534,7 +541,8 @@ export default function EquipmentPage() {
     // v74: جلب السجل الكامل (بما فيه الصورة) عند الطلب — نفس نمط openView للمعدات
     authedFetch('/api/company-assets/' + a.id + '?_t=' + Date.now(), { cache: 'no-store' })
       .then(function(r) { return r.ok ? r.json() : null })
-      .then(function(d) { if (d && d.asset) setViewAsset(d.asset) })
+      // v84: سجل الأصل الكامل يصل مع التفاصيل — يُدمج للعرض في النافذة
+      .then(function(d) { if (d && d.asset) setViewAsset(Object.assign({}, d.asset, { logs: d.logs || [] })) })
       .catch(function() {})
   }
 
@@ -629,6 +637,8 @@ export default function EquipmentPage() {
         toast.success(isRtl ? 'تم تسجيل الصيانة' : 'Maintenance recorded')
         setMaintenanceDialogOpen(false)
         fetchEquipment()
+        // v84: تحديث المفكرة والسجلات المصغرة بعد تسجيل الصيانة
+        fetchEquipmentLogs()
       } else {
         var errData = await res.json().catch(function() { return {} })
         toast.error(errData.message || (isRtl ? 'فشل تسجيل الصيانة' : 'Maintenance failed'))
@@ -643,7 +653,8 @@ export default function EquipmentPage() {
     setViewDialogOpen(true)
     authedFetch('/api/equipment/' + eq.id + '?_t=' + Date.now(), { cache: 'no-store' })
       .then(function(r) { return r.ok ? r.json() : null })
-      .then(function(d) { if (d && d.equipment) setViewEquipment(d.equipment) })
+      // v84: سجل المعدة الكامل يصل مع التفاصيل — يُدمج للعرض في النافذة
+      .then(function(d) { if (d && d.equipment) setViewEquipment(Object.assign({}, d.equipment, { logs: d.logs || [] })) })
       .catch(function() {})
   }
 
@@ -810,6 +821,25 @@ export default function EquipmentPage() {
                       </div>
                     )}
                   </div>
+                  {/* v84: السجل المصغر على المعدة نفسها — نقاط صغيرة مختصرة بخط صغير
+                      يوثّق كل تغيير باسم صاحبه وتاريخه (ضمان حقوق الجميع) */}
+                  {eq.recentLogs && eq.recentLogs.length > 0 && (
+                    <div className="mt-2 pt-1.5 border-t border-dashed space-y-0.5">
+                      {eq.recentLogs.map(function(l: any) {
+                        var v84Act = eqLogActionLabels[l.action] || { ar: l.action, en: l.action }
+                        var v84Txt = (isRtl ? (l.changesAr || v84Act.ar) : (l.changesEn || v84Act.en)) || ''
+                        return (
+                          <div
+                            key={l.id}
+                            className="text-[10px] leading-4 text-muted-foreground/70 truncate"
+                            title={isRtl ? (l.changesAr || v84Txt) : (l.changesEn || v84Txt)}
+                          >
+                            {'• '}{v84Txt}{l.userName ? ' — ' + l.userName : ''}{l.createdAt ? ' — ' + new Date(l.createdAt).toLocaleDateString(isRtl ? 'ar-EG' : 'en-GB') : ''}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
                   <div className="flex gap-1.5 mt-3">
                     <Button variant="outline" size="sm" className="flex-1" onClick={() => openView(eq)}>
                       {isRtl ? 'تفاصيل' : 'Details'}
@@ -1030,6 +1060,24 @@ export default function EquipmentPage() {
                         )}
                       </div>
                     </div>
+                    {/* v84: السجل المصغر على الأصل نفسه — نقاط صغيرة مختصرة بخط صغير */}
+                    {a.recentLogs && a.recentLogs.length > 0 && (
+                      <div className="mt-1.5 pt-1 border-t border-dashed space-y-0.5">
+                        {a.recentLogs.map(function(l: any) {
+                          var v84Act = eqLogActionLabels[l.action] || { ar: l.action, en: l.action }
+                          var v84Txt = (isRtl ? (l.changesAr || v84Act.ar) : (l.changesEn || v84Act.en)) || ''
+                          return (
+                            <div
+                              key={l.id}
+                              className="text-[10px] leading-4 text-muted-foreground/70 truncate"
+                              title={isRtl ? (l.changesAr || v84Txt) : (l.changesEn || v84Txt)}
+                            >
+                              {'• '}{v84Txt}{l.userName ? ' — ' + l.userName : ''}{l.createdAt ? ' — ' + new Date(l.createdAt).toLocaleDateString(isRtl ? 'ar-EG' : 'en-GB') : ''}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               )
@@ -1072,6 +1120,9 @@ export default function EquipmentPage() {
       )}
 
       {/* ==================== v75: مفكرة المعدات — سجل التغييرات ثنائي اللغة ==================== */}
+      {/* v84 (قرار صاحب الموقع): المفكرة الكاملة تظهر لمدير النظام فقط — أخُفيت عن
+          بقية المستخدمين، ومكانها عندهم السجل المصغر على كل معدة/أصل نفسه */}
+      {isSystemAdminUser && (
       <div className="pt-4 border-t mt-8">
         <div className="flex items-center justify-between flex-wrap gap-3 mb-3">
           <div className="flex items-center gap-2">
@@ -1129,6 +1180,7 @@ export default function EquipmentPage() {
           )
         )}
       </div>
+      )}
 
       {/* ==================== Dialogs ==================== */}
 
@@ -1549,6 +1601,28 @@ export default function EquipmentPage() {
                 </div>
               )}
               {viewAsset.notes && (<div><p className="text-xs text-muted-foreground">{isRtl ? 'ملاحظات' : 'Notes'}</p><p className="text-sm mt-0.5">{viewAsset.notes}</p></div>)}
+              {/* v84: سجل هذا الأصل الكامل — نقاط صغيرة لكل تغيير باسم صاحبه */}
+              {(() => {
+                var v84AssetLogs = (viewAsset.logs && viewAsset.logs.length > 0) ? viewAsset.logs : (viewAsset.recentLogs || [])
+                if (!v84AssetLogs.length) return null
+                return (
+                  <div>
+                    <p className="text-xs text-muted-foreground">{isRtl ? 'سجل تغييرات الأصل' : 'Asset change log'}</p>
+                    <div className="mt-1 space-y-1 max-h-44 overflow-y-auto">
+                      {v84AssetLogs.map(function(l: any) {
+                        var v84Act = eqLogActionLabels[l.action] || { ar: l.action, en: l.action }
+                        var v84Txt = (isRtl ? (l.changesAr || v84Act.ar) : (l.changesEn || v84Act.en)) || ''
+                        return (
+                          <div key={l.id} className="text-xs leading-5 text-muted-foreground border-b border-dashed pb-1 last:border-0">
+                            {'• '}{v84Txt}
+                            <span className="text-muted-foreground/60"> — {l.userName || '—'} — {new Date(l.createdAt).toLocaleString(isRtl ? 'ar-EG' : 'en-GB', { dateStyle: 'short', timeStyle: 'short' })}</span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })()}
             </div>
           )}
         </DialogContent>
@@ -1588,6 +1662,29 @@ export default function EquipmentPage() {
                   </div>
                 </div>
               )}
+              {/* v84: سجل هذه المعدة الكامل — نقاط صغيرة لكل تغيير باسم صاحبه وتوقيته
+                  يظهر لكل من يعرض المعدة (ضمان حقوق الجميع) */}
+              {(() => {
+                var v84LogsArr = (viewEquipment.logs && viewEquipment.logs.length > 0) ? viewEquipment.logs : (viewEquipment.recentLogs || [])
+                if (!v84LogsArr.length) return null
+                return (
+                  <div>
+                    <h4 className="font-semibold text-sm mb-1.5">{isRtl ? 'سجل تغييرات المعدة' : 'Equipment change log'}</h4>
+                    <div className="space-y-1 max-h-52 overflow-y-auto">
+                      {v84LogsArr.map(function(l: any) {
+                        var v84Act = eqLogActionLabels[l.action] || { ar: l.action, en: l.action }
+                        var v84Txt = (isRtl ? (l.changesAr || v84Act.ar) : (l.changesEn || v84Act.en)) || ''
+                        return (
+                          <div key={l.id} className="text-xs leading-5 text-muted-foreground border-b border-dashed pb-1 last:border-0">
+                            {'• '}{v84Txt}
+                            <span className="text-muted-foreground/60"> — {l.userName || '—'} — {new Date(l.createdAt).toLocaleString(isRtl ? 'ar-EG' : 'en-GB', { dateStyle: 'short', timeStyle: 'short' })}</span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })()}
             </div>
           )}
         </DialogContent>
