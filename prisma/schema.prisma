@@ -693,3 +693,4 @@ model LeaveAdjustment {
 
   @@index([userId, createdAt])
 }
+
