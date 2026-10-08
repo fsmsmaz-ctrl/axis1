@@ -5,6 +5,7 @@ import { handleDbError, safeDbOp } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 import { canModifyEquipment, isSystemAdminAccount } from '@/lib/auth'
 import { ensureEquipmentLogSupport } from '@/lib/db-selfheal'
+import { logEquipmentChange } from '@/lib/api-helpers'
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   // v75: يضمن عمودي الحذف الناعم قبل أي استعلام
@@ -14,11 +15,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
   }
 
+  var { id } = await params
+
   // FIX: Use centralized RBAC instead of custom admin email check
-  // v82: تسجيل الصيانة محجوب عن أدوار «الإنشاء فقط» (مسؤول السلامة) —
-  // سجلات الصيانة تحمل تكلفة مالية ولا يجوز أن يضيفها من لا يرى الأسعار
-  if (!canModifyEquipment(user)) {
-    return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية لتسجيل صيانة المعدات' }, { status: 403 })
+  // v82: تسجيل الصيانة محجوب عن أدوار «الإنشاء فقط» (مسؤول السلامة/المشرف)…
+  // v83 …إلا إذا كان صاحب المعدة نفسه (مَن سجّلها) — قرار صاحب الموقع:
+  // مَن سجّل المعدة يُدخل كافة بياناتها، وكل صيانة يُسجّلها تظهر باسمه في المفكرة
+  var eqGate = await safeDbOp(
+    () => db.equipment.findUnique({ where: { id }, select: { id: true, deletedAt: true, createdById: true, name: true, number: true, projectId: true } }),
+    'فحص المعدة'
+  )
+  var eqForGate = eqGate.success ? eqGate.data as any : null
+  var v83IsCreator = !!eqForGate && !!eqForGate.createdById && eqForGate.createdById === user.id
+  if (!canModifyEquipment(user) && !v83IsCreator) {
+    return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية لتسجيل صيانة المعدات — الصيانة متاحة لمَن سجّل المعدة وللإدارة فقط' }, { status: 403 })
   }
 
   var rl = checkRateLimit(req, RateLimitPresets.write)
@@ -29,8 +39,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     )
   }
 
-  var { id } = await params
-
   var body = await req.json()
 
   if (!body.date || !body.type) {
@@ -39,7 +47,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   try {
     // FIX: Validate equipment exists
-    var eqResult = await safeDbOp(
+    // v83: الفحص الأول للبوابة تم أعلاه (eqForGate) — هذا فحص ما بعد الجسم للسلامة
+    var eqResult = eqGate.success ? eqGate : await safeDbOp(
       () => db.equipment.findUnique({ where: { id }, select: { id: true, deletedAt: true } }),
       'فحص المعدة'
     )
@@ -87,6 +96,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       () => db.auditLog.create({ data: { userId: user!.id, action: 'create', entity: 'equipment_maintenance', entityId: maintenance.data.id, details: 'Maintenance: ' + body.type + ' for equipment ' + id } }),
       'سجل التدقيق'
     ).catch(function() {})
+
+    // v83: تسجيل الصيانة في مفكرة المعدات أيضاً — «أي تغيّر يظهر في السجل في الأسفل»
+    var v83Cost = Number(maintCost) || 0
+    var v83TypeAr = String(body.type) === 'routine' ? 'دورية' : String(body.type) === 'repair' ? 'إصلاح' : String(body.type) === 'emergency' ? 'طارئة' : String(body.type)
+    await logEquipmentChange({
+      equipmentId: id,
+      equipmentName: eqForGate ? (eqForGate.name as string) : null,
+      user,
+      action: 'maintenance',
+      changesAr: 'سجّل صيانة (' + v83TypeAr + ') للمعدة «' + (eqForGate ? eqForGate.name : '') + '»' + (v83Cost > 0 ? ' — التكلفة: ' + v83Cost + ' ر.ع' : ''),
+      changesEn: 'Recorded ' + String(body.type) + ' maintenance for equipment "' + (eqForGate ? (eqForGate.name as string) : '') + '"' + (v83Cost > 0 ? ' — cost: ' + v83Cost + ' OMR' : ''),
+      projectId: eqForGate ? (eqForGate.projectId as string | null) : null,
+    })
 
     return NextResponse.json({ maintenance: maintenance.data })
   } catch (error) {
