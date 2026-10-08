@@ -81,7 +81,7 @@ export async function GET(req: NextRequest) {
     }
 
     // v14.2 SECURITY: سعر المتر بيانات سرية — يُحذف من كل مشروع في القائمة
-    // إلا للإدارة العليا ومدير المشروع (canViewPricing يستثني admin@axis.om صراحةً)
+    // إلا للإدارة العليا ومدير المشروع ومدير النظام (v78 — حسب canViewPricing)
     var canSeePrice = canViewPricing(user)
     for (var i = 0; i < projects.length; i++) {
       sanitizeProject(projects[i], canSeePrice)
