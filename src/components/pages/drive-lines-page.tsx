@@ -17,7 +17,7 @@ import {
   AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
   AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { Plus, GitBranch, MapPin, Ruler, Layers, AlertCircle, Pencil, Trash2, Loader2, Coins } from 'lucide-react'
+import { Plus, GitBranch, MapPin, Ruler, Layers, AlertCircle, Pencil, Trash2, Loader2, Coins, CalendarRange } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
 import { toast } from 'sonner'
@@ -34,6 +34,13 @@ const emptyForm = {
   projectId: '', lineNumber: '', startPoint: '', endPoint: '',
   totalLength: '', pricePerMeter: '', diameter: '1200mm', pipeType: 'pipe', soilType: 'mixed',
   depth: '', status: 'not_started', problems: '',
+}
+
+// v79: تنسيق تواريخ الحفر — نفس نمط صفحة التقارير اليومية (ar-EG / en-US)
+function fmtDrillDate(d: any, isRtl: boolean): string {
+  try {
+    return new Date(d).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+  } catch { return '—' }
 }
 
 export default function DriveLinesPage() {
@@ -282,6 +289,23 @@ export default function DriveLinesPage() {
                             <Layers className="h-3.5 w-3.5 shrink-0" />
                             <span className="text-xs">{isRtl ? 'العمق' : 'Depth'}: {line.depth} {isRtl ? 'م' : 'm'} • {line.soilType}</span>
                           </div>
+                          {/* v79: تواريخ الحفر — تظهر فقط حين وُجدت تقارير يومية معتمدة (منشورة)
+                              للخط: بدء الحفر = أول تقرير معتمد، آخر يوم حفر = آخر تقرير معتمد.
+                              تُحسب وتُسجّل على الخط تلقائياً دون أي إدخال يدوي. */}
+                          {(line.drillingStartDate || line.drillingEndDate) && (
+                          <div className="flex items-center gap-2 text-foreground/80">
+                            <CalendarRange className="h-3.5 w-3.5 shrink-0 text-primary" />
+                            <span className="text-xs">
+                              {line.drillingStartDate && (
+                                <>{isRtl ? 'بدء الحفر' : 'Drilling start'}: <span className="font-semibold">{fmtDrillDate(line.drillingStartDate, isRtl)}</span></>
+                              )}
+                              {line.drillingStartDate && line.drillingEndDate ? ' • ' : ''}
+                              {line.drillingEndDate && (
+                                <>{isRtl ? 'آخر يوم حفر' : 'Last drilling day'}: <span className="font-semibold">{fmtDrillDate(line.drillingEndDate, isRtl)}</span></>
+                              )}
+                            </span>
+                          </div>
+                          )}
                           {seePricing && (
                           <div className="flex items-center gap-2 text-muted-foreground">
                             <Coins className="h-3.5 w-3.5 shrink-0" />
