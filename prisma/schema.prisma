@@ -287,17 +287,22 @@ model Equipment {
 // أسماء المستخدمين تُخزن كلقطة لحظية لتبقى المفكرة صالحة حتى بعد حذف أي مستخدم
 model EquipmentLog {
   id            String   @id @default(cuid())
-  equipmentId   String
+  equipmentId   String?  // v83: صار يقبل null — صفوف الأصول لا تحمل معدة
   equipmentName String?
+  // v83: المفكرة الموحدة — تغييرات أصول الشركة في نفس الجدول
+  targetType    String?  // 'equipment' | 'company_asset' (null = معدات قبل v83)
+  assetId       String?
+  assetName     String?
   userId        String?
   userName      String?
   userNameEn    String?
-  action        String   // create, update, delete, restore
+  action        String   // create, update, delete, restore, maintenance
   changesAr     String?
   changesEn     String?
   createdAt     DateTime @default(now())
 
   @@index([equipmentId, createdAt])
+  @@index([assetId, createdAt])
   @@index([createdAt])
 }
 
