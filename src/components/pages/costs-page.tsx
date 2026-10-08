@@ -19,6 +19,7 @@ import { Plus, DollarSign, TrendingUp, TrendingDown, Wallet, BarChart3, Search, 
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
 import { SYSTEM_ADMIN_EMAIL, canViewPricing } from '@/lib/auth'
+import { localTodayISO } from '@/lib/utils'
 import { toast } from 'sonner'
 
 const categoryLabels: Record<string, { ar: string; en: string }> = {
@@ -74,6 +75,8 @@ export default function CostsPage() {
   const seePricing = !!(user && canViewPricing(user))
 
   const [revenue, setRevenue] = useState(0)
+  // v80: تمييز فشل جلب الإيراد عن الإيراد الصفري الحقيقي — فشل الجلب لا يعني خسارة!
+  const [revenueUnavailable, setRevenueUnavailable] = useState(false)
   const [approvedReports, setApprovedReports] = useState<any[]>([])
   const [fetchError, setFetchError] = useState('')
   // Search & filter
@@ -93,7 +96,7 @@ export default function CostsPage() {
   const [migBusy, setMigBusy] = useState(false)
 
   const [formData, setFormData] = useState({
-    projectId: '', date: new Date().toISOString().split('T')[0],
+    projectId: '', date: localTodayISO(),
     category: 'labor', description: '', amount: '', notes: '',
   })
 
@@ -133,11 +136,20 @@ export default function CostsPage() {
       if (selectedProject !== 'all') repParams.set('projectId', selectedProject)
       repParams.set('limit', '500')
       const repRes = await authedFetch('/api/daily-reports?' + repParams.toString())
-      const repData = await repRes.json()
-      var reports = (repData.reports || []).filter(function(r: any) { return r.status === 'approved' })
-      var totalRev = reports.reduce(function(s: number, r: any) { return s + (r.dailyRevenue || 0) }, 0)
-      setRevenue(totalRev)
-      setApprovedReports(reports)
+      // v80 إصلاح: لم يكن يفحص res.ok — فشل جلب التقارير كان يجعل الإيراد صفراً
+      // فتعرض بطاقة صافي الربح خسارة وهمية تساوي كل التكاليف!
+      if (!repRes.ok) {
+        setRevenueUnavailable(true)
+        setRevenue(0)
+        setApprovedReports([])
+      } else {
+        const repData = await repRes.json()
+        var reports = (repData.reports || []).filter(function(r: any) { return r.status === 'approved' })
+        var totalRev = reports.reduce(function(s: number, r: any) { return s + (r.dailyRevenue || 0) }, 0)
+        setRevenueUnavailable(false)
+        setRevenue(totalRev)
+        setApprovedReports(reports)
+      }
     } catch (e) {
       console.error('fetchCosts error:', e)
       setFetchError(String(e))
@@ -233,9 +245,9 @@ export default function CostsPage() {
   }
 
   useEffect(function() {
-    fetchCosts()
+    // v80 إصلاح: fetchCosts حُذفت من هنا — تأثير selectedProject أسفلها ينفذها أصلاً عند التحميل
+    // فكانت تُستدعى مرتين متتاليتين عند فتح الصفحة
     fetchProjects()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(function() {
@@ -283,10 +295,15 @@ export default function CostsPage() {
         setDialogOpen(false)
         setEditingCostId(null)
         setFormData({
-          projectId: projects[0]?.id || 'none', date: new Date().toISOString().split('T')[0],
+          projectId: projects[0]?.id || 'none', date: localTodayISO(),
           category: 'labor', description: '', amount: '', notes: '',
         })
         fetchCosts()
+      } else {
+        // v80 إصلاح: فشل التحقق الخادمي كان يمرّ بصمت — النافذة تبقى مفتوحة بلا أي رسالة
+        var errData: any = null
+        try { errData = await res.json() } catch { /* جسم غير JSON */ }
+        toast.error((errData && errData.message) || (isRtl ? 'فشل الحفظ — تحقق من البيانات (المبلغ يجب أن يكون أكبر من صفر)' : 'Save failed — check the data (amount must be greater than zero)'))
       }
     } catch {
       toast.error(isRtl ? 'حدث خطأ' : 'Error')
@@ -338,7 +355,7 @@ export default function CostsPage() {
     }
   }
 
-  var netProfit = revenue - grandTotal
+  var netProfit = revenueUnavailable ? 0 : revenue - grandTotal
   var profitMargin = revenue > 0 ? (netProfit / revenue) * 100 : 0
   var totalMeters = approvedReports.reduce(function(s, r) { return s + (r.dailyMeters || 0) }, 0)
   var costPerMeter = totalMeters > 0 ? total / totalMeters : 0
@@ -371,7 +388,7 @@ export default function CostsPage() {
           <Button onClick={function() {
             setEditingCostId(null)
             setFormData({
-              projectId: projects[0]?.id || 'none', date: new Date().toISOString().split('T')[0],
+              projectId: projects[0]?.id || 'none', date: localTodayISO(),
               category: 'labor', description: '', amount: '', notes: '',
             })
             setDialogOpen(true)
@@ -394,11 +411,16 @@ export default function CostsPage() {
               <span className="text-xs text-white/80">{isRtl ? 'الإيرادات' : 'Revenue'}</span>
             </div>
             <p className="text-xl font-bold">
-              {revenue.toLocaleString(isRtl ? 'ar-EG' : 'en-US', { maximumFractionDigits: 0 })}
-              <span className="text-sm font-normal ml-1 text-white/80">{isRtl ? 'ر.ع' : 'OMR'}</span>
+              {/* v80: عند فشل جلب التقارير نعرض «—» بدل صفر لأن الصفر يعني خسارة وهمية في بطاقة الربح */}
+              {revenueUnavailable
+                ? '—'
+                : revenue.toLocaleString(isRtl ? 'ar-EG' : 'en-US', { maximumFractionDigits: 0 })}
+              <span className="text-sm font-normal ml-1 text-white/80">{revenueUnavailable ? '' : (isRtl ? 'ر.ع' : 'OMR')}</span>
             </p>
             <p className="text-xs text-white/60 mt-1">
-              {approvedReports.length} {isRtl ? 'تقرير معتمد' : 'approved reports'}
+              {revenueUnavailable
+                ? (isRtl ? 'تعذر جلب الإيرادات الآن' : 'Revenue unavailable')
+                : approvedReports.length + ' ' + (isRtl ? 'تقرير معتمد' : 'approved reports')}
             </p>
           </CardContent>
         </Card>
@@ -769,7 +791,7 @@ export default function CostsPage() {
               </div>
               <div className="space-y-1.5">
                 <Label>{isRtl ? 'المبلغ (ر.ع)' : 'Amount (OMR)'} *</Label>
-                <Input type="number" step="0.01" value={formData.amount} onChange={function(e) { setFormData(Object.assign({}, formData, { amount: e.target.value })) }} required />
+                <Input type="number" step="0.01" min="0.01" value={formData.amount} onChange={function(e) { setFormData(Object.assign({}, formData, { amount: e.target.value })) }} required />
               </div>
             </div>
             <div className="space-y-1.5">
