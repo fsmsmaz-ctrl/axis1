@@ -515,7 +515,10 @@ export function buildAuditDetails(
 // كل تغيير على المعدة (إنشاء/تعديل/حذف/استعادة) يُسجل في EquipmentLog
 // (ثنائي اللغة للعرض في المفكرة أسفل صفحة المعدات) وفي AuditLog (سجل
 // التدقيق العام بالتوقيت). فشل التسجيل لا يُفشل العملية الأساسية أبداً.
-export type EquipmentLogAction = 'create' | 'update' | 'delete' | 'restore'
+// v83: أُضيف الإجراء 'maintenance' (تسجيل صيانة يظهر في المفكرة)،
+// وأُضيف logAssetChange — تغييرات أصول الشركة (أصول ومستأجرات) تدخل
+// المفكرة الموحدة نفسها (targetType = 'company_asset' + assetId/assetName).
+export type EquipmentLogAction = 'create' | 'update' | 'delete' | 'restore' | 'maintenance'
 
 export async function logEquipmentChange(entry: {
   equipmentId: string
@@ -531,6 +534,8 @@ export async function logEquipmentChange(entry: {
       data: {
         equipmentId: entry.equipmentId,
         equipmentName: entry.equipmentName || null,
+        // v83: وسم نوع الهدف — صفوف المعدات قبل v83 تبقى بلا وسم (null = معدات)
+        targetType: 'equipment',
         userId: entry.user.id,
         userName: entry.user.name || null,
         userNameEn: entry.user.nameEn || null,
@@ -555,6 +560,39 @@ export async function logEquipmentChange(entry: {
     })
   } catch (e) {
     console.error('v75: equipment audit write failed:', e)
+  }
+}
+
+// ─── v83: كاتب مفكرة الأصول — نفس الجدول الموحد EquipmentLog ─────────
+// تغييرات أصول الشركة (إضافة/تعديل/حذف/استعادة) تظهر في مفكرة المعدات
+// أسفل الصفحة بجانب تغييرات المعدات — باسم صاحبها وتوقيتها. الكتابة
+// في AuditLog تبقى مسؤولية المسارات نفسها (بعضها يكتب أصلاً) — هذه الدالة
+// للمفكرة فقط. فشل التسجيل لا يُفشل العملية الأساسية أبداً.
+export async function logAssetChange(entry: {
+  assetId: string
+  assetName?: string | null
+  user: { id: string; name?: string | null; nameEn?: string | null }
+  action: EquipmentLogAction
+  changesAr?: string
+  changesEn?: string
+}): Promise<void> {
+  try {
+    await db.equipmentLog.create({
+      data: {
+        equipmentId: null,
+        targetType: 'company_asset',
+        assetId: entry.assetId,
+        assetName: entry.assetName || null,
+        userId: entry.user.id,
+        userName: entry.user.name || null,
+        userNameEn: entry.user.nameEn || null,
+        action: entry.action,
+        changesAr: entry.changesAr || null,
+        changesEn: entry.changesEn || null,
+      },
+    })
+  } catch (e) {
+    console.error('v83: asset log write failed:', e)
   }
 }
 
