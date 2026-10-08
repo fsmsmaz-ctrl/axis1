@@ -3,7 +3,7 @@ import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { handleDbError, safeDbOp } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
-import { canModifyEquipment, isSystemAdminAccount } from '@/lib/auth'
+import { canEditAnyEquipment, isSystemAdminAccount } from '@/lib/auth'
 import { ensureEquipmentLogSupport } from '@/lib/db-selfheal'
 import { logEquipmentChange } from '@/lib/api-helpers'
 
@@ -18,17 +18,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   var { id } = await params
 
   // FIX: Use centralized RBAC instead of custom admin email check
-  // v82: تسجيل الصيانة محجوب عن أدوار «الإنشاء فقط» (مسؤول السلامة/المشرف)…
-  // v83 …إلا إذا كان صاحب المعدة نفسه (مَن سجّلها) — قرار صاحب الموقع:
-  // مَن سجّل المعدة يُدخل كافة بياناتها، وكل صيانة يُسجّلها تظهر باسمه في المفكرة
+  // v84 (قرار صاحب الموقع): تسجيل الصيانة متاح لأي موظف يملك صلاحية كتابة
+  // المعدات — أي معدة سجّلها موظف يمكن لأي موظف آخر تسجيل صيانتها، وكل
+  // صيانة تُسجّل باسم صاحبها وتوقيتها في سجل المعدة نفسها (النقاط الصغيرة)
   var eqGate = await safeDbOp(
-    () => db.equipment.findUnique({ where: { id }, select: { id: true, deletedAt: true, createdById: true, name: true, number: true, projectId: true } }),
+    () => db.equipment.findUnique({ where: { id }, select: { id: true, deletedAt: true, name: true, number: true, projectId: true } }),
     'فحص المعدة'
   )
   var eqForGate = eqGate.success ? eqGate.data as any : null
-  var v83IsCreator = !!eqForGate && !!eqForGate.createdById && eqForGate.createdById === user.id
-  if (!canModifyEquipment(user) && !v83IsCreator) {
-    return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية لتسجيل صيانة المعدات — الصيانة متاحة لمَن سجّل المعدة وللإدارة فقط' }, { status: 403 })
+  if (!canEditAnyEquipment(user)) {
+    return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية لتسجيل صيانة المعدات' }, { status: 403 })
   }
 
   var rl = checkRateLimit(req, RateLimitPresets.write)
