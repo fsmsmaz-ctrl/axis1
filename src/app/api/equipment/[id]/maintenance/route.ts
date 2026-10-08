@@ -3,7 +3,7 @@ import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { handleDbError, safeDbOp } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
-import { canWrite, isSystemAdminAccount } from '@/lib/auth'
+import { canModifyEquipment, isSystemAdminAccount } from '@/lib/auth'
 import { ensureEquipmentLogSupport } from '@/lib/db-selfheal'
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -15,7 +15,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   // FIX: Use centralized RBAC instead of custom admin email check
-  if (!canWrite(user.role, 'equipment', user.permissions)) {
+  // v82: تسجيل الصيانة محجوب عن أدوار «الإنشاء فقط» (مسؤول السلامة) —
+  // سجلات الصيانة تحمل تكلفة مالية ولا يجوز أن يضيفها من لا يرى الأسعار
+  if (!canModifyEquipment(user)) {
     return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية لتسجيل صيانة المعدات' }, { status: 403 })
   }
 
