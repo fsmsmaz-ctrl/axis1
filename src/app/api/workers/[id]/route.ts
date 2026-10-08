@@ -42,11 +42,11 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     }
 
     var updateData: any = {}
-    if (body.name !== undefined) updateData.name = body.name
-    if (body.phone !== undefined) updateData.phone = body.phone
-    if (body.contractorName !== undefined) updateData.contractorName = body.contractorName || null
+    if (body.name !== undefined) updateData.name = String(body.name || '').slice(0, 120)
+    if (body.phone !== undefined) updateData.phone = String(body.phone || '').slice(0, 30)
+    if (body.contractorName !== undefined) updateData.contractorName = (body.contractorName ? String(body.contractorName).slice(0, 120) : null)
     if (body.projectId !== undefined) updateData.projectId = body.projectId || null
-    if (body.notes !== undefined) updateData.notes = body.notes || null
+    if (body.notes !== undefined) updateData.notes = (body.notes ? String(body.notes).slice(0, 2000) : null)
 
     var updateResult = await safeDbOp(
       () => db.worker.update({
