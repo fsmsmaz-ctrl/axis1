@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -29,6 +30,8 @@ export default function PerformancePage() {
   const [projects, setProjects] = useState<any[]>([])
   const [selectedProject, setSelectedProject] = useState<string>('all')
   const [loading, setLoading] = useState(true)
+  // v80: حالة فشل جلب البيانات — كانت الصفحة تبقى «لا توجد بيانات» بلا أي إشارة للخطأ
+  const [fetchError, setFetchError] = useState('')
   const language = useAppStore((s) => s.language)
   const token = useAppStore((s) => s.token)
   const isRtl = language === 'ar'
@@ -44,11 +47,16 @@ export default function PerformancePage() {
       authedFetch('/api/performance' + (selectedProject !== 'all' ? `?projectId=${selectedProject}` : '')),
       authedFetch('/api/projects/list'),
     ]).then(async ([perfRes, projRes]) => {
+      // v80 إصلاح: لا فحص ok ولا catch — فشل الشبكة كان يترك الصفحة على «لا توجد بيانات» للأبد
+      if (!perfRes.ok || !projRes.ok) throw new Error('HTTP ' + perfRes.status + '/' + projRes.status)
       const perfData = await perfRes.json()
       const projData = await projRes.json()
       setPerformance(perfData.performance || [])
       setLineStats(perfData.driveLines || [])
       setProjects(projData.projects || [])
+    }).catch((e) => {
+      console.warn('performance load failed:', e?.message || e)
+      setFetchError(e?.message || 'network')
     }).finally(() => setLoading(false))
   }, [selectedProject])
 
@@ -223,7 +231,28 @@ export default function PerformancePage() {
         <Badge variant="outline" className="text-xs">{isRtl ? `${lineStats.length} خط` : `${lineStats.length} lines`}</Badge>
       </div>
 
-      {lineStats.length === 0 ? (
+      {fetchError ? (
+        <Card>
+          <CardContent className="py-8 text-center">
+            <p className="text-sm text-destructive mb-3">
+              {isRtl ? 'تعذر تحميل بيانات الأداء — تحقق من الاتصال وحاول مجدداً' : 'Failed to load performance data — check connection and retry'}
+            </p>
+            <Button variant="outline" size="sm" onClick={function() { setFetchError(''); setLoading(true); Promise.all([
+              authedFetch('/api/performance' + (selectedProject !== 'all' ? `?projectId=${selectedProject}` : '')),
+              authedFetch('/api/projects/list'),
+            ]).then(async ([perfRes, projRes]) => {
+              if (!perfRes.ok || !projRes.ok) throw new Error('HTTP ' + perfRes.status)
+              const perfData = await perfRes.json()
+              const projData = await projRes.json()
+              setPerformance(perfData.performance || [])
+              setLineStats(perfData.driveLines || [])
+              setProjects(projData.projects || [])
+            }).catch((e: any) => setFetchError(e?.message || 'network')).finally(() => setLoading(false)) }}>
+              {isRtl ? 'إعادة المحاولة' : 'Retry'}
+            </Button>
+          </CardContent>
+        </Card>
+      ) : lineStats.length === 0 ? (
         <Card>
           <CardContent className="py-8 text-center text-muted-foreground text-sm">
             {isRtl ? 'لا توجد خطوط حفر — أضف خطوطاً من قسم خطوط الحفر لتظهر التحليلات هنا' : 'No drive lines yet — add lines in the Drive Lines section'}
