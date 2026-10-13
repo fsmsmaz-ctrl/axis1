@@ -117,13 +117,15 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
     'projects', 'daily_reports', 'finishings', 'equipment', 'tasks', 'reports', 'notifications',
   ],
   // v85 (قرار صاحب الموقع): رتبة «عامل» — أدنى رتبة تشغيلية أسفل المشرف
-  // (الفورمان). قراءة فقط: يرى المشاريع والتقارير اليومية ومهامه المُكلَّف بها
-  // والتنبيهات بحسابه الشخصي — لا يكتب في أي قسم (ليس في WRITE_ROLES إطلاقاً)،
+  // (الفورمان). يرى المشاريع ومهامه المُكلَّف بها والتنبيهات بحسابه الشخصي،
   // ولا يرى الأسعار ولا التقارير التحليلية ولا لوحة التحكم. الإدارة تستطيع
   // منحه أقساماً إضافية لكل عامل على حدة من إدارة المستخدمين (التخصيص لكل
   // مستخدم يقدم على افتراض الرتبة).
+  // v86 (قرار صاحب الموقع): أُضيفت «السلامة» لرؤيته الافتراضية — العامل
+  // يُنشئ تقارير السلامة (ومنها يُنشأ التقرير اليومي المرتبط تلقائياً)،
+  // والكتابة نفسها محصورة بقائمة بيضاء صريحة في canWrite أدناه.
   worker: [
-    'projects', 'daily_reports', 'tasks', 'notifications',
+    'projects', 'daily_reports', 'safety', 'tasks', 'notifications',
   ],
   accountant: [
     'projects', 'costs', 'tasks', 'reports', 'notifications',
@@ -193,17 +195,25 @@ export const WRITE_ROLES: Record<string, string[]> = {
   workers: ['top_management', 'project_manager', 'site_engineer', 'foreman'],
 }
 
+// v86 (قرار صاحب الموقع): القائمة البيضاء للعامل — الرتبة «عامل» ممنوعة من
+// الكتابة في كل الأقسام ما عدا هذه القائمتين صراحةً:
+//   safety        → إنشاء تقارير السلامة وتعديلها (ومنها يُنشأ التقرير اليومي)
+//   daily_reports → تعديل التقرير اليومي وتسليمه (إرساله للاعتماد)
+// كل ما عداها (خطوط الحفر، المعدات، التكاليف، المهام...) يبقى محظوراً حتى لو
+// مُنحت رؤيته من إدارة المستخدمين — فالمنح يفتح الرؤية فقط (نفس قاعدة v85.1)،
+// والاعتماد/الحذف/إعادة الإسناد الإدارية وأزرار «إضافة عامل» تبقى مغلقة أمامه.
+const WORKER_WRITE_ALLOWED = ['safety', 'daily_reports'] as const
+
 export function canWrite(userRole: string, resource: string, userPermissions?: Record<string, boolean> | null): boolean {
-  // v85.1 (قرار صاحب الموقع): رتبة «عامل» قراءة فقط بلا استثناء — الإدارة قد
-  // تمنح العامل رؤية قسم (كخطوط الحفر) من «صلاحيات الوصول» في إدارة المستخدمين،
-  // فتفتح له القسم للقراءة فقط. بلا هذا الحظر كان تخصيص الصلاحية يقدم على
-  // افتراض الرتبة فيظهر له «إنشاء خط جديد» وأزرار تعديل/حذف الخطوط (وكل أزرار
-  // الكتابة في باقي الأقسام الممنوحة). كل بوابات الكتابة في النظام تمر من هنا
-  // (canWrite/canModifyDriveLines/canModifyEquipment/canEditAnyEquipment/
-  // canModifyCompanyAsset/canEditAnyCompanyAsset) — فالحظر من هذه النقطة
-  // الواحدة يغطي الواجهة والخادم معاً، ومدير النظام لا يمر من canWrite أصلاً
-  // (تجاوزه في دوال البوابات قبل الاستدعاء) فلا يتأثر.
-  if (normalizeRole(userRole) === 'worker') return false
+  // v86: رتبة «عامل» — كتابة بالقائمة البيضاء فقط (WORKER_WRITE_ALLOWED أعلاه)،
+  // وكل ما عداه قراءة فقط حتى مع صلاحيات التخصيص من إدارة المستخدمين.
+  // بوابات الكتابة كلها تمر من هنا (canWrite/canModifyDriveLines/canModifyEquipment/
+  // canEditAnyEquipment/canModifyCompanyAsset/canEditAnyCompanyAsset) — فالحكم من
+  // هذه النقطة الواحدة يغطي الواجهة والخادم معاً، ومدير النظام لا يمر من canWrite
+  // أصلاً (تجاوزه في دوال البوابات قبل الاستدعاء) فلا يتأثر.
+  if (normalizeRole(userRole) === 'worker') {
+    return (WORKER_WRITE_ALLOWED as readonly string[]).includes(resource)
+  }
   // Check per-user permission override first
   if (userPermissions && typeof userPermissions[resource] === 'boolean') {
     return userPermissions[resource]
