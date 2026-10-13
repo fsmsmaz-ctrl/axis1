@@ -24,6 +24,7 @@ export const translations = {
     site_engineer: 'مهندس الموقع',
     hse_officer: 'مسؤول السلامة',
     foreman: 'المشرف / الفورمان',
+    worker: 'عامل',
     accountant: 'المحاسب',
 
     // Navigation
@@ -337,6 +338,7 @@ export const translations = {
     site_engineer: 'Site Engineer',
     hse_officer: 'HSE Officer',
     foreman: 'Foreman',
+    worker: 'Worker',
     accountant: 'Accountant',
 
     dashboard: 'Dashboard',
