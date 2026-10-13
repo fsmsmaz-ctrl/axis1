@@ -7,11 +7,23 @@ import { db } from '@/lib/db'
 import bcrypt from 'bcryptjs'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 import { logProfileAudit, logOversightEvent } from '@/lib/profile-audit'
+// v85: تطبيع الدور لبوابة الزائر
+import { normalizeRole } from '@/lib/auth'
 
 export async function POST(req: NextRequest) {
   var user = await getAuthUser(req)
   if (!user) {
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
+  }
+  // v85 SECURITY: الزائر حساب مشترك دخوله معروف لكل من يتصفح النظام —
+  // السماح له بتغيير كلمة المرور كان يتيح لأي زائر إقفال الحساب على بقية
+  // الزوار (تعطيل حساب لا يملكه). إعادة تعيين كلمة مرور الزائر تبقى
+  // متاحة للإدارة من إدارة المستخدمين حصراً.
+  if (normalizeRole(user.role) === 'visitor') {
+    return NextResponse.json(
+      { error: 'forbidden', message: 'لا يمكن تغيير كلمة مرور حساب الزائر — إن لزم ذلك تواصل مع الإدارة' },
+      { status: 403 }
+    )
   }
   // معدل دخول: نفس الحماية الصارمة لتسجيل الدخول لمنع التخمين
   var rl = checkRateLimit(req, RateLimitPresets.auth)
