@@ -194,6 +194,16 @@ export const WRITE_ROLES: Record<string, string[]> = {
 }
 
 export function canWrite(userRole: string, resource: string, userPermissions?: Record<string, boolean> | null): boolean {
+  // v85.1 (قرار صاحب الموقع): رتبة «عامل» قراءة فقط بلا استثناء — الإدارة قد
+  // تمنح العامل رؤية قسم (كخطوط الحفر) من «صلاحيات الوصول» في إدارة المستخدمين،
+  // فتفتح له القسم للقراءة فقط. بلا هذا الحظر كان تخصيص الصلاحية يقدم على
+  // افتراض الرتبة فيظهر له «إنشاء خط جديد» وأزرار تعديل/حذف الخطوط (وكل أزرار
+  // الكتابة في باقي الأقسام الممنوحة). كل بوابات الكتابة في النظام تمر من هنا
+  // (canWrite/canModifyDriveLines/canModifyEquipment/canEditAnyEquipment/
+  // canModifyCompanyAsset/canEditAnyCompanyAsset) — فالحظر من هذه النقطة
+  // الواحدة يغطي الواجهة والخادم معاً، ومدير النظام لا يمر من canWrite أصلاً
+  // (تجاوزه في دوال البوابات قبل الاستدعاء) فلا يتأثر.
+  if (normalizeRole(userRole) === 'worker') return false
   // Check per-user permission override first
   if (userPermissions && typeof userPermissions[resource] === 'boolean') {
     return userPermissions[resource]
