@@ -195,16 +195,27 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       v75Push('projectId', v75OldProjName, v75NewProjectName)
     }
 
+    // v85 DATA FIX: التحديث الجزئي لم يعد يمسح الحقول الغائبة — قبل v85 كان
+    // أي طلب تعديل لا يحتوي dailyHours يصفّرها (parseFloat(undefined)→NaN→0)
+    // ويمحو lastMaintenance/nextMaintenance/notes إلى null حتى لو لم يُرسل
+    // مفتاحها أصلاً. الآن كل حقل يُلمس فقط عند وجوده في الطلب (نمط الصورة v74):
+    // الواجهة ترسل كل الحقول دائماً فلا يتغير سلوكها، لكن أي تعديل جزئي
+    // مستقبلي من عميل آخر لن يخرب بيانات المعدة.
+    var v85Data: Record<string, any> = {}
+    if (body.name !== undefined) v85Data.name = body.name
+    if (body.number !== undefined) v85Data.number = body.number
+    if (body.type !== undefined) v85Data.type = body.type
+    if (safeStatus !== undefined) v85Data.status = safeStatus
+    if (body.dailyHours !== undefined) v85Data.dailyHours = Math.max(0, parseFloat(body.dailyHours) || 0)
+    if (body.lastMaintenance !== undefined) v85Data.lastMaintenance = body.lastMaintenance ? new Date(body.lastMaintenance) : null
+    if (body.nextMaintenance !== undefined) v85Data.nextMaintenance = body.nextMaintenance ? new Date(body.nextMaintenance) : null
+    if (body.notes !== undefined) v85Data.notes = body.notes ? String(body.notes).slice(0, 2000) : null
+
     const result = await safeDbOp(
       () => db.equipment.update({
         where: { id },
         data: {
-          name: body.name, number: body.number, type: body.type,
-          status: safeStatus,
-          dailyHours: Math.max(0, parseFloat(body.dailyHours) || 0),
-          lastMaintenance: body.lastMaintenance ? new Date(body.lastMaintenance) : null,
-          nextMaintenance: body.nextMaintenance ? new Date(body.nextMaintenance) : null,
-          notes: body.notes ? String(body.notes).slice(0, 2000) : null,
+          ...v85Data,
           ...v74ImageData,
           ...v42ProjectData,
         },
