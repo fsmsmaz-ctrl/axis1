@@ -375,6 +375,8 @@ export default function ProfilePage() {
     : roleKey === 'site_engineer' ? (isRtl ? 'مهندس الموقع' : 'Site Engineer')
     : roleKey === 'hse_officer' ? (isRtl ? 'مسؤول السلامة' : 'HSE Officer')
     : roleKey === 'foreman' ? (isRtl ? 'المشرف' : 'Foreman')
+    // v85: رتبة «عامل»
+    : roleKey === 'worker' ? (isRtl ? 'عامل' : 'Worker')
     : roleKey === 'accountant' ? (isRtl ? 'المحاسب' : 'Accountant')
     // v52: زائر
     : roleKey === 'visitor' ? (isRtl ? 'زائر' : 'Visitor')
