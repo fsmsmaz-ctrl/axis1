@@ -97,16 +97,26 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       }
     }
 
-    var updateData: any = {
-      name: body.name !== undefined ? String(body.name).trim().slice(0, 200) : undefined, itemType: body.itemType !== undefined ? String(body.itemType).slice(0, 100) : undefined,
-      quantity: body.quantity !== undefined ? parseInt(body.quantity) : undefined,
-      ownership: body.ownership !== undefined ? String(body.ownership).slice(0, 50) : undefined, supplier: body.supplier ? String(body.supplier).trim() : null,
-      rentalCost: body.rentalCost !== undefined && body.rentalCost !== '' ? parseFloat(body.rentalCost) : null,
-      rentalStart: body.rentalStart ? new Date(body.rentalStart) : null,
-      rentalEnd: body.rentalEnd ? new Date(body.rentalEnd) : null,
-      responsibleId: body.responsibleId || null, projectId: body.projectId || null,
-      status: body.status !== undefined ? String(body.status).slice(0, 50) : undefined, notes: body.notes ? String(body.notes).slice(0, 2000) : null,
-    }
+    // v85 DATA FIX: كائن التحديث يحتوي فقط المفاتيح المرسلة فعلاً — قبل v85
+    // كان يُبنى دائماً بكل الحقول (بقيمة undefined عند الغياب) وحقول التفريغ
+    // (supplier/rentalCost/rentalStart/rentalEnd/responsibleId/projectId/notes)
+    // كانت تُكتب null حتى لو لم يُرسل مفتاحها، فأي تعديل جزئي يمحو بيانات
+    // الأصل. الآن: الحقل يُلمس فقط عند وجوده في الطلب — الواجهة ترسل كل
+    // الحقول دائماً فلا يتغير سلوكها، ويصبح سجل التغييرات أدق (لا صفوف
+    // وهمية «X → undefined» للحقول غير المرسلة).
+    var updateData: any = {}
+    if (body.name !== undefined) updateData.name = String(body.name).trim().slice(0, 200)
+    if (body.itemType !== undefined) updateData.itemType = String(body.itemType).slice(0, 100)
+    if (body.quantity !== undefined) updateData.quantity = (body.quantity === null || body.quantity === '') ? null : parseInt(body.quantity)
+    if (body.ownership !== undefined) updateData.ownership = String(body.ownership).slice(0, 50)
+    if (body.status !== undefined) updateData.status = String(body.status).slice(0, 50)
+    if (body.supplier !== undefined) updateData.supplier = body.supplier ? String(body.supplier).trim().slice(0, 200) : null
+    if (body.rentalCost !== undefined) updateData.rentalCost = (body.rentalCost !== null && body.rentalCost !== '') ? parseFloat(body.rentalCost) : null
+    if (body.rentalStart !== undefined) updateData.rentalStart = body.rentalStart ? new Date(body.rentalStart) : null
+    if (body.rentalEnd !== undefined) updateData.rentalEnd = body.rentalEnd ? new Date(body.rentalEnd) : null
+    if (body.responsibleId !== undefined) updateData.responsibleId = body.responsibleId || null
+    if (body.projectId !== undefined) updateData.projectId = body.projectId || null
+    if (body.notes !== undefined) updateData.notes = body.notes ? String(body.notes).slice(0, 2000) : null
     // v83: أُلغي شطب حقول الإيجار من طلبات أدوار «الإنشاء فقط» — قرار صاحب الموقع:
     // مَن سجّل الأصل يُدخل كافة بياناته ومن ضمنها الأسعار، والمساءلة عبر المفكرة
     if (body.hasOwnProperty('image')) {
