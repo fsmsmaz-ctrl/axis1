@@ -74,6 +74,8 @@ const roleLabels: Record<string, { ar: string; en: string }> = {
   site_engineer: { ar: 'مهندس الموقع', en: 'Site Engineer' },
   hse_officer: { ar: 'مسؤول السلامة', en: 'HSE Officer' },
   foreman: { ar: 'المشرف', en: 'Foreman' },
+  // v85: رتبة «عامل» — أدنى رتبة تشغيلية أسفل المشرف (قراءة فقط)
+  worker: { ar: 'عامل', en: 'Worker' },
   accountant: { ar: 'المحاسب', en: 'Accountant' },
   // v52: زائر — قراءة فقط لخطوط الحفر وبلا أسعار
   visitor: { ar: 'زائر', en: 'Visitor' },
@@ -85,6 +87,8 @@ const ROLES = [
   { value: 'site_engineer', ar: 'مهندس الموقع', en: 'Site Engineer' },
   { value: 'hse_officer', ar: 'مسؤول السلامة HSE', en: 'HSE Officer' },
   { value: 'foreman', ar: 'المشرف / الفورمان', en: 'Foreman' },
+  // v85: رتبة «عامل»
+  { value: 'worker', ar: 'عامل', en: 'Worker' },
   { value: 'accountant', ar: 'المحاسب / الإدارة المالية', en: 'Accountant' },
   // v52: زائر
   { value: 'visitor', ar: 'زائر', en: 'Visitor' },
@@ -480,7 +484,7 @@ export default function AppShell() {
 
         <div className="p-3 border-t border-sidebar-border">
           {/* v48: علامة الإصدار — إن لم تظهر هنا فالنشر الأخير لم يتم بعد */}
-          <p className="text-center text-[10px] text-muted-foreground/60 select-none">v84</p>
+          <p className="text-center text-[10px] text-muted-foreground/60 select-none">v85</p>
           {/* v48: بطاقة المستخدم قابلة للنقر — تفتح الملف الشخصي */}
           <div className="flex items-center gap-3 p-2 rounded-lg cursor-pointer hover:bg-sidebar-accent transition-colors"
             onClick={function() { setSidebarOpen(false); setCurrentPage('profile') }}
