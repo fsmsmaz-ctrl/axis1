@@ -129,6 +129,11 @@ export default function SafetyPage() {
   // v26: صلاحية تعديل تقارير السلامة — لكل من يملك صلاحية قسم السلامة (مع تجاوز مدير النظام)
   const storeUser = useAppStore((s) => s.user)
   const canEditSafety = isAdmin || canWrite(storeUser?.role || '', 'safety', storeUser?.permissions)
+  // v86: إدارة بيانات العمال (إضافة/تعديل/حذف) صلاحية مستقلة عن كتابة تقارير
+  // السلامة — بإظهار الأزرار لمن يملك كتابة «سجلات العمال» فقط (الخادم يفرض
+  // هذا أصلاً بـ 403، والأزرار كانت ظاهرة بلا بوابة فتفشل عند العامل ومسؤول
+  // السلامة — الأزرار الآن تختفي عن غير المصرّح لهم بدل أن تُظهر رسالة خطأ)
+  const canManageWorkers = isAdmin || canWrite(storeUser?.role || '', 'workers', storeUser?.permissions)
 
   // v27: إعادة إسناد المشروع وخط الحفر — نفس صلاحيات القسم للمسودة/المُسلَّم،
   // والمعتمد/المرفوض للإدارة العليا ومدير النظام فقط
@@ -835,6 +840,8 @@ export default function SafetyPage() {
               {isRtl ? 'بيانات العمال' : 'Worker Data'}
               <Badge variant="secondary" className="text-xs font-normal">{workers.length}</Badge>
             </CardTitle>
+            {/* v86: زر إضافة عامل — لمن يملك صلاحية سجلات العمال فقط */}
+            {canManageWorkers && (
             <Button size="sm" onClick={function() {
               setEditingWorker(null)
               setWorkerForm({ name: '', phone: '', contractorName: '', projectId: projects[0]?.id || '', notes: '' })
@@ -843,6 +850,7 @@ export default function SafetyPage() {
               <Plus className="h-3.5 w-3.5 ml-1.5" />
               {isRtl ? 'إضافة عامل' : 'Add Worker'}
             </Button>
+            )}
           </div>
         </CardHeader>
         <CardContent>
@@ -889,6 +897,8 @@ export default function SafetyPage() {
                         <td className="p-2.5 text-xs text-muted-foreground">{w.project ? w.project.name : '-'}</td>
                         <td className="p-2.5">
                           {/* v47: أزرار التعديل والحذف ظاهرة طوال الوقت — على الجوال والحاسوب */}
+                          {/* v86: لمن يملك صلاحية سجلات العمال فقط */}
+                          {canManageWorkers && (
                           <div className="flex gap-1">
                             <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={function() {
                               setEditingWorker(w)
@@ -907,6 +917,7 @@ export default function SafetyPage() {
                               <Trash2 className="h-3.5 w-3.5" />
                             </Button>
                           </div>
+                          )}
                         </td>
                       </tr>
                     )
