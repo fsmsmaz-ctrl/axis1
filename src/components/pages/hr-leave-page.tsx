@@ -34,6 +34,7 @@ const roleLabels: Record<string, { ar: string; en: string }> = {
   site_engineer: { ar: 'مهندس الموقع', en: 'Site Engineer' },
   hse_officer: { ar: 'مسؤول السلامة', en: 'HSE Officer' },
   foreman: { ar: 'المشرف', en: 'Foreman' },
+  worker: { ar: 'عامل', en: 'Worker' },
   accountant: { ar: 'المحاسب', en: 'Accountant' },
   visitor: { ar: 'زائر', en: 'Visitor' },
 }
