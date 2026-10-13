@@ -23,6 +23,8 @@ const VALID_ROLES = [
   { value: 'site_engineer', ar: 'مهندس الموقع', en: 'Site Engineer' },
   { value: 'hse_officer', ar: 'مسؤول السلامة', en: 'HSE Officer' },
   { value: 'foreman', ar: 'المشرف', en: 'Foreman' },
+  // v85: رتبة «عامل» — أدنى رتبة تشغيلية أسفل المشرف (قراءة فقط)
+  { value: 'worker', ar: 'عامل', en: 'Worker' },
   { value: 'accountant', ar: 'المحاسب', en: 'Accountant' },
 ]
 
@@ -32,6 +34,7 @@ const roleLabels: Record<string, { ar: string; en: string }> = {
   site_engineer: { ar: 'مهندس الموقع', en: 'Site Engineer' },
   hse_officer: { ar: 'مسؤول السلامة', en: 'HSE Officer' },
   foreman: { ar: 'المشرف', en: 'Foreman' },
+  worker: { ar: 'عامل', en: 'Worker' },
   accountant: { ar: 'المحاسب', en: 'Accountant' },
 }
 
