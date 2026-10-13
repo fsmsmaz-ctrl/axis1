@@ -116,6 +116,15 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
   foreman: [
     'projects', 'daily_reports', 'finishings', 'equipment', 'tasks', 'reports', 'notifications',
   ],
+  // v85 (قرار صاحب الموقع): رتبة «عامل» — أدنى رتبة تشغيلية أسفل المشرف
+  // (الفورمان). قراءة فقط: يرى المشاريع والتقارير اليومية ومهامه المُكلَّف بها
+  // والتنبيهات بحسابه الشخصي — لا يكتب في أي قسم (ليس في WRITE_ROLES إطلاقاً)،
+  // ولا يرى الأسعار ولا التقارير التحليلية ولا لوحة التحكم. الإدارة تستطيع
+  // منحه أقساماً إضافية لكل عامل على حدة من إدارة المستخدمين (التخصيص لكل
+  // مستخدم يقدم على افتراض الرتبة).
+  worker: [
+    'projects', 'daily_reports', 'tasks', 'notifications',
+  ],
   accountant: [
     'projects', 'costs', 'tasks', 'reports', 'notifications',
   ],
@@ -156,9 +165,12 @@ export function canAccessDashboard(
 
 // H-1 FIX: Role-based access control helper for API routes
 // v52: زائر — حساب للمعاينة فقط: قراءة فقط لقسم خطوط الحفر وبلا أي أسعار
-export const VALID_ROLES = ['top_management', 'project_manager', 'site_engineer', 'hse_officer', 'foreman', 'accountant', 'visitor'] as const
+// v85: أُضيفت رتبة «عامل» (worker) أسفل المشرف — أدنى رتبة تشغيلية
+export const VALID_ROLES = ['top_management', 'project_manager', 'site_engineer', 'hse_officer', 'foreman', 'worker', 'accountant', 'visitor'] as const
 
 // Roles that can write to each resource
+// v85: رتبة «عامل» عمداً غائبة من كل قوائم الكتابة — قراءة فقط بلا أي
+// إنشاء/تعديل/حذف في كل أقسام النظام (الخادم يرفض كتاباته بـ 403).
 export const WRITE_ROLES: Record<string, string[]> = {
   projects: ['top_management', 'project_manager'],
   drive_lines: ['top_management', 'project_manager', 'site_engineer', 'hse_officer'],
