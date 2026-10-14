@@ -233,6 +233,10 @@ export default function AppShell() {
   const landingPage: PageId = allowedItems.find(i => i.id !== 'dashboard')?.id ?? 'notifications'
   const effectivePage: PageId = currentPage === 'dashboard' && !canSeeDashboard ? landingPage : currentPage
   const isAdmin = user.email.toLowerCase().trim() === SYSTEM_ADMIN_EMAIL
+  // v87 (قرار صاحب الموقع): إدارة المستخدمين للإدارة كافة (الإدارة العليا ومدير المشروع) وللمحاسب
+  // — كانت لمدير النظام فقط. وإدارة حسابات الإدارة العليا ومنح دورها بقيت للنخية فقط
+  const canManageUsersUI = isAdmin || ['top_management', 'project_manager', 'accountant'].includes(normalizeRole(user.role))
+  const canManageTopUI = isAdmin || normalizeRole(user.role) === 'top_management'
   const isAr = language === 'ar'
   const isRtl = isAr
 
@@ -453,7 +457,7 @@ export default function AppShell() {
         </div>
 
         <nav className="flex-1 overflow-y-auto p-3.5 lg:p-3 space-y-2 lg:space-y-1">
-          {isAdmin && (
+          {canManageUsersUI && (
             <button
               onClick={openUserDialog}
               className="w-full flex items-center gap-3.5 px-4 py-4 lg:py-2.5 rounded-xl text-base lg:text-sm font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-all border border-primary/20 border-dashed"
@@ -484,7 +488,7 @@ export default function AppShell() {
 
         <div className="p-3 border-t border-sidebar-border">
           {/* v48: علامة الإصدار — إن لم تظهر هنا فالنشر الأخير لم يتم بعد */}
-          <p className="text-center text-[10px] text-muted-foreground/60 select-none">v86</p>
+          <p className="text-center text-[10px] text-muted-foreground/60 select-none">v87</p>
           {/* v48: بطاقة المستخدم قابلة للنقر — تفتح الملف الشخصي */}
           <div className="flex items-center gap-3 p-2 rounded-lg cursor-pointer hover:bg-sidebar-accent transition-colors"
             onClick={function() { setSidebarOpen(false); setCurrentPage('profile') }}
@@ -621,7 +625,7 @@ export default function AppShell() {
           <span>{isRtl ? 'المزيد' : 'More'}</span>
         </button>
       </nav>
-      {isAdmin && (
+      {canManageUsersUI && (
         <Dialog open={userDialogOpen} onOpenChange={(v) => setUserDialogOpen(v)}>
           <DialogContent className="sm:max-w-[680px] max-h-[90vh] overflow-y-auto">
             <DialogHeader>
@@ -696,7 +700,8 @@ export default function AppShell() {
                     <Select value={formData.role} onValueChange={(val) => setFormData({ ...formData, role: val, permissions: {} })}>
                       <SelectTrigger className="h-10"><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        {ROLES.map((r) => (
+                        {/* v87: خيار «الإدارة العليا» لمدير النظام والإدارة العليا فقط */}
+                        {(canManageTopUI ? ROLES : ROLES.filter(function(r) { return r.value !== 'top_management' })).map((r) => (
                           <SelectItem key={r.value} value={r.value}>{isAr ? r.ar : r.en}</SelectItem>
                         ))}
                       </SelectContent>
@@ -868,7 +873,8 @@ export default function AppShell() {
                           {roleLabels[u.role] ? (isAr ? roleLabels[u.role].ar : roleLabels[u.role].en) : (u.roleLabel ? (isAr ? u.roleLabel.ar : u.roleLabel.en) : u.role)}
                         </span>
                         <div className="flex items-center gap-1 shrink-0">
-                          {deleteConfirm === u.id ? (
+                          {/* v87: حسابات الإدارة العليا — إدارتها لمدير النظام والإدارة العليا فقط (نفس بوابة الخادم) */}
+                          {!(canManageTopUI || normalizeRole(u.role) !== 'top_management') ? null : deleteConfirm === u.id ? (
                             <>
                               <Button size="sm" variant="destructive" className="h-7 px-2 text-xs gap-1" onClick={() => handleDeleteUser(u.id)}>
                                 {isAr ? 'تأكيد' : 'Confirm'}
