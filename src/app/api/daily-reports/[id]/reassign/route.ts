@@ -28,6 +28,12 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   var isTopManagement = normalizeRole(user.role) === 'top_management'
   var canEdit = canWrite(user.role, 'daily_reports', user.permissions) || canWrite(user.role, 'safety', user.permissions)
 
+  // v87 (فحص شامل): إعادة الإسناد أداة هندسية خارج القائمة البيضاء للعامل (v86) —
+  // نقل التقرير بين المشاريع/الخطوط يعيد حساب الإيراد والتقدم فلا يُعدّ «تعديل
+  // تقرير» ضمن صلاحيات العامل المحدودة (إنشاء سلامة + تعديل/تسليم يومي). كان
+  // canWrite يمرّ للعامل بعد قائمة v86 البيضاء فيفتح له النقل — أُغلق صراحة.
+  if (normalizeRole(user.role) === 'worker') canEdit = false
+
   if (!isSystemAdmin && !isTopManagement && !canEdit) {
     return NextResponse.json(
       { error: 'forbidden', message: 'تعديل إسناد المشروع وخط الحفر متاح للموظفين المصرّح لهم فقط' },
