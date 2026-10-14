@@ -4,7 +4,7 @@ import { db } from '@/lib/db'
 import bcrypt from 'bcryptjs'
 import { handleDbError, safeDbOp } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
-import { VALID_ROLES, normalizeRole, SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
+import { VALID_ROLES, normalizeRole, SYSTEM_ADMIN_EMAIL, canManageUsers, canManageTopAccounts } from '@/lib/auth'
 
 // FIX-3.2: Removed hardcoded ADMIN_EMAIL — now uses role-based check
 
@@ -27,8 +27,11 @@ export async function POST(req: NextRequest) {
     // v67: مدير النظام (العلم أو البريد) ينشئ المستخدمين أيضاً — لم يعد مقيّداً بدوره
     var editorIsSysAdmin = authUser != null &&
       (authUser.isSystemAdmin === true || (authUser.email || '').toLowerCase().trim() === SYSTEM_ADMIN_EMAIL)
-    if (!authUser || (normalizeRole(authUser.role) !== 'top_management' && !editorIsSysAdmin)) {
-      return NextResponse.json({ error: 'forbidden', message: 'هذه العملية متاحة فقط للإدارة العليا' }, { status: 403 })
+    // v87 (قرار صاحب الموقع): إنشاء الحسابات للإدارة كافة والمحاسب — كانت للإدارة
+    // العليا فقط. الصمام الأمني أدناه يحصر إنشاء حسابات «الإدارة العليا» بمدير
+    // النظام والإدارة العليا (منع ترقية الصلاحيات).
+    if (!authUser || !canManageUsers(authUser)) {
+      return NextResponse.json({ error: 'forbidden', message: 'هذه العملية متاحة للإدارة فقط' }, { status: 403 })
     }
 
     var body = await req.json()
@@ -48,6 +51,12 @@ export async function POST(req: NextRequest) {
     // H-5 FIX: Validate role
     if (!(VALID_ROLES as readonly string[]).includes(role)) {
       return NextResponse.json({ error: 'invalid_value', message: 'دور غير صالح' }, { status: 400 })
+    }
+
+    // v87: منع ترقية الصلاحيات — إنشاء حساب «إدارة عليا» لمدير النظام
+    // والإدارة العليا فقط (المحاسب ومدير المشروع لا يمكنهما صنع إداري عليا)
+    if (role === 'top_management' && !canManageTopAccounts(authUser)) {
+      return NextResponse.json({ error: 'forbidden', message: 'إنشاء حسابات الإدارة العليا متاح للإدارة العليا ومدير النظام فقط' }, { status: 403 })
     }
 
     // M-6 FIX: Password minimum length
