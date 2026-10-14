@@ -3,7 +3,7 @@ import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { handleDbError, safeDbOp } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
-import { normalizeRole } from '@/lib/auth'
+import { normalizeRole, canManageUsers } from '@/lib/auth'
 
 // FIX-3.2: Removed hardcoded ADMIN_EMAIL — now uses role-based check
 
@@ -19,9 +19,11 @@ export async function DELETE(req: NextRequest) {
   try {
     var authUser = await getAuthUser(req)
     // FIX-3.2: Use role check instead of hardcoded email
-    // v65: المقارنة عبر normalizeRole — لا مقارنات دور حرفية (نفس علة v63)
-    if (!authUser || normalizeRole(authUser.role) !== 'top_management') {
-      return NextResponse.json({ error: 'forbidden', message: 'هذه العملية متاحة فقط للإدارة العليا' }, { status: 403 })
+    // v87 (قرار صاحب الموقع): حذف الحسابات للإدارة كافة والمحاسب — كانت للإدارة
+    // العليا فقط. الحماية أدناه تمنع حذف حسابات «الدارة العليا» كلياً (باستثناء
+    // لا أحد) والحذف الذاتي — فلن يتمكن محاسب من حذف إداري عليا مهما كان.
+    if (!authUser || !canManageUsers(authUser)) {
+      return NextResponse.json({ error: 'forbidden', message: 'هذه العملية متاحة للإدارة فقط' }, { status: 403 })
     }
 
     var searchParams = new URL(req.url).searchParams
