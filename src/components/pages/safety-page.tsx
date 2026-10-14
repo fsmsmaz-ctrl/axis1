@@ -142,6 +142,9 @@ export default function SafetyPage() {
   function canReassignSafety(r: any): boolean {
     var st = (r.dailyReport && r.dailyReport.status) || 'draft'
     if (isAdmin || isTopManagement) return true
+    // v87 (فحص شامل): إعادة الإسناد خارج صلاحيات العامل — نفس بوابة الخادم
+    // (نقل التقرير بين المشاريع يعيد حساب الإيراد والتقدم فليس «تعديل تقرير»)
+    if (String(storeUser?.role || '').trim().toLowerCase() === 'worker') return false
     return canEditSafety && (st === 'draft' || st === 'submitted')
   }
 
