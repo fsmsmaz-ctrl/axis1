@@ -165,6 +165,28 @@ export function canAccessDashboard(
   return (DASHBOARD_ALLOWED_ROLES as readonly string[]).includes(normalizeRole(user.role))
 }
 
+// ─── v87: إدارة المستخدمين — من يفتح القسم ويدير الحسابات ──────────
+// قرار صاحب الموقع: قسم «إدارة المستخدمين» وإنشاء الحسابات الجديدة متاح
+// للإدارة كافة (الإدارة العليا ومدير المشروع) وللمحاسب — بدل حصره بمدير
+// النظام والإدارة العليا. مع صمامات أمان صريحة أدناه:
+//   canManageTopAccounts → إدارة حسابات الإدارة العليا نفسها (إنشاءها/
+//   تعديلها/حذفها) ومنح دور «إدارة عليا» لمدير النظام والإدارة العليا فقط
+//   (منع ترقية الصلاحيات: محاسب أو مدير مشروع لا يستطيع صنع إداري عليا).
+export const USER_MANAGE_ROLES = ['top_management', 'project_manager', 'accountant'] as const
+
+export function canManageUsers(user: { role?: string; email?: string } | null | undefined): boolean {
+  if (!user) return false
+  if (user.email && user.email.toLowerCase().trim() === SYSTEM_ADMIN_EMAIL) return true
+  return (USER_MANAGE_ROLES as readonly string[]).includes(normalizeRole(user.role))
+}
+
+// v87: من يملك إدارة حسابات الإدارة العليا ومنح دورها — النخبة فقط
+export function canManageTopAccounts(user: { role?: string; email?: string } | null | undefined): boolean {
+  if (!user) return false
+  if (user.email && user.email.toLowerCase().trim() === SYSTEM_ADMIN_EMAIL) return true
+  return normalizeRole(user.role) === 'top_management'
+}
+
 // H-1 FIX: Role-based access control helper for API routes
 // v52: زائر — حساب للمعاينة فقط: قراءة فقط لقسم خطوط الحفر وبلا أي أسعار
 // v85: أُضيفت رتبة «عامل» (worker) أسفل المشرف — أدنى رتبة تشغيلية
