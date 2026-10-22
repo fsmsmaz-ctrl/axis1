@@ -37,7 +37,7 @@ const roleLabels: Record<string, { ar: string; en: string }> = {
   worker: { ar: 'عامل', en: 'Worker' },
   // v89: رتبة «حامل التصريح» — رتبة ميدانية قراءة فقط
   permit_holder: { ar: 'حامل التصريح', en: 'Permit Holder' },
-  accountant: { ar: 'المحاسب', en: 'Accountant' },
+  accountant: { ar: 'المدير المالي والإداري', en: 'Financial & Administrative Manager' },
   visitor: { ar: 'زائر', en: 'Visitor' },
 }
 
