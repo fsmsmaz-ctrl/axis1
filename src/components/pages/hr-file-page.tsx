@@ -37,6 +37,8 @@ const roleLabels: Record<string, { ar: string; en: string }> = {
   hse_officer: { ar: 'مسؤول السلامة', en: 'HSE Officer' },
   foreman: { ar: 'المشرف', en: 'Foreman' },
   worker: { ar: 'عامل', en: 'Worker' },
+  // v89: رتبة «حامل التصريح» — رتبة ميدانية قراءة فقط
+  permit_holder: { ar: 'حامل التصريح', en: 'Permit Holder' },
   accountant: { ar: 'المحاسب', en: 'Accountant' },
   visitor: { ar: 'زائر', en: 'Visitor' },
 }
