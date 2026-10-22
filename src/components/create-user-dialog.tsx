@@ -27,7 +27,7 @@ const VALID_ROLES = [
   { value: 'worker', ar: 'عامل', en: 'Worker' },
   // v89: رتبة «حامل التصريح» — رتبة ميدانية قراءة فقط
   { value: 'permit_holder', ar: 'حامل التصريح', en: 'Permit Holder' },
-  { value: 'accountant', ar: 'المحاسب', en: 'Accountant' },
+  { value: 'accountant', ar: 'المدير المالي والإداري', en: 'Financial & Administrative Manager' },
 ]
 
 const roleLabels: Record<string, { ar: string; en: string }> = {
@@ -38,7 +38,7 @@ const roleLabels: Record<string, { ar: string; en: string }> = {
   foreman: { ar: 'المشرف', en: 'Foreman' },
   worker: { ar: 'عامل', en: 'Worker' },
   permit_holder: { ar: 'حامل التصريح', en: 'Permit Holder' },
-  accountant: { ar: 'المحاسب', en: 'Accountant' },
+  accountant: { ar: 'المدير المالي والإداري', en: 'Financial & Administrative Manager' },
 }
 
 interface CreateUserDialogProps {
