@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
   }
 
   // v13.1 SECURITY: فرض صلاحية التكاليف على الخادم — كانت القراءة متاحة لأي مستخدم مسجل
-  // (المحاسب/التقارير المالية rpt_costs و rpt_revenue و rpt_profit مسموحة أيضاً لصفحة التقارير)
+  // (المدير المالي والإداري/التقارير المالية rpt_costs و rpt_revenue و rpt_profit مسموحة أيضاً لصفحة التقارير)
   var canReadCosts = hasPermission(user.role, 'costs', user.permissions, user.email)
     || hasPermission(user.role, 'rpt_costs', user.permissions, user.email)
     || hasPermission(user.role, 'rpt_revenue', user.permissions, user.email)
@@ -164,9 +164,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
   }
 
-  // v13.1 SECURITY: كتابة التكاليف للإدارة والمحاسب فقط (كانت مفتوحة لأي مستخدم)
+  // v13.1 SECURITY: كتابة التكاليف للإدارة والمدير المالي والإداري فقط (كانت مفتوحة لأي مستخدم)
   if (!canWrite(user.role, 'costs', user.permissions)) {
-    return NextResponse.json({ error: 'forbidden', message: 'إضافة التكاليف متاحة للإدارة والمحاسب فقط' }, { status: 403 })
+    return NextResponse.json({ error: 'forbidden', message: 'إضافة التكاليف متاحة للإدارة والمدير المالي والإداري فقط' }, { status: 403 })
   }
 
   // Rate limit write operations
