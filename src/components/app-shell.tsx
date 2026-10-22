@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { useAppStore } from '@/lib/store'
-import { hasPermission, MODULE_PERMISSIONS, MODULE_PERMISSION_LABELS, REPORT_PERMISSIONS, REPORT_LABELS, ROLE_PERMISSIONS, canAccessDashboard, canViewPricing, SYSTEM_ADMIN_EMAIL, HR_MANAGE_ROLES, HR_MANAGE_PERMISSION_KEY, normalizeRole, canAssignRoleTo, canManageTargetAccount, type SessionUser } from '@/lib/auth'
+import { hasPermission, MODULE_PERMISSIONS, MODULE_PERMISSION_LABELS, REPORT_PERMISSIONS, REPORT_LABELS, ROLE_PERMISSIONS, canAccessDashboard, canViewPricing, SYSTEM_ADMIN_EMAIL, HR_MANAGE_ROLES, HR_MANAGE_PERMISSION_KEY, normalizeRole, canManageUsers, canAssignRoleTo, canManageTargetAccount, type SessionUser } from '@/lib/auth'
 import { clearStoredToken, authedFetch } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
@@ -242,8 +242,13 @@ export default function AppShell() {
   // v87 (قرار صاحب الموقع): إدارة المستخدمين للإدارة كافة (الإدارة العليا ومدير المشروع)
   // وللمدير المالي والإداري («المحاسب» سابقاً — v92 غيّرت التسمية المعروضة فقط)
   // — كانت لمدير النظام فقط. وإدارة حسابات الإدارة العليا ومنح دورها بقيت للنخبة فقط
-  const canManageUsersUI = isAdmin || ['top_management', 'project_manager', 'accountant'].includes(normalizeRole(user.role))
-  // v92: canManageTopUI حُذفت — قوائم الأدوار وأزرار الإدارة تستخدم canAssignRoleTo/canManageTargetAccount (نفس بوابة الخادم)
+  // v93 (تدقيق أمني): مصدر حقيقة واحد — استُبدلت القائمة المكتوبة يدوياً بدالة الخادم نفسها
+  // (canManageUsers في auth.ts) فلا يختلف حكم الواجهة عن حكم الخادم أبداً حتى مع تغيير القائمة مستقبلاً.
+  const canManageUsersUI = canManageUsers(user)
+  // v93 (تدقيق أمني): مفتاح «تعديل بيانات الموظفين» (hr_manage) يمنحه مدير النظام فقط —
+  // الخادم يتجاهله من بقية المحررين (users/create و users/update)، فإظهاره لهم كان مفتاً
+  // ميتاً يحفظ ولا يحفظ شيئاً فيبدو أن الصلاحية مُنحت وهي ليست كذلك. يظهر الآن لمدير النظام حصراً.
+  const canGrantHR = user.isSystemAdmin === true || isAdmin  // v92: canManageTopUI حُذفت — قوائم الأدوار وأزرار الإدارة تستخدم canAssignRoleTo/canManageTargetAccount (نفس بوابة الخادم)
   const isAr = language === 'ar'
   const isRtl = isAr
 
@@ -326,12 +331,25 @@ export default function AppShell() {
     setCreateLoading(true)
     setCreateError('')
     if (dialogTab === 'edit') {
+      // v93 (تدقيق أمني): التعديل الذاتي — كان النموذج يرسل الدور والصلاحيات مع كل حفظ،
+      // وحارس الخادم (v92) يرفض أي تعديل ذاتي يمس الدور أو الصلاحيات أو كلمة المرور،
+      // فصار تعديل اسمك أو هاتفك من إدارة المستخدمين مستحيلاً رغم أنه مسموح بالتصميم.
+      // الآن: تعديل حسابك نفسه يرسل الاسم والهاتف فقط — بلا دور ولا صلاحيات ولا كلمة
+      // مرور — فيمر الحارس وتُحدَّث الحقول الآمنة. تعديل حساب غيرك يرسل كل الحقول وتظل
+      // بوابات الخادم (canAssignRoleTo / canManageTargetAccount) هي الحكم النهائي.
+      const isSelf = editingUser.id === user?.id
       const { email, ...updateFields } = formData
+      const updatePayload: Record<string, unknown> = { userId: editingUser.id, name: updateFields.name, nameEn: updateFields.nameEn, phone: updateFields.phone }
+      if (!isSelf) {
+        updatePayload.role = updateFields.role
+        updatePayload.permissions = updateFields.permissions
+        if (updateFields.password && String(updateFields.password).trim()) updatePayload.password = updateFields.password
+      }
       try {
         const res = await authedFetch('/api/users/update', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: editingUser.id, ...updateFields, permissions: updateFields.permissions }),
+          body: JSON.stringify(updatePayload),
         })
         const data = await res.json()
         if (!res.ok) {
@@ -495,7 +513,7 @@ export default function AppShell() {
 
         <div className="p-3 border-t border-sidebar-border">
           {/* v48: علامة الإصدار — إن لم تظهر هنا فالنشر الأخير لم يتم بعد */}
-          <p className="text-center text-[10px] text-muted-foreground/60 select-none">v92</p>
+          <p className="text-center text-[10px] text-muted-foreground/60 select-none">v93</p>
           {/* v48: بطاقة المستخدم قابلة للنقر — تفتح الملف الشخصي */}
           <div className="flex items-center gap-3 p-2 rounded-lg cursor-pointer hover:bg-sidebar-accent transition-colors"
             onClick={function() { setSidebarOpen(false); setCurrentPage('profile') }}
@@ -724,6 +742,8 @@ export default function AppShell() {
                 </div>
 
                 {/* v67: صلاحية تعديل بيانات الموظفين — مدير النظام يمنحها ويسحبها لكل مستخدم */}
+                {/* v93: يظهر لمدير النظام فقط — الخادم يتجاهل المفتاح من بقية المحررين فكان ظهوره هنا مفتاً ميتاً */}
+                {canGrantHR && (
                 <div className="space-y-3">
                   <div className="flex items-center gap-2 text-sm font-semibold">
                     <Users className="h-4 w-4 text-primary" />
@@ -757,6 +777,7 @@ export default function AppShell() {
                     })()}
                   </div>
                 </div>
+                )}
 
                 {/* ─── Permissions Section ─── */}
                 <div className="space-y-3 pt-2">
