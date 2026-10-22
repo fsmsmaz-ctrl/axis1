@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { useAppStore } from '@/lib/store'
-import { hasPermission, MODULE_PERMISSIONS, MODULE_PERMISSION_LABELS, REPORT_PERMISSIONS, REPORT_LABELS, ROLE_PERMISSIONS, canAccessDashboard, canViewPricing, SYSTEM_ADMIN_EMAIL, HR_MANAGE_ROLES, HR_MANAGE_PERMISSION_KEY, normalizeRole, type SessionUser } from '@/lib/auth'
+import { hasPermission, MODULE_PERMISSIONS, MODULE_PERMISSION_LABELS, REPORT_PERMISSIONS, REPORT_LABELS, ROLE_PERMISSIONS, canAccessDashboard, canViewPricing, SYSTEM_ADMIN_EMAIL, HR_MANAGE_ROLES, HR_MANAGE_PERMISSION_KEY, normalizeRole, canAssignRoleTo, canManageTargetAccount, type SessionUser } from '@/lib/auth'
 import { clearStoredToken, authedFetch } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
@@ -78,7 +78,8 @@ const roleLabels: Record<string, { ar: string; en: string }> = {
   worker: { ar: 'عامل', en: 'Worker' },
   // v89: رتبة «حامل التصريح» — رتبة ميدانية قراءة فقط
   permit_holder: { ar: 'حامل التصريح', en: 'Permit Holder' },
-  accountant: { ar: 'المحاسب', en: 'Accountant' },
+  // v92: «المحاسب» أصبح «المدير المالي والإداري» (المفتاح الداخلي accountant ثابت)
+  accountant: { ar: 'المدير المالي والإداري', en: 'Financial & Administrative Manager' },
   // v52: زائر — قراءة فقط لخطوط الحفر وبلا أسعار
   visitor: { ar: 'زائر', en: 'Visitor' },
 }
@@ -93,7 +94,8 @@ const ROLES = [
   { value: 'worker', ar: 'عامل', en: 'Worker' },
   // v89: رتبة «حامل التصريح»
   { value: 'permit_holder', ar: 'حامل التصريح', en: 'Permit Holder' },
-  { value: 'accountant', ar: 'المحاسب / الإدارة المالية', en: 'Accountant' },
+  // v92: «المحاسب» أصبح «المدير المالي والإداري» (المفتاح الداخلي accountant ثابت)
+  { value: 'accountant', ar: 'المدير المالي والإداري', en: 'Financial & Administrative Manager' },
   // v52: زائر
   { value: 'visitor', ar: 'زائر', en: 'Visitor' },
 ]
@@ -237,10 +239,11 @@ export default function AppShell() {
   const landingPage: PageId = allowedItems.find(i => i.id !== 'dashboard')?.id ?? 'notifications'
   const effectivePage: PageId = currentPage === 'dashboard' && !canSeeDashboard ? landingPage : currentPage
   const isAdmin = user.email.toLowerCase().trim() === SYSTEM_ADMIN_EMAIL
-  // v87 (قرار صاحب الموقع): إدارة المستخدمين للإدارة كافة (الإدارة العليا ومدير المشروع) وللمحاسب
-  // — كانت لمدير النظام فقط. وإدارة حسابات الإدارة العليا ومنح دورها بقيت للنخية فقط
+  // v87 (قرار صاحب الموقع): إدارة المستخدمين للإدارة كافة (الإدارة العليا ومدير المشروع)
+  // وللمدير المالي والإداري («المحاسب» سابقاً — v92 غيّرت التسمية المعروضة فقط)
+  // — كانت لمدير النظام فقط. وإدارة حسابات الإدارة العليا ومنح دورها بقيت للنخبة فقط
   const canManageUsersUI = isAdmin || ['top_management', 'project_manager', 'accountant'].includes(normalizeRole(user.role))
-  const canManageTopUI = isAdmin || normalizeRole(user.role) === 'top_management'
+  // v92: canManageTopUI حُذفت — قوائم الأدوار وأزرار الإدارة تستخدم canAssignRoleTo/canManageTargetAccount (نفس بوابة الخادم)
   const isAr = language === 'ar'
   const isRtl = isAr
 
@@ -492,7 +495,7 @@ export default function AppShell() {
 
         <div className="p-3 border-t border-sidebar-border">
           {/* v48: علامة الإصدار — إن لم تظهر هنا فالنشر الأخير لم يتم بعد */}
-          <p className="text-center text-[10px] text-muted-foreground/60 select-none">v91</p>
+          <p className="text-center text-[10px] text-muted-foreground/60 select-none">v92</p>
           {/* v48: بطاقة المستخدم قابلة للنقر — تفتح الملف الشخصي */}
           <div className="flex items-center gap-3 p-2 rounded-lg cursor-pointer hover:bg-sidebar-accent transition-colors"
             onClick={function() { setSidebarOpen(false); setCurrentPage('profile') }}
@@ -705,7 +708,10 @@ export default function AppShell() {
                       <SelectTrigger className="h-10"><SelectValue /></SelectTrigger>
                       <SelectContent>
                         {/* v87: خيار «الإدارة العليا» لمدير النظام والإدارة العليا فقط */}
-                        {(canManageTopUI ? ROLES : ROLES.filter(function(r) { return r.value !== 'top_management' })).map((r) => (
+                        {/* v92: التراتب كامل — قائمة الأدوار المتاحة لكل مدير برتبته (نفس بوابة الخادم canAssignRoleTo):
+                            الإدارة العليا كل الأدوار، مدير المشروع كل ما دون الإدارة العليا،
+                            والمدير المالي والإداري الأدوار التشغيلية فقط (لا مدير مشروع ولا إدارة عليا) */}
+                        {ROLES.filter(function(r) { return canAssignRoleTo(user, r.value) }).map((r) => (
                           <SelectItem key={r.value} value={r.value}>{isAr ? r.ar : r.en}</SelectItem>
                         ))}
                       </SelectContent>
@@ -877,26 +883,40 @@ export default function AppShell() {
                           {roleLabels[u.role] ? (isAr ? roleLabels[u.role].ar : roleLabels[u.role].en) : (u.roleLabel ? (isAr ? u.roleLabel.ar : u.roleLabel.en) : u.role)}
                         </span>
                         <div className="flex items-center gap-1 shrink-0">
-                          {/* v87: حسابات الإدارة العليا — إدارتها لمدير النظام والإدارة العليا فقط (نفس بوابة الخادم) */}
-                          {!(canManageTopUI || normalizeRole(u.role) !== 'top_management') ? null : deleteConfirm === u.id ? (
-                            <>
-                              <Button size="sm" variant="destructive" className="h-7 px-2 text-xs gap-1" onClick={() => handleDeleteUser(u.id)}>
-                                {isAr ? 'تأكيد' : 'Confirm'}
-                              </Button>
-                              <Button size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={() => setDeleteConfirm(null)}>
-                                {isAr ? 'إلغاء' : 'No'}
-                              </Button>
-                            </>
-                          ) : (
-                            <>
-                              <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground hover:text-primary" onClick={() => openEditUser(u)} title={isAr ? 'تعديل' : 'Edit'}>
-                                <Pencil className="h-3.5 w-3.5" />
-                              </Button>
-                              <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => setDeleteConfirm(u.id)} title={isAr ? 'حذف' : 'Delete'}>
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </Button>
-                            </>
-                          )}
+                          {/* v87: حسابات الإدارة العليا — إدارتها لمدير النظام والإدارة العليا فقط */}
+                          {/* v92: نفس بوابة الخادم canManageTargetAccount — لا أزرار لحساب أعلى رتبة المدير
+                              (المدير المالي والإداري لا يعدّل ولا يحذف حسابات مديري المشاريع)،
+                              والحساب الذاتي زر تعديل فقط (الحقول الآمنة: الاسم/الهاتف —
+                              الدور والصلاحيات وكلمة المرور مرفوضة خادماً، والحذف الذاتي ممنوع أصلاً) */}
+                          {(() => {
+                            if (!isAdmin && u.id === user.id) {
+                              return (
+                                <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground hover:text-primary" onClick={() => openEditUser(u)} title={isAr ? 'تعديل بياناتك (الاسم والهاتف)' : 'Edit your info (name & phone)'}>
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </Button>
+                              )
+                            }
+                            if (!isAdmin && !canManageTargetAccount(user, u.role)) return null
+                            return deleteConfirm === u.id ? (
+                              <>
+                                <Button size="sm" variant="destructive" className="h-7 px-2 text-xs gap-1" onClick={() => handleDeleteUser(u.id)}>
+                                  {isAr ? 'تأكيد' : 'Confirm'}
+                                </Button>
+                                <Button size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={() => setDeleteConfirm(null)}>
+                                  {isAr ? 'إلغاء' : 'No'}
+                                </Button>
+                              </>
+                            ) : (
+                              <>
+                                <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground hover:text-primary" onClick={() => openEditUser(u)} title={isAr ? 'تعديل' : 'Edit'}>
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => setDeleteConfirm(u.id)} title={isAr ? 'حذف' : 'Delete'}>
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              </>
+                            )
+                          })()}
                         </div>
                       </div>
                     ))}
