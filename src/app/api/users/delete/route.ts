@@ -3,7 +3,7 @@ import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { handleDbError, safeDbOp } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
-import { normalizeRole, canManageUsers } from '@/lib/auth'
+import { normalizeRole, canManageUsers, canManageTargetAccount } from '@/lib/auth'
 
 // FIX-3.2: Removed hardcoded ADMIN_EMAIL — now uses role-based check
 
@@ -19,9 +19,10 @@ export async function DELETE(req: NextRequest) {
   try {
     var authUser = await getAuthUser(req)
     // FIX-3.2: Use role check instead of hardcoded email
-    // v87 (قرار صاحب الموقع): حذف الحسابات للإدارة كافة والمحاسب — كانت للإدارة
-    // العليا فقط. الحماية أدناه تمنع حذف حسابات «الدارة العليا» كلياً (باستثناء
-    // لا أحد) والحذف الذاتي — فلن يتمكن محاسب من حذف إداري عليا مهما كان.
+    // v87 (قرار صاحب الموقع): حذف الحسابات للإدارة كافة والمدير المالي والإداري
+    // («المحاسب» سابقاً) — كانت للإدارة
+    // العليا فقط. الحماية أدناه تمنع حذف حسابات «الإدارة العليا» كلياً (باستثناء
+    // لا أحد) والحذف الذاتي — فلن يتمكن أحد من حذف إداري عليا مهما كان.
     if (!authUser || !canManageUsers(authUser)) {
       return NextResponse.json({ error: 'forbidden', message: 'هذه العملية متاحة للإدارة فقط' }, { status: 403 })
     }
@@ -52,6 +53,14 @@ export async function DELETE(req: NextRequest) {
 
     if (userId === authUser.id) {
       return NextResponse.json({ error: 'forbidden', message: 'لا يمكنك حذف حسابك الخاص' }, { status: 403 })
+    }
+
+    // v92 (تدقيق أمني): تراتب الحذف — كان المدير المالي والإداري يستطيع تعطيل
+    // (حذف) حسابات مديري المشاريع وإقفال الإدارة خارج النظام. الآن كل مدير
+    // يحذف حسابات أدنى رتبته فقط، ومدير النظام يتجاوز (والإدارة العليا محمية
+    // كلياً بالفحص الأعلى كما كانت).
+    if (!canManageTargetAccount(authUser, targetResult.data.role)) {
+      return NextResponse.json({ error: 'forbidden', message: 'لا يمكنك حذف حسابات هذه الرتبة — إدارتها لمدير النظام والإدارة الأعلى' }, { status: 403 })
     }
 
     // Soft delete — prevents orphaned records and DB constraint errors
