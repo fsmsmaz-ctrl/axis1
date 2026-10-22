@@ -25,6 +25,8 @@ const VALID_ROLES = [
   { value: 'foreman', ar: 'المشرف', en: 'Foreman' },
   // v85: رتبة «عامل» — أدنى رتبة تشغيلية أسفل المشرف (قراءة فقط)
   { value: 'worker', ar: 'عامل', en: 'Worker' },
+  // v89: رتبة «حامل التصريح» — رتبة ميدانية قراءة فقط
+  { value: 'permit_holder', ar: 'حامل التصريح', en: 'Permit Holder' },
   { value: 'accountant', ar: 'المحاسب', en: 'Accountant' },
 ]
 
@@ -35,6 +37,7 @@ const roleLabels: Record<string, { ar: string; en: string }> = {
   hse_officer: { ar: 'مسؤول السلامة', en: 'HSE Officer' },
   foreman: { ar: 'المشرف', en: 'Foreman' },
   worker: { ar: 'عامل', en: 'Worker' },
+  permit_holder: { ar: 'حامل التصريح', en: 'Permit Holder' },
   accountant: { ar: 'المحاسب', en: 'Accountant' },
 }
 
