@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
-import { canWrite, hasPermission } from '@/lib/auth'
+import { canWrite, canViewWorkersData } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { handleDbError, safeDbOp } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
@@ -13,7 +13,9 @@ export async function GET(req: NextRequest) {
   }
 
   // SECURITY FIX: بوابة قراءة — قائمة العمال تُستخدم من وحدة السلامة فقط
-  if (!hasPermission(user.role, 'safety', user.permissions, user.email)) {
+  // v91 (قرار صاحب الموقع): حامل التصريح ممنوع من «بيانات العمال» حتى مع
+  // صلاحية السلامة — canViewWorkersData ترفضه صراحةً وتسمح لغيره كالسابق
+  if (!canViewWorkersData(user)) {
     return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية الوصول لهذه البيانات' }, { status: 403 })
   }
 
@@ -121,4 +123,3 @@ export async function POST(req: NextRequest) {
     return handleDbError(error, 'إضافة عامل')
   }
 }
-
