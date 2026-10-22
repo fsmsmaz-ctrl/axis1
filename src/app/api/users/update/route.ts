@@ -4,7 +4,7 @@ import { db } from '@/lib/db'
 import bcrypt from 'bcryptjs'
 import { buildAuditDetails, handleDbError, safeDbOp } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
-import { VALID_ROLES, normalizeRole, SYSTEM_ADMIN_EMAIL, canManageUsers, canManageTopAccounts } from '@/lib/auth'
+import { VALID_ROLES, normalizeRole, SYSTEM_ADMIN_EMAIL, canManageUsers, canAssignRoleTo, canManageTargetAccount } from '@/lib/auth'
 
 // FIX-3.2: Removed hardcoded ADMIN_EMAIL — now uses role-based check
 
@@ -32,9 +32,8 @@ export async function PATCH(req: NextRequest) {
     // v67: مدير النظام (العلم أو البريد) يدير المستخدمين أيضاً — لم يعد مقيّداً بدوره
     var editorIsSysAdmin = authUser != null &&
       (authUser.isSystemAdmin === true || (authUser.email || '').toLowerCase().trim() === SYSTEM_ADMIN_EMAIL)
-    // v87 (قرار صاحب الموقع): تعديل الحسابات للإدارة كافة والمحاسب — كانت للإدارة
-    // العليا فقط. حماية أهداف «الإدارة العليا» أدناه تقفل تعديلها على مدير
-    // النظام والإدارة العليا، وفحص المنع من منح دورها نفسه بعد التحقق من الدور.
+    // v87 (قرار صاحب الموقع): تعديل الحسابات للإدارة كافة والمدير المالي والإداري
+    // («المحاسب» سابقاً) — كانت للإدارة العليا فقط. صمامات v92 أدناه تفصل الأدوار.
     if (!authUser || !canManageUsers(authUser)) {
       return NextResponse.json({ error: 'forbidden', message: 'هذه العملية متاحة للإدارة فقط' }, { status: 403 })
     }
@@ -67,8 +66,26 @@ export async function PATCH(req: NextRequest) {
     // الدور في القاعدة يحمل مسافة/حرفاً كبيراً من تعديل يدوي قديم
     // v67 FIX: استثناء مدير النظام — كان هذا الفحص يمنعه من إغلاق صلاحية عن
     // أحد الإداريين (403 صامت) فتبدو الصلاحية مغلقة والقسم يظل ظاهراً لصاحبه
-    if (normalizeRole(targetResult.data.role) === 'top_management' && targetResult.data.id !== authUser.id && !editorIsSysAdmin) {
-      return NextResponse.json({ error: 'forbidden', message: 'لا يمكن تعديل حسابات الإدارة العليا' }, { status: 403 })
+    //
+    // v92 (تدقيق أمني) — استُبدل الفحص القديم بتراتب إدارة المستخدمين:
+    //   1) حماية الأهداف: كان الإدارة العليا فقط محمية، فبقي المدير المالي
+    //      والإداري يستطيع إعادة تعيين كلمة مرور مدير مشروع قائم ثم الدخول
+    //      بحسابه (ترقية صلاحيات كاملة). الآن canManageTargetAccount تحمي كل
+    //      حساب أعلى رتبة من المحرر (المدير المالي: الإدارة العليا + مديرو
+    //      المشاريع — مدير المشروع: الإدارة العليا كما كان). مدير النظام يتجاوز.
+    //   2) التعديل الذاتي: كان أي مدير يستطيع تغيير دوره بنفسه إلى «مدير
+    //      مشروع» (فيفتح الأسعار السرية التي لا تفتحها الصلاحيات المخصصة
+    //      أصلاً) أو منح نفسه أي صلاحيات أو تغيير كلمة مروره من إدارة
+    //      المستخدمين متجاوزاً تحقق كلمة المرور الحالية في الملف الشخصي.
+    //      الآن: التعديل الذاتي للحقول الآمنة (الاسم/الهاتف) متاح، وأي
+    //      محاولة لتغيير الدور أو الصلاحيات أو كلمة المرور للذات تُرفض —
+    //      كلمة المرور من الملف الشخصي، والدور والصلاحيات للإدارة الأعلى.
+    var isSelfEdit = targetResult.data.id === authUser.id
+    if (!editorIsSysAdmin && !isSelfEdit && !canManageTargetAccount(authUser, targetResult.data.role)) {
+      return NextResponse.json({ error: 'forbidden', message: 'لا يمكنك تعديل حسابات هذه الرتبة — إدارتها لمدير النظام والإدارة الأعلى' }, { status: 403 })
+    }
+    if (isSelfEdit && !editorIsSysAdmin && (role !== undefined || permissions !== undefined || (password && password.trim()))) {
+      return NextResponse.json({ error: 'forbidden', message: 'لا يمكنك تعديل دورك أو صلاحياتك أو كلمة مرورك من إدارة المستخدمين — كلمة المرور من الملف الشخصي، ودورك وصلاحياتك تديرها الإدارة' }, { status: 403 })
     }
 
     var updateData: Record<string, any> = {}
@@ -81,9 +98,11 @@ export async function PATCH(req: NextRequest) {
         return NextResponse.json({ error: 'invalid_value', message: 'دور غير صالح. الأدوار المسموحة: ' + (VALID_ROLES as readonly string[]).join(', ') }, { status: 400 })
       }
       // v87: منع ترقية الصلاحيات — منح دور «إدارة عليا» لمدير النظام
-      // والإدارة العليا فقط (المحاسب ومدير المشروع لا يمكنهما ترقية أحد)
-      if (role === 'top_management' && !canManageTopAccounts(authUser)) {
-        return NextResponse.json({ error: 'forbidden', message: 'منح دور الإدارة العليا متاح للإدارة العليا ومدير النظام فقط' }, { status: 403 })
+      // والإدارة العليا فقط.
+      // v92 (تدقيق أمني): التراتب كامل — المحرر لا يمنح دوراً أعلى من رتبته
+      // (كان المدير المالي والإداري يستطيع تحويل أي حساب إلى «مدير مشروع»).
+      if (!canAssignRoleTo(authUser, role)) {
+        return NextResponse.json({ error: 'forbidden', message: 'لا يمكنك منح هذا الدور — الأدوار المتاحة لك محدودة برتبتك' }, { status: 403 })
       }
       updateData.role = role
     }
