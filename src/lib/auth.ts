@@ -187,11 +187,13 @@ export function canAccessDashboard(
 
 // ─── v87: إدارة المستخدمين — من يفتح القسم ويدير الحسابات ──────────
 // قرار صاحب الموقع: قسم «إدارة المستخدمين» وإنشاء الحسابات الجديدة متاح
-// للإدارة كافة (الإدارة العليا ومدير المشروع) وللمحاسب — بدل حصره بمدير
+// للإدارة كافة (الإدارة العليا ومدير المشروع) وللمدير المالي والإداري
+// («المحاسب» سابقاً — v92 غيّرت التسمية المعروضة فقط) — بدل حصره بمدير
 // النظام والإدارة العليا. مع صمامات أمان صريحة أدناه:
 //   canManageTopAccounts → إدارة حسابات الإدارة العليا نفسها (إنشاءها/
 //   تعديلها/حذفها) ومنح دور «إدارة عليا» لمدير النظام والإدارة العليا فقط
-//   (منع ترقية الصلاحيات: محاسب أو مدير مشروع لا يستطيع صنع إداري عليا).
+//   (منع ترقية الصلاحيات: المدير المالي والإداري أو مدير المشروع لا يستطيع
+//   صنع إداري عليا). وإضافة v92: تراتب إدارة المستخدمين أدناه.
 export const USER_MANAGE_ROLES = ['top_management', 'project_manager', 'accountant'] as const
 
 export function canManageUsers(user: { role?: string; email?: string } | null | undefined): boolean {
@@ -212,6 +214,67 @@ export function canManageTopAccounts(user: { role?: string; email?: string } | n
 // v85: أُضيفت رتبة «عامل» (worker) أسفل المشرف — أدنى رتبة تشغيلية
 // v89: أُضيفت رتبة «حامل التصريح» (permit_holder) — رتبة ميدانية قراءة فقط
 export const VALID_ROLES = ['top_management', 'project_manager', 'site_engineer', 'hse_officer', 'foreman', 'worker', 'permit_holder', 'accountant', 'visitor'] as const
+
+// ─── v92: تراتب إدارة المستخدمين ──────────────────────────────────
+// قرار صاحب الموقع (v92): رتبة «المحاسب» أصبحت «المدير المالي والإداري»
+// (المفتاح الداخلي accountant ثابت في قاعدة البيانات — التسمية معروضة فقط)،
+// ويملك تعبئة بيانات المستخدمين (إنشاء/تعديل/حذف الحسابات — متاح له منذ v87).
+// التدقيق الأمني في v92 أغلق ثغرات ترقية صلاحيات كانت مفتوحة لأن إدارة
+// الحسابات لم تكن مدرَّبة:
+//   1) كان يستطيع تغيير دوره بنفسه من إدارة المستخدمين إلى «مدير مشروع»
+//      فيرى الأسعار السرية (PRICING_ALLOWED_ROLES التي لا تفتحها الصلاحيات
+//      المخصصة أصلاً) وإدارة المهام وصلاحيات الموارد البشرية الافتراضية.
+//   2) كان يستطيع إنشاء حساب «مدير مشروع» بكلمة مرور يعرفها — ترقية غير مباشرة.
+//   3) كان يستطيع إعادة تعيين كلمة مرور مدير مشروع قائم ثم الدخول بحسابه.
+//   4) كان يستطيع تعطيل (حذف) حسابات مديري المشاريع وإقفال الإدارة خارج النظام.
+// القاعدة الآن: مَن يدير المستخدمين يدير حسابات أدنى رتبته فقط، ولا يعدّل
+// دوره ولا صلاحياته ولا كلمة مروره بنفسه من إدارة المستخدمين (كلمة المرور
+// من الملف الشخصي بتحقق كلمة المرور الحالية، والدور والصلاحيات لمدير النظام
+// والإدارة الأعلى). الإدارة العليا تدير كل من دونها كما كانت، ومدير النظام
+// (admin@axis.om أو علم isSystemAdmin) يتجاوز دائماً.
+export const USER_TIER_PROTECTED_ROLES: Record<string, string[]> = {
+  top_management: [],
+  project_manager: ['top_management'],
+  accountant: ['top_management', 'project_manager'],
+}
+
+// الأدوار التي يستطيع كل مدير «إنشاءها» أو «منحها» — لا دور أعلى من رتبته.
+// مبنية من VALID_ROLES أعلاه لتبقى متطابقة معها دائماً.
+export const USER_TIER_ASSIGNABLE_ROLES: Record<string, string[]> = {
+  top_management: (VALID_ROLES as readonly string[]).slice(),
+  project_manager: (VALID_ROLES as readonly string[]).filter(function (r) { return r !== 'top_management' }),
+  accountant: ['site_engineer', 'hse_officer', 'foreman', 'worker', 'permit_holder', 'accountant', 'visitor'],
+}
+
+// هل يستطيع المحرر (مدير المستخدمين) إدارة حساب الهدف — تعديلاً وحذفاً؟
+// حسابات «الإدارة العليا» لمدير النظام حصراً (ومنع حذفها كلياً ثابت في مسار
+// الحذف قبل هذا الفحص)، وما فوق رتبة المحرر محمي منه.
+export function canManageTargetAccount(
+  editor: { role?: string; email?: string; isSystemAdmin?: boolean } | null | undefined,
+  targetRole: string
+): boolean {
+  if (!editor) return false
+  if (isSystemAdminAccount(editor)) return true
+  var t = normalizeRole(targetRole)
+  if (t === 'top_management') return false
+  var protectedFor = USER_TIER_PROTECTED_ROLES[normalizeRole(editor.role)]
+  if (protectedFor && protectedFor.indexOf(t) !== -1) return false
+  return true
+}
+
+// هل يستطيع المحرر إنشاء/منح هذا الدور؟ (إنشاء حساب جديد أو تغيير دور حساب قائم)
+export function canAssignRoleTo(
+  editor: { role?: string; email?: string; isSystemAdmin?: boolean } | null | undefined,
+  role: string
+): boolean {
+  if (!editor) return false
+  var r = normalizeRole(role)
+  if (!r) return false
+  if (isSystemAdminAccount(editor)) return true
+  if (r === 'top_management') return canManageTopAccounts(editor)
+  var allowed = USER_TIER_ASSIGNABLE_ROLES[normalizeRole(editor.role)]
+  return !!allowed && allowed.indexOf(r) !== -1
+}
 
 // Roles that can write to each resource
 // v85: رتبة «عامل» عمداً غائبة من كل قوائم الكتابة — قراءة فقط بلا أي
@@ -463,7 +526,7 @@ export function canViewPricing(user: { role?: string; email?: string; isSystemAd
 // صلاحية تعديل بيانات الموظفين (v67): قابلة للمنح والسحب لكل مستخدم على حدة
 // من إدارة المستخدمين — مدير النظام هو من يسمح ويمنع.
 // مفاتيح الصلاحية في كائن permissions للمستخدم: 'hr_manage'
-// الافتراض حسب الدور: الإدارة العليا + مدير المشروع (v67 — مكان المحاسب).
+// الافتراض حسب الدور: الإدارة العليا + مدير المشروع (v67 — مكان المدير المالي والإداري).
 // يملكها حصراً: إنشاء وتعديل الملفات الوظيفية، تحديد أرصدة الإجازات،
 // تسجيل الغياب والتأخير، تعديل الرصيد مع السبب، العطلات والسياسات،
 // والاطلاع على بيانات الرواتب (سرية عن باقي الأدوار حتى المشرفين).
