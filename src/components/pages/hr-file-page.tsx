@@ -991,7 +991,11 @@ function LeaveFlowSection({ isAr, isRtl }: { isAr: boolean; isRtl: boolean }) {
   async function loadLeave() {
     setLoading(true)
     try {
-      var r = await authedFetch('/api/hr/leave')
+      // v94 إصلاح خلل صامت: الاستدعاء كان بلا scope فلا يُرجع الخادم طلبات الفريق
+      // أبداً (يشترط scope=team منذ v68) — بقى قسم «طلبات إجازة بانتظار موافقتك»
+      // فارغاً لأي أحد: لا للإدارة ولا للمسؤول المباشر رغم سلامة الخادم والنوافذ.
+      // scope=team آمن: الخادم يُرجع للإدارة كل الطلبات ولمسؤول مباشر مرؤوسيه فقط.
+      var r = await authedFetch('/api/hr/leave?scope=team')
       var ct = r.headers.get('content-type') || ''
       if (ct.indexOf('application/json') === -1) {
         var unexpected = isAr
