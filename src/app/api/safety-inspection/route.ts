@@ -67,8 +67,9 @@ export async function POST(req: NextRequest) {
 
   // v13.1 SECURITY: إنشاء التقارير اليومية عبر السلامة لمن يملك كتابة السلامة فقط
   // (كان يمكن لأي مستخدم مسجل إنشاء/استبدال تقارير عبر هذا المسار)
+  // v91: حامل التصريح (permit_holder) ينشئ تقارير السلامة مثل مسؤول السلامة
   if (!canWrite(user.role, 'safety', user.permissions)) {
-    return NextResponse.json({ error: 'forbidden', message: 'إنشاء تقارير السلامة متاح للإدارة والمهندسين ومسؤول السلامة فقط' }, { status: 403 })
+    return NextResponse.json({ error: 'forbidden', message: 'إنشاء تقارير السلامة متاح للإدارة والمهندسين ومسؤول السلامة وحامل التصريح فقط' }, { status: 403 })
   }
 
   // Extract user info after null check to satisfy TypeScript inside callbacks
