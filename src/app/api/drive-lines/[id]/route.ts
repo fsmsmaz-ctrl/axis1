@@ -18,8 +18,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     const user = await getAuthUser(req)
     if (!user) return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
     // v81: مسؤول السلامة — إنشاء فقط: لا تعديل لخطوط قائمة
+    // v90: حامل التصريح — معاينة فقط: لا تعديل إطلاقاً
     if (!canModifyDriveLines(user)) {
-      return NextResponse.json({ error: 'forbidden', message: 'مسؤول السلامة يمكنه إنشاء خطوط حفر جديدة فقط — تعديل الخطوط متاح للإدارة ومدير المشروع ومهندس الموقع' }, { status: 403 })
+      return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية تعديل خطوط الحفر — التعديل متاح للإدارة ومدير المشروع ومهندس الموقع' }, { status: 403 })
     }
 
     var rl = checkRateLimit(req, RateLimitPresets.write)
@@ -166,8 +167,9 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     const user = await getAuthUser(req)
     if (!user) return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
     // v81: مسؤول السلامة — إنشاء فقط: لا حذف لخطوط قائمة
+    // v90: حامل التصريح — معاينة فقط: لا حذف إطلاقاً
     if (!canModifyDriveLines(user)) {
-      return NextResponse.json({ error: 'forbidden', message: 'مسؤول السلامة يمكنه إنشاء خطوط حفر جديدة فقط — حذف الخطوط متاح للإدارة ومدير المشروع ومهندس الموقع' }, { status: 403 })
+      return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية حذف خطوط الحفر — الحذف متاح للإدارة ومدير المشروع ومهندس الموقع' }, { status: 403 })
     }
 
     var { id } = await params
@@ -201,4 +203,3 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     return handleDbError(error, 'حذف خط الحفر')
   }
 }
-
