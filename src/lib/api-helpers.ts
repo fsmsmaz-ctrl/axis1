@@ -434,7 +434,7 @@ const valueLabels: Record<string, Record<string, string>> = {
   handoverStatus: { pending: 'معلق', accepted: 'مقبول', needs_revision: 'يحتاج مراجعة', rejected: 'مرفوض' },
   workType: { pipe_jacking: 'Pipe Jacking', microtunneling: 'Microtunneling', hdd: 'HDD', auger_boring: 'Auger Boring' },
   priority: { urgent: 'عاجلة', high: 'عالية', normal: 'عادية', low: 'منخفضة' },
-  role: { top_management: 'الإدارة العليا', project_manager: 'مدير مشروع', site_engineer: 'مهندس موقع', hse_officer: 'مسؤول سلامة', foreman: 'مراقب موقع', worker: 'عامل', accountant: 'محاسب' },
+  role: { top_management: 'الإدارة العليا', project_manager: 'مدير مشروع', site_engineer: 'مهندس موقع', hse_officer: 'مسؤول سلامة', foreman: 'مراقب موقع', worker: 'عامل', accountant: 'المدير المالي والإداري' },
   size: { small: 'صغيرة', medium: 'متوسطة', large: 'كبيرة' },
   recurring: { daily: 'يومياً', weekly: 'أسبوعياً', monthly: 'شهرياً', yearly: 'سنوياً' },
   category: {
