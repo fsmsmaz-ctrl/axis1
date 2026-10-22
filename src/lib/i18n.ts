@@ -25,7 +25,7 @@ export const translations = {
     hse_officer: 'مسؤول السلامة',
     foreman: 'المشرف / الفورمان',
     worker: 'عامل',
-    accountant: 'المحاسب',
+    accountant: 'المدير المالي والإداري',
 
     // Navigation
     dashboard: 'لوحة التحكم',
@@ -339,7 +339,7 @@ export const translations = {
     hse_officer: 'HSE Officer',
     foreman: 'Foreman',
     worker: 'Worker',
-    accountant: 'Accountant',
+    accountant: 'Financial & Administrative Manager',
 
     dashboard: 'Dashboard',
     projects: 'Projects',
@@ -624,4 +624,3 @@ export type TranslationKey = keyof typeof translations.ar
 export function t(lang: Language, key: TranslationKey): string {
   return translations[lang][key] || translations.ar[key] || key
 }
-
