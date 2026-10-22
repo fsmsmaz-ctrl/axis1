@@ -9,7 +9,9 @@ import { VALID_ROLES, normalizeRole, SYSTEM_ADMIN_EMAIL, canManageUsers, canMana
 // FIX-3.2: Removed hardcoded ADMIN_EMAIL — now uses role-based check
 
 var ALL_PERMISSIONS = [
-  'projects', 'drive_lines', 'daily_reports', 'safety', 'equipment', 'costs', 'finishings', 'tasks', 'performance', 'notifications', 'oversight',
+  'projects', 'drive_lines', 'daily_reports', 'safety', 'equipment', 'costs', 'finishings', 'tasks', 'performance',
+  // v91: «التقارير» صلاحية قسم قابلة للمنح من إدارة المستخدمين (مطابقة لـ MODULE_PERMISSIONS)
+  'reports', 'notifications', 'oversight',
   'rpt_daily_site', 'rpt_production', 'rpt_safety', 'rpt_attendance',
   'rpt_revenue', 'rpt_costs', 'rpt_profit', 'rpt_equipment',
   'rpt_weekly', 'rpt_monthly', 'rpt_handover',
@@ -134,5 +136,3 @@ export async function POST(req: NextRequest) {
     return handleDbError(error, 'إنشاء المستخدم')
   }
 }
-
-
