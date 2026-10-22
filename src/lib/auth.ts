@@ -234,8 +234,14 @@ export const VALID_ROLES = ['top_management', 'project_manager', 'site_engineer'
 // (admin@axis.om أو علم isSystemAdmin) يتجاوز دائماً.
 export const USER_TIER_PROTECTED_ROLES: Record<string, string[]> = {
   top_management: [],
-  project_manager: ['top_management'],
-  accountant: ['top_management', 'project_manager'],
+  // v93 (تدقيق أمني): حماية الأقران — كان مدير المشروع يستطيع إعادة تعيين كلمة
+  // مرور مدير مشروع آخر ثم الدخول بحسابه وامتلاك هويته القائمة (سجلات التدقيق
+  // تنسب أفعاله إليه). نفس النمط الذي أغلقه v92 على المدير المالي والإداري
+  // ضد مديري المشاريع، والآن مُوحّد بكل طبقة: كل مدير يدير حسابات «أدنى
+  // رتبته» حصراً والأقران محميون من بعضهم، ومدير النظام (admin@axis.om أو
+  // علم isSystemAdmin) يتجاوز دائماً كما في بقية البوابات.
+  project_manager: ['top_management', 'project_manager'],
+  accountant: ['top_management', 'project_manager', 'accountant'],
 }
 
 // الأدوار التي يستطيع كل مدير «إنشاءها» أو «منحها» — لا دور أعلى من رتبته.
