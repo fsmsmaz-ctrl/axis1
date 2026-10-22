@@ -16,7 +16,7 @@ import { ShieldCheck, ShieldAlert, AlertTriangle, CheckCircle2, XCircle, Calenda
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
 import { SystemDiagnosticsButton } from '@/components/system-diagnostics'
-import { canWrite } from '@/lib/auth'
+import { canWrite, canViewWorkersData } from '@/lib/auth'
 import { reportDayName } from '@/lib/day-name'
 import { cn, localTodayISO } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -134,6 +134,10 @@ export default function SafetyPage() {
   // هذا أصلاً بـ 403، والأزرار كانت ظاهرة بلا بوابة فتفشل عند العامل ومسؤول
   // السلامة — الأزرار الآن تختفي عن غير المصرّح لهم بدل أن تُظهر رسالة خطأ)
   const canManageWorkers = isAdmin || canWrite(storeUser?.role || '', 'workers', storeUser?.permissions)
+  // v91 (قرار صاحب الموقع): حامل التصريح ممنوع من «بيانات العمال» كلياً حتى مع
+  // صلاحية السلامة — القسم كله (الجدول وأزرار الإضافة) مخفي عنه ولا يُجلب أي
+  // بيان عمال له، والخادم يرد بـ403 على أي طلب (canViewWorkersData في auth)
+  const canSeeWorkers = isAdmin || canViewWorkersData(storeUser)
 
   // v27: إعادة إسناد المشروع وخط الحفر — نفس صلاحيات القسم للمسودة/المُسلَّم،
   // والمعتمد/المرفوض للإدارة العليا ومدير النظام فقط
@@ -295,6 +299,8 @@ export default function SafetyPage() {
   }
 
   async function fetchWorkers() {
+    // v91: الممنوعون من بيانات العمال (حامل التصريح) — لا جلب إطلاقاً (القسم مخفي عنهم)
+    if (!canSeeWorkers) { setWorkers([]); return }
     setWorkersLoading(true)
     try {
       var params = new URLSearchParams()
@@ -832,7 +838,8 @@ export default function SafetyPage() {
         </div>
       )}
 
-      {/* Workers Section */}
+      {/* Workers Section — v91: مخفي تماماً عن الممنوعين من بيانات العمال (حامل التصريح) */}
+      {canSeeWorkers && (
       <Card className="shadow-sm">
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between flex-wrap gap-3">
@@ -931,6 +938,7 @@ export default function SafetyPage() {
           )}
         </CardContent>
       </Card>
+      )}
 
       {/* Worker Dialog */}
       <Dialog open={workerDialogOpen} onOpenChange={setWorkerDialogOpen}>
@@ -1283,4 +1291,3 @@ export default function SafetyPage() {
     </div>
   )
 }
-
