@@ -4,7 +4,7 @@ import { db } from '@/lib/db'
 import bcrypt from 'bcryptjs'
 import { buildAuditDetails, handleDbError, safeDbOp } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
-import { VALID_ROLES, normalizeRole, SYSTEM_ADMIN_EMAIL, canManageUsers, canAssignRoleTo, canManageTargetAccount } from '@/lib/auth'
+import { VALID_ROLES, normalizeRole, SYSTEM_ADMIN_EMAIL, canManageUsers, canAssignRoleTo, canManageTargetAccount, HR_MANAGE_PERMISSION_KEY } from '@/lib/auth'
 
 // FIX-3.2: Removed hardcoded ADMIN_EMAIL — now uses role-based check
 
@@ -53,7 +53,7 @@ export async function PATCH(req: NextRequest) {
     }
 
     var targetResult = await safeDbOp(
-      () => db.user.findUnique({ where: { id: userId }, select: { id: true, email: true, role: true } }),
+      () => db.user.findUnique({ where: { id: userId }, select: { id: true, email: true, role: true, permissions: true } }),
       'البحث عن المستخدم'
     )
     if (!targetResult.success) return targetResult.response
@@ -118,6 +118,20 @@ export async function PATCH(req: NextRequest) {
           if (typeof permissions[key] === 'boolean') {
             cleanPerms[key] = permissions[key]
           }
+        }
+      }
+      // v93 (تدقيق أمني): منع «المسح الجانبي» لصلاحية الموارد البشرية —
+      // نموذج إدارة المستخدمين يرسل خريطة الصلاحيات كاملة مع كل حفظ، والخادم
+      // كان يستبدل الخريطة المخزنة بأخرى مبنيّة من مفاتيح المحرر المسموحة فقط،
+      // فكانت صلاحية hr_manage القائمة (التي منحها مدير النظام) تُسقط صامتاً
+      // عند أي تعديل عادي (اسم/هاتف) من مدير مشروع أو المدير المالي والإداري.
+      // الآن: قيمة hr_manage المخزنة تُحفظ كما هي لغير مدير النظام — منحها
+      // وسحبها يبقى لمدير النظام حصراً (allowKeys أعلاه)، ونجاة القيمة القائمة
+      // من عمليات الاستبدال الجانبية.
+      if (!editorIsSysAdmin) {
+        var storedPerms = (targetResult.data as { permissions?: unknown }).permissions
+        if (storedPerms && typeof storedPerms === 'object' && !Array.isArray(storedPerms) && typeof (storedPerms as Record<string, unknown>)[HR_MANAGE_PERMISSION_KEY] === 'boolean') {
+          cleanPerms[HR_MANAGE_PERMISSION_KEY] = (storedPerms as Record<string, boolean>)[HR_MANAGE_PERMISSION_KEY]
         }
       }
       updateData.permissions = Object.keys(cleanPerms).length > 0 ? cleanPerms : null
