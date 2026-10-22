@@ -377,6 +377,8 @@ export default function ProfilePage() {
     : roleKey === 'foreman' ? (isRtl ? 'المشرف' : 'Foreman')
     // v85: رتبة «عامل»
     : roleKey === 'worker' ? (isRtl ? 'عامل' : 'Worker')
+    // v89: رتبة «حامل التصريح»
+    : roleKey === 'permit_holder' ? (isRtl ? 'حامل التصريح' : 'Permit Holder')
     : roleKey === 'accountant' ? (isRtl ? 'المحاسب' : 'Accountant')
     // v52: زائر
     : roleKey === 'visitor' ? (isRtl ? 'زائر' : 'Visitor')
