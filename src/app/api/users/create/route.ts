@@ -4,7 +4,7 @@ import { db } from '@/lib/db'
 import bcrypt from 'bcryptjs'
 import { handleDbError, safeDbOp } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
-import { VALID_ROLES, normalizeRole, SYSTEM_ADMIN_EMAIL, canManageUsers, canManageTopAccounts } from '@/lib/auth'
+import { VALID_ROLES, normalizeRole, SYSTEM_ADMIN_EMAIL, canManageUsers, canAssignRoleTo } from '@/lib/auth'
 
 // FIX-3.2: Removed hardcoded ADMIN_EMAIL — now uses role-based check
 
@@ -29,9 +29,8 @@ export async function POST(req: NextRequest) {
     // v67: مدير النظام (العلم أو البريد) ينشئ المستخدمين أيضاً — لم يعد مقيّداً بدوره
     var editorIsSysAdmin = authUser != null &&
       (authUser.isSystemAdmin === true || (authUser.email || '').toLowerCase().trim() === SYSTEM_ADMIN_EMAIL)
-    // v87 (قرار صاحب الموقع): إنشاء الحسابات للإدارة كافة والمحاسب — كانت للإدارة
-    // العليا فقط. الصمام الأمني أدناه يحصر إنشاء حسابات «الإدارة العليا» بمدير
-    // النظام والإدارة العليا (منع ترقية الصلاحيات).
+    // v87 (قرار صاحب الموقع): إنشاء الحسابات للإدارة كافة والمدير المالي والإداري
+    // («المحاسب» سابقاً) — كانت للإدارة العليا فقط. الصمام الأمني أدناه يفصل الأدوار.
     if (!authUser || !canManageUsers(authUser)) {
       return NextResponse.json({ error: 'forbidden', message: 'هذه العملية متاحة للإدارة فقط' }, { status: 403 })
     }
@@ -55,10 +54,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'invalid_value', message: 'دور غير صالح' }, { status: 400 })
     }
 
-    // v87: منع ترقية الصلاحيات — إنشاء حساب «إدارة عليا» لمدير النظام
-    // والإدارة العليا فقط (المحاسب ومدير المشروع لا يمكنهما صنع إداري عليا)
-    if (role === 'top_management' && !canManageTopAccounts(authUser)) {
-      return NextResponse.json({ error: 'forbidden', message: 'إنشاء حسابات الإدارة العليا متاح للإدارة العليا ومدير النظام فقط' }, { status: 403 })
+    // v87 (قرار صاحب الموقع): إنشاء الحسابات للإدارة كافة والمدير المالي والإداري
+    // («المحاسب» سابقاً) — كانت للإدارة العليا فقط.
+    // v92 (تدقيق أمني): تراتب الأدوار — المحرر ينشئ حسابات أدنى رتبته فقط.
+    // كان الفحص يمنع «الإدارة العليا» حصراً، فبقي المدير المالي والإداري
+    // يستطيع إنشاء حساب «مدير مشروع» بكلمة مرور يعرفها — ترقية غير مباشرة
+    // إلى رؤية الأسعار السرية وإدارة المهام. الآن canAssignRoleTo تحصر
+    // الأدوار المتاحة لكل رتبة (والإدارة العليا ومدير النظام بلا تغيير).
+    if (!canAssignRoleTo(authUser, role)) {
+      return NextResponse.json({ error: 'forbidden', message: 'لا يمكنك إنشاء حسابات بهذا الدور — الأدوار المتاحة لك محدودة برتبتك' }, { status: 403 })
     }
 
     // M-6 FIX: Password minimum length
