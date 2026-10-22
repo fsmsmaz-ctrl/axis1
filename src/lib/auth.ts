@@ -36,7 +36,11 @@ export function getCookieOptions() {
 }
 
 export const MODULE_PERMISSIONS = [
-  'projects', 'drive_lines', 'daily_reports', 'safety', 'equipment', 'costs', 'finishings', 'tasks', 'performance', 'notifications', 'oversight',
+  'projects', 'drive_lines', 'daily_reports', 'safety', 'equipment', 'costs', 'finishings', 'tasks', 'performance',
+  // v91: «التقارير» صلاحية قسم كاملة قابلة للمنح والسحب من إدارة المستخدمين —
+  // كانت سابقاً مفتاحاً داخلياً في ROLE_PERMISSIONS فقط (لا يظهر في قائمة
+  // الصلاحيات) فلم تستطع الإدارة منح قسم التقارير لأي حساب من إدارة الحسابات.
+  'reports', 'notifications', 'oversight',
   // v62: حُذفت صلاحيتا «ملفي الوظيفي» و«الإجازات» مع القسمين — بيانات الموظف ورصيده في الملف الشخصي فقط
 ] as const
 
@@ -50,6 +54,7 @@ export const MODULE_PERMISSION_LABELS: Record<string, { ar: string; en: string }
   finishings:     { ar: 'التشطيبات',         en: 'Finishings' },
   tasks:          { ar: 'إدارة المهام',      en: 'Task Management' },
   performance:    { ar: 'تقييم الأداء',      en: 'Performance' },
+  reports:        { ar: 'التقارير',           en: 'Reports' },
   notifications:  { ar: 'التنبيهات وسجل المراقبة', en: 'Notifications & Monitor' },
   oversight:      { ar: 'الرقابة العملية',   en: 'Operational Control' },
 }
@@ -133,12 +138,14 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
   // أعلاه فالخادم يرفض أي إنشاء/تعديل/حذف منه بـ403. ومن يملك إدارة المستخدمين
   // يمكنه منحه صلاحيات أقسام محددة لكل مستخدم على حدة (التخصيص يقدّم على افتراض
   // الرتبة كما في بقية الرتب — وليس عليه قائمة بيضاء العامل v86).
-  // v90 (قرار صاحب الموقع): قسم «خطوط الحفر» لهذه الرتبة معاينة فقط دائماً —
-  // حتى لو مُنحت صلاحية drive_lines من إدارة المستخدمين فالمنح يفتح الرؤية
-  // وحدها، وأزرار «خط حفر جديد/تعديل/حذف» تبقى مخفية والخادم يرفض كتابته
-  // بـ403 (انظر DRIVE_LINES_VIEW_ONLY_ROLES و canWrite أدناه).
+  // v91 (قرار صاحب الموقع — التكوين النهائي): حامل التصريح «مثل مسؤول السلامة»
+  // في قسم السلامة — ينشئ تقارير السلامة (WRITE_ROLES.safety أدناه) — ماعدا
+  // «بيانات العمال» فممنوعة عليه كلياً (WORKERS_DATA_DENIED_ROLES أدناه).
+  // وأُضيفت «خطوط الحفر» و«التقارير» لرؤيته الافتراضية: خطوط الحفر معاينة
+  // فقط (قيد v90 ثابت حتى مع التخصيص) والتقارير قسم كامل — والكتابة في
+  // التقارير اليومية تبقى مرفوضة منه (ليس في WRITE_ROLES.daily_reports).
   permit_holder: [
-    'projects', 'daily_reports', 'safety', 'tasks', 'notifications',
+    'projects', 'drive_lines', 'daily_reports', 'safety', 'tasks', 'reports', 'notifications',
   ],
   accountant: [
     'projects', 'costs', 'tasks', 'reports', 'notifications',
@@ -213,7 +220,10 @@ export const WRITE_ROLES: Record<string, string[]> = {
   projects: ['top_management', 'project_manager'],
   drive_lines: ['top_management', 'project_manager', 'site_engineer', 'hse_officer'],
   daily_reports: ['top_management', 'project_manager', 'site_engineer', 'foreman'],
-  safety: ['top_management', 'project_manager', 'site_engineer', 'hse_officer'],
+  // v91 (قرار صاحب الموقع): حامل التصريح ينشئ تقارير السلامة مثل مسؤول
+  // السلامة — التقرير اليومي المرتبط يُنشأ خادمياً تلقائياً من مسار السلامة
+  // نفسه فلا يحتاج أي صلاحية كتابة على التقارير اليومية (تبقى معاينة فقط).
+  safety: ['top_management', 'project_manager', 'site_engineer', 'hse_officer', 'permit_holder'],
   // v82: مسؤول السلامة يستطيع «إضافة» معدة جديدة (إنشاء فقط).
   // v83: المشرف (foreman) أيضاً يسجّل معدات جديدة — إنشاء فقط، ويعدّل ما سجّله
   // هو فقط، والتعديل الإداري للقائمة يبقى عبر canModifyEquipment
@@ -400,6 +410,27 @@ export function hasPermission(
 }
 
 export const hasReportPermission = hasPermission
+
+// ─── v91: بيانات العمال — من يُمنع من الوصول إليها ─────────────
+// قرار صاحب الموقع: حامل التصريح يشبه مسؤول السلامة في قسم السلامة
+// (ينشئ تقارير السلامة) لكنه ممنوع تماماً من «بيانات العمال» — سجل
+// العمال وأسماؤهم وأرقامهم ومقاولوهم. ولأن بوابة قراءة سجل العمال
+// تمر بصلاحية السلامة نفسها (قائمة العمال تُستهلك من وحدة السلامة)
+// فإن هذا الفحص الصريح يسبقها ويحجبها عنه نهائياً حتى لو مُنحت
+// صلاحية السلامة له من إدارة المستخدمين: الواجهة تخفي قسم «بيانات
+// العمال» كلياً والخادم يرد بـ403. مدير النظام (admin@axis.om أو
+// علم isSystemAdmin) يتجاوز دائماً.
+export const WORKERS_DATA_DENIED_ROLES = ['permit_holder'] as const
+
+export function canViewWorkersData(
+  user: { role?: string; email?: string; isSystemAdmin?: boolean; permissions?: Record<string, boolean> | null } | null | undefined
+): boolean {
+  if (!user) return false
+  if (user.isSystemAdmin === true) return true
+  if (user.email && user.email.toLowerCase().trim() === SYSTEM_ADMIN_EMAIL) return true
+  if ((WORKERS_DATA_DENIED_ROLES as readonly string[]).includes(normalizeRole(user.role))) return false
+  return hasPermission(user.role || '', 'safety', user.permissions, user.email)
+}
 
 // ─── Pricing confidentiality (v14.1 — محدَّثة في v78) ──────────
 // سعر خط الحفر (pricePerMeter) وسعر المشروع الاحتياطي والإيرادات المشتقة
