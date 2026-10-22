@@ -133,6 +133,10 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
   // أعلاه فالخادم يرفض أي إنشاء/تعديل/حذف منه بـ403. ومن يملك إدارة المستخدمين
   // يمكنه منحه صلاحيات أقسام محددة لكل مستخدم على حدة (التخصيص يقدّم على افتراض
   // الرتبة كما في بقية الرتب — وليس عليه قائمة بيضاء العامل v86).
+  // v90 (قرار صاحب الموقع): قسم «خطوط الحفر» لهذه الرتبة معاينة فقط دائماً —
+  // حتى لو مُنحت صلاحية drive_lines من إدارة المستخدمين فالمنح يفتح الرؤية
+  // وحدها، وأزرار «خط حفر جديد/تعديل/حذف» تبقى مخفية والخادم يرفض كتابته
+  // بـ403 (انظر DRIVE_LINES_VIEW_ONLY_ROLES و canWrite أدناه).
   permit_holder: [
     'projects', 'daily_reports', 'safety', 'tasks', 'notifications',
   ],
@@ -246,6 +250,13 @@ export function canWrite(userRole: string, resource: string, userPermissions?: R
   if (normalizeRole(userRole) === 'worker') {
     return (WORKER_WRITE_ALLOWED as readonly string[]).includes(resource)
   }
+  // v90 (قرار صاحب الموقع): رتبة «حامل التصريح» — خطوط الحفر معاينة فقط.
+  // الفحص يسبق تجاوز الصلاحيات الفردية عمداً: منح «خطوط الحفر» من إدارة
+  // المستخدمين يفتح له الرؤية فقط (عبر hasPermission) بينما تبقى الكتابة
+  // (إنشاء/تعديل/حذف) مرفوضة من هذه النقطة في كل بوابات النظام.
+  if (resource === 'drive_lines' && (DRIVE_LINES_VIEW_ONLY_ROLES as readonly string[]).includes(normalizeRole(userRole))) {
+    return false
+  }
   // Check per-user permission override first
   if (userPermissions && typeof userPermissions[resource] === 'boolean') {
     return userPermissions[resource]
@@ -266,6 +277,16 @@ export function canWrite(userRole: string, resource: string, userPermissions?: R
 // (canViewPricing لا تمنحه شيئاً) والخادم يُعقّم ردوده من السعر أصلاً.
 export const DRIVE_LINES_CREATE_ONLY_ROLES = ['hse_officer'] as const
 
+// ─── v90: خطوط الحفر — أدوار «المعاينة فقط» ─────────────────────
+// قرار صاحب الموقع: رتبة «حامل التصريح» (permit_holder) ترى قسم خطوط الحفر
+// للقراءة فقط — لا إنشاء ولا تعديل ولا حذف إطلاقاً. والحكم هنا أقوى من
+// أدوار «الإنشاء فقط»: يسبق تجاوز الصلاحيات الفردية في canWrite نفسه، فحتى
+// لو مُنح المستخدم صلاحية drive_lines من إدارة المستخدمين (التي تفتح الرؤية
+// والأزرار معاً افتراضياً لبقية الرتب) تبقى كتابته مرفوضة — الواجهة تخفي
+// الأزرار والخادم يرد بـ403. مدير النظام (admin@axis.om أو علم
+// isSystemAdmin) يتجاوز دائماً كما في بقية البوابات.
+export const DRIVE_LINES_VIEW_ONLY_ROLES = ['permit_holder'] as const
+
 export function canModifyDriveLines(
   user: { role?: string; email?: string; isSystemAdmin?: boolean; permissions?: Record<string, boolean> | null } | null | undefined
 ): boolean {
@@ -274,6 +295,8 @@ export function canModifyDriveLines(
   if (user.email && user.email.toLowerCase().trim() === SYSTEM_ADMIN_EMAIL) return true
   // أدوار الإنشاء فقط: إنشاء نعم — تعديل/حذف لا
   if ((DRIVE_LINES_CREATE_ONLY_ROLES as readonly string[]).includes(normalizeRole(user.role))) return false
+  // v90: أدوار المعاينة فقط — لا تعديل ولا حذف حتى مع صلاحيات التخصيص
+  if ((DRIVE_LINES_VIEW_ONLY_ROLES as readonly string[]).includes(normalizeRole(user.role))) return false
   return canWrite(user.role || '', 'drive_lines', user.permissions)
 }
 
