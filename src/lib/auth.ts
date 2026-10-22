@@ -127,6 +127,15 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
   worker: [
     'projects', 'daily_reports', 'safety', 'tasks', 'notifications',
   ],
+  // v89 (قرار صاحب الموقع): رتبة «حامل التصريح» (Permit Holder) — رتبة ميدانية
+  // لحامل تصريح العمل (PTW). نفس الرؤية الافتراضية للعامل (مشاريع، تقارير يومية،
+  // سلامة، مهام، تنبيهات) لكنه قراءة فقط تماماً: عمداً غائب عن كل قوائم WRITE_ROLES
+  // أعلاه فالخادم يرفض أي إنشاء/تعديل/حذف منه بـ403. ومن يملك إدارة المستخدمين
+  // يمكنه منحه صلاحيات أقسام محددة لكل مستخدم على حدة (التخصيص يقدّم على افتراض
+  // الرتبة كما في بقية الرتب — وليس عليه قائمة بيضاء العامل v86).
+  permit_holder: [
+    'projects', 'daily_reports', 'safety', 'tasks', 'notifications',
+  ],
   accountant: [
     'projects', 'costs', 'tasks', 'reports', 'notifications',
   ],
@@ -190,7 +199,8 @@ export function canManageTopAccounts(user: { role?: string; email?: string } | n
 // H-1 FIX: Role-based access control helper for API routes
 // v52: زائر — حساب للمعاينة فقط: قراءة فقط لقسم خطوط الحفر وبلا أي أسعار
 // v85: أُضيفت رتبة «عامل» (worker) أسفل المشرف — أدنى رتبة تشغيلية
-export const VALID_ROLES = ['top_management', 'project_manager', 'site_engineer', 'hse_officer', 'foreman', 'worker', 'accountant', 'visitor'] as const
+// v89: أُضيفت رتبة «حامل التصريح» (permit_holder) — رتبة ميدانية قراءة فقط
+export const VALID_ROLES = ['top_management', 'project_manager', 'site_engineer', 'hse_officer', 'foreman', 'worker', 'permit_holder', 'accountant', 'visitor'] as const
 
 // Roles that can write to each resource
 // v85: رتبة «عامل» عمداً غائبة من كل قوائم الكتابة — قراءة فقط بلا أي
