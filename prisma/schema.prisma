@@ -18,7 +18,7 @@ model User {
   name         String
   nameEn       String?
   phone        String?
-  role         String   @default("site_engineer") // top_management, project_manager, site_engineer, hse_officer, foreman, accountant
+  role         String   @default("site_engineer") // top_management, project_manager, site_engineer, hse_officer, foreman, worker, permit_holder, accountant, visitor
   avatar       String?
   active       Boolean  @default(true)
   language     String   @default("ar") // ar, en
@@ -698,4 +698,3 @@ model LeaveAdjustment {
 
   @@index([userId, createdAt])
 }
-
