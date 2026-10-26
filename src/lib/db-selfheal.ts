@@ -546,3 +546,104 @@ export async function ensureDriveLineDates(): Promise<void> {
   }
 }
 
+
+
+// ─── v97: جداول المكتبات — تُنشأ تلقائياً عند أول استخدام للقسم ─────────────
+// نفس أسلوب الشفاء الذاتي المُثبت (v53/v70): مسار سريع يفحص الوجود فيخرج بلا أي
+// DDL بعد أول نجاح، وكل عنصر معزول في try/catch خاص به — بهذا لا يحتاج صاحب
+// الموقع لأي خطوة يدوية على قاعدة Supabase، والنشر في Vercel يكفي.
+var v97LibrariesChecked = false
+
+export async function ensureLibrariesSupport(): Promise<void> {
+  if (v97LibrariesChecked) return
+  try {
+    // المسار السريع: الجداول الثلاثة موجودة؟ ثبّت العلم وارجع فوراً (صفر DDL)
+    var existing = await db.$queryRaw<Array<{ tablename: string }>>`
+      SELECT tablename FROM pg_tables
+      WHERE schemaname = 'public'
+        AND tablename IN ('Library', 'LibrarySection', 'LibraryFile')`
+    var tableSet = new Set((existing || []).map((r) => r.tablename))
+    if (tableSet.has('Library') && tableSet.has('LibrarySection') && tableSet.has('LibraryFile')) {
+      v97LibrariesChecked = true
+      return
+    }
+
+    // 1) الجداول الثلاثة — كل جدول معزول عن الآخر (تسمية مطابقة لمخطط Prisma)
+    if (!tableSet.has('Library')) {
+      try {
+        await db.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "Library" (
+  "id" TEXT NOT NULL,
+  "name" TEXT NOT NULL,
+  "description" TEXT,
+  "ownerId" TEXT NOT NULL,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" TIMESTAMP(3) NOT NULL,
+  CONSTRAINT "Library_pkey" PRIMARY KEY ("id")
+)`)
+        await db.$executeRawUnsafe('CREATE INDEX IF NOT EXISTS "Library_ownerId_idx" ON "Library"("ownerId")')
+        await db.$executeRawUnsafe('CREATE INDEX IF NOT EXISTS "Library_createdAt_idx" ON "Library"("createdAt")')
+        try {
+          await db.$executeRawUnsafe('ALTER TABLE "Library" ADD CONSTRAINT "Library_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE')
+        } catch (fkE) {
+          var m0 = (fkE as { message?: string })?.message || ''
+          if (m0.indexOf('already exists') === -1) console.error('v97: Library FK skipped:', fkE)
+        }
+        console.warn('v97: Library table created by self-heal')
+      } catch (e) { console.error('v97: Library self-heal skipped:', e) }
+    }
+
+    if (!tableSet.has('LibrarySection')) {
+      try {
+        await db.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "LibrarySection" (
+  "id" TEXT NOT NULL,
+  "libraryId" TEXT NOT NULL,
+  "name" TEXT NOT NULL,
+  "isPrivate" BOOLEAN NOT NULL DEFAULT false,
+  "ownerId" TEXT NOT NULL,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT "LibrarySection_pkey" PRIMARY KEY ("id")
+)`)
+        await db.$executeRawUnsafe('CREATE INDEX IF NOT EXISTS "LibrarySection_libraryId_idx" ON "LibrarySection"("libraryId")')
+        await db.$executeRawUnsafe('CREATE INDEX IF NOT EXISTS "LibrarySection_ownerId_idx" ON "LibrarySection"("ownerId")')
+        try {
+          await db.$executeRawUnsafe('ALTER TABLE "LibrarySection" ADD CONSTRAINT "LibrarySection_libraryId_fkey" FOREIGN KEY ("libraryId") REFERENCES "Library"("id") ON DELETE CASCADE ON UPDATE CASCADE')
+          await db.$executeRawUnsafe('ALTER TABLE "LibrarySection" ADD CONSTRAINT "LibrarySection_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE')
+        } catch (fkE) {
+          var m1 = (fkE as { message?: string })?.message || ''
+          if (m1.indexOf('already exists') === -1) console.error('v97: LibrarySection FK skipped:', fkE)
+        }
+        console.warn('v97: LibrarySection table created by self-heal')
+      } catch (e) { console.error('v97: LibrarySection self-heal skipped:', e) }
+    }
+
+    if (!tableSet.has('LibraryFile')) {
+      try {
+        await db.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "LibraryFile" (
+  "id" TEXT NOT NULL,
+  "sectionId" TEXT NOT NULL,
+  "fileName" TEXT NOT NULL,
+  "fileType" TEXT NOT NULL,
+  "url" TEXT NOT NULL,
+  "size" INTEGER,
+  "uploaderId" TEXT NOT NULL,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT "LibraryFile_pkey" PRIMARY KEY ("id")
+)`)
+        await db.$executeRawUnsafe('CREATE INDEX IF NOT EXISTS "LibraryFile_sectionId_idx" ON "LibraryFile"("sectionId")')
+        try {
+          await db.$executeRawUnsafe('ALTER TABLE "LibraryFile" ADD CONSTRAINT "LibraryFile_sectionId_fkey" FOREIGN KEY ("sectionId") REFERENCES "LibrarySection"("id") ON DELETE CASCADE ON UPDATE CASCADE')
+          await db.$executeRawUnsafe('ALTER TABLE "LibraryFile" ADD CONSTRAINT "LibraryFile_uploaderId_fkey" FOREIGN KEY ("uploaderId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE')
+        } catch (fkE) {
+          var m2 = (fkE as { message?: string })?.message || ''
+          if (m2.indexOf('already exists') === -1) console.error('v97: LibraryFile FK skipped:', fkE)
+        }
+        console.warn('v97: LibraryFile table created by self-heal')
+      } catch (e) { console.error('v97: LibraryFile self-heal skipped:', e) }
+    }
+
+    v97LibrariesChecked = true
+  } catch (e) {
+    // لا نُثبّت العلم عند الفشل — تُعاد المحاولة في الطلب التالي
+    console.error('v97: libraries tables self-heal skipped (will retry):', e)
+  }
+}
