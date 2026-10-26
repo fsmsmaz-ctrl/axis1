@@ -7,6 +7,9 @@ import { Badge } from '@/components/ui/badge'
 import { AlertTriangle, Bell, CheckCircle2, ClipboardCheck, FileCheck, HardHat, Info, LayoutList, RefreshCw, XCircle } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
+// v95: بعد كل عملية «تعليم كمقروء» تُبطل ذاكرة إدارة الحالة المركزية حتى
+// يُحدّث عدّاد التنبيهات في الشريط العلوي نسخة حية في دورته التالية فوراً
+import { invalidateCache } from '@/lib/data-cache'
 import { toast } from 'sonner'
 
 const severityConfig = {
@@ -126,6 +129,7 @@ export default function NotificationsPage() {
         method: 'PUT',
         body: JSON.stringify({ read: true }),
       })
+      invalidateCache('/api/notifications') // v95: عدّاد الشريط العلوي يلتقط التحديث فوراً
       setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)))
     } catch (e) {
       // تجاهل
@@ -138,6 +142,7 @@ export default function NotificationsPage() {
       const res = await authedFetch('/api/notifications/batch', { method: 'PUT' })
       if (res.ok) {
         toast.success(isRtl ? 'تم تعليم الكل كمقروء' : 'All marked as read')
+        invalidateCache('/api/notifications') // v95: عدّاد الشريط العلوي يلتقط التحديث فوراً
         fetchNotifications()
       } else {
         // v80 إصلاح: فشل الخادم كان يمرّ بصمت — الزر يبدو معطلاً
