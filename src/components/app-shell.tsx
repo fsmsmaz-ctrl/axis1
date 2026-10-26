@@ -31,7 +31,7 @@ import {
   Wrench, DollarSign, CheckCircle2, FileBarChart, TrendingUp, ListChecks,
   Bell, LogOut, Menu, X, Globe,
   AlertTriangle, ChevronLeft, UserPlus, Users, Loader2, Shield, Pencil, Trash2, Check,
-  ShieldAlert, Eye, UserCircle
+  ShieldAlert, Eye, UserCircle, Library
 } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 import { SectionErrorBoundary } from '@/components/section-error-boundary'
@@ -42,7 +42,7 @@ import dynamic from 'next/dynamic'
 type PageId =
   | 'dashboard' | 'projects' | 'driveLines' | 'dailyReports' | 'safety'
   | 'equipment' | 'costs' | 'finishings' | 'tasks' | 'reports' | 'performance' | 'notifications'
-  | 'oversight'
+  | 'oversight' | 'libraries'
   | 'profile'
 
 interface NavItem {
@@ -63,6 +63,8 @@ const navItems: NavItem[] = [
   { id: 'costs', labelAr: 'التكاليف والإيرادات', labelEn: 'Costs & Revenue', icon: DollarSign, resource: 'costs' },
   { id: 'finishings', labelAr: 'التشطيبات', labelEn: 'Finishings', icon: CheckCircle2, resource: 'finishings' },
   { id: 'tasks', labelAr: 'إدارة المهام', labelEn: 'Task Management', icon: ListChecks, resource: 'tasks' },
+  // v97: «المكتبات» — قسم عام يظهر لكل الموظفين (كل موظف ينشئ مكتباته وأقسامه الخاصة/العامة)
+  { id: 'libraries', labelAr: 'المكتبات', labelEn: 'Libraries', icon: Library, resource: 'libraries' },
   { id: 'performance', labelAr: 'تقييم الأداء', labelEn: 'Performance', icon: TrendingUp, resource: 'performance' },
   { id: 'reports', labelAr: 'التقارير', labelEn: 'Reports', icon: FileBarChart, resource: 'reports' },
   { id: 'oversight', labelAr: 'الرقابة العملية', labelEn: 'Operational Control', icon: Eye, resource: 'oversight' },
@@ -122,6 +124,8 @@ const EquipmentPage = dynamic(() => import('@/components/pages/equipment-page'),
 const CostsPage = dynamic(() => import('@/components/pages/costs-page'), { ssr: false, loading: SectionLoader })
 const FinishingsPage = dynamic(() => import('@/components/pages/finishings-page'), { ssr: false, loading: SectionLoader })
 const TasksPage = dynamic(() => import('@/components/pages/tasks-page'), { ssr: false, loading: SectionLoader })
+// v97: المكتبات
+const LibrariesPage = dynamic(() => import('@/components/pages/libraries-page'), { ssr: false, loading: SectionLoader })
 const PerformancePage = dynamic(() => import('@/components/pages/performance-page'), { ssr: false, loading: SectionLoader })
 const ReportsPage = dynamic(() => import('@/components/pages/reports-page'), { ssr: false, loading: SectionLoader })
 const NotificationsPage = dynamic(() => import('@/components/pages/notifications-page'), { ssr: false, loading: SectionLoader })
@@ -142,6 +146,7 @@ const PAGE_CHUNK_PRELOADS: Record<string, () => Promise<unknown>> = {
   costs: () => import('@/components/pages/costs-page'),
   finishings: () => import('@/components/pages/finishings-page'),
   tasks: () => import('@/components/pages/tasks-page'),
+  libraries: () => import('@/components/pages/libraries-page'),
   performance: () => import('@/components/pages/performance-page'),
   reports: () => import('@/components/pages/reports-page'),
   notifications: () => import('@/components/pages/notifications-page'),
@@ -446,6 +451,7 @@ export default function AppShell() {
       case 'costs': return <CostsPage />
       case 'finishings': return <FinishingsPage />
       case 'tasks': return <TasksPage />
+      case 'libraries': return <LibrariesPage />
       case 'performance': return <PerformancePage />
       case 'reports': return <ReportsPage />
       case 'notifications': return <NotificationsPage />
@@ -521,7 +527,7 @@ export default function AppShell() {
 
         <div className="p-3 border-t border-sidebar-border">
           {/* v48: علامة الإصدار — إن لم تظهر هنا فالنشر الأخير لم يتم بعد */}
-          <p className="text-center text-[10px] text-muted-foreground/60 select-none">v96</p>
+          <p className="text-center text-[10px] text-muted-foreground/60 select-none">v97</p>
           {/* v48: بطاقة المستخدم قابلة للنقر — تفتح الملف الشخصي */}
           <div className="flex items-center gap-3 p-2 rounded-lg cursor-pointer hover:bg-sidebar-accent transition-colors"
             onClick={function() { setSidebarOpen(false); setCurrentPage('profile') }}
