@@ -4,6 +4,8 @@ import { useEffect, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { useAppStore } from '@/lib/store'
 import { hasPermission, MODULE_PERMISSIONS, MODULE_PERMISSION_LABELS, REPORT_PERMISSIONS, REPORT_LABELS, ROLE_PERMISSIONS, canAccessDashboard, canViewPricing, SYSTEM_ADMIN_EMAIL, HR_MANAGE_ROLES, HR_MANAGE_PERMISSION_KEY, normalizeRole, canManageUsers, canAssignRoleTo, canManageTargetAccount, type SessionUser } from '@/lib/auth'
 import { clearStoredToken, authedFetch } from '@/lib/api-client'
+// v95: طبقة إدارة الحالة المركزية — ذاكرة قراءة بمدة صلاحية ومنع تكرار الطلبات
+import { cachedGet } from '@/lib/data-cache'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
@@ -137,21 +139,59 @@ function togglePerm(key: string, role: string, current: Record<string, boolean>)
   return { ...current, [key]: newVal }
 }
 
-const DashboardPage = dynamic(() => import('@/components/pages/dashboard-page'), { ssr: false })
-const ProjectsPage = dynamic(() => import('@/components/pages/projects-page'), { ssr: false })
-const DriveLinesPage = dynamic(() => import('@/components/pages/drive-lines-page'), { ssr: false })
-const DailyReportsPage = dynamic(() => import('@/components/pages/daily-reports-page'), { ssr: false })
-const SafetyPage = dynamic(() => import('@/components/pages/safety-page'), { ssr: false })
-const EquipmentPage = dynamic(() => import('@/components/pages/equipment-page'), { ssr: false })
-const CostsPage = dynamic(() => import('@/components/pages/costs-page'), { ssr: false })
-const FinishingsPage = dynamic(() => import('@/components/pages/finishings-page'), { ssr: false })
-const TasksPage = dynamic(() => import('@/components/pages/tasks-page'), { ssr: false })
-const PerformancePage = dynamic(() => import('@/components/pages/performance-page'), { ssr: false })
-const ReportsPage = dynamic(() => import('@/components/pages/reports-page'), { ssr: false })
-const NotificationsPage = dynamic(() => import('@/components/pages/notifications-page'), { ssr: false })
-const OversightPage = dynamic(() => import('@/components/pages/oversight-page'), { ssr: false })
+// v95: شاشة انتظار موحدة تظهر لحظة تبديل القسم بدل الفراغ الأبيض — نفس هوية النظام (دوّار بألوانه)
+function SectionLoader() {
+  return (
+    <div className="flex items-center justify-center py-28" aria-busy="true" role="status">
+      <Loader2 className="h-8 w-8 animate-spin text-primary" />
+    </div>
+  )
+}
+
+const DashboardPage = dynamic(() => import('@/components/pages/dashboard-page'), { ssr: false, loading: SectionLoader })
+const ProjectsPage = dynamic(() => import('@/components/pages/projects-page'), { ssr: false, loading: SectionLoader })
+const DriveLinesPage = dynamic(() => import('@/components/pages/drive-lines-page'), { ssr: false, loading: SectionLoader })
+const DailyReportsPage = dynamic(() => import('@/components/pages/daily-reports-page'), { ssr: false, loading: SectionLoader })
+const SafetyPage = dynamic(() => import('@/components/pages/safety-page'), { ssr: false, loading: SectionLoader })
+const EquipmentPage = dynamic(() => import('@/components/pages/equipment-page'), { ssr: false, loading: SectionLoader })
+const CostsPage = dynamic(() => import('@/components/pages/costs-page'), { ssr: false, loading: SectionLoader })
+const FinishingsPage = dynamic(() => import('@/components/pages/finishings-page'), { ssr: false, loading: SectionLoader })
+const TasksPage = dynamic(() => import('@/components/pages/tasks-page'), { ssr: false, loading: SectionLoader })
+const PerformancePage = dynamic(() => import('@/components/pages/performance-page'), { ssr: false, loading: SectionLoader })
+const ReportsPage = dynamic(() => import('@/components/pages/reports-page'), { ssr: false, loading: SectionLoader })
+const NotificationsPage = dynamic(() => import('@/components/pages/notifications-page'), { ssr: false, loading: SectionLoader })
+const OversightPage = dynamic(() => import('@/components/pages/oversight-page'), { ssr: false, loading: SectionLoader })
 // v48: الملف الشخصي
-const ProfilePage = dynamic(() => import('@/components/pages/profile-page'), { ssr: false })
+const ProfilePage = dynamic(() => import('@/components/pages/profile-page'), { ssr: false, loading: SectionLoader })
+
+// v95: تحميل مسبق لشفرة الأقسام عند تمرير المؤشر أو أول لمسة على رابط القسم —
+// تنزل حزمة القسم قبل النقر فيصبح الانتقال شبه فوري. لا يغيّر أي سلوك:
+// لو فشل التحميل المسبق يتجاهل بصمت ويعيد المتصفح المحاولة عند النقر الفعلي.
+const PAGE_CHUNK_PRELOADS: Record<string, () => Promise<unknown>> = {
+  dashboard: () => import('@/components/pages/dashboard-page'),
+  projects: () => import('@/components/pages/projects-page'),
+  driveLines: () => import('@/components/pages/drive-lines-page'),
+  dailyReports: () => import('@/components/pages/daily-reports-page'),
+  safety: () => import('@/components/pages/safety-page'),
+  equipment: () => import('@/components/pages/equipment-page'),
+  costs: () => import('@/components/pages/costs-page'),
+  finishings: () => import('@/components/pages/finishings-page'),
+  tasks: () => import('@/components/pages/tasks-page'),
+  performance: () => import('@/components/pages/performance-page'),
+  reports: () => import('@/components/pages/reports-page'),
+  notifications: () => import('@/components/pages/notifications-page'),
+  oversight: () => import('@/components/pages/oversight-page'),
+  profile: () => import('@/components/pages/profile-page'),
+}
+
+function preloadPageChunk(id: string) {
+  try {
+    const loader = PAGE_CHUNK_PRELOADS[id]
+    if (loader) loader().catch(() => {})
+  } catch {
+    // تجاهل — التحميل المسبق تحسيني فقط
+  }
+}
 
 export default function AppShell() {
   const user = useAppStore((s) => s.user)
@@ -178,10 +218,13 @@ export default function AppShell() {
     // v70: كان الرمز null دائماً فتوقف جلب التنبيهات — الكوكي httpOnly هو الجلسة
     if (!user) return
     let active = true
+    // v95 إدارة الحالة المركزية: الجلب عبر ذاكرة data-cache — التنقل السريع بين
+    // الأقسام خلال 20 ثانية يقرأ النسخة المخزنة فوراً بدل طلب شبكي لكل تنقل،
+    // والنداءات المتوازية تتشارك طلباً واحداً. المهلة الدورية 60 ثانية كما هي،
+    // وعمليات «تعليم كمقروء» في قسم التنبيهات تُبطل الذاكرة فتُجلب نسخة حية تالياً.
     const loadUnread = () => {
-      authedFetch('/api/notifications?unreadOnly=true')
-        .then(r => r.json())
-        .then(data => { if (active) setNotifications(data.notifications || []) })
+      cachedGet<any>('/api/notifications?unreadOnly=true')
+        .then(data => { if (active) setNotifications(data?.notifications || []) })
         .catch(() => {})
     }
     loadUnread()
@@ -498,7 +541,7 @@ export default function AppShell() {
             const label = isRtl ? item.labelAr : item.labelEn
             const unreadCount = item.id === 'notifications' ? notifications.length : 0
             return (
-              <button key={item.id} onClick={() => { setCurrentPage(item.id); setSidebarOpen(false) }} className={cn(
+              <button key={item.id} onClick={() => { setCurrentPage(item.id); setSidebarOpen(false) }} onMouseEnter={() => preloadPageChunk(item.id)} onTouchStart={() => preloadPageChunk(item.id)} className={cn(
                 "w-full flex items-center gap-3.5 px-4 py-4 lg:py-2.5 rounded-xl text-base lg:text-sm font-medium transition-all",
                 isActive ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm" : "text-sidebar-foreground hover:bg-sidebar-accent"
               )}>
@@ -513,10 +556,12 @@ export default function AppShell() {
 
         <div className="p-3 border-t border-sidebar-border">
           {/* v48: علامة الإصدار — إن لم تظهر هنا فالنشر الأخير لم يتم بعد */}
-          <p className="text-center text-[10px] text-muted-foreground/60 select-none">v94</p>
+          <p className="text-center text-[10px] text-muted-foreground/60 select-none">v95</p>
           {/* v48: بطاقة المستخدم قابلة للنقر — تفتح الملف الشخصي */}
           <div className="flex items-center gap-3 p-2 rounded-lg cursor-pointer hover:bg-sidebar-accent transition-colors"
             onClick={function() { setSidebarOpen(false); setCurrentPage('profile') }}
+            onMouseEnter={() => preloadPageChunk('profile')}
+            onTouchStart={() => preloadPageChunk('profile')}
             title={isRtl ? 'فتح الملف الشخصي' : 'Open profile'}>
             <Avatar className="h-11 w-11 lg:h-9 lg:w-9 border-2 border-primary/20 shrink-0">
               {user.avatar && <AvatarImage src={user.avatar} alt={isRtl ? user.name : (user.nameEn || user.name)} />}
@@ -632,6 +677,8 @@ export default function AppShell() {
             <button
               key={item.id}
               onClick={() => setCurrentPage(item.id)}
+              onMouseEnter={() => preloadPageChunk(item.id)}
+              onTouchStart={() => preloadPageChunk(item.id)}
               className={cn(
                 'flex flex-col items-center justify-center gap-1 min-h-[62px] flex-1 px-1 text-[11px] font-medium transition-colors',
                 isActive ? 'text-primary' : 'text-muted-foreground active:bg-muted/60'
