@@ -2,10 +2,12 @@
 
 import { useEffect, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { useAppStore } from '@/lib/store'
-import { hasPermission, MODULE_PERMISSIONS, MODULE_PERMISSION_LABELS, REPORT_PERMISSIONS, REPORT_LABELS, ROLE_PERMISSIONS, canAccessDashboard, canViewPricing, SYSTEM_ADMIN_EMAIL, HR_MANAGE_ROLES, HR_MANAGE_PERMISSION_KEY, normalizeRole, canManageUsers, canAssignRoleTo, canManageTargetAccount, type SessionUser } from '@/lib/auth'
+import { hasPermission, MODULE_PERMISSIONS, MODULE_PERMISSION_LABELS, REPORT_PERMISSIONS, REPORT_LABELS, canAccessDashboard, canViewPricing, SYSTEM_ADMIN_EMAIL, HR_MANAGE_PERMISSION_KEY, canManageUsers, canAssignRoleTo, canManageTargetAccount, type SessionUser } from '@/lib/auth'
+// v96: مصفوفة الصلاحيات النقية (افتراضات الدور/الفعلي/التبديل) نُقلت إلى طبقة النطاق
+import { getRoleDefaults, getEffective, togglePerm } from '@/domain/permissions'
 import { clearStoredToken, authedFetch } from '@/lib/api-client'
 // v95: طبقة إدارة الحالة المركزية — ذاكرة قراءة بمدة صلاحية ومنع تكرار الطلبات
-import { cachedGet } from '@/lib/data-cache'
+import { cachedGet } from '@/application/data-cache'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
@@ -101,43 +103,6 @@ const ROLES = [
   // v52: زائر
   { value: 'visitor', ar: 'زائر', en: 'Visitor' },
 ]
-
-// ─── Permission helpers ──────────────────────────────────────────
-function getRoleDefaults(role: string): Record<string, boolean> {
-  const defs: Record<string, boolean> = {}
-  // Module permissions from role
-  const rolePerms = ROLE_PERMISSIONS[normalizeRole(role)] || []
-  const hasAll = rolePerms.includes('*')
-  for (const key of MODULE_PERMISSIONS) {
-    defs[key] = hasAll || rolePerms.includes(key)
-  }
-  // Report permissions: all roles get all reports by default
-  for (const key of REPORT_PERMISSIONS) {
-    defs[key] = hasAll || rolePerms.includes('reports')
-  }
-  // v67: صلاحية تعديل بيانات الموظفين — افتراض الدور (الإدارة العليا + مدير المشروع)
-  // ومدير النظام يسمح ويمنع لكل مستخدم على حدة عبر التجاوز اليدوي
-  defs[HR_MANAGE_PERMISSION_KEY] = hasAll || (HR_MANAGE_ROLES as readonly string[]).includes(normalizeRole(role))
-  return defs
-}
-
-function getEffective(key: string, role: string, customPerms: Record<string, boolean>): boolean {
-  if (typeof customPerms[key] === 'boolean') return customPerms[key]
-  return getRoleDefaults(role)[key] ?? false
-}
-
-function togglePerm(key: string, role: string, current: Record<string, boolean>): Record<string, boolean> {
-  const defaults = getRoleDefaults(role)
-  const currentVal = getEffective(key, role, current)
-  const newVal = !currentVal
-  // If toggling TO the default value, remove the override (cleaner)
-  if (newVal === defaults[key]) {
-    const next = { ...current }
-    delete next[key]
-    return next
-  }
-  return { ...current, [key]: newVal }
-}
 
 // v95: شاشة انتظار موحدة تظهر لحظة تبديل القسم بدل الفراغ الأبيض — نفس هوية النظام (دوّار بألوانه)
 function SectionLoader() {
@@ -556,7 +521,7 @@ export default function AppShell() {
 
         <div className="p-3 border-t border-sidebar-border">
           {/* v48: علامة الإصدار — إن لم تظهر هنا فالنشر الأخير لم يتم بعد */}
-          <p className="text-center text-[10px] text-muted-foreground/60 select-none">v95</p>
+          <p className="text-center text-[10px] text-muted-foreground/60 select-none">v96</p>
           {/* v48: بطاقة المستخدم قابلة للنقر — تفتح الملف الشخصي */}
           <div className="flex items-center gap-3 p-2 rounded-lg cursor-pointer hover:bg-sidebar-accent transition-colors"
             onClick={function() { setSidebarOpen(false); setCurrentPage('profile') }}
