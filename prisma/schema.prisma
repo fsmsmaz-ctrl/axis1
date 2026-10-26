@@ -88,6 +88,10 @@ model User {
   leaveBalance      LeaveBalance?     @relation("UserLeaveBalance")
   leaveAdjustments  LeaveAdjustment[] @relation("LeaveAdjustmentUser")
   adjustmentsMade   LeaveAdjustment[] @relation("LeaveAdjuster")
+  // v97: المكتبات — مكتبات الموظف وأقسامه وملفاته المرفوعة
+  librariesOwned       Library[]        @relation("LibraryOwner")
+  librarySectionsOwned LibrarySection[] @relation("LibrarySectionOwner")
+  libraryFilesUploaded LibraryFile[]    @relation("LibraryFileUploader")
 }
 
 // ==================== Projects ====================
@@ -697,4 +701,56 @@ model LeaveAdjustment {
   by   User? @relation("LeaveAdjuster", fields: [byId], references: [id])
 
   @@index([userId, createdAt])
+}
+
+// ==================== v97: المكتبات (Libraries) ====================
+// مكتبة يُنشئها أي موظف للاحتفاظ بملفاته، بداخلها أقسام (خاصة بصاحبها أو عامة
+// يراها كل الموظفين) وملفات تُخزَّن base64 في القاعدة (نمط مرفقات المهام نفسه).
+model Library {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  ownerId     String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  owner    User             @relation("LibraryOwner", fields: [ownerId], references: [id])
+  sections LibrarySection[]
+
+  @@index([ownerId])
+  @@index([createdAt])
+}
+
+// قسم داخل مكتبة — isPrivate=true يراه صاحبه ومدير النظام فقط، عام يراه الجميع
+model LibrarySection {
+  id        String   @id @default(cuid())
+  libraryId String
+  name      String
+  isPrivate Boolean  @default(false)
+  ownerId   String
+  createdAt DateTime @default(now())
+
+  library Library       @relation(fields: [libraryId], references: [id], onDelete: Cascade)
+  owner   User          @relation("LibrarySectionOwner", fields: [ownerId], references: [id])
+  files   LibraryFile[]
+
+  @@index([libraryId])
+  @@index([ownerId])
+}
+
+// ملف داخل قسم — url بيانات base64 أو رابط https آمن (نفس قوائم السماح للمرفقات)
+model LibraryFile {
+  id         String   @id @default(cuid())
+  sectionId  String
+  fileName   String
+  fileType   String   // image, pdf, doc, xls
+  url        String
+  size       Int?
+  uploaderId String
+  createdAt  DateTime @default(now())
+
+  section  LibrarySection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  uploader User           @relation("LibraryFileUploader", fields: [uploaderId], references: [id])
+
+  @@index([sectionId])
 }
