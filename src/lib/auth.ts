@@ -41,6 +41,9 @@ export const MODULE_PERMISSIONS = [
   // كانت سابقاً مفتاحاً داخلياً في ROLE_PERMISSIONS فقط (لا يظهر في قائمة
   // الصلاحيات) فلم تستطع الإدارة منح قسم التقارير لأي حساب من إدارة الحسابات.
   'reports', 'notifications', 'oversight',
+  // v97: «المكتبات» — قسم عام يظهر لكل الموظفين (كل رتبة عدا الزائر):
+  // كل موظف يُنشئ مكتباته وأقسامه الخاصة/العامة ويرفع ملفاته
+  'libraries',
   // v62: حُذفت صلاحيتا «ملفي الوظيفي» و«الإجازات» مع القسمين — بيانات الموظف ورصيده في الملف الشخصي فقط
 ] as const
 
@@ -57,6 +60,8 @@ export const MODULE_PERMISSION_LABELS: Record<string, { ar: string; en: string }
   reports:        { ar: 'التقارير',           en: 'Reports' },
   notifications:  { ar: 'التنبيهات وسجل المراقبة', en: 'Notifications & Monitor' },
   oversight:      { ar: 'الرقابة العملية',   en: 'Operational Control' },
+  // v97: المكتبات
+  libraries:      { ar: 'المكتبات',           en: 'Libraries' },
 }
 
 export const REPORT_PERMISSIONS = [
@@ -98,10 +103,12 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
   project_manager: [
     'projects', 'drive_lines', 'daily_reports', 'safety',
     'equipment', 'costs', 'finishings', 'tasks', 'reports', 'performance', 'notifications', 'oversight',
+    'libraries', // v97
   ],
   site_engineer: [
     'projects', 'drive_lines', 'daily_reports', 'safety',
     'equipment', 'finishings', 'tasks', 'notifications',
+    'libraries', // v97
   ],
   // v81: مسؤول السلامة (hse_officer) — أُضيفت صلاحية «خطوط الحفر» بقرار صاحب الموقع:
   // يرى القسم ويُدخل البيانات ويُنشئ خطوط حفر جديدة فقط (إنشاء بلا تعديل/حذف —
@@ -112,6 +119,7 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
   // وتستبدلت بالمساءلة: من سجّل يظهر مع كل معدة، وكل تغيير يُسجّل في المفكرة أسفل الصفحة.
   hse_officer: [
     'projects', 'drive_lines', 'equipment', 'safety', 'tasks', 'reports', 'notifications',
+    'libraries', // v97
   ],
   // v83 (قرار صاحب الموقع): المشرف (الفورمان) يرى قسم المعدات ويسجّل معدات
   // وأصولاً جديدة بكافة بياناتها ومن ضمنها الأسعار — إنشاء فقط (انظر
@@ -120,6 +128,7 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
   // وكل ما يفعله يظهر باسمه في مفكرة المعدات أسفل الصفحة.
   foreman: [
     'projects', 'daily_reports', 'finishings', 'equipment', 'tasks', 'reports', 'notifications',
+    'libraries', // v97
   ],
   // v85 (قرار صاحب الموقع): رتبة «عامل» — أدنى رتبة تشغيلية أسفل المشرف
   // (الفورمان). يرى المشاريع ومهامه المُكلَّف بها والتنبيهات بحسابه الشخصي،
@@ -131,6 +140,7 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
   // والكتابة نفسها محصورة بقائمة بيضاء صريحة في canWrite أدناه.
   worker: [
     'projects', 'daily_reports', 'safety', 'tasks', 'notifications',
+    'libraries', // v97: قسم المكتبات عام — كل موظف (ومنهم العامل) يُنشئ مكتبته الخاصة
   ],
   // v89 (قرار صاحب الموقع): رتبة «حامل التصريح» (Permit Holder) — رتبة ميدانية
   // لحامل تصريح العمل (PTW). نفس الرؤية الافتراضية للعامل (مشاريع، تقارير يومية،
@@ -146,9 +156,11 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
   // التقارير اليومية تبقى مرفوضة منه (ليس في WRITE_ROLES.daily_reports).
   permit_holder: [
     'projects', 'drive_lines', 'daily_reports', 'safety', 'tasks', 'reports', 'notifications',
+    'libraries', // v97
   ],
   accountant: [
     'projects', 'costs', 'tasks', 'reports', 'notifications',
+    'libraries', // v97
   ],
   // v52: الزائر — يرى قسم خطوط الحفر للقراءة فقط:
   // ليس في WRITE_ROLES.drive_lines فلا أزرار إضافة/تعديل/حذف (والخادم يرفض كتاباته بـ 403)،
@@ -308,6 +320,9 @@ export const WRITE_ROLES: Record<string, string[]> = {
   company_assets: ['top_management', 'project_manager', 'site_engineer', 'accountant', 'hse_officer', 'foreman'],
   // v14: سجلات العمال — الإدارة ومهندسو الموقع والمشرفون
   workers: ['top_management', 'project_manager', 'site_engineer', 'foreman'],
+  // v97: المكتبات — كل رتب الموظفين تكتب (إنشاء مكتبات/أقسام ورفع ملفات)
+  // بقرار صاحب الموقع: القسم عام لكل الموظفين. الزائر مستثنى عمداً.
+  libraries: ['top_management', 'project_manager', 'site_engineer', 'hse_officer', 'foreman', 'worker', 'permit_holder', 'accountant'],
 }
 
 // v86 (قرار صاحب الموقع): القائمة البيضاء للعامل — الرتبة «عامل» ممنوعة من
@@ -317,7 +332,9 @@ export const WRITE_ROLES: Record<string, string[]> = {
 // كل ما عداها (خطوط الحفر، المعدات، التكاليف، المهام...) يبقى محظوراً حتى لو
 // مُنحت رؤيته من إدارة المستخدمين — فالمنح يفتح الرؤية فقط (نفس قاعدة v85.1)،
 // والاعتماد/الحذف/إعادة الإسناد الإدارية وأزرار «إضافة عامل» تبقى مغلقة أمامه.
-const WORKER_WRITE_ALLOWED = ['safety', 'daily_reports'] as const
+// v97: أُضيفت «المكتبات» بقرار صاحب الموقع — القسم عام لكل الموظفين والعامل
+// يُنشئ مكتبته الخاصة وأقسامه ويرفع ملفاته فيه (يبقى محظوراً في بقية الأقسام كما هو)
+const WORKER_WRITE_ALLOWED = ['safety', 'daily_reports', 'libraries'] as const
 
 export function canWrite(userRole: string, resource: string, userPermissions?: Record<string, boolean> | null): boolean {
   // v86: رتبة «عامل» — كتابة بالقائمة البيضاء فقط (WORKER_WRITE_ALLOWED أعلاه)،
