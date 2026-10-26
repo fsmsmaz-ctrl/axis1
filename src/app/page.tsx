@@ -59,9 +59,21 @@ export default function HomePage() {
     return <AppShell />
   }
 
-  // While checking session, show nothing (prevents flash of login form)
+  // While checking session, show a branded splash (v95): كان الصفحة بيضاء فارغة
+  // طوال فحص الجلسة — الآن شعار AXIS بنبض خفيف ودوّار بألوان النظام، هوية واحدة
+  // وبلا أي نص لتفادي وميض تغيّر اللغة. لا منطق هنا — عرض فقط.
   if (checking) {
-    return null
+    return (
+      <div className="min-h-dvh flex flex-col items-center justify-center bg-background gap-5">
+        <img
+          src="/axis-logo.png"
+          alt="AXIS"
+          className="h-16 w-auto object-contain animate-pulse select-none"
+          draggable={false}
+        />
+        <Loader2 className="h-5 w-5 animate-spin text-primary" />
+      </div>
+    )
   }
 
   const t = {
