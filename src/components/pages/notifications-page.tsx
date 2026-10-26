@@ -9,7 +9,7 @@ import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
 // v95: بعد كل عملية «تعليم كمقروء» تُبطل ذاكرة إدارة الحالة المركزية حتى
 // يُحدّث عدّاد التنبيهات في الشريط العلوي نسخة حية في دورته التالية فوراً
-import { invalidateCache } from '@/lib/data-cache'
+import { invalidateCache } from '@/application/data-cache'
 import { toast } from 'sonner'
 
 const severityConfig = {
@@ -334,4 +334,3 @@ export default function NotificationsPage() {
     </div>
   )
 }
-
