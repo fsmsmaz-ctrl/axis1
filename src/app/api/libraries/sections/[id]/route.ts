@@ -14,6 +14,7 @@ import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 import { hasPermission } from '@/lib/auth'
 import { ensureLibrariesSupport } from '@/lib/db-selfheal'
 import { canManageSection, canViewSection } from '@/lib/libraries'
+import { allowedSectionModes, sectionModeOf } from '@/lib/lib-visibility'
 
 type RouteParams = { params: Promise<{ id: string }> }
 
@@ -22,7 +23,8 @@ async function loadSection(id: string) {
     where: { id },
     select: {
       id: true, name: true, isPrivate: true, linkToken: true, ownerId: true, createdAt: true,
-      library: { select: { id: true, ownerId: true, name: true } },
+      // v100: بوابة المكتبة كاملة (الرؤية + التوكن) — الحكم لا يمر دونها
+      library: { select: { id: true, ownerId: true, name: true, visibility: true, linkToken: true } },
     },
   })
 }
@@ -43,8 +45,9 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
     if (!section) return NextResponse.json({ error: 'not_found', message: 'القسم غير موجود' }, { status: 404 })
 
     // التوكن من استعلام الرابط فقط — قسما «برابط» يُفتح به حتى وهو مخفي عن القوائم
+    // (v100: توكن مكتبة «برابط» يفتح أيضاً أقسامها — الحكم كله خادمياً)
     var token = req.nextUrl.searchParams.get('t')
-    if (!canViewSection(user, section, token, section.library.ownerId)) {
+    if (!canViewSection(user, section, token, section.library.ownerId, section.library)) {
       return NextResponse.json({ error: 'forbidden', message: 'هذا القسم محمي — يُفتح برابط الوصول الخاص به أو لصاحبه' }, { status: 403 })
     }
 
@@ -65,6 +68,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
           id: section.library.id,
           name: section.library.name,
           ownerId: section.library.ownerId,
+          visibility: section.library.visibility,
         },
         canManage: manager,
       },
@@ -111,6 +115,21 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     }
     if (Object.keys(data).length === 0) {
       return NextResponse.json({ error: 'nothing_to_update', message: 'لا يوجد ما يُحدَّث' }, { status: 400 })
+    }
+
+    // v100: القاعدة الذهبية عند التعديل — أي محاولة لجعل القسم أوسع من مكتبته تُرفض
+    // (لا قسم عام أو برابط داخل مكتبة خاصة، ولا قسم عام داخل مكتبة «برابط»)
+    if (data.isPrivate !== undefined || data.linkToken !== undefined) {
+      var nextIsPrivate = data.isPrivate !== undefined ? data.isPrivate : section.isPrivate
+      var nextToken = data.linkToken !== undefined ? data.linkToken : section.linkToken
+      var nextMode = sectionModeOf({ isPrivate: nextIsPrivate, linkToken: nextToken })
+      var allowed = allowedSectionModes(section.library)
+      if (!allowed.includes(nextMode)) {
+        var whyV = section.library.visibility === 'private'
+          ? 'المكتبة نفسها خاصة — كل ما داخلها يبقى خاصاً ولا يمكن جعل قسم فيها عاماً أو برابط (منع للتسريب)'
+          : 'المكتبة تُفتح لمن يمتلك رابطها فقط — القسم فيها يكون خاصاً أو برابط وصول، ولا يمكن جعله عاماً'
+        return NextResponse.json({ error: 'visibility_conflict', message: whyV }, { status: 403 })
+      }
     }
 
     const result = await safeDbOp(
