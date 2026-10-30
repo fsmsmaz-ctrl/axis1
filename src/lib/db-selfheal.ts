@@ -554,9 +554,36 @@ export async function ensureDriveLineDates(): Promise<void> {
 // الموقع لأي خطوة يدوية على قاعدة Supabase، والنشر في Vercel يكفي.
 var v97LibrariesChecked = false
 
+// v98: عمود «رابط الوصول» — القواعد القائمة (المنشورة قبل v98) لا تملكه،
+// والقواعد الجديدة تُنشأ بعمود linkToken من أولها — الشفاء يجعل الاثنتين متطابقتين.
+// بعلم مستقل عن علم الجداول حتى يعمل على القواعد القائمة والجديدة على السواء.
+var v98LinkTokenChecked = false
+
+async function ensureSectionLinkTokenColumn(): Promise<void> {
+  if (v98LinkTokenChecked) return
+  try {
+    var cols = await db.$queryRawUnsafe<Array<{ column_name: string }>>(
+      "SELECT column_name FROM information_schema.columns WHERE table_name = 'LibrarySection'"
+    )
+    var hasLink = (cols || []).some(function (c) { return c.column_name === 'linkToken' })
+    if (!hasLink) {
+      await db.$executeRawUnsafe('ALTER TABLE "LibrarySection" ADD COLUMN IF NOT EXISTS "linkToken" TEXT')
+      await db.$executeRawUnsafe('CREATE INDEX IF NOT EXISTS "LibrarySection_linkToken_idx" ON "LibrarySection"("linkToken")')
+      console.warn('v98: LibrarySection.linkToken column ready (link-access mode)')
+    }
+    v98LinkTokenChecked = true
+  } catch (e) {
+    // لا يُثبّت العلم عند الفشل — تُعاد المحاولة في الطلب التالي
+    console.error('v98: LibrarySection.linkToken self-heal skipped (will retry):', e)
+  }
+}
+
 export async function ensureLibrariesSupport(): Promise<void> {
   if (v97LibrariesChecked) return
   try {
+    // v98: عمود التوكن أولاً — يعمل على القاعدة القائمة والجديدة على السواء
+    await ensureSectionLinkTokenColumn()
+
     // المسار السريع: الجداول الثلاثة موجودة؟ ثبّت العلم وارجع فوراً (صفر DDL)
     var existing = await db.$queryRaw<Array<{ tablename: string }>>`
       SELECT tablename FROM pg_tables
@@ -599,12 +626,14 @@ export async function ensureLibrariesSupport(): Promise<void> {
   "libraryId" TEXT NOT NULL,
   "name" TEXT NOT NULL,
   "isPrivate" BOOLEAN NOT NULL DEFAULT false,
+  "linkToken" TEXT,
   "ownerId" TEXT NOT NULL,
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT "LibrarySection_pkey" PRIMARY KEY ("id")
 )`)
         await db.$executeRawUnsafe('CREATE INDEX IF NOT EXISTS "LibrarySection_libraryId_idx" ON "LibrarySection"("libraryId")')
         await db.$executeRawUnsafe('CREATE INDEX IF NOT EXISTS "LibrarySection_ownerId_idx" ON "LibrarySection"("ownerId")')
+        await db.$executeRawUnsafe('CREATE INDEX IF NOT EXISTS "LibrarySection_linkToken_idx" ON "LibrarySection"("linkToken")')
         try {
           await db.$executeRawUnsafe('ALTER TABLE "LibrarySection" ADD CONSTRAINT "LibrarySection_libraryId_fkey" FOREIGN KEY ("libraryId") REFERENCES "Library"("id") ON DELETE CASCADE ON UPDATE CASCADE')
           await db.$executeRawUnsafe('ALTER TABLE "LibrarySection" ADD CONSTRAINT "LibrarySection_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE')
