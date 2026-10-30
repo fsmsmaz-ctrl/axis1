@@ -1,7 +1,9 @@
 // ─── v97: المكتبات — إنشاء قسم داخل مكتبة ──────────────────────────────────
 // POST /api/libraries/[id]/sections → صاحب المكتبة ومدير النظام فقط
-// القسم يُنشأ «خاص بصاحبه» أو «عام يراه كل الموظفين» حسب اختيار المنشئ
+// v98 — القسم بأحد ثلاثة أوضاع: خاص / عام / برابط (linkToken: 'generate'
+// يولّد رمز وصول فريد يُنسخ مع الرابط — انظر GET في sections/[id])
 import { NextRequest, NextResponse } from 'next/server'
+import { randomBytes } from 'crypto'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { handleDbError, validateRequired, safeDbOp } from '@/lib/api-helpers'
@@ -37,6 +39,9 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     if (!name) return NextResponse.json({ error: 'invalid_name', message: 'اسم القسم مطلوب' }, { status: 400 })
     if (name.length > 120) return NextResponse.json({ error: 'invalid_name', message: 'اسم القسم طويل جداً (الحد 120 حرفاً)' }, { status: 400 })
     var isPrivate = body.isPrivate === true
+    // v98: وضع «برابط الوصول» — رمز عشوائي 32 خانة سدسية عملياً غير قابل للتخمين
+    var linkToken: string | null = null
+    if (body.linkToken === 'generate') linkToken = randomBytes(16).toString('hex')
 
     // سقف وقائي: 50 قسماً لكل مكتبة
     var count = await db.librarySection.count({ where: { libraryId: id } })
@@ -46,9 +51,9 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
 
     const result = await safeDbOp(
       () => db.librarySection.create({
-        data: { libraryId: id, name, isPrivate, ownerId: user.id },
+        data: { libraryId: id, name, isPrivate, linkToken, ownerId: user.id },
         select: {
-          id: true, name: true, isPrivate: true, ownerId: true, createdAt: true,
+          id: true, name: true, isPrivate: true, linkToken: true, ownerId: true, createdAt: true,
           owner: { select: { id: true, name: true, nameEn: true } },
         },
       }),
