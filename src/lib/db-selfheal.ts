@@ -554,6 +554,66 @@ export async function ensureDriveLineDates(): Promise<void> {
 // الموقع لأي خطوة يدوية على قاعدة Supabase، والنشر في Vercel يكفي.
 var v97LibrariesChecked = false
 
+// v100: خصوصية المكتبة نفسها + الملفات المباشرة على المكتبة — أعمدة تعمل على
+// القواعد القائمة والجديدة على السواء (بعلم مستقل كنمط v98):
+//   • Library.visibility  (نص، افتراضي 'public') — عام/خاص/برابط
+//   • Library.linkToken   — رمز رابط وصول المكتبة
+//   • LibraryFile.libraryId — إجباري على كل ملف (ترحيل من أقسامها) ثم يصير
+//     sectionId اختيارياً لملفات «ملفات المكتبة» المباشرة بلا قسم
+var v100LibVisChecked = false
+
+async function ensureLibraryVisibilityColumns(): Promise<void> {
+  if (v100LibVisChecked) return
+  try {
+    var libCols = await db.$queryRawUnsafe<Array<{ column_name: string }>>(
+      "SELECT column_name FROM information_schema.columns WHERE table_name = 'Library'"
+    )
+    var libSet = new Set((libCols || []).map(function (c) { return c.column_name }))
+    if (libSet.size > 0) {
+      if (!libSet.has('visibility')) {
+        await db.$executeRawUnsafe("ALTER TABLE \"Library\" ADD COLUMN IF NOT EXISTS \"visibility\" TEXT NOT NULL DEFAULT 'public'")
+        console.warn('v100: Library.visibility column ready (library privacy)')
+      }
+      if (!libSet.has('linkToken')) {
+        await db.$executeRawUnsafe('ALTER TABLE "Library" ADD COLUMN IF NOT EXISTS "linkToken" TEXT')
+        await db.$executeRawUnsafe('CREATE INDEX IF NOT EXISTS "Library_linkToken_idx" ON "Library"("linkToken")')
+        console.warn('v100: Library.linkToken column ready (library access link)')
+      }
+    }
+
+    var fileCols = await db.$queryRawUnsafe<Array<{ column_name: string }>>(
+      "SELECT column_name FROM information_schema.columns WHERE table_name = 'LibraryFile'"
+    )
+    var fileSet = new Set((fileCols || []).map(function (c) { return c.column_name }))
+    if (fileSet.size > 0 && !fileSet.has('libraryId')) {
+      // 1) العمود الجديد (مسموح مؤقتاً بلا قيمة لحين الترحيل)
+      await db.$executeRawUnsafe('ALTER TABLE "LibraryFile" ADD COLUMN IF NOT EXISTS "libraryId" TEXT')
+      // 2) ترحيل بيانات: كل ملف قسم يرث مكتبة قسمه — ثم العمود إجباري
+      await db.$executeRawUnsafe('UPDATE "LibraryFile" f SET "libraryId" = s."libraryId" FROM "LibrarySection" s WHERE f."sectionId" = s.id AND f."libraryId" IS NULL')
+      try {
+        await db.$executeRawUnsafe('ALTER TABLE "LibraryFile" ALTER COLUMN "libraryId" SET NOT NULL')
+      } catch (nnE) {
+        // ملفات يتيمة بلا قسم (نظرياً لا تحدث مع Cascade) — تبقى بلا مكتبة ولا تُقرأ
+        console.error('v100: LibraryFile.libraryId NOT NULL deferred:', nnE)
+      }
+      await db.$executeRawUnsafe('CREATE INDEX IF NOT EXISTS "LibraryFile_libraryId_idx" ON "LibraryFile"("libraryId")')
+      try {
+        await db.$executeRawUnsafe('ALTER TABLE "LibraryFile" ADD CONSTRAINT "LibraryFile_libraryId_fkey" FOREIGN KEY ("libraryId") REFERENCES "Library"("id") ON DELETE CASCADE ON UPDATE CASCADE')
+      } catch (fkE) {
+        var m3 = (fkE as { message?: string })?.message || ''
+        if (m3.indexOf('already exists') === -1) console.error('v100: LibraryFile.libraryId FK skipped:', fkE)
+      }
+      // 3) sectionId يصير اختيارياً — ملفات المكتبة المباشرة بلا قسم
+      await db.$executeRawUnsafe('ALTER TABLE "LibraryFile" ALTER COLUMN "sectionId" DROP NOT NULL')
+      console.warn('v100: LibraryFile.libraryId ready + sectionId optional (direct library files)')
+    }
+    v100LibVisChecked = true
+  } catch (e) {
+    // لا يُثبّت العلم عند الفشل — تُعاد المحاولة في الطلب التالي
+    console.error('v100: library visibility self-heal skipped (will retry):', e)
+  }
+}
+
 // v98: عمود «رابط الوصول» — القواعد القائمة (المنشورة قبل v98) لا تملكه،
 // والقواعد الجديدة تُنشأ بعمود linkToken من أولها — الشفاء يجعل الاثنتين متطابقتين.
 // بعلم مستقل عن علم الجداول حتى يعمل على القواعد القائمة والجديدة على السواء.
@@ -583,6 +643,8 @@ export async function ensureLibrariesSupport(): Promise<void> {
   try {
     // v98: عمود التوكن أولاً — يعمل على القاعدة القائمة والجديدة على السواء
     await ensureSectionLinkTokenColumn()
+    // v100: خصوصية المكتبة + الملفات المباشرة — بنفس النمط المستقل
+    await ensureLibraryVisibilityColumns()
 
     // المسار السريع: الجداول الثلاثة موجودة؟ ثبّت العلم وارجع فوراً (صفر DDL)
     var existing = await db.$queryRaw<Array<{ tablename: string }>>`
@@ -602,6 +664,8 @@ export async function ensureLibrariesSupport(): Promise<void> {
   "id" TEXT NOT NULL,
   "name" TEXT NOT NULL,
   "description" TEXT,
+  "visibility" TEXT NOT NULL DEFAULT 'public',
+  "linkToken" TEXT,
   "ownerId" TEXT NOT NULL,
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt" TIMESTAMP(3) NOT NULL,
@@ -609,6 +673,7 @@ export async function ensureLibrariesSupport(): Promise<void> {
 )`)
         await db.$executeRawUnsafe('CREATE INDEX IF NOT EXISTS "Library_ownerId_idx" ON "Library"("ownerId")')
         await db.$executeRawUnsafe('CREATE INDEX IF NOT EXISTS "Library_createdAt_idx" ON "Library"("createdAt")')
+        await db.$executeRawUnsafe('CREATE INDEX IF NOT EXISTS "Library_linkToken_idx" ON "Library"("linkToken")')
         try {
           await db.$executeRawUnsafe('ALTER TABLE "Library" ADD CONSTRAINT "Library_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE')
         } catch (fkE) {
@@ -649,7 +714,8 @@ export async function ensureLibrariesSupport(): Promise<void> {
       try {
         await db.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "LibraryFile" (
   "id" TEXT NOT NULL,
-  "sectionId" TEXT NOT NULL,
+  "libraryId" TEXT NOT NULL,
+  "sectionId" TEXT,
   "fileName" TEXT NOT NULL,
   "fileType" TEXT NOT NULL,
   "url" TEXT NOT NULL,
@@ -659,7 +725,9 @@ export async function ensureLibrariesSupport(): Promise<void> {
   CONSTRAINT "LibraryFile_pkey" PRIMARY KEY ("id")
 )`)
         await db.$executeRawUnsafe('CREATE INDEX IF NOT EXISTS "LibraryFile_sectionId_idx" ON "LibraryFile"("sectionId")')
+        await db.$executeRawUnsafe('CREATE INDEX IF NOT EXISTS "LibraryFile_libraryId_idx" ON "LibraryFile"("libraryId")')
         try {
+          await db.$executeRawUnsafe('ALTER TABLE "LibraryFile" ADD CONSTRAINT "LibraryFile_libraryId_fkey" FOREIGN KEY ("libraryId") REFERENCES "Library"("id") ON DELETE CASCADE ON UPDATE CASCADE')
           await db.$executeRawUnsafe('ALTER TABLE "LibraryFile" ADD CONSTRAINT "LibraryFile_sectionId_fkey" FOREIGN KEY ("sectionId") REFERENCES "LibrarySection"("id") ON DELETE CASCADE ON UPDATE CASCADE')
           await db.$executeRawUnsafe('ALTER TABLE "LibraryFile" ADD CONSTRAINT "LibraryFile_uploaderId_fkey" FOREIGN KEY ("uploaderId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE')
         } catch (fkE) {
