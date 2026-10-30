@@ -1,7 +1,11 @@
 // ─── v97: المكتبات — بوابات الرؤية والإدارة المشتركة بين مسارات الخادم ──────
 // قواعد المكتبات في مكان واحد فلا تختلف حكمة المسارات:
 //   • المكتبة عامة بالاسم والوصف — يراها كل من يرى القسم.
-//   • القسم الخاص يراه صاحبه ومدير النظام فقط (لا يظهر له وجود أصلاً عند غيرهما).
+//   • v98 — ثلاث حالات رؤية للقسم:
+//       عام  (isPrivate=false وبدون linkToken) → يراه جميع الموظفين.
+//       خاص  (isPrivate=true  وبدون linkToken) → صاحبه ومدير النظام فقط.
+//       برابط (linkToken موجود) → مخفي عن القوائم كالخاص تماماً، ويُفتح فقط
+//         لمن يقدم التوكن الصحيح مع الطلب (أو لصاحبه/صاحب المكتبة/مدير النظام).
 //   • إدارة المكتبة (تعديل/حذف/إنشاء أقسام): صاحب المكتبة ومدير النظام.
 //   • إدارة القسم (تعديل/حذف): صاحب القسم وصاحب المكتبة ومدير النظام.
 //   • رفع/حذف ملف: صاحب القسم وصاحب المكتبة ومدير النظام (والرفع من الرافع نفسه يحذف ملفه).
@@ -29,16 +33,39 @@ export function canManageSection(user: LibraryActor, sectionOwnerId: string, lib
   return user.id === sectionOwnerId || user.id === libraryOwnerId || isLibraryAdmin(user)
 }
 
-/** هل يرى هذا المستخدم القسم؟ (القسم الخاص: صاحبه ومدير النظام فقط) */
-export function canViewSection(user: LibraryActor, section: { isPrivate: boolean; ownerId: string }): boolean {
+/**
+ * v98: هل يرى هذا المستخدم هذا القسم؟
+ * - عام: الجميع.
+ * - خاص: صاحبه ومدير النظام فقط.
+ * - برابط: المدرّون دائماً، أو أي موظف قدم التوكن الصحيح مع الطلب.
+ * libraryOwnerId اختياري — يُمرَّر كلما توفر (المسارات تحمله أصلاً) ليُعرف
+ * صاحب المكتبة بدقة؛ وحين يغيب يُكتفى بمالك القسم ومدير النظام.
+ */
+export function canViewSection(
+  user: LibraryActor,
+  section: { isPrivate: boolean; ownerId: string; linkToken?: string | null },
+  token?: string | null,
+  libraryOwnerId?: string
+): boolean {
+  // v98: وضع «برابط» — التوكن يفصل الحكم عن القوائم كلياً
+  if (section.linkToken) {
+    if (token && String(token) === section.linkToken) return true
+    if (libraryOwnerId && user.id === libraryOwnerId) return true
+    return user.id === section.ownerId || isLibraryAdmin(user)
+  }
   if (!section.isPrivate) return true
   return user.id === section.ownerId || isLibraryAdmin(user)
 }
 
-/** فلترة أقسام مكتبة حسب الرؤية قبل إعادتها للعميل — الخصوصية تُطبَّق خادمياً دائماً */
-export function filterVisibleSections<T extends { isPrivate: boolean; ownerId: string }>(
+/**
+ * فلترة أقسام مكتبة حسب الرؤية قبل إعادتها للعميل — الخصوصية تُطبَّق خادمياً دائماً.
+ * v98: أقسام «برابط» تُخفى من القوائم عن الجميع عدا المدرّين — الدخول إليها
+ * يكون بالرابط فقط، فلا يمرر هنا توكن أبداً (التوكن مسار الرابط المباشر حصراً).
+ */
+export function filterVisibleSections<T extends { isPrivate: boolean; ownerId: string; linkToken?: string | null }>(
   user: LibraryActor,
-  sections: T[]
+  sections: T[],
+  libraryOwnerId?: string
 ): T[] {
-  return sections.filter((s) => canViewSection(user, s))
+  return sections.filter((s) => canViewSection(user, s, null, libraryOwnerId))
 }
