@@ -231,7 +231,8 @@ export default function AppShell() {
   useEffect(() => {
     try {
       var sp = new URLSearchParams(window.location.search)
-      if (sp.get('sec')) setCurrentPage('libraries')
+      // v100: رابط قسم (sec=) أو رابط مكتبة (lib= + t=) — كلاهما يفتح قسم المكتبات
+      if (sp.get('sec') || (sp.get('lib') && sp.get('t'))) setCurrentPage('libraries')
     } catch {}
   }, [])
 
@@ -537,7 +538,7 @@ export default function AppShell() {
 
         <div className="p-3 border-t border-sidebar-border">
           {/* v48: علامة الإصدار — إن لم تظهر هنا فالنشر الأخير لم يتم بعد */}
-          <p className="text-center text-[10px] text-muted-foreground/60 select-none">v99</p>
+          <p className="text-center text-[10px] text-muted-foreground/60 select-none">v100</p>
           {/* v48: بطاقة المستخدم قابلة للنقر — تفتح الملف الشخصي */}
           <div className="flex items-center gap-3 p-2 rounded-lg cursor-pointer hover:bg-sidebar-accent transition-colors"
             onClick={function() { setSidebarOpen(false); setCurrentPage('profile') }}
