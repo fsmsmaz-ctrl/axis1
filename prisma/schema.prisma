@@ -721,12 +721,17 @@ model Library {
   @@index([createdAt])
 }
 
-// قسم داخل مكتبة — isPrivate=true يراه صاحبه ومدير النظام فقط، عام يراه الجميع
+// قسم داخل مكتبة — ثلاث حالات رؤية (v98):
+//   isPrivate=true وبدون linkToken → خاص: صاحبه ومدير النظام فقط
+//   isPrivate=false وبدون linkToken → عام: يراه جميع الموظفين
+//   linkToken موجود → «من لديه رابط الوصول فقط»: مخفي عن القوائم كالخاص،
+//   ويُفتح فقط بالرابط الذي يحمل التوكن (أو لصاحبه/مدير النظام)
 model LibrarySection {
   id        String   @id @default(cuid())
   libraryId String
   name      String
   isPrivate Boolean  @default(false)
+  linkToken String?
   ownerId   String
   createdAt DateTime @default(now())
 
@@ -736,6 +741,7 @@ model LibrarySection {
 
   @@index([libraryId])
   @@index([ownerId])
+  @@index([linkToken])
 }
 
 // ملف داخل قسم — url بيانات base64 أو رابط https آمن (نفس قوائم السماح للمرفقات)
