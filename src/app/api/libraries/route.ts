@@ -1,16 +1,19 @@
 // ─── v97: المكتبات — قائمة المكتبات وإنشاء مكتبة جديدة ─────────────────────
-// GET  /api/libraries  → كل المكتبات مع أقسامها المرئية للمستخدم الحالي
-//                        (القسم الخاص يظهر لصاحبه ومدير النظام فقط)
+// GET  /api/libraries  → المكتبات المرئية للمستخدم الحالي مع أقسامها المرئية
+//                        (v100: الخاصة و«برابط» لا تُرسل أصلاً لغير أهلها)
 // POST /api/libraries  → إنشاء مكتبة — لكل موظف يملك صلاحية القسم (بقرار صاحب
 //                        الموقع القسم عام لكل الموظفين)
+// v100 — للمكتبة نفسها رؤية يختارها صاحبها: عامة / خاصة / لمن يمتلك الرابط،
+// والقاعدة الذهبية: لا شيء داخلها أوسع انتشاراً منها (الخاص يبقى خاصاً مهما كان السبب).
 import { NextRequest, NextResponse } from 'next/server'
+import { randomBytes } from 'crypto'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { handleDbError, validateRequired, safeDbOp } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 import { hasPermission, canWrite } from '@/lib/auth'
 import { ensureLibrariesSupport } from '@/lib/db-selfheal'
-import { filterVisibleSections, isLibraryAdmin } from '@/lib/libraries'
+import { filterVisibleSections, isLibraryAdmin, canSeeLibraryInList } from '@/lib/libraries'
 
 export async function GET(req: NextRequest) {
   try {
@@ -30,9 +33,12 @@ export async function GET(req: NextRequest) {
         id: true,
         name: true,
         description: true,
+        visibility: true,
+        linkToken: true,
         ownerId: true,
         createdAt: true,
         owner: { select: { id: true, name: true, nameEn: true } },
+        _count: { select: { files: true } },
         sections: {
           orderBy: { createdAt: 'asc' },
           select: {
@@ -49,21 +55,32 @@ export async function GET(req: NextRequest) {
       },
     })
 
-    // الرؤية تُطبَّق هنا خادمياً: الخاص و«برابط» لا يُرسلان أصلاً لغير أهلها
-    // (v98: الفلترة تعرف صاحب المكتبة — أقسام «برابط» تُخفى عن القوائم كالخاص)
+    // الرؤية تُطبَّق هنا خادمياً — v100: المكتبة الخاصة أو «برابط» لا تصل أصلاً
+    // لغير صاحبها (الخاص يبقى خاصاً مهما كان السبب)، وأقسامها تخضع لقيد مكتبتها
     var admin = isLibraryAdmin(user)
-    var libraries = rows.map((lib) => {
-      var visible = admin ? lib.sections : filterVisibleSections(user, lib.sections, lib.ownerId)
-      var fileCount = visible.reduce((acc, s) => acc + s._count.files, 0)
-      return {
+    var libraries: Array<Record<string, unknown>> = []
+    for (var lib of rows) {
+      if (!canSeeLibraryInList(user, lib)) continue
+      var visible = admin ? lib.sections : filterVisibleSections(user, lib.sections, lib)
+      // ملفات المكتبة المباشرة (خارج الأقسام) — الفرق بين كل ملفات المكتبة
+      // وملفات أقسامها كله، فلا يسرّب عدد ملفات الأقسام المخفية
+      var allSectionFiles = lib.sections.reduce((acc, s) => acc + s._count.files, 0)
+      var directCount = Math.max(0, lib._count.files - allSectionFiles)
+      var fileCount = visible.reduce((acc, s) => acc + s._count.files, 0) + directCount
+      var manager = admin || lib.ownerId === user.id
+      libraries.push({
         id: lib.id,
         name: lib.name,
         description: lib.description,
         createdAt: lib.createdAt,
         ownerId: lib.ownerId,
         owner: lib.owner,
+        // v100: رؤية المكتبة نفسها — عامة/خاصة/برابط
+        visibility: lib.visibility,
+        // توكن رابط المكتبة يُسلَّم لمدرّها فقط — لا يصل أصلاً لغيرهم
+        linkToken: manager ? lib.linkToken : undefined,
         isMine: lib.ownerId === user.id,
-        canManage: lib.ownerId === user.id || admin,
+        canManage: manager,
         sectionCount: visible.length,
         fileCount,
         sections: visible.map((s) => ({
@@ -74,12 +91,11 @@ export async function GET(req: NextRequest) {
           ownerId: s.ownerId,
           owner: s.owner,
           fileCount: s._count.files,
-          // v98: توكن «رابط الوصول» يُسلَّم لمدرّ القسم فقط (صاحبه/صاحب المكتبة/
-          // مدير النظام) — أقسام البرابط لا تصل أصلاً لغيرهم فلا تسريب ممكن
+          // توكن «رابط الوصول» للقسم يُسلَّم لمدرّي القسم/المكتبة فقط
           linkToken: (admin || s.ownerId === user.id || lib.ownerId === user.id) ? s.linkToken : undefined,
         })),
-      }
-    })
+      })
+    }
 
     return NextResponse.json({ libraries })
   } catch (error: any) {
@@ -110,6 +126,11 @@ export async function POST(req: NextRequest) {
     if (name.length > 120) return NextResponse.json({ error: 'invalid_name', message: 'اسم المكتبة طويل جداً (الحد 120 حرفاً)' }, { status: 400 })
     var description = body.description != null ? String(body.description).trim().slice(0, 500) : null
 
+    // v100: رؤية المكتبة — عامة (افتراضي) / خاصة / لمن يمتلك الرابط
+    var visibility = body.visibility === 'private' || body.visibility === 'link' ? String(body.visibility) : 'public'
+    // وضع «برابط» يولّد رمز وصول فريد 32 خانة سدسية عملياً غير قابل للتخمين
+    var linkToken = visibility === 'link' ? randomBytes(16).toString('hex') : null
+
     // سقف وقائي من التضخم: 50 مكتبة لكل موظف (مكتبات شخصية لا تتجاوز ذلك عملياً)
     var mine = await db.library.count({ where: { ownerId: user.id } })
     if (mine >= 50) {
@@ -118,9 +139,9 @@ export async function POST(req: NextRequest) {
 
     const result = await safeDbOp(
       () => db.library.create({
-        data: { name, description, ownerId: user.id },
+        data: { name, description, visibility, linkToken, ownerId: user.id },
         select: {
-          id: true, name: true, description: true, ownerId: true, createdAt: true,
+          id: true, name: true, description: true, visibility: true, linkToken: true, ownerId: true, createdAt: true,
           owner: { select: { id: true, name: true, nameEn: true } },
         },
       }),
