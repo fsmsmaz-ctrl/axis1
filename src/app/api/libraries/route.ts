@@ -39,6 +39,7 @@ export async function GET(req: NextRequest) {
             id: true,
             name: true,
             isPrivate: true,
+            linkToken: true,
             ownerId: true,
             createdAt: true,
             owner: { select: { id: true, name: true, nameEn: true } },
@@ -48,10 +49,11 @@ export async function GET(req: NextRequest) {
       },
     })
 
-    // الخصوصية تُطبَّق هنا خادمياً: القسم الخاص لا يُرسل أصلاً لغير صاحبه
+    // الرؤية تُطبَّق هنا خادمياً: الخاص و«برابط» لا يُرسلان أصلاً لغير أهلها
+    // (v98: الفلترة تعرف صاحب المكتبة — أقسام «برابط» تُخفى عن القوائم كالخاص)
     var admin = isLibraryAdmin(user)
     var libraries = rows.map((lib) => {
-      var visible = admin ? lib.sections : filterVisibleSections(user, lib.sections)
+      var visible = admin ? lib.sections : filterVisibleSections(user, lib.sections, lib.ownerId)
       var fileCount = visible.reduce((acc, s) => acc + s._count.files, 0)
       return {
         id: lib.id,
@@ -72,6 +74,9 @@ export async function GET(req: NextRequest) {
           ownerId: s.ownerId,
           owner: s.owner,
           fileCount: s._count.files,
+          // v98: توكن «رابط الوصول» يُسلَّم لمدرّ القسم فقط (صاحبه/صاحب المكتبة/
+          // مدير النظام) — أقسام البرابط لا تصل أصلاً لغيرهم فلا تسريب ممكن
+          linkToken: (admin || s.ownerId === user.id || lib.ownerId === user.id) ? s.linkToken : undefined,
         })),
       }
     })
