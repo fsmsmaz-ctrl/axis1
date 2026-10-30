@@ -36,13 +36,14 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
 
     var section = await db.librarySection.findUnique({
       where: { id },
-      select: { id: true, name: true, isPrivate: true, linkToken: true, ownerId: true, library: { select: { id: true, ownerId: true } } },
+      select: { id: true, name: true, isPrivate: true, linkToken: true, ownerId: true, library: { select: { id: true, ownerId: true, visibility: true, linkToken: true } } },
     })
     if (!section) return NextResponse.json({ error: 'not_found', message: 'القسم غير موجود' }, { status: 404 })
-    // الرؤية خادمياً (v98): عام للجميع، خاص لصاحبه/مدير النظام، «برابط» لمن قدم
+    // الرؤية خادمياً: عام للجميع، خاص لصاحبه/مدير النظام، «برابط» لمن قدم
     // التوكن الصحيح (من استعلام الرابط t=) أو للمدرّين
+    // v100: بوابة المكتبة نفسها مطبقة دائماً — القاعدة الذهبية (الأضيق يفوز)
     var token = req.nextUrl.searchParams.get('t')
-    if (!canViewSection(user, section, token, section.library.ownerId)) {
+    if (!canViewSection(user, section, token, section.library.ownerId, section.library)) {
       return NextResponse.json({ error: 'forbidden', message: 'هذا القسم محمي — يُفتح برابط الوصول الخاص به أو لصاحبه' }, { status: 403 })
     }
 
@@ -83,7 +84,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
 
     var section = await db.librarySection.findUnique({
       where: { id },
-      select: { id: true, name: true, isPrivate: true, linkToken: true, ownerId: true, library: { select: { id: true, ownerId: true } } },
+      select: { id: true, name: true, isPrivate: true, linkToken: true, ownerId: true, library: { select: { id: true, ownerId: true, visibility: true, linkToken: true } } },
     })
     if (!section) return NextResponse.json({ error: 'not_found', message: 'القسم غير موجود' }, { status: 404 })
     // الرفع لصاحب القسم أو صاحب المكتبة (ومدير النظام) — القسم العام «يُرى» للجميع
@@ -91,6 +92,8 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     if (!canManageSection(user, section.ownerId, section.library.ownerId)) {
       return NextResponse.json({ error: 'forbidden', message: 'رفع الملفات لصاحب القسم أو صاحب المكتبة فقط' }, { status: 403 })
     }
+    // تثبيت معرف المكتبة للاستخدام داخل الدالة المغلقة أدناه (تضييق النوع لا يعبر حدود الإغلاقات)
+    var libraryId = section.library.id
 
     var fileCount = await db.libraryFile.count({ where: { sectionId: id } })
     if (fileCount >= MAX_FILES_PER_SECTION) {
@@ -125,6 +128,8 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     const result = await safeDbOp(
       () => db.libraryFile.create({
         data: {
+          // v100: كل ملف يعرف مكتبته مباشرة (قسمه يحددها، والعمود إجباري الآن)
+          libraryId: libraryId,
           sectionId: id,
           fileName: String(body.fileName).slice(0, 255),
           fileType,
