@@ -1,22 +1,77 @@
 // ─── v97: المكتبات — تعديل قسم / حذف قسم ───────────────────────────────────
-// PATCH  /api/libraries/sections/[id] → تعديل الاسم أو الخصوصية (خاص/عام)
+// PATCH  /api/libraries/sections/[id] → تعديل الاسم أو الرؤية (خاص/عام/برابط)
 // DELETE /api/libraries/sections/[id] → حذف القسم وملفاته
-// البوابة: صاحب القسم أو صاحب المكتبة أو مدير النظام
+// v98: GET  /api/libraries/sections/[id]?t=<token> → قسم واحد ببياناته —
+//        أساس فتح «رابط الوصول»: من يملك الرابط (بالتوكن الصحيح) يرى القسم
+//        حتى لو كان مخفياً عن القوائم، بينما تُسلَّم بياناته بلا توكن لها أصلاً.
+// البوابة: صاحب القسم أو صاحب المكتبة أو مدير النظام (للتعديل والحذف)
 import { NextRequest, NextResponse } from 'next/server'
+import { randomBytes } from 'crypto'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
 import { handleDbError, safeDbOp } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
+import { hasPermission } from '@/lib/auth'
 import { ensureLibrariesSupport } from '@/lib/db-selfheal'
-import { canManageSection } from '@/lib/libraries'
+import { canManageSection, canViewSection } from '@/lib/libraries'
 
 type RouteParams = { params: Promise<{ id: string }> }
 
 async function loadSection(id: string) {
   return db.librarySection.findUnique({
     where: { id },
-    select: { id: true, name: true, isPrivate: true, ownerId: true, libraryId: true, library: { select: { id: true, ownerId: true, name: true } } },
+    select: {
+      id: true, name: true, isPrivate: true, linkToken: true, ownerId: true, createdAt: true,
+      library: { select: { id: true, ownerId: true, name: true } },
+    },
   })
+}
+
+// ─── v98: قسم واحد — بوابة رابط الوصول ─────────────────────────────────────
+export async function GET(req: NextRequest, { params }: RouteParams) {
+  try {
+    const { id } = await params
+    const user = await getAuthUser(req)
+    if (!user) return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
+    if (!hasPermission(user.role, 'libraries', user.permissions, user.email)) {
+      return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية الوصول' }, { status: 403 })
+    }
+
+    await ensureLibrariesSupport()
+
+    var section = await loadSection(id)
+    if (!section) return NextResponse.json({ error: 'not_found', message: 'القسم غير موجود' }, { status: 404 })
+
+    // التوكن من استعلام الرابط فقط — قسما «برابط» يُفتح به حتى وهو مخفي عن القوائم
+    var token = req.nextUrl.searchParams.get('t')
+    if (!canViewSection(user, section, token, section.library.ownerId)) {
+      return NextResponse.json({ error: 'forbidden', message: 'هذا القسم محمي — يُفتح برابط الوصول الخاص به أو لصاحبه' }, { status: 403 })
+    }
+
+    var fileCount = await db.libraryFile.count({ where: { sectionId: id } })
+    var manager = canManageSection(user, section.ownerId, section.library.ownerId)
+
+    return NextResponse.json({
+      section: {
+        id: section.id,
+        name: section.name,
+        isPrivate: section.isPrivate,
+        // التوكن يُسلَّم للمدرّين فقط — لا يصل أصلاً لغيرهم
+        linkToken: manager ? section.linkToken : undefined,
+        ownerId: section.ownerId,
+        createdAt: section.createdAt,
+        fileCount,
+        library: {
+          id: section.library.id,
+          name: section.library.name,
+          ownerId: section.library.ownerId,
+        },
+        canManage: manager,
+      },
+    })
+  } catch (error: any) {
+    return handleDbError(error, 'تحميل قسم المكتبة')
+  }
 }
 
 export async function PATCH(req: NextRequest, { params }: RouteParams) {
@@ -37,7 +92,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     }
 
     const body = await req.json()
-    var data: { name?: string; isPrivate?: boolean } = {}
+    var data: { name?: string; isPrivate?: boolean; linkToken?: string | null } = {}
     if (body.name !== undefined) {
       var name = String(body.name).trim()
       if (!name) return NextResponse.json({ error: 'invalid_name', message: 'اسم القسم مطلوب' }, { status: 400 })
@@ -47,12 +102,19 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     if (body.isPrivate !== undefined) {
       data.isPrivate = body.isPrivate === true
     }
+    // v98: الرؤية «برابط» — 'generate' يولّد رمزاً جديداً (وإبطال أي رمز قديم)،
+    // وnull يُلغي الوضع (يرجع القسم إلى خاص/عام حسب isPrivate)
+    if (body.linkToken === 'generate') {
+      data.linkToken = randomBytes(16).toString('hex')
+    } else if (body.linkToken === null) {
+      data.linkToken = null
+    }
     if (Object.keys(data).length === 0) {
       return NextResponse.json({ error: 'nothing_to_update', message: 'لا يوجد ما يُحدَّث' }, { status: 400 })
     }
 
     const result = await safeDbOp(
-      () => db.librarySection.update({ where: { id }, data, select: { id: true, name: true, isPrivate: true } }),
+      () => db.librarySection.update({ where: { id }, data, select: { id: true, name: true, isPrivate: true, linkToken: true } }),
       'تعديل قسم المكتبة'
     )
     if (!result.success) return result.response
