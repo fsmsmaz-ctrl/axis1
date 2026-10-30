@@ -225,6 +225,16 @@ export default function AppShell() {
     return () => window.removeEventListener('axis:goto-page', handler)
   }, [])
 
+  // v98: فتح «رابط الوصول» — رابط قسم مكتبة يحمل sec= يفتح قسم المكتبات
+  // تلقائياً عند الإقلاع، وصفحة المكتبات نفسها تقرأ sec/t وتفتح القسم مباشرة
+  // (التحقق النهائي من التوكن في الخادم — لا ثقة بالواجهة)
+  useEffect(() => {
+    try {
+      var sp = new URLSearchParams(window.location.search)
+      if (sp.get('sec')) setCurrentPage('libraries')
+    } catch {}
+  }, [])
+
   // منع تمرير الصفحة الخلفية أثناء فتح القائمة الجانبية على الهاتف
   useEffect(() => {
     if (sidebarOpen && typeof window !== 'undefined' && window.innerWidth < 1024) {
@@ -527,7 +537,7 @@ export default function AppShell() {
 
         <div className="p-3 border-t border-sidebar-border">
           {/* v48: علامة الإصدار — إن لم تظهر هنا فالنشر الأخير لم يتم بعد */}
-          <p className="text-center text-[10px] text-muted-foreground/60 select-none">v97</p>
+          <p className="text-center text-[10px] text-muted-foreground/60 select-none">v98</p>
           {/* v48: بطاقة المستخدم قابلة للنقر — تفتح الملف الشخصي */}
           <div className="flex items-center gap-3 p-2 rounded-lg cursor-pointer hover:bg-sidebar-accent transition-colors"
             onClick={function() { setSidebarOpen(false); setCurrentPage('profile') }}
