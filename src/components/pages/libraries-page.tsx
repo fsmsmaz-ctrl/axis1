@@ -1,15 +1,13 @@
-// ─── v97: قسم «المكتبات» — v98: إصلاح الرفع لكل الصيغات + وضع «رابط الوصول» ──
-// قسم عام يظهر لكل الموظفين: كل موظف يُنشئ مكتباته للاحتفاظ بملفاته، ويصنع
-// داخلها أقساماً بأحد ثلاثة أوضاع: «خاص به» أو «عام للجميع» أو «برابط وصول»
-// (مخفي عن القوائم ويُفتح بالرابط الذي يحمل رمزاً فريداً).
-// v98 — إصلاحات جذرية لشكوى عدم إدراج الملفات:
-//   • كل الصيغات مقبولة (صور/فيديو/صوت/مستندات/أرشيف/نصوص/أي امتداد) — القائمة
-//     الضيقة القديمة كانت ترفض PowerPoint وCSV وأي صيغة غيرها.
-//   • صور الجوال تُضغط تلقائياً في الجهاز قبل الرفع (فوتوغرافيا 5MB تصير
-//     مئات الكيلوبايتات) — الحد الفعلي في Vercel 4.5MB لجسم الطلب كان يقتل
-//     كل ملف أكبر من ~3MB قبل وصوله للخادم أصلاً.
-//   • سقف واضح 3MB للملف برسالة صريحة بدل «فشل الرفع» العام.
-//   • حالة خطأ ظاهرة بزر إعادة محاولة في عرض الملفات بدل الصمت.
+// ─── v97: قسم «المكتبات» — v100: خصوصية المكتبة نفسها + ملفات مباشرة ────────
+// قسم عام يظهر لكل الموظفين: كل موظف يُنشئ مكتباته للاحتفاظ بملفاته، ويحدد
+// رؤية مكتبته نفسها: «عامة» أو «خاصة» أو «لمن يمتلك الرابط»، ويصنع داخلها
+// أقساماً بأحد ثلاثة أوضاع: «خاص به» أو «عام للجميع» أو «برابط وصول».
+// v100 — القاعدة الذهبية من صاحب الموقع:
+//   • أي شيء داخل مكتبة خاصة يبقى خاصاً ولا يظهر لأحد مهما كان السبب.
+//   • لا يمكن جعل قسم «عاماً» أو «برابط» داخل مكتبة خاصة — ثغرة مسدودة
+//     خادمياً وفي الواجهة معاً (خيارات القسم تُقيَّد بمستوى مكتبته).
+//   • مكتبة «برابط» مخفية عن القوائم وتُفتح برابطها — وأقسامها خاص أو برابط فقط.
+//   • المستخدم يرفع ملفاته مباشرة داخل مكتبته بلا قسم («ملفات المكتبة»).
 // القراءة عبر ذاكرة إدارة الحالة المركزية (v95/v96) — نفس نمط بقية الأقسام.
 
 'use client'
@@ -32,6 +30,7 @@ import {
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
 import { useCachedGet, invalidateCache } from '@/application/data-cache'
+import { effectiveSectionMode, allowedSectionModes, libraryVisibility, type LibVisibility } from '@/lib/lib-visibility'
 import { toast } from 'sonner'
 
 interface LibOwner { id: string; name: string; nameEn?: string | null }
@@ -39,6 +38,8 @@ interface LibSectionRow { id: string; name: string; isPrivate: boolean; createdA
 interface LibRow {
   id: string; name: string; description?: string | null; createdAt: string
   ownerId: string; owner: LibOwner; isMine?: boolean; canManage?: boolean
+  // v100: رؤية المكتبة نفسها + توكن رابطها (يُسلَّم لمدرّيها فقط)
+  visibility?: string; linkToken?: string | null
   sectionCount: number; fileCount: number; sections: LibSectionRow[]
 }
 interface LibFileRow {
@@ -125,6 +126,108 @@ function sectionMode(s: { isPrivate: boolean; linkToken?: string | null }): 'pri
   return s.isPrivate ? 'private' : 'public'
 }
 
+/** v100: نسخ أي رابط وصول (قسم أو مكتبة) — مع نافذة يدوية للمتصفحات الصارمة */
+async function copyAccessLink(url: string, isRtl: boolean): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(url)
+    toast.success(isRtl ? 'نُسخ رابط الوصول — شاركه مع من تريد' : 'Access link copied — share it')
+  } catch {
+    try {
+      window.prompt(isRtl ? 'انسخ الرابط يدوياً:' : 'Copy the link manually:', url)
+    } catch {}
+  }
+}
+
+/** v100: قراءة الملف ورفعه إلى أي مسار ملفات (قسم أو مكتبة) — منطق واحد لكل الرفع */
+async function uploadLibraryFile(
+  file: File,
+  endpoint: string,
+  isRtl: boolean,
+  fmtSize: (n?: number | null) => string
+): Promise<boolean> {
+  var type = detectFileType(file)
+  var toUpload = file
+  // صور الجوال الكبيرة تُضغط أولاً — فوتوغرافيا 5MB تصير مئات الكيلوبايتات
+  if (type === 'image' && file.size > IMAGE_COMPRESS_OVER) {
+    try {
+      var smaller = await compressImage(file)
+      if (smaller) toUpload = smaller
+    } catch {}
+  }
+  if (toUpload.size > MAX_FILE_BYTES) {
+    toast.error(
+      isRtl
+        ? `حجم الملف ${fmtSize(toUpload.size)} يتجاوز 3 ميغابايت — الصور تُضغط تلقائياً، والملفات الأخرى صغّرها أو قسّمها`
+        : `File is ${fmtSize(toUpload.size)} — over the 3MB limit. Photos are compressed automatically; shrink other files first`
+    )
+    return false
+  }
+  try {
+    var url = await new Promise<string>((resolve, reject) => {
+      var reader = new FileReader()
+      reader.onload = () => resolve(String(reader.result))
+      reader.onerror = () => reject(new Error('read_failed'))
+      reader.readAsDataURL(toUpload)
+    })
+    var res = await authedFetch(endpoint, {
+      method: 'POST',
+      body: JSON.stringify({ fileName: toUpload.name, url, fileType: detectFileType(toUpload) }),
+    })
+    var data = await res.json().catch(() => null)
+    if (!res.ok) {
+      toast.error(data?.message || (isRtl ? 'فشل الرفع — حاول مجدداً' : 'Upload failed — try again'))
+      return false
+    }
+    toast.success(isRtl ? 'رُفع الملف' : 'File uploaded')
+    return true
+  } catch {
+    toast.error(isRtl ? 'فشل الاتصال' : 'Connection failed')
+    return false
+  }
+}
+
+/**
+ * v100: منتقي الرؤية الثلاثي المشترك — في نافذة المكتبة ونافذة القسم معاً.
+ * الأوضاع غير المسموحة معطّلة تماماً (والخادم يرفضها أيضاً — حاجزان لا واحد)،
+ * مع تلميح يوضّح سبب التقييد: قاعدة صاحب الموقع — لا توسيع فوق مستوى المكتبة.
+ */
+function VisibilityOptions(props: {
+  value: LibVisibility
+  onChange: (m: LibVisibility) => void
+  allowed: LibVisibility[]
+  isRtl: boolean
+}) {
+  var opts: Array<{ m: LibVisibility; label: string; hint: string; icon: typeof Lock }> = [
+    { m: 'private', label: props.isRtl ? 'خاص' : 'Private', hint: props.isRtl ? 'تراه أنت والإدارة فقط' : 'Only you and management', icon: Lock },
+    { m: 'public', label: props.isRtl ? 'عام' : 'Public', hint: props.isRtl ? 'يراه جميع الموظفين' : 'Visible to all employees', icon: Globe2 },
+    { m: 'link', label: props.isRtl ? 'برابط' : 'By link', hint: props.isRtl ? 'يُفتح فقط لمن يملك رابطه' : 'Opens only with its link', icon: Link2 },
+  ]
+  return (
+    <div className="grid grid-cols-3 gap-2">
+      {opts.map((o) => {
+        var disabled = !props.allowed.includes(o.m)
+        var active = props.value === o.m
+        var Icon = o.icon
+        return (
+          <button
+            key={o.m}
+            type="button"
+            disabled={disabled}
+            onClick={() => props.onChange(o.m)}
+            className={`p-3 rounded-lg border text-right transition ${active ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-border hover:bg-muted/50'} ${disabled ? 'opacity-40 cursor-not-allowed' : ''}`}
+          >
+            <div className="flex items-center gap-2">
+              <Icon className={`h-4 w-4 shrink-0 ${active ? 'text-primary' : 'text-muted-foreground'}`} />
+              <span className="text-sm font-medium">{o.label}</span>
+            </div>
+            <p className="text-[11px] text-muted-foreground mt-1 leading-snug">{o.hint}</p>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 interface SectionViewProps {
   section: LibSectionRow
   lib: LibRow
@@ -169,67 +272,32 @@ function SectionFilesView(props: SectionViewProps) {
 
   // صلاحيات الواجهة — مرآة لبوابات الخادم (الخادم يبقى المصدر النهائي)
   var canManageHere = section.ownerId === userId || lib.ownerId === userId || isAdmin
-  var mode = sectionMode(section)
+  // v100: الوضع المعروض هو الوضع الفعلي بعد قيد المكتبة (الأضيق يفوز) —
+  // قسم «عام» داخل مكتبة خاصة يظهر خاصاً كما يحكم عليه الخادم حرفياً
+  var mode = effectiveSectionMode(lib, section)
 
-  // v98: نسخ رابط الوصول — صاحب القسم/المكتبة ينسخه ويوزعه على من يريد
+  // v98/v100: نسخ رابط الوصول — لرابط القسم نفسه، أو لرابط مكتبته إن كان
+  // القسم يُفتح برابط المكتبة (قسم بلا توكن خاص داخل مكتبة «برابط»)
   async function copySectionLink() {
-    if (!section.linkToken) return
-    var url = `${window.location.origin}/?lib=${encodeURIComponent(lib.id)}&sec=${encodeURIComponent(section.id)}&t=${encodeURIComponent(section.linkToken)}`
-    try {
-      await navigator.clipboard.writeText(url)
-      toast.success(isRtl ? 'نُسخ رابط الوصول — شاركه مع من تريد' : 'Access link copied — share it')
-    } catch {
-      // متصفحات بلا إذن الحافظة — نافذة اختيار يدوية
-      try {
-        window.prompt(isRtl ? 'انسخ الرابط يدوياً:' : 'Copy the link manually:', url)
-      } catch {}
-    }
+    var url = section.linkToken
+      ? `${window.location.origin}/?lib=${encodeURIComponent(lib.id)}&sec=${encodeURIComponent(section.id)}&t=${encodeURIComponent(section.linkToken)}`
+      : (lib.visibility === 'link' && lib.linkToken
+        ? `${window.location.origin}/?lib=${encodeURIComponent(lib.id)}&t=${encodeURIComponent(lib.linkToken)}`
+        : '')
+    if (!url) return
+    await copyAccessLink(url, isRtl)
   }
 
-  // ─── رفع ملف (v98: كل الصيغات + ضغط الصور تلقائياً) ───────────────────────
+  // ─── رفع ملف (v98: كل الصيغات + ضغط الصور — v100: منطق مشترك واحد) ────────
   async function handleFilePicked(e: React.ChangeEvent<HTMLInputElement>) {
     var input = e.target
     var f = input.files && input.files[0]
     input.value = ''
     if (!f) return
-    var picked = f // تثبيت النوع للاستخدام داخل الدالة المغلقة أدناه
-    var type = detectFileType(picked)
-    var toUpload = picked
-    // صور الجوال الكبيرة تُضغط أولاً — فوتوغرافيا 5MB تصير مئات الكيلوبايتات
-    if (type === 'image' && picked.size > IMAGE_COMPRESS_OVER) {
-      try {
-        var smaller = await compressImage(picked)
-        if (smaller) toUpload = smaller
-      } catch {}
-    }
-    if (toUpload.size > MAX_FILE_BYTES) {
-      toast.error(
-        isRtl
-          ? `حجم الملف ${fmtSize(toUpload.size)} يتجاوز 3 ميغابايت — الصور تُضغط تلقائياً، والملفات الأخرى صغّرها أو قسّمها`
-          : `File is ${fmtSize(toUpload.size)} — over the 3MB limit. Photos are compressed automatically; shrink other files first`
-      )
-      return
-    }
     setBusy(true)
     try {
-      var url = await new Promise<string>((resolve, reject) => {
-        var reader = new FileReader()
-        reader.onload = () => resolve(String(reader.result))
-        reader.onerror = () => reject(new Error('read_failed'))
-        reader.readAsDataURL(toUpload)
-      })
-      var res = await authedFetch(`/api/libraries/sections/${section.id}/files`, {
-        method: 'POST',
-        body: JSON.stringify({ fileName: toUpload.name, url, fileType: detectFileType(toUpload) }),
-      })
-      var data = await res.json().catch(() => null)
-      if (!res.ok) toast.error(data?.message || (isRtl ? 'فشل الرفع — حاول مجدداً' : 'Upload failed — try again'))
-      else {
-        toast.success(isRtl ? 'رُفع الملف' : 'File uploaded')
-        onChanged()
-      }
-    } catch {
-      toast.error(isRtl ? 'فشل الاتصال' : 'Connection failed')
+      var ok = await uploadLibraryFile(f, `/api/libraries/sections/${section.id}/files`, isRtl, fmtSize)
+      if (ok) onChanged()
     } finally {
       setBusy(false)
     }
@@ -324,8 +392,8 @@ function SectionFilesView(props: SectionViewProps) {
               <Pencil className="h-4 w-4" />
             </Button>
           )}
-          {/* v98: زر نسخ الرابط — للمدرّين في أقسام «برابط» */}
-          {canManageHere && mode === 'link' && section.linkToken && (
+          {/* v98/v100: زر نسخ الرابط — لرابط القسم نفسه أو لرابط مكتبته */}
+          {canManageHere && (section.linkToken || (lib.visibility === 'link' && lib.linkToken)) && (
             <Button variant="outline" size="sm" onClick={copySectionLink} title={isRtl ? 'نسخ رابط الوصول' : 'Copy access link'}>
               <Copy className="h-4 w-4" />
             </Button>
@@ -413,6 +481,184 @@ function SectionFilesView(props: SectionViewProps) {
   )
 }
 
+// ─── v100: ملفات المكتبة المباشرة (بلا قسم) ──────────────────────────────────
+// «يمكن للمستخدم أن يرفع ملفاته بشكل مباشر داخل مكتبته» — كتلة مستقلة أعلى
+// الأقسام، رؤيتها = رؤية المكتبة نفسها (الخادم يفرض ذلك — هنا مرآة عرض فقط).
+function LibraryDirectFiles(props: {
+  lib: LibRow
+  /** توكن رابط المكتبة لمن فتحها بالرابط (يمر مع طلبات العرض والفتح) */
+  libToken?: string | null
+  userId: string
+  isRtl: boolean
+  onChanged: () => void
+}) {
+  const { lib, isRtl } = props
+  var filesUrl = `/api/libraries/${lib.id}/files${props.libToken ? `?t=${encodeURIComponent(props.libToken)}` : ''}`
+  const files = useCachedGet<{ files: LibFileRow[] }>(filesUrl)
+  const [busy, setBusy] = useState(false)
+  const [open, setOpen] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  var canManageHere = lib.ownerId === props.userId || lib.canManage === true
+
+  function ownerName(o: LibOwner): string {
+    return isRtl ? (o.name || o.nameEn || '') : (o.nameEn || o.name || '')
+  }
+  function fmtDate(s: string): string {
+    return new Date(s).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')
+  }
+  function fmtSize(n?: number | null): string {
+    if (!n) return ''
+    var kb = n / 1024
+    if (kb < 1024) return `${Math.round(kb)} KB`
+    return `${(kb / 1024).toFixed(1)} MB`
+  }
+
+  async function handleFilePicked(e: React.ChangeEvent<HTMLInputElement>) {
+    var input = e.target
+    var f = input.files && input.files[0]
+    input.value = ''
+    if (!f) return
+    setBusy(true)
+    try {
+      var ok = await uploadLibraryFile(f, `/api/libraries/${lib.id}/files`, isRtl, fmtSize)
+      if (ok) {
+        files.refresh()
+        props.onChanged()
+      }
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function openFile(f: LibFileRow) {
+    try {
+      var res = await authedFetch(`/api/libraries/files/${f.id}${props.libToken ? `?t=${encodeURIComponent(props.libToken)}` : ''}`)
+      var data = await res.json().catch(() => null)
+      if (!res.ok || !data?.file?.url) {
+        toast.error(data?.message || (isRtl ? 'تعذر تحميل الملف' : 'Failed to load file'))
+        return
+      }
+      var url = String(data.file.url)
+      if (url.startsWith('data:')) {
+        var a = document.createElement('a')
+        a.href = url
+        a.download = f.fileName
+        document.body.appendChild(a)
+        a.click()
+        a.remove()
+      } else {
+        window.open(url, '_blank', 'noopener,noreferrer')
+      }
+    } catch {
+      toast.error(isRtl ? 'فشل الاتصال' : 'Connection failed')
+    }
+  }
+
+  async function deleteFile(f: LibFileRow) {
+    if (!window.confirm(isRtl ? `حذف الملف «${f.fileName}»؟` : `Delete file "${f.fileName}"?`)) return
+    try {
+      var res = await authedFetch(`/api/libraries/files/${f.id}`, { method: 'DELETE' })
+      var data = await res.json().catch(() => null)
+      if (!res.ok) toast.error(data?.message || (isRtl ? 'فشل الحذف' : 'Delete failed'))
+      else {
+        toast.success(isRtl ? 'حُذف الملف' : 'File deleted')
+        files.refresh()
+        props.onChanged()
+      }
+    } catch {
+      toast.error(isRtl ? 'فشل الاتصال' : 'Connection failed')
+    }
+  }
+
+  var list = files.data?.files || []
+
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <button
+          type="button"
+          className="flex items-center gap-2 text-sm font-medium hover:text-primary transition"
+          onClick={() => setOpen((o) => !o)}
+        >
+          <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-600 flex items-center justify-center shrink-0">
+            <FileIcon className="h-4 w-4" />
+          </div>
+          {isRtl ? 'ملفات المكتبة (خارج الأقسام)' : 'Library files (outside sections)'}
+          <Badge variant="outline" className="text-[10px] px-1.5 py-0">{list.length}</Badge>
+        </button>
+        <div className="flex items-center gap-1.5">
+          <Button variant="ghost" size="sm" onClick={() => files.refresh()} disabled={files.refreshing} title={isRtl ? 'تحديث' : 'Refresh'}>
+            <RefreshCw className={`h-4 w-4 ${files.refreshing ? 'animate-spin' : ''}`} />
+          </Button>
+          {canManageHere && (
+            <>
+              <input ref={fileInputRef} type="file" className="hidden" onChange={handleFilePicked} />
+              <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} disabled={busy}>
+                {busy ? <Loader2 className="h-4 w-4 ml-2 animate-spin" /> : <Upload className="h-4 w-4 ml-2" />}
+                {isRtl ? 'رفع مباشر' : 'Upload'}
+              </Button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {open && (
+        <div className="mt-2 space-y-2">
+          {files.loading ? (
+            <>
+              <div className="h-14 bg-muted animate-pulse rounded" />
+              <div className="h-14 bg-muted animate-pulse rounded" />
+            </>
+          ) : files.error ? (
+            <div className="text-sm text-muted-foreground py-3 text-center bg-muted/40 rounded">
+              {isRtl ? 'تعذر تحميل ملفات المكتبة — تحقق من الاتصال' : 'Could not load library files'}
+            </div>
+          ) : list.length === 0 ? (
+            <div className="text-sm text-muted-foreground py-3 text-center bg-muted/40 rounded">
+              {canManageHere
+                ? (isRtl ? 'لا توجد ملفات مباشرة بعد — استخدم «رفع مباشر» لإضافة ملف بلا قسم' : 'No direct files yet — use "Upload"')
+                : (isRtl ? 'لا توجد ملفات مباشرة' : 'No direct files')}
+            </div>
+          ) : (
+            list.map((f) => {
+              var Icon = fileTypeIcon(f.fileType)
+              return (
+                <Card key={f.id} className="transition hover:bg-muted/40">
+                  <CardContent className="p-3 flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                      <Icon className="h-4 w-4 text-primary" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm truncate" title={f.fileName}>{f.fileName}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-2 flex-wrap">
+                        <span>{fileTypeLabelAr(f.fileType, isRtl)}</span>
+                        {f.size ? <span>• {fmtSize(f.size)}</span> : null}
+                        <span>• {ownerName(f.uploader)}</span>
+                        <span>• {fmtDate(f.createdAt)}</span>
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <Button variant="ghost" size="sm" onClick={() => openFile(f)} title={isRtl ? 'تحميل' : 'Download'}>
+                        <Download className="h-4 w-4" />
+                      </Button>
+                      {(f.canDelete || f.uploaderId === props.userId) && (
+                        <Button variant="ghost" size="sm" onClick={() => deleteFile(f)} className="text-destructive hover:text-destructive" title={isRtl ? 'حذف' : 'Delete'}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              )
+            })
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── الصفحة الرئيسية: قائمة المكتبات وعرض المكتبة والأقسام ───────────────────
 export default function LibrariesPage() {
   const user = useAppStore((s) => s.user)
@@ -428,11 +674,17 @@ export default function LibrariesPage() {
   const [linkLoading, setLinkLoading] = useState(false)
   const [linkError, setLinkError] = useState(false)
 
+  // v100: عرض مكتبة فُتحت برابطها المباشر (مكتبة «برابط» مخفية عن القوائم)
+  const [libLinkView, setLibLinkView] = useState<null | { lib: LibRow; token: string }>(null)
+  const [libLinkError, setLibLinkError] = useState(false)
+
   // نوافذ الإنشاء والتعديل
   const [libDialog, setLibDialog] = useState<null | 'create' | 'edit'>(null)
-  const [libForm, setLibForm] = useState({ name: '', description: '' })
+  const [libForm, setLibForm] = useState({ name: '', description: '', visibility: 'public' as LibVisibility })
+  // v100: تدوير رابط مكتبة موجودة (زر «توليد رابط جديد» في نافذة التعديل)
+  const [libRegenLink, setLibRegenLink] = useState(false)
   const [sectionDialog, setSectionDialog] = useState<null | { mode: 'create' | 'edit'; section?: LibSectionRow }>(null)
-  const [sectionForm, setSectionForm] = useState({ name: '', mode: 'public' as 'private' | 'public' | 'link' })
+  const [sectionForm, setSectionForm] = useState({ name: '', mode: 'public' as LibVisibility })
   const [busy, setBusy] = useState(false)
 
   const refreshAll = useCallback(() => {
@@ -463,6 +715,7 @@ export default function LibrariesPage() {
           lib: {
             id: s.library?.id || '', name: s.library?.name || '', createdAt: s.createdAt,
             ownerId: s.library?.ownerId || '', owner: s.owner || { id: '', name: '', nameEn: null },
+            visibility: s.library?.visibility || 'public',
             sectionCount: 0, fileCount: 0, sections: [],
           },
         })
@@ -474,23 +727,68 @@ export default function LibrariesPage() {
     }
   }, [])
 
+  // ─── v100: فتح «رابط المكتبة» مباشرة ─────────────────────────────────────
+  // الرابط: ?lib=<id>&t=<libToken> (بلا sec) — يفتح مكتبة «لمن يمتلك الرابط»
+  // بأقسامها وملفاتها المباشرة (الخادم يتحقق من التوكن — لا ثقة بالواجهة)
+  const loadLibraryLink = useCallback(async (libId: string, token: string) => {
+    setLinkLoading(true)
+    setLibLinkError(false)
+    try {
+      var res = await authedFetch(`/api/libraries/${encodeURIComponent(libId)}?t=${encodeURIComponent(token)}`)
+      var data = await res.json().catch(() => null)
+      if (!res.ok || !data?.library) {
+        setLibLinkError(true)
+      } else {
+        var l = data.library
+        setLibLinkView({
+          token,
+          lib: {
+            id: l.id, name: l.name, description: l.description || null, createdAt: l.createdAt,
+            ownerId: l.ownerId, owner: l.owner || { id: '', name: '', nameEn: null },
+            visibility: l.visibility || 'public', linkToken: l.linkToken ?? null,
+            isMine: l.isMine, canManage: l.canManage,
+            sectionCount: l.sectionCount || 0, fileCount: l.fileCount || 0,
+            sections: (l.sections || []).map((x: Record<string, unknown>) => ({
+              id: String(x.id), name: String(x.name), isPrivate: x.isPrivate === true,
+              createdAt: String(x.createdAt), ownerId: String(x.ownerId),
+              owner: (x.owner as LibOwner) || { id: '', name: '', nameEn: null },
+              fileCount: Number(x.fileCount || 0), linkToken: (x.linkToken as string) ?? null,
+            })),
+          },
+        })
+        setView({ libId: libId, sectionId: null })
+      }
+    } catch {
+      setLibLinkError(true)
+    } finally {
+      setLinkLoading(false)
+    }
+  }, [])
+
   useEffect(() => {
     try {
       var sp = new URLSearchParams(window.location.search)
       var secId = sp.get('sec')
-      if (!secId) return
+      var libId = sp.get('lib')
       var token = sp.get('t') || ''
-      loadLinkSection(secId, token)
+      // رابط قسم: ?lib=&sec=&t= — يُقرأ كما هو منذ v98
+      if (secId) { loadLinkSection(secId, token); return }
+      // v100 رابط مكتبة: ?lib=&t= (بلا sec) — يفتح المكتبة نفسها
+      if (libId && token) loadLibraryLink(libId, token)
     } catch {}
-  }, [loadLinkSection])
+  }, [loadLinkSection, loadLibraryLink])
 
-  const openLib = (id: string) => { setLinkView(null); setView({ libId: id, sectionId: null }) }
+  const openLib = (id: string) => { setLinkView(null); setLibLinkView(null); setView({ libId: id, sectionId: null }) }
   const openSection = (id: string) => setView((v) => ({ ...v, sectionId: id }))
-  const backToLibraries = () => { setLinkView(null); setView({ libId: null, sectionId: null }) }
+  const backToLibraries = () => { setLinkView(null); setLibLinkView(null); setView({ libId: null, sectionId: null }) }
   const backToSections = () => { setLinkView(null); setView((v) => ({ ...v, sectionId: null })) }
 
-  const openLibRow = view.libId ? (libs.data?.libraries || []).find((l) => l.id === view.libId) || null : null
+  // v100: المكتبة المفتوحة — من القائمة، أو المُحمّلة برابطها المباشر
+  const openLibRow = libLinkView?.lib
+    || (view.libId ? (libs.data?.libraries || []).find((l) => l.id === view.libId) || null : null)
   const openSectionRow = openLibRow?.sections.find((s) => s.id === view.sectionId) || null
+  // توكن رابط المكتبة يرافق التنقل داخلها (طلبات ملفات أقسامها وملفاتها المباشرة)
+  const activeLibToken = libLinkView && openLibRow && libLinkView.lib.id === openLibRow.id ? libLinkView.token : null
 
   var isAdmin = user?.isSystemAdmin === true
   function canManageSectionUI(section: LibSectionRow, lib: LibRow): boolean {
@@ -498,15 +796,22 @@ export default function LibrariesPage() {
     return section.ownerId === user.id || lib.ownerId === user.id || isAdmin
   }
 
-  // ─── إنشاء/تعديل مكتبة ────────────────────────────────────────────────────
+  // ─── إنشاء/تعديل مكتبة (v100: مع رؤيتها العامة/خاصة/برابط) ─────────────────
   async function submitLibrary() {
     if (!libForm.name.trim()) { toast.error(isRtl ? 'اسم المكتبة مطلوب' : 'Library name is required'); return }
     setBusy(true)
     try {
       var isEdit = libDialog === 'edit' && openLibRow
+      // v100: الرؤية تُرسل دائماً، و«توليد رابط جديد» في التعديل يدوّر الرمز
+      var payload: Record<string, unknown> = {
+        name: libForm.name.trim(),
+        description: libForm.description.trim() || null,
+        visibility: libForm.visibility,
+      }
+      if (isEdit && libRegenLink && libForm.visibility === 'link') payload.linkToken = 'generate'
       var res = await authedFetch(isEdit ? `/api/libraries/${openLibRow!.id}` : '/api/libraries', {
         method: isEdit ? 'PATCH' : 'POST',
-        body: JSON.stringify({ name: libForm.name.trim(), description: libForm.description.trim() || null }),
+        body: JSON.stringify(payload),
       })
       var data = await res.json().catch(() => null)
       if (!res.ok) {
@@ -514,6 +819,9 @@ export default function LibrariesPage() {
       } else {
         toast.success(isEdit ? (isRtl ? 'حُدّثت المكتبة' : 'Library updated') : (isRtl ? 'أُنشئت المكتبة' : 'Library created'))
         setLibDialog(null)
+        setLibRegenLink(false)
+        // رابط المكتبة المفتوح بالرابط يُحدّث بياناته بعد أي حفظ
+        if (libLinkView) loadLibraryLink(libLinkView.lib.id, libLinkView.token)
         refreshAll()
       }
     } catch {
@@ -540,11 +848,15 @@ export default function LibrariesPage() {
     }
   }
 
-  // ─── إنشاء/تعديل قسم (v98: ثلاثة أوضاع رؤية) ─────────────────────────────
+  // ─── إنشاء/تعديل قسم (v98: ثلاثة أوضاع — v100: مقيدة برؤية المكتبة) ────────
   function openSectionDialog(mode: 'create' | 'edit', section?: LibSectionRow) {
+    // v100: الوضع الافتراضي للقسم الجديد يلتزم بمستوى مكتبته — داخل مكتبة
+    // خاصة أو «برابط» يبدأ من «خاص» (الخيار الأضيق المتاح دائماً)
+    var defMode: LibVisibility = 'public'
+    if (openLibRow && !allowedSectionModes(openLibRow).includes('public')) defMode = 'private'
     setSectionForm({
       name: section ? section.name : '',
-      mode: section ? sectionMode(section) : 'public',
+      mode: section ? sectionMode(section) : defMode,
     })
     setSectionDialog({ mode, section })
   }
@@ -600,18 +912,22 @@ export default function LibrariesPage() {
     }
   }
 
-  // ─── نسخ رابط قسم من بطاقة القسم (للمدرّين) ──────────────────────────────
+  // ─── نسخ رابط قسم من بطاقة القسم (للمدرّين — v100: أو رابط مكتبته) ────────
   async function copySectionLink(section: LibSectionRow, lib: LibRow) {
-    if (!section.linkToken) return
-    var url = `${window.location.origin}/?lib=${encodeURIComponent(lib.id)}&sec=${encodeURIComponent(section.id)}&t=${encodeURIComponent(section.linkToken)}`
-    try {
-      await navigator.clipboard.writeText(url)
-      toast.success(isRtl ? 'نُسخ رابط الوصول — شاركه مع من تريد' : 'Access link copied — share it')
-    } catch {
-      try {
-        window.prompt(isRtl ? 'انسخ الرابط يدوياً:' : 'Copy the link manually:', url)
-      } catch {}
-    }
+    var url = section.linkToken
+      ? `${window.location.origin}/?lib=${encodeURIComponent(lib.id)}&sec=${encodeURIComponent(section.id)}&t=${encodeURIComponent(section.linkToken)}`
+      : (lib.visibility === 'link' && lib.linkToken
+        ? `${window.location.origin}/?lib=${encodeURIComponent(lib.id)}&t=${encodeURIComponent(lib.linkToken)}`
+        : '')
+    if (!url) return
+    await copyAccessLink(url, isRtl)
+  }
+
+  // ─── v100: نسخ رابط المكتبة نفسها (للمدرّين) ──────────────────────────────
+  async function copyLibraryLink(lib: LibRow) {
+    if (!lib.linkToken) return
+    var url = `${window.location.origin}/?lib=${encodeURIComponent(lib.id)}&t=${encodeURIComponent(lib.linkToken)}`
+    await copyAccessLink(url, isRtl)
   }
 
   if (!user) return null
@@ -631,7 +947,7 @@ export default function LibrariesPage() {
           <DialogHeader>
             <DialogTitle>{libDialog === 'edit' ? (isRtl ? 'تعديل المكتبة' : 'Edit Library') : (isRtl ? 'مكتبة جديدة' : 'New Library')}</DialogTitle>
             <DialogDescription>
-              {isRtl ? 'المكتبة مكان تحفظ فيه ملفاتك في أقسام — خاصة أو عامة أو برابط وصول' : 'A library holds your files in sections — private, public or by access link'}
+              {isRtl ? 'حدد من يرى مكتبتك: عامة للجميع، خاصة بك وحدك، أو تُفتح لمن يمتلك رابطها — وقاعدة ثابتة: ما داخل المكتبة الخاصة يبقى خاصاً دائماً' : 'Choose who sees this library: public, private to you, or opened only with its link — inside a private library everything stays private'}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
@@ -643,6 +959,42 @@ export default function LibrariesPage() {
               <Label>{isRtl ? 'وصف مختصر (اختياري)' : 'Short description (optional)'}</Label>
               <Textarea value={libForm.description} onChange={(e) => setLibForm({ ...libForm, description: e.target.value })} placeholder={isRtl ? 'لماذا هذه المكتبة؟' : 'What is this library for?'} rows={2} maxLength={500} />
             </div>
+            {/* v100: رؤية المكتبة نفسها — عامة/خاصة/لمن يمتلك الرابط */}
+            <div className="space-y-2">
+              <Label>{isRtl ? 'من يرى هذه المكتبة؟' : 'Who can see this library?'}</Label>
+              <VisibilityOptions
+                value={libForm.visibility}
+                onChange={(m) => setLibForm({ ...libForm, visibility: m })}
+                allowed={['private', 'public', 'link']}
+                isRtl={isRtl}
+              />
+            </div>
+            {libForm.visibility === 'private' && (
+              <p className="text-xs text-muted-foreground bg-muted/50 rounded p-2 leading-relaxed">
+                {isRtl
+                  ? 'المكتبة الخاصة لا تظهر إلا لك (والإدارة) — وكل أقسامها وملفاتها تبقى خاصة إجبارياً حتى لو حاول أحد جعل قسم فيها عاماً (حماية من التسريب).'
+                  : 'A private library is visible only to you (and management) — all its sections and files stay private no matter what (leak-proof).' }
+              </p>
+            )}
+            {libForm.visibility === 'link' && (
+              <p className="text-xs text-muted-foreground bg-muted/50 rounded p-2 leading-relaxed">
+                {isRtl
+                  ? 'المكتبة مخفية عن القوائم — بعد الحفظ استخدم زر «نسخ رابط المكتبة» لمن تريد، وكل من يملك الرابط يراها بأقسامها المسموحة وملفاتها المباشرة. يمكنك توليد رابط جديد متى شئت فيُبطل القديم فوراً.'
+                  : 'The library stays hidden from lists — share its link after saving. Anyone with it sees the library and its allowed sections. Regenerate the link anytime to revoke the old one instantly.'}
+              </p>
+            )}
+            {libDialog === 'edit' && libForm.visibility === 'link' && openLibRow?.linkToken && (
+              <div className="flex items-center gap-2 flex-wrap">
+                <Button type="button" variant="outline" size="sm" onClick={() => copyLibraryLink(openLibRow!)}>
+                  <Copy className="h-4 w-4 ml-2" />
+                  {isRtl ? 'نسخ رابط المكتبة' : 'Copy library link'}
+                </Button>
+                <Button type="button" variant="outline" size="sm" onClick={() => setLibRegenLink(true)} disabled={libRegenLink}>
+                  <RefreshCw className="h-4 w-4 ml-2" />
+                  {libRegenLink ? (isRtl ? 'سيُولَّد رابط جديد عند الحفظ' : 'A new link will be generated on save') : (isRtl ? 'توليد رابط جديد (يبطل القديم)' : 'Regenerate link (revokes old)')}
+                </Button>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setLibDialog(null)} disabled={busy}>{isRtl ? 'إلغاء' : 'Cancel'}</Button>
@@ -670,40 +1022,31 @@ export default function LibrariesPage() {
               <Label>{isRtl ? 'اسم القسم *' : 'Section name *'}</Label>
               <Input value={sectionForm.name} onChange={(e) => setSectionForm({ ...sectionForm, name: e.target.value })} placeholder={isRtl ? 'مثال: شهاداتي ووثائقي' : 'e.g. My certificates'} className="h-10" maxLength={120} />
             </div>
-            <div className="grid grid-cols-3 gap-2">
-              <button
-                type="button"
-                onClick={() => setSectionForm({ ...sectionForm, mode: 'private' })}
-                className={`p-3 rounded-lg border text-right transition ${sectionForm.mode === 'private' ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-border hover:bg-muted/50'}`}
-              >
-                <div className="flex items-center gap-2">
-                  <Lock className={`h-4 w-4 shrink-0 ${sectionForm.mode === 'private' ? 'text-primary' : 'text-muted-foreground'}`} />
-                  <span className="text-sm font-medium">{isRtl ? 'خاص' : 'Private'}</span>
-                </div>
-                <p className="text-[11px] text-muted-foreground mt-1 leading-snug">{isRtl ? 'تراه أنت والإدارة فقط' : 'Only you and management'}</p>
-              </button>
-              <button
-                type="button"
-                onClick={() => setSectionForm({ ...sectionForm, mode: 'public' })}
-                className={`p-3 rounded-lg border text-right transition ${sectionForm.mode === 'public' ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-border hover:bg-muted/50'}`}
-              >
-                <div className="flex items-center gap-2">
-                  <Globe2 className={`h-4 w-4 shrink-0 ${sectionForm.mode === 'public' ? 'text-primary' : 'text-muted-foreground'}`} />
-                  <span className="text-sm font-medium">{isRtl ? 'عام' : 'Public'}</span>
-                </div>
-                <p className="text-[11px] text-muted-foreground mt-1 leading-snug">{isRtl ? 'يراه جميع الموظفين' : 'Visible to all employees'}</p>
-              </button>
-              <button
-                type="button"
-                onClick={() => setSectionForm({ ...sectionForm, mode: 'link' })}
-                className={`p-3 rounded-lg border text-right transition ${sectionForm.mode === 'link' ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-border hover:bg-muted/50'}`}
-              >
-                <div className="flex items-center gap-2">
-                  <Link2 className={`h-4 w-4 shrink-0 ${sectionForm.mode === 'link' ? 'text-primary' : 'text-muted-foreground'}`} />
-                  <span className="text-sm font-medium">{isRtl ? 'برابط' : 'By link'}</span>
-                </div>
-                <p className="text-[11px] text-muted-foreground mt-1 leading-snug">{isRtl ? 'يُفتح فقط لمن يملك رابطه' : 'Opens only with its link'}</p>
-              </button>
+            {/* v100: خيارات القسم مقيّدة برؤية مكتبته — لا قسم أوسع من مكتبته */}
+            <div className="space-y-2">
+              <Label>{isRtl ? 'رؤية القسم' : 'Section visibility'}</Label>
+              {openLibRow && (
+                <VisibilityOptions
+                  value={sectionForm.mode}
+                  onChange={(m) => setSectionForm({ ...sectionForm, mode: m })}
+                  allowed={allowedSectionModes(openLibRow)}
+                  isRtl={isRtl}
+                />
+              )}
+              {openLibRow && libraryVisibility(openLibRow.visibility) === 'private' && (
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2 leading-relaxed">
+                  {isRtl
+                    ? 'المكتبة نفسها خاصة — القسم هنا خاص إجبارياً ولا يمكن جعله عاماً أو برابط (منع ثغرة التسريب).'
+                    : 'This library is private — the section stays private; public/link modes are locked (leak-proof rule).'}
+                </p>
+              )}
+              {openLibRow && libraryVisibility(openLibRow.visibility) === 'link' && (
+                <p className="text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded p-2 leading-relaxed">
+                  {isRtl
+                    ? 'المكتبة تُفتح لمن يمتلك رابطها — القسم هنا يكون خاصاً أو برابط وصول فقط، ولا يمكن جعله عاماً.'
+                    : 'This library opens by its link — sections can be private or by-link only, never public.'}
+                </p>
+              )}
             </div>
             {sectionForm.mode === 'link' && (
               <p className="text-xs text-muted-foreground bg-muted/50 rounded p-2 leading-relaxed">
@@ -765,6 +1108,9 @@ export default function LibrariesPage() {
         userId={user.id}
         isAdmin={isAdmin}
         isRtl={isRtl}
+        // v100: من فتح مكتبة «برابط» ثم دخل قسماً — توكن المكتبة يرافقه
+        // في عرض الملفات (الخادم يقبل توكن المكتبة أو توكن القسم)
+        accessToken={activeLibToken || undefined}
         onChanged={refreshAll}
         onBackToSections={backToSections}
         onBackToLibraries={backToLibraries}
@@ -786,13 +1132,13 @@ export default function LibrariesPage() {
       </div>
     )
   }
-  if (linkError) {
+  if (linkError || libLinkError) {
     return (
       <Card>
         <CardContent className="py-12 text-center">
           <Link2 className="h-12 w-12 mx-auto text-muted-foreground/50" />
           <p className="mt-3 text-muted-foreground">{isRtl ? 'رابط الوصول غير صالح أو انتهت صلاحيته' : 'This access link is invalid'}</p>
-          <Button variant="outline" size="sm" className="mt-3" onClick={() => { setLinkError(false); try { var sp = new URLSearchParams(window.location.search); var secId = sp.get('sec'); if (secId) loadLinkSection(secId, sp.get('t') || '') } catch {} }}>
+          <Button variant="outline" size="sm" className="mt-3" onClick={() => { setLinkError(false); setLibLinkError(false); try { var sp = new URLSearchParams(window.location.search); var secId = sp.get('sec'); var lbId = sp.get('lib'); var tk = sp.get('t') || ''; if (secId) loadLinkSection(secId, tk); else if (lbId && tk) loadLibraryLink(lbId, tk) } catch {} }}>
             <RefreshCw className="h-4 w-4 ml-2" />
             {isRtl ? 'إعادة المحاولة' : 'Retry'}
           </Button>
@@ -813,10 +1159,21 @@ export default function LibrariesPage() {
 
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
-            <h1 className="text-2xl font-bold">{openLibRow.name}</h1>
+            <h1 className="text-2xl font-bold flex items-center gap-2 flex-wrap">
+              {openLibRow.name}
+              {/* v100: شارة رؤية المكتبة نفسها */}
+              {libraryVisibility(openLibRow.visibility) === 'private' ? (
+                <Badge variant="outline" className="gap-1"><Lock className="h-3 w-3" />{isRtl ? 'مكتبة خاصة' : 'Private'}</Badge>
+              ) : libraryVisibility(openLibRow.visibility) === 'link' ? (
+                <Badge variant="outline" className="gap-1"><Link2 className="h-3 w-3" />{isRtl ? 'برابط' : 'By link'}</Badge>
+              ) : (
+                <Badge variant="secondary" className="gap-1"><Globe2 className="h-3 w-3" />{isRtl ? 'عامة' : 'Public'}</Badge>
+              )}
+            </h1>
             <p className="text-sm text-muted-foreground mt-1">
               {openLibRow.description ? <span>{openLibRow.description} — </span> : null}
               {isRtl ? `مكتبة ${ownerName(openLibRow.owner)}` : `Library of ${ownerName(openLibRow.owner)}`}
+              {libraryVisibility(openLibRow.visibility) === 'private' ? (isRtl ? ' — كل ما فيها يبقى خاصاً' : ' — everything inside stays private') : ''}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -824,13 +1181,19 @@ export default function LibrariesPage() {
               <RefreshCw className={`h-4 w-4 ml-2 ${libs.refreshing ? 'animate-spin' : ''}`} />
               {isRtl ? 'تحديث' : 'Refresh'}
             </Button>
+            {/* v100: نسخ رابط المكتبة — لمدرّي مكتبة «برابط» */}
+            {openLibRow.canManage && libraryVisibility(openLibRow.visibility) === 'link' && openLibRow.linkToken && (
+              <Button variant="outline" size="sm" onClick={() => copyLibraryLink(openLibRow!)} title={isRtl ? 'نسخ رابط المكتبة' : 'Copy library link'}>
+                <Copy className="h-4 w-4" />
+              </Button>
+            )}
             {openLibRow.canManage && (
               <>
                 <Button size="sm" onClick={() => openSectionDialog('create')}>
                   <Plus className="h-4 w-4 ml-2" />
                   {isRtl ? 'قسم جديد' : 'New Section'}
                 </Button>
-                <Button variant="outline" size="sm" onClick={() => { setLibForm({ name: openLibRow!.name, description: openLibRow!.description || '' }); setLibDialog('edit') }}>
+                <Button variant="outline" size="sm" onClick={() => { setLibForm({ name: openLibRow!.name, description: openLibRow!.description || '', visibility: libraryVisibility(openLibRow!.visibility) }); setLibRegenLink(false); setLibDialog('edit') }}>
                   <Pencil className="h-4 w-4" />
                 </Button>
                 <Button variant="outline" size="sm" onClick={() => deleteLibrary(openLibRow!)} className="text-destructive hover:text-destructive">
@@ -840,6 +1203,13 @@ export default function LibrariesPage() {
             )}
           </div>
         </div>
+
+        {/* v100: ملفات المكتبة المباشرة — الرفع المباشر داخل المكتبة بلا قسم */}
+        <Card>
+          <CardContent className="p-4">
+            <LibraryDirectFiles lib={openLibRow} libToken={activeLibToken} userId={user.id} isRtl={isRtl} onChanged={refreshAll} />
+          </CardContent>
+        </Card>
 
         {openLibRow.sections.length === 0 ? (
           <Card>
@@ -852,7 +1222,8 @@ export default function LibrariesPage() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {openLibRow.sections.map((s) => {
-              var m = sectionMode(s)
+              // v100: البطاقة تعرض الوضع الفعلي بعد قيد المكتبة (الأضيق يفوز)
+              var m = effectiveSectionMode(openLibRow, s)
               return (
                 <Card
                   key={s.id}
@@ -868,15 +1239,17 @@ export default function LibrariesPage() {
                         <p className="font-semibold text-sm truncate">{s.name}</p>
                         <p className="text-xs text-muted-foreground mt-1">
                           {m === 'private' ? (isRtl ? 'خاص' : 'Private') : m === 'link' ? (isRtl ? 'برابط' : 'By link') : (isRtl ? 'عام' : 'Public')}
+                          {/* داخل مكتبة خاصة: القسم خاص إجبارياً — توضيح صريح للقاعدة */}
+                          {m === 'private' && s && !s.isPrivate ? (isRtl ? ' (إجباري — مكتبة خاصة)' : ' (forced — private library)') : ''}
                           {` • ${isRtl ? `${s.fileCount} ملف` : `${s.fileCount} file${s.fileCount === 1 ? '' : 's'}`}`}
                         </p>
-                        {!s.isPrivate && !s.linkToken && s.ownerId !== user.id && (
+                        {m === 'public' && s.ownerId !== user.id && (
                           <p className="text-xs text-muted-foreground/70 mt-0.5">{ownerName(s.owner)}</p>
                         )}
                       </div>
                       {canManageSectionUI(s, openLibRow) && (
                         <div className="flex items-center gap-0.5 shrink-0">
-                          {m === 'link' && s.linkToken && (
+                          {(s.linkToken || (libraryVisibility(openLibRow.visibility) === 'link' && openLibRow.linkToken)) && (
                             <button
                               onClick={(e) => { e.stopPropagation(); copySectionLink(s, openLibRow) }}
                               className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition"
@@ -914,8 +1287,8 @@ export default function LibrariesPage() {
           <h1 className="text-2xl font-bold">{isRtl ? 'المكتبات' : 'Libraries'}</h1>
           <p className="text-sm text-muted-foreground mt-1">
             {isRtl
-              ? 'أنشئ مكتبتك للاحتفاظ بملفاتك — أقسام خاصة بك أو عامة للجميع أو تُفتح برابط وصول'
-              : 'Create your own library — private sections, public ones, or sections opened by access link'}
+              ? 'أنشئ مكتبتك وحدد من يراها: عامة أو خاصة أو لمن يمتلك رابطها — وما داخل الخاصة يبقى خاصاً دائماً'
+              : 'Create your library and choose who sees it: public, private, or by-link only — inside a private one everything stays private'}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -923,7 +1296,7 @@ export default function LibrariesPage() {
             <RefreshCw className={`h-4 w-4 ml-2 ${libs.refreshing ? 'animate-spin' : ''}`} />
             {isRtl ? 'تحديث' : 'Refresh'}
           </Button>
-          <Button size="sm" onClick={() => { setLibForm({ name: '', description: '' }); setLibDialog('create') }}>
+          <Button size="sm" onClick={() => { setLibForm({ name: '', description: '', visibility: 'public' }); setLibRegenLink(false); setLibDialog('create') }}>
             <FolderPlus className="h-4 w-4 ml-2" />
             {isRtl ? 'مكتبة جديدة' : 'New Library'}
           </Button>
@@ -950,13 +1323,16 @@ export default function LibrariesPage() {
             <Card key={lib.id} className="transition cursor-pointer hover:bg-muted/40 hover:shadow-sm" onClick={() => openLib(lib.id)}>
               <CardContent className="p-4">
                 <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                    <Library className="h-5 w-5 text-primary" />
+                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${libraryVisibility(lib.visibility) === 'private' ? 'bg-orange-100 text-orange-600' : libraryVisibility(lib.visibility) === 'link' ? 'bg-blue-100 text-blue-600' : 'bg-primary/10 text-primary'}`}>
+                    {libraryVisibility(lib.visibility) === 'private' ? <Lock className="h-5 w-5" /> : libraryVisibility(lib.visibility) === 'link' ? <Link2 className="h-5 w-5" /> : <Library className="h-5 w-5 text-primary" />}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5">
                       <p className="font-semibold text-sm truncate">{lib.name}</p>
                       {lib.isMine && <Badge variant="outline" className="text-[10px] px-1.5 py-0 shrink-0">{isRtl ? 'مكتبتك' : 'Yours'}</Badge>}
+                      {/* v100: شارة رؤية المكتبة — خاصة/برابط تُخفى عن غير أهلها أصلاً */}
+                      {libraryVisibility(lib.visibility) === 'private' && <Badge variant="outline" className="text-[10px] px-1.5 py-0 shrink-0 gap-0.5"><Lock className="h-2.5 w-2.5" />{isRtl ? 'خاصة' : 'Private'}</Badge>}
+                      {libraryVisibility(lib.visibility) === 'link' && <Badge variant="outline" className="text-[10px] px-1.5 py-0 shrink-0 gap-0.5"><Link2 className="h-2.5 w-2.5" />{isRtl ? 'برابط' : 'By link'}</Badge>}
                     </div>
                     {lib.description ? <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{lib.description}</p> : null}
                     <p className="text-xs text-muted-foreground mt-1">
@@ -964,6 +1340,16 @@ export default function LibrariesPage() {
                     </p>
                     {!lib.isMine && <p className="text-xs text-muted-foreground/70 mt-0.5">{ownerName(lib.owner)}</p>}
                   </div>
+                  {/* v100: نسخ رابط مكتبة «برابط» من البطاقة — لمدرّيها فقط */}
+                  {lib.canManage && libraryVisibility(lib.visibility) === 'link' && lib.linkToken && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); copyLibraryLink(lib) }}
+                      className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition shrink-0"
+                      title={isRtl ? 'نسخ رابط المكتبة' : 'Copy library link'}
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                 </div>
               </CardContent>
             </Card>
