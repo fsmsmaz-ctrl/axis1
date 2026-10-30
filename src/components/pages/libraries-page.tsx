@@ -620,9 +620,121 @@ export default function LibrariesPage() {
     return isRtl ? (o.name || o.nameEn || '') : (o.nameEn || o.name || '')
   }
 
+  // ─── v99: نوافذ المكتبة والقسم — تعريف واحد يُعرض في كل الفروع ──────────
+  // الإصلاح: كانت النوافذ في فرع قائمة المكتبات فقط، فالنقر على «قسم جديد»
+  // أو «تعديل القسم» من داخل المكتبة أو القسم المفتوح لا يظهر شيئاً (فشل صامت).
+  const dialogsJsx = (
+    <>
+      {/* نافذة إنشاء/تعديل مكتبة */}
+      <Dialog open={libDialog !== null} onOpenChange={(o) => { if (!o) setLibDialog(null) }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{libDialog === 'edit' ? (isRtl ? 'تعديل المكتبة' : 'Edit Library') : (isRtl ? 'مكتبة جديدة' : 'New Library')}</DialogTitle>
+            <DialogDescription>
+              {isRtl ? 'المكتبة مكان تحفظ فيه ملفاتك في أقسام — خاصة أو عامة أو برابط وصول' : 'A library holds your files in sections — private, public or by access link'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <Label>{isRtl ? 'اسم المكتبة *' : 'Library name *'}</Label>
+              <Input value={libForm.name} onChange={(e) => setLibForm({ ...libForm, name: e.target.value })} placeholder={isRtl ? 'مثال: ملفاتي الهندسية' : 'e.g. My engineering files'} className="h-10" maxLength={120} />
+            </div>
+            <div className="space-y-2">
+              <Label>{isRtl ? 'وصف مختصر (اختياري)' : 'Short description (optional)'}</Label>
+              <Textarea value={libForm.description} onChange={(e) => setLibForm({ ...libForm, description: e.target.value })} placeholder={isRtl ? 'لماذا هذه المكتبة؟' : 'What is this library for?'} rows={2} maxLength={500} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setLibDialog(null)} disabled={busy}>{isRtl ? 'إلغاء' : 'Cancel'}</Button>
+            <Button onClick={submitLibrary} disabled={busy || !libForm.name.trim()}>
+              {busy ? <Loader2 className="h-4 w-4 animate-spin ml-2" /> : null}
+              {isRtl ? 'حفظ' : 'Save'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* نافذة إنشاء/تعديل قسم — v98: ثلاثة أوضاع رؤية */}
+      <Dialog open={sectionDialog !== null} onOpenChange={(o) => { if (!o) setSectionDialog(null) }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {sectionDialog?.mode === 'edit' ? (isRtl ? 'تعديل القسم' : 'Edit Section') : (isRtl ? 'قسم جديد' : 'New Section')}
+            </DialogTitle>
+            <DialogDescription>
+              {isRtl ? 'حدد رؤية القسم: خاص بك وحدك، عام لجميع الموظفين، أو يُفتح برابط وصول فقط' : 'Choose visibility: private to you, public to everyone, or opened by access link only'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <Label>{isRtl ? 'اسم القسم *' : 'Section name *'}</Label>
+              <Input value={sectionForm.name} onChange={(e) => setSectionForm({ ...sectionForm, name: e.target.value })} placeholder={isRtl ? 'مثال: شهاداتي ووثائقي' : 'e.g. My certificates'} className="h-10" maxLength={120} />
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() => setSectionForm({ ...sectionForm, mode: 'private' })}
+                className={`p-3 rounded-lg border text-right transition ${sectionForm.mode === 'private' ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-border hover:bg-muted/50'}`}
+              >
+                <div className="flex items-center gap-2">
+                  <Lock className={`h-4 w-4 shrink-0 ${sectionForm.mode === 'private' ? 'text-primary' : 'text-muted-foreground'}`} />
+                  <span className="text-sm font-medium">{isRtl ? 'خاص' : 'Private'}</span>
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-1 leading-snug">{isRtl ? 'تراه أنت والإدارة فقط' : 'Only you and management'}</p>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSectionForm({ ...sectionForm, mode: 'public' })}
+                className={`p-3 rounded-lg border text-right transition ${sectionForm.mode === 'public' ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-border hover:bg-muted/50'}`}
+              >
+                <div className="flex items-center gap-2">
+                  <Globe2 className={`h-4 w-4 shrink-0 ${sectionForm.mode === 'public' ? 'text-primary' : 'text-muted-foreground'}`} />
+                  <span className="text-sm font-medium">{isRtl ? 'عام' : 'Public'}</span>
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-1 leading-snug">{isRtl ? 'يراه جميع الموظفين' : 'Visible to all employees'}</p>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSectionForm({ ...sectionForm, mode: 'link' })}
+                className={`p-3 rounded-lg border text-right transition ${sectionForm.mode === 'link' ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-border hover:bg-muted/50'}`}
+              >
+                <div className="flex items-center gap-2">
+                  <Link2 className={`h-4 w-4 shrink-0 ${sectionForm.mode === 'link' ? 'text-primary' : 'text-muted-foreground'}`} />
+                  <span className="text-sm font-medium">{isRtl ? 'برابط' : 'By link'}</span>
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-1 leading-snug">{isRtl ? 'يُفتح فقط لمن يملك رابطه' : 'Opens only with its link'}</p>
+              </button>
+            </div>
+            {sectionForm.mode === 'link' && (
+              <p className="text-xs text-muted-foreground bg-muted/50 rounded p-2 leading-relaxed">
+                {isRtl
+                  ? 'بعد الحفظ ستجد زر «نسخ الرابط» على بطاقة القسم — شاركه مع من تريد، وكل من يملكه يفتح القسم وملفاته مباشرة. القسم يبقى مخفياً عن بقية القوائم، ويمكنك إبطال الرابط وتوليد غيره متى شئت من التعديل.'
+                  : 'After saving, use the copy-link button on the section card to share it. Anyone with the link opens the section directly. It stays hidden from lists, and you can revoke and regenerate the link anytime from Edit.'}
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            {sectionDialog?.mode === 'edit' && sectionDialog.section && openLibRow && canManageSectionUI(sectionDialog.section, openLibRow) ? (
+              <Button variant="outline" className="text-destructive hover:text-destructive mr-auto" onClick={() => { var s = sectionDialog.section!; setSectionDialog(null); deleteSection(s) }} disabled={busy}>
+                <Trash2 className="h-4 w-4 ml-2" />
+                {isRtl ? 'حذف القسم' : 'Delete'}
+              </Button>
+            ) : null}
+            <Button variant="outline" onClick={() => setSectionDialog(null)} disabled={busy}>{isRtl ? 'إلغاء' : 'Cancel'}</Button>
+            <Button onClick={submitSection} disabled={busy || !sectionForm.name.trim()}>
+              {busy ? <Loader2 className="h-4 w-4 animate-spin ml-2" /> : null}
+              {isRtl ? 'حفظ' : 'Save'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  )
+
   // ─── v98: عرض قسم فُتح برابط وصول مباشر (يستبق كل العروض الأخرى) ──────────
   if (linkView) {
     return (
+      <>
       <SectionFilesView
         key={`link-${linkView.section.id}`}
         section={linkView.section}
@@ -637,12 +749,15 @@ export default function LibrariesPage() {
         onEditSection={(s) => openSectionDialog('edit', s)}
         onDeleteSection={deleteSection}
       />
+      {dialogsJsx}
+      </>
     )
   }
 
   // ─── عرض ملفات القسم ─────────────────────────────────────────────────────
   if (openLibRow && openSectionRow) {
     return (
+      <>
       <SectionFilesView
         key={openSectionRow.id}
         section={openSectionRow}
@@ -656,6 +771,8 @@ export default function LibrariesPage() {
         onEditSection={(s) => openSectionDialog('edit', s)}
         onDeleteSection={deleteSection}
       />
+      {dialogsJsx}
+      </>
     )
   }
 
@@ -784,6 +901,7 @@ export default function LibrariesPage() {
             })}
           </div>
         )}
+        {dialogsJsx}
       </div>
     )
   }
@@ -853,109 +971,7 @@ export default function LibrariesPage() {
         </div>
       )}
 
-      {/* نافذة إنشاء/تعديل مكتبة */}
-      <Dialog open={libDialog !== null} onOpenChange={(o) => { if (!o) setLibDialog(null) }}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>{libDialog === 'edit' ? (isRtl ? 'تعديل المكتبة' : 'Edit Library') : (isRtl ? 'مكتبة جديدة' : 'New Library')}</DialogTitle>
-            <DialogDescription>
-              {isRtl ? 'المكتبة مكان تحفظ فيه ملفاتك في أقسام — خاصة أو عامة أو برابط وصول' : 'A library holds your files in sections — private, public or by access link'}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div className="space-y-2">
-              <Label>{isRtl ? 'اسم المكتبة *' : 'Library name *'}</Label>
-              <Input value={libForm.name} onChange={(e) => setLibForm({ ...libForm, name: e.target.value })} placeholder={isRtl ? 'مثال: ملفاتي الهندسية' : 'e.g. My engineering files'} className="h-10" maxLength={120} />
-            </div>
-            <div className="space-y-2">
-              <Label>{isRtl ? 'وصف مختصر (اختياري)' : 'Short description (optional)'}</Label>
-              <Textarea value={libForm.description} onChange={(e) => setLibForm({ ...libForm, description: e.target.value })} placeholder={isRtl ? 'لماذا هذه المكتبة؟' : 'What is this library for?'} rows={2} maxLength={500} />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setLibDialog(null)} disabled={busy}>{isRtl ? 'إلغاء' : 'Cancel'}</Button>
-            <Button onClick={submitLibrary} disabled={busy || !libForm.name.trim()}>
-              {busy ? <Loader2 className="h-4 w-4 animate-spin ml-2" /> : null}
-              {isRtl ? 'حفظ' : 'Save'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* نافذة إنشاء/تعديل قسم — v98: ثلاثة أوضاع رؤية */}
-      <Dialog open={sectionDialog !== null} onOpenChange={(o) => { if (!o) setSectionDialog(null) }}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>
-              {sectionDialog?.mode === 'edit' ? (isRtl ? 'تعديل القسم' : 'Edit Section') : (isRtl ? 'قسم جديد' : 'New Section')}
-            </DialogTitle>
-            <DialogDescription>
-              {isRtl ? 'حدد رؤية القسم: خاص بك وحدك، عام لجميع الموظفين، أو يُفتح برابط وصول فقط' : 'Choose visibility: private to you, public to everyone, or opened by access link only'}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div className="space-y-2">
-              <Label>{isRtl ? 'اسم القسم *' : 'Section name *'}</Label>
-              <Input value={sectionForm.name} onChange={(e) => setSectionForm({ ...sectionForm, name: e.target.value })} placeholder={isRtl ? 'مثال: شهاداتي ووثائقي' : 'e.g. My certificates'} className="h-10" maxLength={120} />
-            </div>
-            <div className="grid grid-cols-3 gap-2">
-              <button
-                type="button"
-                onClick={() => setSectionForm({ ...sectionForm, mode: 'private' })}
-                className={`p-3 rounded-lg border text-right transition ${sectionForm.mode === 'private' ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-border hover:bg-muted/50'}`}
-              >
-                <div className="flex items-center gap-2">
-                  <Lock className={`h-4 w-4 shrink-0 ${sectionForm.mode === 'private' ? 'text-primary' : 'text-muted-foreground'}`} />
-                  <span className="text-sm font-medium">{isRtl ? 'خاص' : 'Private'}</span>
-                </div>
-                <p className="text-[11px] text-muted-foreground mt-1 leading-snug">{isRtl ? 'تراه أنت والإدارة فقط' : 'Only you and management'}</p>
-              </button>
-              <button
-                type="button"
-                onClick={() => setSectionForm({ ...sectionForm, mode: 'public' })}
-                className={`p-3 rounded-lg border text-right transition ${sectionForm.mode === 'public' ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-border hover:bg-muted/50'}`}
-              >
-                <div className="flex items-center gap-2">
-                  <Globe2 className={`h-4 w-4 shrink-0 ${sectionForm.mode === 'public' ? 'text-primary' : 'text-muted-foreground'}`} />
-                  <span className="text-sm font-medium">{isRtl ? 'عام' : 'Public'}</span>
-                </div>
-                <p className="text-[11px] text-muted-foreground mt-1 leading-snug">{isRtl ? 'يراه جميع الموظفين' : 'Visible to all employees'}</p>
-              </button>
-              <button
-                type="button"
-                onClick={() => setSectionForm({ ...sectionForm, mode: 'link' })}
-                className={`p-3 rounded-lg border text-right transition ${sectionForm.mode === 'link' ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-border hover:bg-muted/50'}`}
-              >
-                <div className="flex items-center gap-2">
-                  <Link2 className={`h-4 w-4 shrink-0 ${sectionForm.mode === 'link' ? 'text-primary' : 'text-muted-foreground'}`} />
-                  <span className="text-sm font-medium">{isRtl ? 'برابط' : 'By link'}</span>
-                </div>
-                <p className="text-[11px] text-muted-foreground mt-1 leading-snug">{isRtl ? 'يُفتح فقط لمن يملك رابطه' : 'Opens only with its link'}</p>
-              </button>
-            </div>
-            {sectionForm.mode === 'link' && (
-              <p className="text-xs text-muted-foreground bg-muted/50 rounded p-2 leading-relaxed">
-                {isRtl
-                  ? 'بعد الحفظ ستجد زر «نسخ الرابط» على بطاقة القسم — شاركه مع من تريد، وكل من يملكه يفتح القسم وملفاته مباشرة. القسم يبقى مخفياً عن بقية القوائم، ويمكنك إبطال الرابط وتوليد غيره متى شئت من التعديل.'
-                  : 'After saving, use the copy-link button on the section card to share it. Anyone with the link opens the section directly. It stays hidden from lists, and you can revoke and regenerate the link anytime from Edit.'}
-              </p>
-            )}
-          </div>
-          <DialogFooter>
-            {sectionDialog?.mode === 'edit' && sectionDialog.section && openLibRow && canManageSectionUI(sectionDialog.section, openLibRow) ? (
-              <Button variant="outline" className="text-destructive hover:text-destructive mr-auto" onClick={() => { var s = sectionDialog.section!; setSectionDialog(null); deleteSection(s) }} disabled={busy}>
-                <Trash2 className="h-4 w-4 ml-2" />
-                {isRtl ? 'حذف القسم' : 'Delete'}
-              </Button>
-            ) : null}
-            <Button variant="outline" onClick={() => setSectionDialog(null)} disabled={busy}>{isRtl ? 'إلغاء' : 'Cancel'}</Button>
-            <Button onClick={submitSection} disabled={busy || !sectionForm.name.trim()}>
-              {busy ? <Loader2 className="h-4 w-4 animate-spin ml-2" /> : null}
-              {isRtl ? 'حفظ' : 'Save'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {dialogsJsx}
     </div>
   )
 }
