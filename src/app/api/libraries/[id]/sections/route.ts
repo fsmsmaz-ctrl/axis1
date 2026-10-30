@@ -2,6 +2,9 @@
 // POST /api/libraries/[id]/sections → صاحب المكتبة ومدير النظام فقط
 // v98 — القسم بأحد ثلاثة أوضاع: خاص / عام / برابط (linkToken: 'generate'
 // يولّد رمز وصول فريد يُنسخ مع الرابط — انظر GET في sections/[id])
+// v100 — القاعدة الذهبية من صاحب الموقع: القسم لا يكون أبداً أوسع انتشاراً من
+// مكتبته — داخل مكتبة خاصة القسم خاص إجبارياً (رفض عام/برابط برسالة واضحة)،
+// وداخل مكتبة «برابط» القسم خاص أو برابط فقط. الفحص خادمياً — الواجهة ليست الحارس.
 import { NextRequest, NextResponse } from 'next/server'
 import { randomBytes } from 'crypto'
 import { getAuthUser } from '@/lib/auth-server'
@@ -10,6 +13,7 @@ import { handleDbError, validateRequired, safeDbOp } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 import { ensureLibrariesSupport } from '@/lib/db-selfheal'
 import { canManageLibrary } from '@/lib/libraries'
+import { libraryVisibility, allowedSectionModes } from '@/lib/lib-visibility'
 
 type RouteParams = { params: Promise<{ id: string }> }
 
@@ -24,7 +28,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
 
     await ensureLibrariesSupport()
 
-    var lib = await db.library.findUnique({ where: { id }, select: { id: true, ownerId: true, name: true } })
+    var lib = await db.library.findUnique({ where: { id }, select: { id: true, ownerId: true, name: true, visibility: true } })
     if (!lib) return NextResponse.json({ error: 'not_found', message: 'المكتبة غير موجودة' }, { status: 404 })
     // الأقسام يصنعها صاحب المكتبة (تنظيم مكتبته بيد هو) — ومدير النظام يتجاوز
     if (!canManageLibrary(user, lib.ownerId)) {
@@ -42,6 +46,18 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     // v98: وضع «برابط الوصول» — رمز عشوائي 32 خانة سدسية عملياً غير قابل للتخمين
     var linkToken: string | null = null
     if (body.linkToken === 'generate') linkToken = randomBytes(16).toString('hex')
+
+    // v100: القاعدة الذهبية — القسم لا يكون أوسع انتشاراً من مكتبته
+    // (المطلوب من صاحب الموقع: لا قسم عام أو برابط داخل مكتبة خاصة — ثغرة تُسدّ هنا خادمياً)
+    var requestedMode = linkToken ? 'link' : (isPrivate ? 'private' : 'public')
+    var allowed = allowedSectionModes(lib)
+    if (!allowed.includes(requestedMode as 'private' | 'public' | 'link')) {
+      var libV = libraryVisibility(lib.visibility)
+      var why = libV === 'private'
+        ? 'المكتبة نفسها خاصة — كل ما داخلها يبقى خاصاً ولا يمكن جعل قسم فيها عاماً أو برابط (منع للتسريب)'
+        : 'المكتبة تُفتح لمن يمتلك رابطها فقط — القسم فيها يكون خاصاً أو برابط وصول، ولا يمكن جعله عاماً'
+      return NextResponse.json({ error: 'visibility_conflict', message: why }, { status: 403 })
+    }
 
     // سقف وقائي: 50 قسماً لكل مكتبة
     var count = await db.librarySection.count({ where: { libraryId: id } })
