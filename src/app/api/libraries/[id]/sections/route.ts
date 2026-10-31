@@ -30,8 +30,8 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
 
     var lib = await db.library.findUnique({ where: { id }, select: { id: true, ownerId: true, name: true, visibility: true } })
     if (!lib) return NextResponse.json({ error: 'not_found', message: 'المكتبة غير موجودة' }, { status: 404 })
-    // الأقسام يصنعها صاحب المكتبة (تنظيم مكتبته بيد هو) — ومدير النظام يتجاوز
-    if (!canManageLibrary(user, lib.ownerId)) {
+    // الأقسام يصنعها صاحب المكتبة (تنظيم مكتبته بيد هو) — v101: الخاصة لصاحبها حصراً حتى عن الإدارة
+    if (!canManageLibrary(user, lib.ownerId, lib.visibility)) {
       return NextResponse.json({ error: 'forbidden', message: 'إنشاء الأقسام داخل مكتبة صاحبها فقط' }, { status: 403 })
     }
 
