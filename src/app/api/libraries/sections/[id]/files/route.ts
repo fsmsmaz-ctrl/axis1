@@ -13,6 +13,7 @@ import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 import { hasPermission } from '@/lib/auth'
 import { ensureLibrariesSupport } from '@/lib/db-selfheal'
 import { canManageSection, canViewSection } from '@/lib/libraries'
+import { effectiveSectionMode } from '@/lib/lib-visibility'
 
 type RouteParams = { params: Promise<{ id: string }> }
 
@@ -63,7 +64,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
       files: files.map((f) => ({
         ...f,
         url: undefined, // المحتوى لا يُرسل في القائمة — يُجلب من مسار التحميل فقط
-        canDelete: f.uploaderId === user.id || canManageSection(user, sec.ownerId, sec.library.ownerId),
+        canDelete: f.uploaderId === user.id || canManageSection(user, sec.ownerId, sec.library.ownerId, effectiveSectionMode(sec.library, sec)),
       })),
     })
   } catch (error: any) {
@@ -87,9 +88,8 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       select: { id: true, name: true, isPrivate: true, linkToken: true, ownerId: true, library: { select: { id: true, ownerId: true, visibility: true, linkToken: true } } },
     })
     if (!section) return NextResponse.json({ error: 'not_found', message: 'القسم غير موجود' }, { status: 404 })
-    // الرفع لصاحب القسم أو صاحب المكتبة (ومدير النظام) — القسم العام «يُرى» للجميع
-    // بينما إدارة ملفاته تبقى لصاحبها كما قرر صاحب الموقع
-    if (!canManageSection(user, section.ownerId, section.library.ownerId)) {
+    // الرفع لصاحب القسم أو صاحب المكتبة — v101: الخاص الفعلي بصاحبيه حصراً حتى عن الإدارة
+    if (!canManageSection(user, section.ownerId, section.library.ownerId, effectiveSectionMode(section.library, section))) {
       return NextResponse.json({ error: 'forbidden', message: 'رفع الملفات لصاحب القسم أو صاحب المكتبة فقط' }, { status: 403 })
     }
     // تثبيت معرف المكتبة للاستخدام داخل الدالة المغلقة أدناه (تضييق النوع لا يعبر حدود الإغلاقات)
