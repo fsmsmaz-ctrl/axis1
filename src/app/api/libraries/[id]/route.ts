@@ -56,8 +56,10 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
     }
 
     var admin = isLibraryAdmin(user)
-    var manager = canManageLibrary(user, lib.ownerId)
-    var visible = admin || manager ? lib.sections : filterVisibleSections(user, lib.sections, lib)
+    // v101: الإدارة تمر ببوابة الخاص — المكتبة الخاصة لا تُدار إلا بصاحبها
+    var manager = canManageLibrary(user, lib.ownerId, lib.visibility)
+    // v101: الفلترة دائماً — الخاص الفعلي لا يُرسل لغير صاحبيه حتى للإدارة
+    var visible = filterVisibleSections(user, lib.sections, lib)
     var allSectionFiles = lib.sections.reduce((acc, s) => acc + s._count.files, 0)
     var directCount = Math.max(0, lib._count.files - allSectionFiles)
     // تثبيت القيم للاستخدام داخل الدوال المغلقة (تضييق النوع لا يعبر حدود الإغلاقات)
@@ -109,7 +111,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
 
     var lib = await db.library.findUnique({ where: { id }, select: { id: true, ownerId: true, visibility: true, linkToken: true } })
     if (!lib) return NextResponse.json({ error: 'not_found', message: 'المكتبة غير موجودة' }, { status: 404 })
-    if (!canManageLibrary(user, lib.ownerId)) {
+    if (!canManageLibrary(user, lib.ownerId, lib.visibility)) {
       return NextResponse.json({ error: 'forbidden', message: 'تعديل المكتبة لصاحبها فقط' }, { status: 403 })
     }
 
@@ -169,9 +171,10 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
 
     await ensureLibrariesSupport()
 
-    var lib = await db.library.findUnique({ where: { id }, select: { id: true, name: true, ownerId: true } })
+    var lib = await db.library.findUnique({ where: { id }, select: { id: true, name: true, ownerId: true, visibility: true } })
     if (!lib) return NextResponse.json({ error: 'not_found', message: 'المكتبة غير موجودة' }, { status: 404 })
-    if (!canManageLibrary(user, lib.ownerId)) {
+    // v101: حذف المكتبة الخاصة لصاحبها حصراً — الإدارة لا تحذف ما لا تراه
+    if (!canManageLibrary(user, lib.ownerId, lib.visibility)) {
       return NextResponse.json({ error: 'forbidden', message: 'حذف المكتبة لصاحبها فقط' }, { status: 403 })
     }
 
