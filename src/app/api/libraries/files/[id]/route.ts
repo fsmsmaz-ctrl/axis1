@@ -12,6 +12,7 @@ import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 import { hasPermission } from '@/lib/auth'
 import { ensureLibrariesSupport } from '@/lib/db-selfheal'
 import { canManageLibrary, canManageSection, canViewSection } from '@/lib/libraries'
+import { effectiveSectionMode } from '@/lib/lib-visibility'
 
 type RouteParams = { params: Promise<{ id: string }> }
 
@@ -23,7 +24,7 @@ async function loadFile(id: string) {
       id: true, fileName: true, fileType: true, url: true, size: true, uploaderId: true, createdAt: true,
       sectionId: true,
       library: { select: { id: true, ownerId: true, name: true, visibility: true, linkToken: true } },
-      section: { select: { id: true, isPrivate: true, ownerId: true, name: true } },
+      section: { select: { id: true, isPrivate: true, ownerId: true, name: true, linkToken: true } },
     },
   })
 }
@@ -72,11 +73,12 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
 
     var file = await loadFile(id)
     if (!file) return NextResponse.json({ error: 'not_found', message: 'الملف غير موجود' }, { status: 404 })
-    // الحذف: الرافع نفسه، أو صاحب المكتبة/مدير النظام، أو صاحب القسم إن كان
-    // الملف داخله (ملفات المكتبة المباشرة صاحب القرار فيها صاحب المكتبة)
-    var allowed = file.uploaderId === user.id || canManageLibrary(user, file.library.ownerId)
+    // الحذف: الرافع نفسه، أو صاحب المكتبة/صاحب القسم إن كان الملف داخله —
+    // v101: كلاهما يمر ببوابة الخاص الفعلي (خاصة المكتبة أو الخاص الفعلي للقسم →
+    // صاحبها حصراً بلا استثناء للإدارة — الإدارة لا تحذف ما لا تراه)
+    var allowed = file.uploaderId === user.id || canManageLibrary(user, file.library.ownerId, file.library.visibility)
     if (!allowed && file.section) {
-      allowed = canManageSection(user, file.section.ownerId, file.library.ownerId)
+      allowed = canManageSection(user, file.section.ownerId, file.library.ownerId, effectiveSectionMode(file.library, file.section))
     }
     if (!allowed) {
       return NextResponse.json({ error: 'forbidden', message: 'حذف الملف لرافعه أو لصاحب القسم أو المكتبة فقط' }, { status: 403 })
