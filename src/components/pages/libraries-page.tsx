@@ -270,11 +270,12 @@ function SectionFilesView(props: SectionViewProps) {
     return `${(kb / 1024).toFixed(1)} MB`
   }
 
-  // صلاحيات الواجهة — مرآة لبوابات الخادم (الخادم يبقى المصدر النهائي)
-  var canManageHere = section.ownerId === userId || lib.ownerId === userId || isAdmin
   // v100: الوضع المعروض هو الوضع الفعلي بعد قيد المكتبة (الأضيق يفوز) —
   // قسم «عام» داخل مكتبة خاصة يظهر خاصاً كما يحكم عليه الخادم حرفياً
   var mode = effectiveSectionMode(lib, section)
+  // صلاحيات الواجهة — مرآة لبوابات الخادم (الخادم يبقى المصدر النهائي)
+  // v101: الخاصة الفعلية لصاحبيها حصراً — الإدارة لا تديرها (قرار صاحب الموقع)
+  var canManageHere = section.ownerId === userId || lib.ownerId === userId || (isAdmin && mode !== 'private')
 
   // v98/v100: نسخ رابط الوصول — لرابط القسم نفسه، أو لرابط مكتبته إن كان
   // القسم يُفتح برابط المكتبة (قسم بلا توكن خاص داخل مكتبة «برابط»)
@@ -793,6 +794,10 @@ export default function LibrariesPage() {
   var isAdmin = user?.isSystemAdmin === true
   function canManageSectionUI(section: LibSectionRow, lib: LibRow): boolean {
     if (!user) return false
+    // v101: الخاصة الفعلية لصاحبي القسم/المكتبة حصراً — الإدارة مستثناة (قرار صاحب الموقع)
+    if (effectiveSectionMode(lib, section) === 'private') {
+      return section.ownerId === user.id || lib.ownerId === user.id
+    }
     return section.ownerId === user.id || lib.ownerId === user.id || isAdmin
   }
 
