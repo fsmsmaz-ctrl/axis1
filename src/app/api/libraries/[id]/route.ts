@@ -56,9 +56,10 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
     }
 
     var admin = isLibraryAdmin(user)
-    // v101: الإدارة تمر ببوابة الخاص — المكتبة الخاصة لا تُدار إلا بصاحبها
-    var manager = canManageLibrary(user, lib.ownerId, lib.visibility)
-    // v101: الفلترة دائماً — الخاص الفعلي لا يُرسل لغير صاحبيه حتى للإدارة
+    var manager = canManageLibrary(user, lib)
+    // v101: لا اختصار للإدارة بعد الآن — كل الأقسام تمرّ عبر filterVisibleSections
+    // التي تحترم قاعدة الخاص (صاحب القسم/المكتبة يرى، غيره لا يرى الخاص فعلياً).
+    // صاحب المكتبة يراهم جميعاً لأنه directManager في كل قسم، والإدارة ترى فقط غير الخاص.
     var visible = filterVisibleSections(user, lib.sections, lib)
     var allSectionFiles = lib.sections.reduce((acc, s) => acc + s._count.files, 0)
     var directCount = Math.max(0, lib._count.files - allSectionFiles)
@@ -111,7 +112,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
 
     var lib = await db.library.findUnique({ where: { id }, select: { id: true, ownerId: true, visibility: true, linkToken: true } })
     if (!lib) return NextResponse.json({ error: 'not_found', message: 'المكتبة غير موجودة' }, { status: 404 })
-    if (!canManageLibrary(user, lib.ownerId, lib.visibility)) {
+    if (!canManageLibrary(user, lib)) {
       return NextResponse.json({ error: 'forbidden', message: 'تعديل المكتبة لصاحبها فقط' }, { status: 403 })
     }
 
@@ -173,8 +174,7 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
 
     var lib = await db.library.findUnique({ where: { id }, select: { id: true, name: true, ownerId: true, visibility: true } })
     if (!lib) return NextResponse.json({ error: 'not_found', message: 'المكتبة غير موجودة' }, { status: 404 })
-    // v101: حذف المكتبة الخاصة لصاحبها حصراً — الإدارة لا تحذف ما لا تراه
-    if (!canManageLibrary(user, lib.ownerId, lib.visibility)) {
+    if (!canManageLibrary(user, lib)) {
       return NextResponse.json({ error: 'forbidden', message: 'حذف المكتبة لصاحبها فقط' }, { status: 403 })
     }
 
