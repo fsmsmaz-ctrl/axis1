@@ -761,3 +761,4 @@ export async function ensureLibrariesSupport(): Promise<void> {
     console.error('v97: libraries tables self-heal skipped (will retry):', e)
   }
 }
+
