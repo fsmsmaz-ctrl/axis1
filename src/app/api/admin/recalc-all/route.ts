@@ -4,6 +4,7 @@ import { getAuthUser } from '@/lib/auth-server'
 import { db, invalidateCachePrefix } from '@/lib/db'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 import { safeDbOp } from '@/lib/api-helpers'
+import { ensurePipePaidSupport } from '@/lib/db-selfheal'
 
 // Admin/Manager endpoint to recalculate ALL progress data.
 // Call via: POST /api/admin/recalc-all
@@ -59,6 +60,9 @@ export async function POST(req: NextRequest) {
     const allLines = await db.driveLine.findMany({ select: { id: true, pricePerMeter: true } })
     const linePriceMap: Record<string, number | null> = {}
     for (const l of allLines) linePriceMap[l.id] = l.pricePerMeter
+
+    // v102: ضمان عمودَي دفع الأنبوب قبل أي update على DailyReport (update بلا select يُرجع كل الأعمدة)
+    await ensurePipePaidSupport()
 
     // Process projects sequentially to avoid connection pool exhaustion.
     for (const project of projects) {
