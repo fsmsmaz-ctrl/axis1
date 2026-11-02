@@ -4,7 +4,7 @@ import { SYSTEM_ADMIN_EMAIL, canViewPricing } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 import { safeDbOp, handleDbError, sanitizeDailyReport, recalcDrillingDates } from '@/lib/api-helpers'
-import { ensureDriveLineDates } from '@/lib/db-selfheal'
+import { ensureDriveLineDates, ensurePipePaidSupport } from '@/lib/db-selfheal'
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   var user = await getAuthUser(req)
@@ -33,6 +33,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   // v79: ضمان جاهزية عمودَي تواريخ الحفر — الاعتماد هو لحظة انضمام التقرير للمنشور
   await ensureDriveLineDates()
+  // v102: ضمان عمودَي دفع الأنبوب قبل القراءة/الكتابة (findUnique بلا select يُرجع كل الأعمدة)
+  await ensurePipePaidSupport()
 
   try {
     var existingResult = await safeDbOp(
@@ -171,4 +173,3 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return handleDbError(error, 'اعتماد التقرير')
   }
 }
-
