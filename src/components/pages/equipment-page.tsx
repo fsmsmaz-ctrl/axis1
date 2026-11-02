@@ -82,6 +82,12 @@ export default function EquipmentPage() {
   const [viewEquipment, setViewEquipment] = useState<any | null>(null)
   const [viewDialogOpen, setViewDialogOpen] = useState(false)
   const [maintenanceDialogOpen, setMaintenanceDialogOpen] = useState(false)
+  // v101: حارس النقر المزدوج — يمنع تكرار إنشاء/تعديل المعدة عند النقر السريع المتتالي.
+  // المشكلة: زر «إنشاء» كان يبقى فعالاً أثناء الطلب، فيطلق طلبين POST متزامنين
+  // فيظهر معدتان أو أكثر في الواجهة رغم أنها في الواقع واحدة. الآن يُعطَّل الزر
+  // أثناء الانتظار ولا يُعاد تفعيله إلا بعد انتهاء الطلب (نجاحاً أو فشلاً).
+  const [submitting, setSubmitting] = useState(false)
+  const [editSubmitting, setEditSubmitting] = useState(false)
   const user = useAppStore((s) => s.user)
   // FIX-6.6: Use role-based check instead of hardcoded admin email
   // v65: المقارنة عبر normalizeRole — لا مقارنات دور حرفية (نفس علة v63)
@@ -414,6 +420,9 @@ export default function EquipmentPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    // v101: حارس النقر المزدوج — إن كان هناك طلب إنشاء جارٍ بالفعل، تجاهل النقر التالي.
+    if (submitting) return
+    setSubmitting(true)
     try {
       var payload: any = { ...formData }
       if (payload.image === 'REMOVE' || payload.image === '') {
@@ -436,6 +445,8 @@ export default function EquipmentPage() {
       }
     } catch {
       toast.error(isRtl ? 'حدث خطأ' : 'Error')
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -597,6 +608,9 @@ export default function EquipmentPage() {
   async function handleEditEquipmentSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!editingEquipment) return
+    // v101: حارس النقر المزدوج على التعديل أيضاً
+    if (editSubmitting) return
+    setEditSubmitting(true)
     try {
       var eqPayload: any = { ...formData }
       if (eqPayload.image === 'REMOVE') {
@@ -622,6 +636,8 @@ export default function EquipmentPage() {
       }
     } catch {
       toast.error(isRtl ? 'حدث خطأ' : 'Error')
+    } finally {
+      setEditSubmitting(false)
     }
   }
 
@@ -1282,8 +1298,8 @@ export default function EquipmentPage() {
             </div>
             <div className="space-y-1.5"><Label>{isRtl ? 'ملاحظات' : 'Notes'}</Label><Textarea value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} rows={2} /></div>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>{isRtl ? 'إلغاء' : 'Cancel'}</Button>
-              <Button type="submit">{isRtl ? 'إنشاء' : 'Create'}</Button>
+              <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} disabled={submitting}>{isRtl ? 'إلغاء' : 'Cancel'}</Button>
+              <Button type="submit" disabled={submitting}>{submitting ? (<><Loader2 className="h-4 w-4 ml-2 animate-spin" />{isRtl ? 'جارٍ الإنشاء...' : 'Creating...'}</>) : (isRtl ? 'إنشاء' : 'Create')}</Button>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -1392,8 +1408,8 @@ export default function EquipmentPage() {
             </div>
             <div className="space-y-1.5"><Label>{isRtl ? 'ملاحظات' : 'Notes'}</Label><Textarea value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} rows={2} /></div>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => { setEditEqDialogOpen(false); setEditingEquipment(null) }}>{isRtl ? 'إلغاء' : 'Cancel'}</Button>
-              <Button type="submit">{isRtl ? 'تحديث' : 'Update'}</Button>
+              <Button type="button" variant="outline" onClick={() => { setEditEqDialogOpen(false); setEditingEquipment(null) }} disabled={editSubmitting}>{isRtl ? 'إلغاء' : 'Cancel'}</Button>
+              <Button type="submit" disabled={editSubmitting}>{editSubmitting ? (<><Loader2 className="h-4 w-4 ml-2 animate-spin" />{isRtl ? 'جارٍ التحديث...' : 'Updating...'}</>) : (isRtl ? 'تحديث' : 'Update')}</Button>
             </DialogFooter>
           </form>
         </DialogContent>
