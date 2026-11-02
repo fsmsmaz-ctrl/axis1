@@ -75,6 +75,17 @@ export function PrintableReport({ data, generatedBy, showRevenue = true }: { dat
       {(data.type === 'daily_site' || data.type === 'production') && (
         <>
           <div className="pr-section-title">{isRtl ? `سجل التقارير (${reports.length})` : `Reports Log (${reports.length})`}</div>
+          {/* v102: ملخص دفع الأنبوب ومدة تشغيل الماكينة فوق الجدول */}
+          {reports.length > 0 && (() => {
+            var jackedDays = reports.filter((r: any) => r.pipePaid === true).length
+            var totalMachineHours = reports.reduce((s: number, r: any) => s + (r.pipePaid === true ? (Number(r.machineRunningHours) || 0) : 0), 0)
+            return (
+              <div className="pr-note" style={{ display: 'flex', gap: isRtl ? '0 2rem' : '0 2rem', flexWrap: 'wrap' }}>
+                <span>{isRtl ? `أيام دفع الأنبوب: ${jackedDays} / ${reports.length}` : `Pipe jacked days: ${jackedDays} / ${reports.length}`}</span>
+                <span>{isRtl ? `إجمالي مدة تشغيل الماكينة: ${fmtNum(totalMachineHours)} ساعة` : `Total machine hours: ${fmtNum(totalMachineHours)} h`}</span>
+              </div>
+            )
+          })()}
           <table className="pr-table">
             <thead>
               <tr>
@@ -83,6 +94,9 @@ export function PrintableReport({ data, generatedBy, showRevenue = true }: { dat
                 <th>{isRtl ? 'الخط' : 'Line'}</th>
                 <th>{isRtl ? 'أمتار' : 'Meters'}</th>
                 <th>{isRtl ? 'العمال' : 'Workers'}</th>
+                {/* v102: عمودا دفع الأنبوب ومدة الماكينة */}
+                <th>{isRtl ? 'دفع الأنبوب' : 'Pipe Jacked'}</th>
+                <th>{isRtl ? 'مدة الماكينة' : 'Machine Hrs'}</th>
                 <th>{isRtl ? 'الحالة' : 'Status'}</th>
               </tr>
             </thead>
@@ -94,10 +108,13 @@ export function PrintableReport({ data, generatedBy, showRevenue = true }: { dat
                   <td>{r.driveLine?.lineNumber || '-'}</td>
                   <td className="pr-num">{fmtNum(r.dailyMeters)}</td>
                   <td className="pr-num">{r.workersCount ?? 0}</td>
+                  {/* v102: قيمتا دفع الأنبوب ومدة الماكينة في كل صف */}
+                  <td className="pr-num">{r.pipePaid === true ? (isRtl ? 'نعم' : 'Yes') : (isRtl ? 'لا' : 'No')}</td>
+                  <td className="pr-num">{r.pipePaid === true ? fmtNum(r.machineRunningHours) + (isRtl ? ' س' : ' h') : '-'}</td>
                   <td>{localized(reportStatusLabels, r.status, isRtl)}</td>
                 </tr>
               ))}
-              {reports.length === 0 && <tr><td colSpan={6} className="pr-empty">{isRtl ? 'لا توجد تقارير في هذه الفترة' : 'No reports in this period'}</td></tr>}
+              {reports.length === 0 && <tr><td colSpan={8} className="pr-empty">{isRtl ? 'لا توجد تقارير في هذه الفترة' : 'No reports in this period'}</td></tr>}
             </tbody>
             {reports.length > 0 && (
               <tfoot>
@@ -105,6 +122,9 @@ export function PrintableReport({ data, generatedBy, showRevenue = true }: { dat
                   <td colSpan={3}>{isRtl ? 'الإجمالي' : 'Total'}</td>
                   <td className="pr-num">{fmtNum(totalMeters)}</td>
                   <td className="pr-num">{fmtNum(reports.reduce((s: number, r: any) => s + (Number(r.workersCount) || 0), 0))}</td>
+                  {/* v102: إجمالي مدة الماكينة في التذييل */}
+                  <td></td>
+                  <td className="pr-num">{fmtNum(reports.reduce((s: number, r: any) => s + (r.pipePaid === true ? (Number(r.machineRunningHours) || 0) : 0), 0))}</td>
                   <td></td>
                 </tr>
               </tfoot>
