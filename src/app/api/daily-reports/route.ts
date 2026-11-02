@@ -4,7 +4,7 @@ import { getAuthUser } from '@/lib/auth-server'
 import { hasPermission, canWrite, canViewPricing, SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { handleDbError, validateRequired, parseNumber, safeDbOp, parseDateRange, sanitizeDailyReport, recalcProgress, recalcDrillingDates } from '@/lib/api-helpers'
-import { ensureDriveLineDates } from '@/lib/db-selfheal'
+import { ensureDriveLineDates, ensurePipePaidSupport } from '@/lib/db-selfheal'
 import { notifyUsers } from '@/lib/notify'
 
 export async function GET(req: NextRequest) {
@@ -109,6 +109,8 @@ export async function POST(req: NextRequest) {
 
   // v79: ضمان جاهزية عمودَي تواريخ الحفر قبل أي كتابة عليهما (علم مخزّن — استدعاءات لاحقة شبه مجانية)
   await ensureDriveLineDates()
+  // v102: ضمان عمودَي دفع الأنبوب + مدة تشغيل الماكينة
+  await ensurePipePaidSupport()
 
   try {
     const body = await req.json()
@@ -145,6 +147,10 @@ export async function POST(req: NextRequest) {
     var stoppageHours = Math.max(0, parseNumber(body.stoppageHours, 0))
     var workersCount = Math.max(0, parseInt(body.workersCount) || 0)
     var pipesInstalled = Math.max(0, parseInt(body.pipesInstalled) || 0)
+
+    // v102: هل تم دفع الأنبوب اليوم؟ + مدة تشغيل الماكينة (فقط عند نعم)
+    var pipePaid = body.pipePaid === true || body.pipePaid === 'true' || body.pipePaid === 'yes'
+    var machineRunningHours = pipePaid ? Math.max(0, parseNumber(body.machineRunningHours, 0)) : null
 
     // IMPORTANT: store reportDate as UTC midnight of the calendar date
     // the user picked. If body.reportDate is "2026-09-02" we want to store
@@ -246,6 +252,9 @@ export async function POST(req: NextRequest) {
           progressPercent,
           soilExcavated: (body.soilExcavated ? String(body.soilExcavated).slice(0, 50) : null),
           pipesInstalled: pipesInstalled,
+          // v102: دفع الأنبوب + مدة تشغيل الماكينة
+          pipePaid: pipePaid,
+          machineRunningHours: machineRunningHours,
           productionNotes: (body.productionNotes ? String(body.productionNotes).slice(0, 2000) : null),
           problems: (body.problems ? String(body.problems).slice(0, 2000) : null),
           // SECURITY FIX: قائمة سماح للحالة — كان يقبل 'approved'/'rejected' مباشرة
