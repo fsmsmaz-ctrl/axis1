@@ -46,7 +46,8 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
     // تثبيت القيم للاستخدام داخل الدوال المغلقة (تضييق النوع لا يعبر حدود الإغلاقات)
     var libOwnerId = lib.ownerId
     var libId = lib.id
-    var libVis = lib.visibility
+    // v101: بوابة المكتبة كاملة للإغلاقات (canManageLibrary يحتاج visibility)
+    var libGate = { ownerId: lib.ownerId, visibility: lib.visibility }
 
     var files = await db.libraryFile.findMany({
       where: { libraryId: id, sectionId: null },
@@ -62,7 +63,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
       files: files.map((f) => ({
         ...f,
         url: undefined, // المحتوى لا يُرسل في القائمة — يُجلب من مسار التحميل فقط
-        canDelete: f.uploaderId === user.id || canManageLibrary(user, libOwnerId, libVis),
+        canDelete: f.uploaderId === user.id || canManageLibrary(user, libGate),
       })),
     })
   } catch (error: any) {
@@ -86,8 +87,8 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       select: { id: true, ownerId: true, visibility: true, linkToken: true },
     })
     if (!lib) return NextResponse.json({ error: 'not_found', message: 'المكتبة غير موجودة' }, { status: 404 })
-    // الرفع المباشر داخل المكتبة: صاحب المكتبة — v101: الخاصة لصاحبها حصراً حتى عن الإدارة
-    if (!canManageLibrary(user, lib.ownerId, lib.visibility)) {
+    // الرفع المباشر داخل المكتبة: صاحب المكتبة (ومدير النظام) — مثل إدارة أقسامها
+    if (!canManageLibrary(user, lib)) {
       return NextResponse.json({ error: 'forbidden', message: 'الرفع المباشر داخل المكتبة لصاحبها فقط' }, { status: 403 })
     }
     // تثبيت معرف المكتبة للاستخدام داخل الدالة المغلقة أدناه
