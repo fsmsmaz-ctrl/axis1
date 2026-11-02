@@ -546,6 +546,23 @@ export async function ensureDriveLineDates(): Promise<void> {
   }
 }
 
+// ─── v102: أعمدة دفع الأنبوب + مدة تشغيل الماكينة على DailyReport ──────────
+// نفس أسلوب الشفاء الذاتي: علم مخزّن فلا يُنفَّذ DDL إلا مرة واحدة، وكل عنصر
+// في try/catch خاص به. لا يحتاج صاحب الموقع لأي خطوة يدوية على Supabase.
+var v102PipePaidChecked = false
+
+export async function ensurePipePaidSupport(): Promise<void> {
+  if (v102PipePaidChecked) return
+  try {
+    await db.$executeRawUnsafe('ALTER TABLE "DailyReport" ADD COLUMN IF NOT EXISTS "pipePaid" BOOLEAN NOT NULL DEFAULT false')
+    await db.$executeRawUnsafe('ALTER TABLE "DailyReport" ADD COLUMN IF NOT EXISTS "machineRunningHours" DOUBLE PRECISION')
+    v102PipePaidChecked = true
+  } catch (e) {
+    // لا نُثبّت العلم عند الفشل — تُعاد المحاولة في الطلب التالي
+    console.error('v102: pipe-paid self-heal skipped (will retry):', e)
+  }
+}
+
 
 
 // ─── v97: جداول المكتبات — تُنشأ تلقائياً عند أول استخدام للقسم ─────────────
