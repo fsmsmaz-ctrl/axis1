@@ -23,6 +23,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية عرض التقارير اليومية' }, { status: 403 })
   }
 
+  // v102: ضمان عمودَي دفع الأنبوب قبل قراءة التقارير (القراءة بلا select تُرجع كل الأعمدة)
+  await ensurePipePaidSupport()
+
   const { searchParams } = new URL(req.url)
   const projectId = searchParams.get('projectId')
   const date = searchParams.get('date')
@@ -375,4 +378,3 @@ export async function POST(req: NextRequest) {
     return handleDbError(error, 'إنشاء التقرير اليومي')
   }
 }
-
