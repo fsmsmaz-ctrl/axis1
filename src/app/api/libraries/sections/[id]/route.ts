@@ -52,8 +52,10 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
     }
 
     var fileCount = await db.libraryFile.count({ where: { sectionId: id } })
-    // v101: الإدارة تمر ببوابة الخاص الفعلي — القسم الخاص بصاحبيه حصراً
-    var manager = canManageSection(user, section.ownerId, section.library.ownerId, effectiveSectionMode(section.library, section))
+    // v101: إدارة القسم تخضع لقواعد الخاص — القسم الخاص فعلياً (أو في مكتبة خاصة)
+    // لا يديره مدير النظام بل صاحب القسم وصاحب المكتبة حصراً.
+    var effMode = effectiveSectionMode(section.library, section)
+    var manager = canManageSection(user, section.ownerId, section.library.ownerId, effMode)
 
     return NextResponse.json({
       section: {
@@ -92,8 +94,9 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
 
     var section = await loadSection(id)
     if (!section) return NextResponse.json({ error: 'not_found', message: 'القسم غير موجود' }, { status: 404 })
-    // v101: الخاص الفعلي يُدار بصاحبي القسم/المكتبة حصراً — الإدارة مستثناة
-    if (!canManageSection(user, section.ownerId, section.library.ownerId, effectiveSectionMode(section.library, section))) {
+    // v101: تعديل القسم الخاص فعلياً لصاحب القسم وصاحب المكتبة حصراً
+    var effModePatch = effectiveSectionMode(section.library, section)
+    if (!canManageSection(user, section.ownerId, section.library.ownerId, effModePatch)) {
       return NextResponse.json({ error: 'forbidden', message: 'تعديل القسم لصاحب القسم أو صاحب المكتبة فقط' }, { status: 403 })
     }
 
@@ -158,8 +161,9 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
 
     var section = await loadSection(id)
     if (!section) return NextResponse.json({ error: 'not_found', message: 'القسم غير موجود' }, { status: 404 })
-    // v101: الخاص الفعلي يُدار بصاحبي القسم/المكتبة حصراً — الإدارة مستثناة
-    if (!canManageSection(user, section.ownerId, section.library.ownerId, effectiveSectionMode(section.library, section))) {
+    // v101: حذف القسم الخاص فعلياً لصاحب القسم وصاحب المكتبة حصراً
+    var effModeDel = effectiveSectionMode(section.library, section)
+    if (!canManageSection(user, section.ownerId, section.library.ownerId, effModeDel)) {
       return NextResponse.json({ error: 'forbidden', message: 'حذف القسم لصاحب القسم أو صاحب المكتبة فقط' }, { status: 403 })
     }
 
