@@ -1,7 +1,6 @@
 // ─── v97: المكتبات — قائمة المكتبات وإنشاء مكتبة جديدة ─────────────────────
 // GET  /api/libraries  → المكتبات المرئية للمستخدم الحالي مع أقسامها المرئية
-//                        (v100: الخاصة و«برابط» لا تُرسل أصلاً لغير أهلها —
-//                         v101: الخاصة لا تصل حتى لمدير النظام)
+//                        (v100: الخاصة و«برابط» لا تُرسل أصلاً لغير أهلها)
 // POST /api/libraries  → إنشاء مكتبة — لكل موظف يملك صلاحية القسم (بقرار صاحب
 //                        الموقع القسم عام لكل الموظفين)
 // v100 — للمكتبة نفسها رؤية يختارها صاحبها: عامة / خاصة / لمن يمتلك الرابط،
@@ -57,21 +56,21 @@ export async function GET(req: NextRequest) {
     })
 
     // الرؤية تُطبَّق هنا خادمياً — v100: المكتبة الخاصة أو «برابط» لا تصل أصلاً
-    // لغير صاحبها (v101: الخاصة لا تصل حتى لمدير النظام)، وأقسامها تخضع لقيد مكتبتها
+    // لغير صاحبها (الخاص يبقى خاصاً مهما كان السبب)، وأقسامها تخضع لقيد مكتبتها
+    // v101: لا اختصار للإدارة — كل الأقسام تمرّ عبر filterVisibleSections التي تحترم
+    // قاعدة الخاص (صاحب القسم/المكتبة يرى، والإدارة لا ترى الخاص فعلياً).
     var admin = isLibraryAdmin(user)
     var libraries: Array<Record<string, unknown>> = []
     for (var lib of rows) {
       if (!canSeeLibraryInList(user, lib)) continue
-      // v101: الفلترة دائماً وبلا استثناء — الخاص الفعلي لا يُرسل لغير صاحبيه
-      // (كانت الإدارة تتلقى كل الأقسام هنا — سُدّ هذا الطريق بقرار صاحب الموقع)
       var visible = filterVisibleSections(user, lib.sections, lib)
       // ملفات المكتبة المباشرة (خارج الأقسام) — الفرق بين كل ملفات المكتبة
       // وملفات أقسامها كله، فلا يسرّب عدد ملفات الأقسام المخفية
       var allSectionFiles = lib.sections.reduce((acc, s) => acc + s._count.files, 0)
       var directCount = Math.max(0, lib._count.files - allSectionFiles)
       var fileCount = visible.reduce((acc, s) => acc + s._count.files, 0) + directCount
-      // v101: canManage يمر ببوابة الخاص — مكتبة خاصة تعني إدارة لصاحبها حصراً
-      var manager = canManageLibrary(user, lib.ownerId, lib.visibility)
+      // v101: canManageLibrary تحترم قاعدة الخاص — الخاصة لصاحبها حصراً
+      var manager = canManageLibrary(user, lib)
       libraries.push({
         id: lib.id,
         name: lib.name,
