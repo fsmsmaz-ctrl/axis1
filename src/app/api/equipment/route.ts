@@ -127,6 +127,7 @@ export async function POST(req: NextRequest) {
     const validationError = validateRequired(body, ['name', 'number', 'type'])
     if (validationError) return validationError
 
+    // v101: قيد التفرد على «الرقم» — يبقى كما هو (حارس أول).
     const dupResult = await safeDbOp(() => db.equipment.findUnique({ where: { number: String(body.number).trim() } }), 'فحص الرمز المكرر')
     if (dupResult.success && dupResult.data) {
       // v75: رسالة أوضح إذا كان الرقم محتجزاً بمعدة في الأرشيف (الحذف ناعم)
@@ -134,6 +135,37 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'duplicate_number', message: isArchivedDup
         ? `الرقم "${body.number}" محتجز بمعدة في أرشيف المحذوفات — يمكن لمدير النظام استعادتها أو اختر رقماً آخر`
         : `المعدة برقم "${body.number}" موجودة بالفعل` }, { status: 400 })
+    }
+
+    // v101: حارس زمني ضد التكرار بالنقر المزدوج — لو أن نفس المستخدم أنشأ معدة بنفس
+    // «الاسم + النوع» خلال آخر 30 ثانية، فهذا تقريباً طلب مكرر من نقرات متتالية
+    // (حتى لو اختلف الرقم قليلاً). نُرجع خطأ واضحاً بدل إنشاء نسخة مكررة. لا يُطبَّق
+    // هذا الحارس على مدير النظام حتى لا يُعطّل عمليات الإصلاح اليدوية المتتالية.
+    var v101Name = String(body.name).trim()
+    var v101Type = String(body.type)
+    if (!isSystemAdminAccount(user)) {
+      var v101WindowStart = new Date(Date.now() - 30 * 1000)
+      var v101RecentDup = await safeDbOp(
+        () => db.equipment.findFirst({
+          where: {
+            createdById: user.id,
+            name: v101Name,
+            type: v101Type,
+            createdAt: { gte: v101WindowStart },
+            deletedAt: null,
+          },
+          select: { id: true, name: true, number: true, createdAt: true },
+        }),
+        'فحص التكرار الزمني'
+      )
+      if (v101RecentDup.success && v101RecentDup.data) {
+        var v101Dup = v101RecentDup.data as any
+        return NextResponse.json({
+          error: 'duplicate_submit',
+          message: `أنشأت للتو معدة بنفس الاسم والنوع («${v101Name}») — تنتظر قليلاً قبل إنشاء أخرى مطابقة لتفادي التكرار`,
+          existing: { id: v101Dup.id, number: v101Dup.number },
+        }, { status: 409 })
+      }
     }
 
     const createResult = await safeDbOp(
@@ -146,6 +178,9 @@ export async function POST(req: NextRequest) {
           nextMaintenance: body.nextMaintenance ? new Date(body.nextMaintenance) : null,
           notes: body.notes ? String(body.notes).slice(0, 2000) : null,
           image: validImageDataUrl(body.image),
+          // v101: تسجيل منشئ المعدة — كان مفقوداً قبل هذا الإصدار، وهو لازم
+          // للمساءلة (المفكرة) ولاستخدام الحارس الزمني أعلاه.
+          createdById: user.id,
         },
       }), 'إنشاء المعدة'
     )
