@@ -191,6 +191,10 @@ model DailyReport {
   progressPercent Float    @default(0)
   soilExcavated   String?
   pipesInstalled  Int      @default(0)
+  // v102: هل تم دفع الأنبوب اليوم؟ (نعم/لا) — يختاره الموظف في تقريره اليومي
+  pipePaid        Boolean  @default(false)
+  // v102: مدة تشغيل الماكينة بالساعات — تُملأ فقط عند pipePaid=true
+  machineRunningHours Float?
   productionNotes String?
   problems        String?
 
