@@ -22,6 +22,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية عرض التقارير اليومية' }, { status: 403 })
   }
 
+  // v102: ضمان عمودَي دفع الأنبوب قبل قراءة التقرير (القراءة بلا select تُرجع كل الأعمدة)
+  await ensurePipePaidSupport()
+
   var { id } = await params
 
   var result = await safeDbOp(
