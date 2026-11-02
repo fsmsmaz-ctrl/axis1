@@ -4,6 +4,7 @@ import { canWrite, SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 import { safeDbOp, handleDbError } from '@/lib/api-helpers'
+import { ensurePipePaidSupport } from '@/lib/db-selfheal'
 import { notifyUsers } from '@/lib/notify'
 
 // تسليم التقرير: من مسودة إلى مرسل — بعد الانتهاء من تعديل البيانات
@@ -22,6 +23,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   var { id } = await params
+
+  // v102: ضمان عمودَي دفع الأنبوب — update بلا select يُرجع كل الأعمدة بعد التحديث
+  await ensurePipePaidSupport()
 
   try {
     var existingResult = await safeDbOp(
@@ -115,4 +119,3 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return handleDbError(error, 'تسليم التقرير')
   }
 }
-
