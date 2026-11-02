@@ -3,6 +3,7 @@ import { getAuthUser } from '@/lib/auth-server'
 import { canWrite, canViewPricing, SYSTEM_ADMIN_EMAIL, normalizeRole } from '@/lib/auth'
 import { db, invalidateCachePrefix } from '@/lib/db'
 import { buildAuditDetails, safeDbOp, handleDbError, recalcProgress, sanitizeDailyReport } from '@/lib/api-helpers'
+import { ensurePipePaidSupport } from '@/lib/db-selfheal'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 
 // v27: إعادة إسناد التقرير اليومي (المشروع + خط الحفر) — مسار مخصص مستقل عن تعديل المحتوى
@@ -58,6 +59,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: 'missing_fields', message: 'المشروع الجديد مطلوب' }, { status: 400 })
     }
     var newDriveLineId = body.driveLineId ? String(body.driveLineId) : null
+
+    // v102: ضمان عمودَي دفع الأنبوب — update بلا select يُرجع كل الأعمدة بعد التحديث
+    await ensurePipePaidSupport()
 
     var existingResult = await safeDbOp(
       () => db.dailyReport.findUnique({
@@ -284,4 +288,3 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     return handleDbError(error, 'تعديل إسناد التقرير اليومي')
   }
 }
-
