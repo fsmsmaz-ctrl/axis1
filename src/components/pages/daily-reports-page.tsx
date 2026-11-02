@@ -75,6 +75,11 @@ function incompleteReportFields(d: any, isRtl: boolean): string[] {
   if (stoppageHours > 0 && !(d.stoppageReason && String(d.stoppageReason).trim() !== '')) {
     missing.push(isRtl ? 'سبب التوقف (مطلوب عند وجود توقف)' : 'Stoppage reason (required with stoppage)')
   }
+  // v102: عند دفع الأنبوب (نعم) يجب إدخال مدة تشغيل الماكينة قبل التسليم
+  if (d.pipePaid === true || d.pipePaid === 'true' || d.pipePaid === 'yes') {
+    var mrh = parseFloat(d.machineRunningHours) || 0
+    if (mrh <= 0) missing.push(isRtl ? 'مدة تشغيل الماكينة (مطلوبة عند دفع الأنبوب)' : 'Machine running hours (required when pipe jacked)')
+  }
   return missing
 }
 
@@ -110,6 +115,8 @@ export default function DailyReportsPage() {
     workersCount: '12', attendees: '', startReading: '', endReading: '',
     soilExcavated: 'mixed', pipesInstalled: '0', productionNotes: '',
     problems: '',
+    // v102: هل تم دفع الأنبوب اليوم؟ + مدة تشغيل الماكينة (تُملأ فقط عند نعم)
+    pipePaid: false, machineRunningHours: '',
   })
 
   // Safety checklist state
@@ -270,6 +277,9 @@ export default function DailyReportsPage() {
       endReading: String(report.endReading ?? ''),
       soilExcavated: report.soilExcavated || 'mixed',
       pipesInstalled: String(report.pipesInstalled ?? '0'),
+      // v102: استرجاع قيمتي دفع الأنبوب + مدة تشغيل الماكينة عند فتح التعديل
+      pipePaid: report.pipePaid === true,
+      machineRunningHours: report.machineRunningHours != null ? String(report.machineRunningHours) : '',
       productionNotes: report.productionNotes || '',
       problems: report.problems || '',
     })
@@ -998,6 +1008,35 @@ export default function DailyReportsPage() {
                         <Input type="number" value={formData.pipesInstalled} onChange={(e) => setFormData({ ...formData, pipesInstalled: e.target.value })} />
                       </div>
                     </div>
+                    {/* v102: هل تم دفع الأنبوب اليوم؟ + مدة تشغيل الماكينة الشرطية */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 rounded-lg border bg-muted/20">
+                      <div className="space-y-1.5">
+                        <Label>{isRtl ? 'هل تم دفع الأنبوب اليوم؟' : 'Was the pipe jacked today?'}</Label>
+                        <Select
+                          value={formData.pipePaid ? 'yes' : 'no'}
+                          onValueChange={(v) => setFormData({ ...formData, pipePaid: v === 'yes', machineRunningHours: v === 'yes' ? formData.machineRunningHours : '' })}
+                        >
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="no">{isRtl ? 'لا' : 'No'}</SelectItem>
+                            <SelectItem value="yes">{isRtl ? 'نعم' : 'Yes'}</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      {formData.pipePaid && (
+                        <div className="space-y-1.5">
+                          <Label>{isRtl ? 'مدة تشغيل الماكينة (ساعات)' : 'Machine Running Hours'}</Label>
+                          <Input
+                            type="number"
+                            step="0.1"
+                            min="0"
+                            placeholder={isRtl ? 'مثال: 7.5' : 'e.g. 7.5'}
+                            value={formData.machineRunningHours}
+                            onChange={(e) => setFormData({ ...formData, machineRunningHours: e.target.value })}
+                          />
+                        </div>
+                      )}
+                    </div>
                     <div className="space-y-1.5">
                       <Label>{isRtl ? 'ملاحظات الإنتاج' : 'Production Notes'}</Label>
                       <Textarea value={formData.productionNotes} onChange={(e) => setFormData({ ...formData, productionNotes: e.target.value })} rows={2} />
@@ -1084,6 +1123,11 @@ function ReportDetails({ report }: { report: any }) {
         <Detail label={isRtl ? 'ساعات التوقف' : 'Stoppage'} value={`${report.stoppageHours}h`} />
         <Detail label={isRtl ? 'عدد العمال' : 'Workers'} value={String(report.workersCount)} />
         <Detail label={isRtl ? 'الأنابيب' : 'Pipes'} value={String(report.pipesInstalled)} />
+        {/* v102: عرض دفع الأنبوب + مدة تشغيل الماكينة في تفاصيل التقرير */}
+        <Detail label={isRtl ? 'دفع الأنبوب اليوم' : 'Pipe Jacked'} value={report.pipePaid ? (isRtl ? 'نعم' : 'Yes') : (isRtl ? 'لا' : 'No')} />
+        {report.pipePaid && (
+          <Detail label={isRtl ? 'مدة تشغيل الماكينة' : 'Machine Hours'} value={`${report.machineRunningHours ?? 0} ${isRtl ? 'ساعة' : 'h'}`} />
+        )}
         <Detail label={isRtl ? 'قراءة البداية' : 'Start Reading'} value={`${report.startReading} م`} />
         <Detail label={isRtl ? 'قراءة النهاية' : 'End Reading'} value={`${report.endReading} م`} />
       </div>
@@ -1172,5 +1216,3 @@ function Stat({ label, value, color }: { label: string; value: string; color: st
     </div>
   )
 }
-
-
