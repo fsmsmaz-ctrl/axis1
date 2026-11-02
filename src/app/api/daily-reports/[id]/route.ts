@@ -3,7 +3,7 @@ import { getAuthUser } from '@/lib/auth-server'
 import { canWrite, hasPermission, canViewPricing, SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { buildAuditDetails, safeDbOp, handleDbError, recalcProgress, recalcDrillingDates, sanitizeDailyReport } from '@/lib/api-helpers'
-import { ensureDriveLineDates } from '@/lib/db-selfheal'
+import { ensureDriveLineDates, ensurePipePaidSupport } from '@/lib/db-selfheal'
 
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 
@@ -80,13 +80,15 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
   // v79: ضمان جاهزية عمودَي تواريخ الحفر قبل أي كتابة عليهما
   await ensureDriveLineDates()
+  // v102: ضمان عمودَي دفع الأنبوب + مدة تشغيل الماكينة
+  await ensurePipePaidSupport()
 
   try {
     // Fetch the report first to verify ownership and status
     var existingResult = await safeDbOp(
       () => db.dailyReport.findUnique({
         where: { id },
-        select: { createdById: true, status: true, projectId: true, safetyLocked: true, driveLineId: true, reportDate: true, weather: true, workStartTime: true, workEndTime: true, operatingHours: true, stoppageHours: true, stoppageReason: true, workersCount: true, attendees: true, startReading: true, endReading: true, dailyMeters: true, pipesInstalled: true, soilExcavated: true, productionNotes: true, problems: true, safety: { select: { id: true } } },
+        select: { createdById: true, status: true, projectId: true, safetyLocked: true, driveLineId: true, reportDate: true, weather: true, workStartTime: true, workEndTime: true, operatingHours: true, stoppageHours: true, stoppageReason: true, workersCount: true, attendees: true, startReading: true, endReading: true, dailyMeters: true, pipesInstalled: true, soilExcavated: true, productionNotes: true, problems: true, pipePaid: true, machineRunningHours: true, safety: { select: { id: true } } },
       }),
       'البحث عن التقرير'
     )
@@ -223,6 +225,11 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       progressPercent: progressPercent,
       soilExcavated: (body.soilExcavated ? String(body.soilExcavated).slice(0, 50) : null),
       pipesInstalled: Math.max(0, parseInt(body.pipesInstalled) || 0),
+      // v102: دفع الأنبوب + مدة تشغيل الماكينة (فقط عند نعم)
+      pipePaid: body.pipePaid === true || body.pipePaid === 'true' || body.pipePaid === 'yes',
+      machineRunningHours: (body.pipePaid === true || body.pipePaid === 'true' || body.pipePaid === 'yes')
+        ? Math.max(0, parseFloat(body.machineRunningHours) || 0)
+        : null,
       productionNotes: (body.productionNotes ? String(body.productionNotes).slice(0, 2000) : null),
       problems: (body.problems ? String(body.problems).slice(0, 2000) : null),
       // SECURITY FIX: التسليم حصراً عبر المسار المخصص /submit — كان قبول
@@ -278,6 +285,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       dailyMeters: existingReport.dailyMeters,
       pipesInstalled: existingReport.pipesInstalled,
       soilExcavated: existingReport.soilExcavated,
+      // v102: لقطة قبل التعديل لسجل التدقيق
+      pipePaid: existingReport.pipePaid,
+      machineRunningHours: existingReport.machineRunningHours,
       productionNotes: existingReport.productionNotes,
       problems: existingReport.problems,
     }
