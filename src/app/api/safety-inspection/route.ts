@@ -4,7 +4,7 @@ import { hasPermission, canWrite, SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { handleDbError, validateRequired, safeDbOp } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
-import { ensureDailyReportSafety } from '@/lib/db-selfheal'
+import { ensureDailyReportSafety, ensurePipePaidSupport } from '@/lib/db-selfheal'
 
 export async function GET(req: NextRequest) {
   var user = await getAuthUser(req)
@@ -131,6 +131,8 @@ export async function POST(req: NextRequest) {
     // (درس v44: الشفاء يُربَط بالمسارات المستخدمة فعلياً — أي نقص يظهر سابقاً كرسالة
     // «قاعدة البيانات غير مهيأة» عند الحفظ دون أي إصلاح تلقائي)
     await ensureDailyReportSafety()
+    // v102: ضمان عمودَي دفع الأنبوب قبل إنشاء التقرير (create بلا select يُرجع كل الأعمدة)
+    await ensurePipePaidSupport()
 
     // === فحص التكرار ===
     // v55: القاعدة أصبحت «تقرير سلامة واحد لكل خط حفر في اليوم» بدل «تقرير واحد لكل مشروع في اليوم» —
