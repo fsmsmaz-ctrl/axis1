@@ -604,4 +604,3 @@ export function PrintableReport({ data, generatedBy, showRevenue = true }: { dat
     </div>
   )
 }
-
