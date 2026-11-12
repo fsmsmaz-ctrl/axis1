@@ -260,10 +260,11 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     if (rl.limited) {
       return NextResponse.json({ error: 'too_many_requests', message: 'طلبات كثيرة جداً، يرجى الانتظار قليلاً' }, { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } })
     }
-    // v82: الحذف محجوب عن أدوار «الإنشاء فقط» (مسؤول السلامة/المشرف) —
-    // v83: بوابة المُنشئ تُخوّل التعديل فقط، أما الحذف فللإدارة حصراً
+    // v82: كان الحذف محجوباً عن أدوار «الإنشاء فقط» (v83: للإدارة حصراً) —
+    // v105 (قرار صاحب الموقع): أُرجع الحذف لكل من يملك صلاحية الوصول للقسم،
+    // نفس بوابة التعديل تماماً، والمساءلة عبر المفكرة الموحدة
     if (!canModifyEquipment(user)) {
-      return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية لحذف المعدات — الحذف متاح للإدارة فقط' }, { status: 403 })
+      return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية لحذف المعدات' }, { status: 403 })
     }
     const { id } = await params
     // v70: فحص الوجود — حذف غير موجود كان يُسقط 500 «قاعدة البيانات غير مهيأة» مضللاً
