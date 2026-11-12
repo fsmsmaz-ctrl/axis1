@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { canAccessDashboard, canViewPricing } from '@/lib/auth'
 import { db, cached } from '@/lib/db'
+import { roundMeters, roundMoney } from '@/lib/api-helpers'
 
 // ────────────────────────────────────────────────────────────────
 // Helpers
@@ -270,8 +271,9 @@ async function buildDashboard(canSeePrice: boolean, costsPeriod: 'month' | 'year
   // الإيراد: من التقارير المعتمدة فقط — المسودة والمرسل لا يُحسبان إيراداً قبل الاعتماد
   const approvedToday = todayReports.filter((r: any) => r.status === 'approved')
   const todaySource = approvedToday.length > 0 ? approvedToday : todayReports
-  const metersToday = todaySource.reduce((s: number, r: any) => s + (r.dailyMeters || 0), 0)
-  const revenueToday = approvedToday.reduce((s: number, r: any) => s + (r.dailyRevenue || 0), 0)
+  // v103: تقريب المجاميع لتفادي تلوث النقطة العائمة
+  const metersTodayR = roundMeters(todaySource.reduce((s: number, r: any) => s + (r.dailyMeters || 0), 0))
+  const revenueTodayR = roundMoney(approvedToday.reduce((s: number, r: any) => s + (r.dailyRevenue || 0), 0))
   const presentWorkers = todaySource.reduce((s: number, r: any) => s + (r.workersCount || 0), 0)
 
   // ── Aggregate month stats ──
@@ -279,8 +281,9 @@ async function buildDashboard(canSeePrice: boolean, costsPeriod: 'month' | 'year
   // نفس اليوم: الأمتار بسلوك الاحتياط القديم، والإيراد من المعتمد فقط
   const approvedMonth = monthReports.filter((r: any) => r.status === 'approved')
   const monthSource = approvedMonth.length > 0 ? approvedMonth : monthReports
-  const metersThisMonth = monthSource.reduce((s: number, r: any) => s + (r.dailyMeters || 0), 0)
-  const revenueThisMonth = approvedMonth.reduce((s: number, r: any) => s + (r.dailyRevenue || 0), 0)
+  // v103: تقريب المجاميع الشهرية
+  const metersThisMonthR = roundMeters(monthSource.reduce((s: number, r: any) => s + (r.dailyMeters || 0), 0))
+  const revenueThisMonthR = roundMoney(approvedMonth.reduce((s: number, r: any) => s + (r.dailyRevenue || 0), 0))
 
   // ── Scalar aggregates ──
   const activeProjects = unwrap(activeProjectsResult, 0, 'activeProjects')
@@ -311,6 +314,12 @@ async function buildDashboard(canSeePrice: boolean, costsPeriod: 'month' | 'year
     if (!trendMap.has(key)) trendMap.set(key, { meters: 0, revenue: 0, cost: 0 })
     trendMap.get(key)!.cost += c.amount || 0
   }
+  // v103: تقريب قيم المنحنى بعد اكتمال التراكم
+  for (const item of trendMap.values()) {
+    item.meters = roundMeters(item.meters)
+    item.revenue = roundMoney(item.revenue)
+    item.cost = roundMoney(item.cost)
+  }
   const trend = Array.from(trendMap.entries())
     .sort((a, b) => a[0].localeCompare(b[0]))
     .map(([date, vals]) => ({ date, ...vals }))
@@ -323,11 +332,16 @@ async function buildDashboard(canSeePrice: boolean, costsPeriod: 'month' | 'year
   const costsByCategoryRaw = unwrap(costsByCategoryResult, [], 'costsByCategory')
   const costsByCategory = (costsByCategoryRaw as any[]).map((c) => ({
     category: c.category,
-    amount: c._sum?.amount || 0,
+    // v103: تقريب مبلغ كل فئة
+    amount: roundMoney(c._sum?.amount || 0),
   }))
 
   // ── Build response ──
-  const netProfit = totalRevenueSum - totalCostsSum
+  // v103: تقريب الإيرادات والتكاليف وصافي الربح
+  const totalRevenueSumR = roundMoney(totalRevenueSum)
+  const totalCostsSumR = roundMoney(totalCostsSum)
+  const monthCostsSumR = roundMoney(monthCostsSum)
+  const netProfit = roundMoney(totalRevenueSumR - totalCostsSumR)
 
   // v16: البيانات المالية للوحة كاملة لمن يملك صلاحية الوصول إليها أصلاً
   // (مدير النظام + الإدارة العليا — نفس بوابة canAccessDashboard في الأعلى،
@@ -352,13 +366,13 @@ async function buildDashboard(canSeePrice: boolean, costsPeriod: 'month' | 'year
     stats: {
       activeProjects,
       totalProjects: projects.length,
-      metersToday,
-      metersThisMonth,
-      revenueToday: canSeePrice ? revenueToday : 0,
-      revenueThisMonth: canSeePrice ? revenueThisMonth : 0,
-      totalRevenue: canSeePrice ? totalRevenueSum : 0,
-      totalCosts: totalCostsSum,
-      monthCosts: monthCostsSum,
+      metersToday: metersTodayR,
+      metersThisMonth: metersThisMonthR,
+      revenueToday: canSeePrice ? revenueTodayR : 0,
+      revenueThisMonth: canSeePrice ? revenueThisMonthR : 0,
+      totalRevenue: canSeePrice ? totalRevenueSumR : 0,
+      totalCosts: totalCostsSumR,
+      monthCosts: monthCostsSumR,
       netProfit: canSeePrice ? netProfit : 0,
       stoppedEquipment,
       presentWorkers,
@@ -382,4 +396,4 @@ async function buildDashboard(canSeePrice: boolean, costsPeriod: 'month' | 'year
   }
 }
 
-                                                  
+                                                
