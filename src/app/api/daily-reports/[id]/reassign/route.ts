@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { canWrite, canViewPricing, SYSTEM_ADMIN_EMAIL, normalizeRole } from '@/lib/auth'
 import { db, invalidateCachePrefix } from '@/lib/db'
-import { buildAuditDetails, safeDbOp, handleDbError, recalcProgress, sanitizeDailyReport } from '@/lib/api-helpers'
+import { buildAuditDetails, safeDbOp, handleDbError, recalcProgress, sanitizeDailyReport, roundMeters, roundMoney } from '@/lib/api-helpers'
 import { ensurePipePaidSupport } from '@/lib/db-selfheal'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 
@@ -133,7 +133,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     // إعادة حساب المشتقات بنفس قواعد تعديل التقرير: الإيراد = الأمتار × سعر الخط (أو سعر المشروع احتياطاً)
     var linePrice = newLine && newLine.pricePerMeter != null ? newLine.pricePerMeter : null
     var projectPrice = newProject.pricePerMeter != null ? newProject.pricePerMeter : 0
-    var dailyRevenue = existing.dailyMeters * (linePrice != null ? linePrice : projectPrice)
+    var dailyRevenue = roundMoney(existing.dailyMeters * (linePrice != null ? linePrice : projectPrice))
     var totalLength = newLine ? newLine.totalLength : 0
 
     // v29: إعادة تثبيت القراءات على الخط الجديد — قراءات التقرير القديمة كانت
@@ -158,14 +158,14 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       if (!anchorAgg.success) return anchorAgg.response
       var maxEnd = (anchorAgg.data && anchorAgg.data[0] && anchorAgg.data[0]._max && anchorAgg.data[0]._max.endReading) || 0
       var sumMeters = (anchorAgg.data && anchorAgg.data[1] && anchorAgg.data[1]._sum && anchorAgg.data[1]._sum.dailyMeters) || 0
-      var anchor = Math.max(maxEnd, sumMeters)
+      var anchor = roundMeters(Math.max(maxEnd, sumMeters))
       newStartReading = anchor
-      newEndReading = anchor + movedMeters
+      newEndReading = roundMeters(anchor + movedMeters)
       reanchored = true
     }
-    var totalMeters = newEndReading
-    var remainingMeters = Math.max(0, totalLength - totalMeters)
-    var progressPercent = totalLength > 0 ? Math.min((totalMeters / totalLength) * 100, 100) : 0
+    var totalMeters = roundMeters(newEndReading)
+    var remainingMeters = roundMeters(Math.max(0, totalLength - totalMeters))
+    var progressPercent = roundMoney(totalLength > 0 ? Math.min((totalMeters / totalLength) * 100, 100) : 0)
 
     var updateResult = await safeDbOp(
       () => db.dailyReport.update({
