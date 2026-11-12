@@ -23,6 +23,7 @@ import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
 import { canWrite, SYSTEM_ADMIN_EMAIL, normalizeRole } from '@/lib/auth'
 import { reportDayName } from '@/lib/day-name'
+import { fmtNum } from '@/lib/report-labels'
 import { localTodayISO } from '@/lib/utils'
 import { toast } from 'sonner'
 
@@ -715,7 +716,7 @@ export default function DailyReportsPage() {
                     <div className="flex items-center gap-4 text-sm">
                       <div className="text-center">
                         <p className="text-xs text-muted-foreground">{isRtl ? 'الإنتاج' : 'Production'}</p>
-                        <p className="font-semibold">{r.dailyMeters} {isRtl ? 'م' : 'm'}</p>
+                        <p className="font-semibold">{fmtNum(r.dailyMeters)} {isRtl ? 'م' : 'm'}</p>
                       </div>
                       {r.safety && (
                         <div className="text-center">
@@ -1133,7 +1134,7 @@ function ReportDetails({ report }: { report: any }) {
       </div>
 
       <div className="grid grid-cols-2 gap-2">
-        <Stat label={isRtl ? 'إنتاج اليوم' : 'Daily Meters'} value={`${report.dailyMeters} م`} color="text-blue-600" />
+        <Stat label={isRtl ? 'إنتاج اليوم' : 'Daily Meters'} value={`${fmtNum(report.dailyMeters)} م`} color="text-blue-600" />
         <Stat label={isRtl ? 'إجمالي الأمتار' : 'Total Meters'} value={`${report.totalMeters.toFixed(1)} م`} color="text-purple-600" />
       </div>
 
