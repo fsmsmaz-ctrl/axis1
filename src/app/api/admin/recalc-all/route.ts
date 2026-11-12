@@ -5,6 +5,7 @@ import { db, invalidateCachePrefix } from '@/lib/db'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 import { safeDbOp } from '@/lib/api-helpers'
 import { ensurePipePaidSupport } from '@/lib/db-selfheal'
+import { roundMeters, roundMoney } from '@/lib/api-helpers'
 
 // Admin/Manager endpoint to recalculate ALL progress data.
 // Call via: POST /api/admin/recalc-all
@@ -125,10 +126,10 @@ export async function POST(req: NextRequest) {
           })
           let anchor = 0
           for (const r of lineReports) {
-            const increment = Math.max(0, (r.endReading || 0) - (r.startReading || 0))
+            const increment = roundMeters(Math.max(0, (r.endReading || 0) - (r.startReading || 0)))
             if (increment <= 0) continue // تقارير بلا حفر (سلامة فقط) — لا تُثبَّت
             const corrStart = anchor
-            const corrEnd = anchor + increment
+            const corrEnd = roundMeters(anchor + increment)
             anchor = corrEnd
             corrections.set(r.id, { corrStart: corrStart, corrEnd: corrEnd, increment: increment })
           }
@@ -142,14 +143,14 @@ export async function POST(req: NextRequest) {
           const corr = corrections.get(r.id)
           const correctStartReading = corr ? corr.corrStart : (r.startReading || 0)
           const correctEndReading = corr ? corr.corrEnd : (r.endReading || 0)
-          const correctDailyMeters = corr ? corr.increment : Math.max(0, (r.endReading || 0) - (r.startReading || 0))
-          const correctDailyRevenue = correctDailyMeters * effectivePrice
+          const correctDailyMeters = corr ? corr.increment : roundMeters(Math.max(0, (r.endReading || 0) - (r.startReading || 0)))
+          const correctDailyRevenue = roundMoney(correctDailyMeters * effectivePrice)
 
           // v29: المشتقات نسبةً إلى الخط الحالي للتقرير (وليس الخط القديم)
           const lineLen = r.driveLineId ? (lineLenMap[r.driveLineId] || 0) : 0
-          const correctTotalMeters = correctEndReading
-          const correctRemainingMeters = Math.max(0, lineLen - correctEndReading)
-          const correctProgressPercent = lineLen > 0 ? Math.min((correctEndReading / lineLen) * 100, 100) : 0
+          const correctTotalMeters = roundMeters(correctEndReading)
+          const correctRemainingMeters = roundMeters(Math.max(0, lineLen - correctEndReading))
+          const correctProgressPercent = roundMoney(lineLen > 0 ? Math.min((correctEndReading / lineLen) * 100, 100) : 0)
 
           const needsUpdate =
             Math.abs((r.dailyMeters || 0) - correctDailyMeters) > 0.001 ||
@@ -159,7 +160,16 @@ export async function POST(req: NextRequest) {
             Math.abs((r.endReading || 0) - correctEndReading) > 0.001 ||
             Math.abs((r.totalMeters || 0) - correctTotalMeters) > 0.001 ||
             Math.abs((r.remainingMeters || 0) - correctRemainingMeters) > 0.001 ||
-            Math.abs((r.progressPercent || 0) - correctProgressPercent) > 0.001
+            Math.abs((r.progressPercent || 0) - correctProgressPercent) > 0.001 ||
+            // v103: تنظيف تلوث النقطة العائمة في القيم المخزنة سابقاً
+            // (مثال: 1.3499999999999943 → 1.35). المقارنة بالتقريب تلتقط ما لا تلتقطه 0.001
+            roundMeters(r.dailyMeters || 0) !== (r.dailyMeters || 0) ||
+            roundMeters(r.totalMeters || 0) !== (r.totalMeters || 0) ||
+            roundMeters(r.remainingMeters || 0) !== (r.remainingMeters || 0) ||
+            roundMeters(r.startReading || 0) !== (r.startReading || 0) ||
+            roundMeters(r.endReading || 0) !== (r.endReading || 0) ||
+            roundMoney(r.dailyRevenue || 0) !== (r.dailyRevenue || 0) ||
+            roundMoney(r.progressPercent || 0) !== (r.progressPercent || 0)
 
           if (needsUpdate) {
             await db.dailyReport.update({
@@ -193,11 +203,11 @@ export async function POST(req: NextRequest) {
             where: { driveLineId: dl.id },
             _sum: { dailyMeters: true },
           })
-          const completedLength = Math.max(
+          const completedLength = roundMeters(Math.max(
             maxResult._max.endReading || 0,
             sumResult._sum.dailyMeters || 0
-          )
-          const progress = dl.totalLength > 0 ? (completedLength / dl.totalLength) * 100 : 0
+          ))
+          const progress = roundMoney(dl.totalLength > 0 ? (completedLength / dl.totalLength) * 100 : 0)
           const newStatus =
             progress >= 100 ? 'completed'
             : completedLength > 0 ? 'in_progress'
@@ -222,9 +232,9 @@ export async function POST(req: NextRequest) {
           where: { projectId: project.id },
           _sum: { dailyMeters: true },
         })
-        const totalMeters = metersAgg._sum.dailyMeters || 0
+        const totalMeters = roundMeters(metersAgg._sum.dailyMeters || 0)
         const totalLen = project.totalLength || 0
-        const projectProgress = totalLen > 0 ? Math.min((totalMeters / totalLen) * 100, 100) : 0
+        const projectProgress = roundMoney(totalLen > 0 ? Math.min((totalMeters / totalLen) * 100, 100) : 0)
 
         await db.project.update({
           where: { id: project.id },
