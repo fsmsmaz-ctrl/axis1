@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { hasPermission, canViewPricing } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { handleDbError, safeDbOp, sanitizeProject } from '@/lib/api-helpers'
+import { handleDbError, safeDbOp, sanitizeProject, roundMeters, roundMoney } from '@/lib/api-helpers'
 
 export async function GET(req: NextRequest) {
   try {
@@ -72,9 +72,10 @@ export async function GET(req: NextRequest) {
     for (var i = 0; i < projects.length; i++) {
       var p = projects[i]
       var totalLen = p.totalLength || 0
-      var completedMeters = projectMetersMap[p.id] || 0
+      // v103: تقريب لتفادي تلوث النقطة العائمة في مجموع الأمتار
+      var completedMeters = roundMeters(projectMetersMap[p.id] || 0)
       if (totalLen > 0) {
-        p.progress = Math.min((completedMeters / totalLen) * 100, 100)
+        p.progress = roundMoney(Math.min((completedMeters / totalLen) * 100, 100))
       } else {
         p.progress = 0
       }
