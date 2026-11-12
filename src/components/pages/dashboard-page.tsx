@@ -9,7 +9,7 @@ import {
   Activity, TrendingUp, TrendingDown, DollarSign, Wallet,
   Users, AlertTriangle, Wrench, FolderKanban, ArrowLeft,
   Trophy, AlertCircle, Calendar, Cpu, RefreshCw, Receipt, Check, X, Loader2,
-  ClipboardCheck, CheckCircle2
+  ClipboardCheck, CheckCircle2, Package
 } from 'lucide-react'
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid,
@@ -44,6 +44,8 @@ interface DashboardData {
   recentReports: any[]
   notifications: any[]
   equipment: any[]
+  // v105: الأصول والمستأجرات — القسم الثاني في صفحة المعدات يظهر الآن في اللوحة
+  companyAssets: any[]
   costsByCategory: Array<{ category: string; amount: number }>
 }
 
@@ -71,6 +73,38 @@ const categoryLabelsAr: Record<string, string> = {
   safety: 'سلامة',
   rental: 'إيجار',
   other: 'أخرى',
+}
+
+// v105: تسميات قسم «الأصول والمستأجرات» في لوحة التحكم — نفس تسميات صفحة
+// المعدات حرفياً (نوع الأصل / الملكية / الحالة) بلا أي مصدر جديد للحقول
+const assetTypeLabels: Record<string, string> = {
+  machine: 'آلة/ماكينة',
+  vehicle: 'مركبة',
+  tool: 'أداة',
+  pipe: 'أنابيب',
+  safety_gear: 'معدات سلامة',
+  electrical: 'معدات كهربائية',
+  other: 'أخرى',
+}
+
+const assetOwnershipLabels: Record<string, string> = {
+  owned: 'ملك الشركة',
+  rented: 'مستأجر',
+  borrowed: 'معار',
+}
+
+const assetStatusLabels: Record<string, { ar: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
+  available: { ar: 'متاح', variant: 'default' },
+  in_use: { ar: 'قيد الاستخدام', variant: 'secondary' },
+  returned: { ar: 'تم الإرجاع', variant: 'outline' },
+  damaged: { ar: 'متلف', variant: 'destructive' },
+}
+
+const assetStatusColors: Record<string, string> = {
+  available: 'bg-emerald-100 text-emerald-600',
+  in_use: 'bg-blue-100 text-blue-600',
+  returned: 'bg-gray-100 text-gray-600',
+  damaged: 'bg-red-100 text-red-600',
 }
 
 export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) => void }) {
@@ -230,6 +264,8 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
   const recentReports = Array.isArray(data.recentReports) ? data.recentReports : []
   const notifications = Array.isArray(data.notifications) ? data.notifications : []
   const equipment = Array.isArray(data.equipment) ? data.equipment : []
+  // v105: الأصول والمستأجرات — دفاعية أمام ردود قديمة مخزنة (بلا الحقل تعرض فارغة)
+  const companyAssets = Array.isArray(data.companyAssets) ? data.companyAssets : []
   const costsByCategory = Array.isArray(data.costsByCategory) ? data.costsByCategory : []
 
   const fmt = function(n: number) { return (n || 0).toLocaleString(isRtl ? 'ar-EG' : 'en-US', { maximumFractionDigits: 1 }) }
@@ -662,6 +698,55 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
                       {eq.status === 'operational' ? (isRtl ? 'تعمل' : 'Operational') :
                        eq.status === 'stopped' ? (isRtl ? 'متوقفة' : 'Stopped') :
                        (isRtl ? 'تحتاج صيانة' : 'Maintenance')}
+                    </Badge>
+                  </div>
+                )
+              })
+            )}
+          </CardContent>
+        </Card>
+
+        {/* v105: الأصول والمستأجرات — القسم الثاني في صفحة المعدات لم يكن
+            يظهر في اللوحة إطلاقاً؛ الآن بطاقة مستقلة بجانب المعدات بنفس
+            التسميات والألوان، وعرض الكل يفتح قسم المعدات نفسه */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between">
+              <span className="flex items-center gap-2">
+                <Package className="h-5 w-5 text-primary" />
+                {isRtl ? 'الأصول والمستأجرات' : 'Assets & Rentals'}
+              </span>
+              <Button variant="ghost" size="sm" onClick={function() { onNavigate('equipment') }}>
+                {isRtl ? 'عرض الكل' : 'View all'}
+                <ArrowLeft className="h-4 w-4 mr-1 rtl:rotate-180" />
+              </Button>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 max-h-80 overflow-y-auto">
+            {companyAssets.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground text-sm">
+                {isRtl ? 'لا توجد أصول أو مستأجرات' : 'No assets or rentals'}
+              </div>
+            ) : (
+              companyAssets.map(function(a) {
+                var st = assetStatusLabels[a.status] || { ar: a.status || '-', variant: 'secondary' as const }
+                var ownership = assetOwnershipLabels[a.ownership] || a.ownership || '-'
+                var type = assetTypeLabels[a.itemType] || a.itemType || '-'
+                return (
+                  <div key={a.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 transition">
+                    <div className={'w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ' +
+                      (assetStatusColors[a.status] || 'bg-gray-100 text-gray-600')}>
+                      <Package className="h-4 w-4" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm truncate">{a.name}</p>
+                      <p className="text-xs text-muted-foreground truncate">
+                        {type} • {ownership}{a.quantity && Number(a.quantity) > 1 ? ' • ×' + a.quantity : ''}
+                        {a.project?.name ? ' • ' + a.project.name : ''}
+                      </p>
+                    </div>
+                    <Badge variant={st.variant} className="text-xs shrink-0">
+                      {isRtl ? st.ar : a.status}
                     </Badge>
                   </div>
                 )
