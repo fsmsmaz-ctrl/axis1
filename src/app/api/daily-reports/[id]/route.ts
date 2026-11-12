@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { canWrite, hasPermission, canViewPricing, SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { buildAuditDetails, safeDbOp, handleDbError, recalcProgress, recalcDrillingDates, sanitizeDailyReport } from '@/lib/api-helpers'
+import { buildAuditDetails, safeDbOp, handleDbError, recalcProgress, recalcDrillingDates, sanitizeDailyReport, roundMeters, roundMoney } from '@/lib/api-helpers'
 import { ensureDriveLineDates, ensurePipePaidSupport } from '@/lib/db-selfheal'
 
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
@@ -150,7 +150,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         { status: 400 }
       )
     }
-    var dailyMeters = Math.max(0, endReading - startReading)
+    var dailyMeters = roundMeters(Math.max(0, endReading - startReading))
 
     // إعادة حساب الإيراد عند التعديل = الأمتار الجديدة × سعر متر خط الحفر (أو سعر المشروع احتياطياً)
     // v13: نستخدم الخط الفعلي النهائي للتقرير (الموجود حالياً إن لم يُرسل خط جديد)
@@ -188,7 +188,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         )
       : { success: false as const }
     var linePrice = linePriceResult.success && linePriceResult.data && linePriceResult.data.pricePerMeter != null ? linePriceResult.data.pricePerMeter : null
-    var dailyRevenue = dailyMeters * (linePrice != null ? linePrice : projectPrice)
+    var dailyRevenue = roundMoney(dailyMeters * (linePrice != null ? linePrice : projectPrice))
 
     // Look up drive line (safe)
     var driveLineResult = finalDriveLineId
@@ -200,10 +200,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
     var driveLine = driveLineResult.success ? driveLineResult.data : null
     var totalLength = driveLine ? driveLine.totalLength : 0
-    var totalMeters = endReading
-    var remainingMeters = Math.max(0, totalLength - totalMeters)
+    var totalMeters = roundMeters(endReading)
+    var remainingMeters = roundMeters(Math.max(0, totalLength - totalMeters))
     // SECURITY FIX: حصر نسبة التقدم بـ 100% + منع القيم السالبة للساعات والعمال
-    var progressPercent = totalLength > 0 ? Math.min((totalMeters / totalLength) * 100, 100) : 0
+    var progressPercent = roundMoney(totalLength > 0 ? Math.min((totalMeters / totalLength) * 100, 100) : 0)
 
     // Update the report (safe)
     // v22: بناء بيانات التعديل مسبقاً لتوثيق فروق الحقول بدقة (قبل ← الآن)
@@ -423,3 +423,4 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     return handleDbError(error, 'حذف التقرير اليومي')
   }
 }
+
