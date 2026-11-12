@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAuthUser } from '@/lib/auth-server'
 import { hasPermission, canViewPricing } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { handleDbError, safeDbOp } from '@/lib/api-helpers'
+import { handleDbError, safeDbOp, roundMeters, roundMoney } from '@/lib/api-helpers'
 
 export async function GET(req: NextRequest) {
   const user = await getAuthUser(req)
@@ -143,8 +143,12 @@ export async function GET(req: NextRequest) {
     }
 
     const projectStatsArr = Array.from(projectStats.values()).map((s: any) => {
-      s.avgDaily = s.daysCount > 0 ? s.totalMeters / s.daysCount : 0
-      s.worstDay = s.worstDay === Infinity ? 0 : s.worstDay
+      // v103: تقريب المجاميع والمتوسطات
+      s.totalMeters = roundMeters(s.totalMeters)
+      s.totalRevenue = roundMoney(s.totalRevenue)
+      s.bestDay = roundMeters(s.bestDay)
+      s.worstDay = roundMeters(s.worstDay === Infinity ? 0 : s.worstDay)
+      s.avgDaily = s.daysCount > 0 ? roundMeters(s.totalMeters / s.daysCount) : 0
       return s
     })
 
@@ -232,11 +236,16 @@ export async function GET(req: NextRequest) {
     }
 
     const driveLines = Array.from(lineStats.values()).map((s: any) => {
-      s.avgDaily = s.reportDays > 0 ? s.meters / s.reportDays : 0
-      s.avgWorkers = s.reportDays > 0 ? s.totalWorkers / s.reportDays : 0
-      s.profit = s.revenue - s.cost
-      s.profitMargin = s.revenue > 0 ? (s.profit / s.revenue) * 100 : 0
-      s.costPerMeter = s.meters > 0 ? s.cost / s.meters : 0
+      // v103: تقريب المجاميع والمتوسطات والنسب
+      s.meters = roundMeters(s.meters)
+      s.revenue = roundMoney(s.revenue)
+      s.cost = roundMoney(s.cost)
+      s.bestDay = roundMeters(s.bestDay)
+      s.avgDaily = s.reportDays > 0 ? roundMeters(s.meters / s.reportDays) : 0
+      s.avgWorkers = s.reportDays > 0 ? roundMoney(s.totalWorkers / s.reportDays) : 0
+      s.profit = roundMoney(s.revenue - s.cost)
+      s.profitMargin = s.revenue > 0 ? roundMoney((s.profit / s.revenue) * 100) : 0
+      s.costPerMeter = s.meters > 0 ? roundMoney(s.cost / s.meters) : 0
       return s
     })
 
