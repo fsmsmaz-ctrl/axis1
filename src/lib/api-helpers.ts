@@ -11,6 +11,23 @@ export function validImageDataUrl(v: unknown): string | null {
   return (/^data:image\/(png|jpeg|jpg|webp);base64,/.test(s) && s.length <= 4000000) ? s : null
 }
 
+// ─── v103: تقريب دقيق للأمتار والإيراد — يُعالج خطأ النقطة العائمة IEEE 754 ──
+// المشكلة: 100.35 - 99.00 = 1.3499999999999943 في JS (لا 1.35). هذا التلوث الصغير
+// يتراكم عبر التقارير ويفسد حسابات الشركة. الحل: تقريب كل قيمة مترية لـ 3 منازل
+// عشرية (دقة الملمتر) وكل قيمة مالية/نسبة لـ منزلتين (دقة القرش/النسبة المئوية).
+//
+// نستخدم Number(v.toFixed(N)) بدل Math.round(v*N)/N لأن toFixed يُقرّب القيمة المخزنة
+// الفعلية (أدق)، بينما Math.round(v*N) يضرب أولاً والضرب نفسه يولّد تلوثاً جديداً
+// قد يُخطئ في حالات الحد (مثل 1.0005 و 1000.0005).
+export function roundMeters(v: number): number {
+  if (!isFinite(v)) return 0
+  return Number(v.toFixed(3))
+}
+export function roundMoney(v: number): number {
+  if (!isFinite(v)) return 0
+  return Number(v.toFixed(2))
+}
+
 export interface ApiError {
   error: string
   message: string
@@ -247,11 +264,11 @@ export async function recalcProgress(
           where: { driveLineId: specificDriveLineId },
           _sum: { dailyMeters: true },
         })
-        var completedLength = Math.max(
+        var completedLength = roundMeters(Math.max(
           maxResult._max.endReading || 0,
           sumResult._sum.dailyMeters || 0
-        )
-        var progress = dl.totalLength > 0 ? (completedLength / dl.totalLength) * 100 : 0
+        ))
+        var progress = roundMoney(dl.totalLength > 0 ? (completedLength / dl.totalLength) * 100 : 0)
         var newStatus = progress >= 100 ? 'completed' : (completedLength > 0 ? 'in_progress' : 'not_started')
         await db.driveLine.update({
           where: { id: specificDriveLineId },
@@ -271,9 +288,9 @@ export async function recalcProgress(
       where: { projectId: projectId },
       _sum: { dailyMeters: true },
     })
-    var totalMeters = metersAgg._sum.dailyMeters || 0
+    var totalMeters = roundMeters(metersAgg._sum.dailyMeters || 0)
     var totalLen = projectData.totalLength || 0
-    var projectProgress = totalLen > 0 ? Math.min((totalMeters / totalLen) * 100, 100) : 0
+    var projectProgress = roundMoney(totalLen > 0 ? Math.min((totalMeters / totalLen) * 100, 100) : 0)
 
     await db.project.update({
       where: { id: projectId },
