@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
-import { safeDbOp, handleDbError, validateRequired, parseNumber, parseDate, buildAuditDetails, sanitizeProject } from '@/lib/api-helpers'
+import { safeDbOp, handleDbError, validateRequired, parseNumber, parseDate, buildAuditDetails, sanitizeProject, roundMeters, roundMoney } from '@/lib/api-helpers'
 import { canWrite, hasPermission, canViewPricing, normalizeRole } from '@/lib/auth'
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -50,7 +50,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       'إجمالي التكاليف'
     )
 
-    const totalMeters = aggResult.success ? (aggResult.data._sum.dailyMeters || 0) : 0
+    // v103: تقريب مجموع الأمتار لتفادي تراكم تلوث النقطة العائمة
+    const totalMeters = roundMeters(aggResult.success ? (aggResult.data._sum.dailyMeters || 0) : 0)
     // v13: الإيراد = مجموع (أمتار كل خط × سعر ذلك الخط) + تقارير بلا خط × سعر المشروع احتياطياً
     var totalRevenue = 0
     try {
@@ -64,14 +65,19 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         _sum: { dailyMeters: true },
       })
       for (const g of metersByLine) {
-        const meters = g._sum.dailyMeters || 0
+        // v103: تقريب أمتار كل خط قبل ضربها في السعر
+        const meters = roundMeters(g._sum.dailyMeters || 0)
         const linePrice = g.driveLineId && revenueLineMap[g.driveLineId] != null ? revenueLineMap[String(g.driveLineId)] : null
         totalRevenue += meters * (linePrice != null ? linePrice : fallbackProjectPrice)
       }
+      // v103: تقريب الإيراد النهائي
+      totalRevenue = roundMoney(totalRevenue)
     } catch (e) {
       totalRevenue = 0
     }
-    const totalCost = costAggResult.success ? (costAggResult.data._sum.amount || 0) : 0
+    // v103: تقريب التكاليف وصافي الربح
+    const totalCost = roundMoney(costAggResult.success ? (costAggResult.data._sum.amount || 0) : 0)
+    var netProfit = roundMoney(totalRevenue - totalCost)
 
     // v14.2 SECURITY: سعر المتر والإيراد المشتق وصافي الربح أرقام سرية —
     // تُحذف/تُصفّر لكل من ليس من الإدارة العليا أو مدير المشروع
@@ -88,7 +94,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     }
 
     return NextResponse.json({
-      project: { ...project, totalMetersDrilled: totalMeters, totalRevenue: canSeePrice ? totalRevenue : null, totalCost: canSeePrice ? totalCost : null, netProfit: canSeePrice ? (totalRevenue - totalCost) : null },
+      project: { ...project, totalMetersDrilled: totalMeters, totalRevenue: canSeePrice ? totalRevenue : null, totalCost: canSeePrice ? totalCost : null, netProfit: canSeePrice ? netProfit : null },
     })
   } catch (error) {
     return handleDbError(error, 'جلب المشروع')
