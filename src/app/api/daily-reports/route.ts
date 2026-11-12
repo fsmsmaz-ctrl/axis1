@@ -3,7 +3,7 @@ import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 import { getAuthUser } from '@/lib/auth-server'
 import { hasPermission, canWrite, canViewPricing, SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { handleDbError, validateRequired, parseNumber, safeDbOp, parseDateRange, sanitizeDailyReport, recalcProgress, recalcDrillingDates } from '@/lib/api-helpers'
+import { handleDbError, validateRequired, parseNumber, safeDbOp, parseDateRange, sanitizeDailyReport, recalcProgress, recalcDrillingDates, roundMeters, roundMoney } from '@/lib/api-helpers'
 import { ensureDriveLineDates, ensurePipePaidSupport } from '@/lib/db-selfheal'
 import { notifyUsers } from '@/lib/notify'
 
@@ -143,7 +143,7 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       )
     }
-    const dailyMeters = Math.max(0, endReading - startReading)
+    const dailyMeters = roundMeters(Math.max(0, endReading - startReading))
 
     // SECURITY FIX: منع القيم السالبة لساعات العمل/التوقف وعدد العمال والأنابيب
     var operatingHours = Math.max(0, parseNumber(body.operatingHours, 0))
@@ -221,16 +221,17 @@ export async function POST(req: NextRequest) {
     // === End of drive line validation ===
 
     const totalLength = dlResult.success && dlResult.data ? dlResult.data.totalLength : 0
-    const totalMeters = endReading
-    const remainingMeters = Math.max(0, totalLength - totalMeters)
+    // v103: تقريب الأمتار لتفادي تلوث النقطة العائمة (100.35-99≠1.3500000000000014)
+    const totalMeters = roundMeters(endReading)
+    const remainingMeters = roundMeters(Math.max(0, totalLength - totalMeters))
     // SECURITY FIX: حصر نسبة التقدم بـ 100% كحد أعلى
-    const progressPercent = totalLength > 0 ? Math.min((totalMeters / totalLength) * 100, 100) : 0
+    const progressPercent = roundMoney(totalLength > 0 ? Math.min((totalMeters / totalLength) * 100, 100) : 0)
 
     // v13: الإيراد = الأمتار المحفورة اليوم × سعر متر خط الحفر (أو سعر المشروع احتياطياً للتقارير بلا خط)
     const driveLinePrice = dlResult.success && dlResult.data && dlResult.data.pricePerMeter != null ? dlResult.data.pricePerMeter : null
     const projectPrice = projResult.success && projResult.data && projResult.data.pricePerMeter != null ? projResult.data.pricePerMeter : 0
     const effectivePrice = driveLinePrice != null ? driveLinePrice : projectPrice
-    const dailyRevenue = dailyMeters * effectivePrice
+    const dailyRevenue = roundMoney(dailyMeters * effectivePrice)
 
     const createResult = await safeDbOp(
       () => db.dailyReport.create({
