@@ -3,7 +3,7 @@ import { getAuthUser } from '@/lib/auth-server'
 import { SYSTEM_ADMIN_EMAIL, canViewPricing } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
-import { safeDbOp, handleDbError, sanitizeDailyReport, recalcDrillingDates } from '@/lib/api-helpers'
+import { safeDbOp, handleDbError, sanitizeDailyReport, recalcDrillingDates, roundMoney } from '@/lib/api-helpers'
 import { ensureDriveLineDates, ensurePipePaidSupport } from '@/lib/db-selfheal'
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -116,7 +116,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         )
       : { success: false as const, response: null as any }
     var linePrice = linePriceResult.success && linePriceResult.data && linePriceResult.data.pricePerMeter != null ? linePriceResult.data.pricePerMeter : null
-    var finalRevenue = (existingReport.dailyMeters || 0) * (linePrice != null ? linePrice : projectPrice)
+    var finalRevenue = roundMoney((existingReport.dailyMeters || 0) * (linePrice != null ? linePrice : projectPrice))
 
     var updateResult = await safeDbOp(
       () => db.dailyReport.update({
