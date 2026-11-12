@@ -1,13 +1,13 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useAppStore } from '@/lib/store'
 import { clearStoredToken } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Loader2, ArrowRight, Globe } from 'lucide-react'
+import { Loader2, ArrowRight, Globe, Wrench } from 'lucide-react'
 import { toast } from 'sonner'
 import dynamic from 'next/dynamic'
 
@@ -19,6 +19,9 @@ export default function HomePage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [checking, setChecking] = useState(true)
+  // v104: إن لم يكتمل فحص الجلسة خلال المهلة نعرض تنبيهاً مع زر إصلاح
+  const [sessionHint, setSessionHint] = useState(false)
+  const checkingRef = useRef(true)
 
   const user = useAppStore((s) => s.user)
   const setUser = useAppStore((s) => s.setUser)
@@ -30,21 +33,57 @@ export default function HomePage() {
 
   // Check for existing session on mount
   useEffect(() => {
+    // v104: علم الإقلاع — أول أثر ناجح لتنفيذ JS وتركيب React على الجهاز.
+    // عامل اليقظة في layout يعتمد عليه فلا يظهر إصلاح التعطل للأجهزة السليمة.
+    try { (window as any).__AXIS_BOOTED__ = true } catch {}
+    var alive = true
     async function checkSession() {
+      // v104: مهلة إلغاء 12 ثانية — بعض متصفحات الأجهزة القديمة (TLS/QUIC)
+      // قد تعلّق fetch للأبد فلا يعمل .finally() وتبقى شاشة الانتظار عالقة.
+      var ctrl: AbortController | null = null
+      var timer: any = null
       try {
-        const res = await fetch('/api/auth/me', { credentials: 'include' })
+        if (typeof AbortController !== 'undefined') {
+          ctrl = new AbortController()
+          timer = setTimeout(function () { try { ctrl!.abort() } catch {} }, 12000)
+        }
+      } catch {}
+      try {
+        const res = await fetch('/api/auth/me', {
+          credentials: 'include',
+          cache: 'no-store',
+          signal: ctrl ? ctrl.signal : undefined,
+        })
         if (res.ok) {
-          const data = await res.json()
-          if (data.user) {
+          const data = await res.json().catch(function () { return null })
+          if (data && data.user && alive) {
             setUser(data.user)
             return
           }
         }
       } catch {}
+      if (timer) clearTimeout(timer)
+      if (!alive) return
       clearStoredToken()
       setUser(null)
     }
-    checkSession().finally(() => setChecking(false))
+    // v104: مؤقّت أمان الشاشة — لو لم يكتمل فحص الجلسة خلال 15 ثانية لأي سبب
+    // (شبكة/جهاز) نُخرج المستخدم من الانتظار للأدمن/الدخول بدل التعليق الأبدي.
+    var splashTimer = setTimeout(function () {
+      if (!alive || !checkingRef.current) return
+      setSessionHint(true)
+      setChecking(false)
+    }, 15000)
+    checkSession().finally(function () {
+      checkingRef.current = false
+      if (!alive) return
+      clearTimeout(splashTimer)
+      setChecking(false)
+    })
+    return function () {
+      alive = false
+      clearTimeout(splashTimer)
+    }
   }, [setUser])
 
   useEffect(() => {
@@ -143,6 +182,30 @@ export default function HomePage() {
 
   function toggleLanguage() { setLanguage(isAr ? 'en' : 'ar') }
 
+  // v104: إصلاح ذاكرة التطبيق على الجهاز — يزيل التخزين القديم ويسجّل خروج
+  // عامل الخدمة ويمسح الكاش ثم يعيد التحميل. آمن تماماً: لا توكنات في التخزين
+  // (الجلسة كوكي httpOnly) فلا يفقد المستخدم أي بيانات مهمة.
+  function repairAppStorage() {
+    try { localStorage.removeItem('axis-storage') } catch {}
+    try { sessionStorage.clear() } catch {}
+    try {
+      if ('caches' in window) {
+        caches.keys().then(function (keys) {
+          keys.forEach(function (k) { caches.delete(k).catch(function () {}) })
+        }).catch(function () {})
+      }
+    } catch {}
+    try {
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(function (regs) {
+          regs.forEach(function (r) { r.unregister().catch(function () {}) })
+        }).catch(function () {})
+      }
+    } catch {}
+    toast.success(isAr ? 'جارٍ الإصلاح وإعادة التحميل...' : 'Repairing and reloading...')
+    setTimeout(function () { window.location.reload() }, 800)
+  }
+
   return (
     <div className="min-h-dvh flex flex-col lg:flex-row" dir={isRtl ? 'rtl' : 'ltr'}>
       {/* قسم العلامة التعريفية: مختصر ومتماسك على الهاتف حتى لا يزيح النموذج تحت خط الطي */}
@@ -213,6 +276,22 @@ export default function HomePage() {
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             )}
+            {/* v104: تنبيه فشل فحص الجلسة + زر إصلاح ذاكرة الجهاز */}
+            {sessionHint && (
+              <Alert className="border-amber-200 bg-amber-50 text-amber-800">
+                <AlertDescription className="space-y-2">
+                  <span>
+                    {isAr
+                      ? 'تعذّر التحقق من الجلسة على هذا الجهاز — تحقق من الاتصال أو حدّث الصفحة. إن تكررت المشكلة فالذاكرة المؤقتة للجهاز قد تكون عالقة:'
+                      : 'Could not verify the session on this device — check connection or refresh. If it persists, the device cache may be stuck:'}
+                  </span>
+                  <Button type="button" variant="outline" size="sm" className="w-full" onClick={repairAppStorage}>
+                    <Wrench className="h-4 w-4 ml-2" />
+                    {isAr ? 'إصلاح ذاكرة التطبيق وإعادة التحميل' : 'Repair app storage & reload'}
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            )}
             <Button type="submit" disabled={loading} className="w-full h-12 lg:h-11 text-[15px] lg:text-base" size="lg">
               {loading ? (
                 <Loader2 className="h-5 w-5 animate-spin" />
@@ -226,5 +305,3 @@ export default function HomePage() {
     </div>
   )
 }
-
-
