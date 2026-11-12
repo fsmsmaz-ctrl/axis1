@@ -21,6 +21,7 @@ import { toast } from 'sonner'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { canViewPricing, canAccessDashboard, normalizeRole, SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
 import { reportDayName } from '@/lib/day-name'
+import { fmtNum } from '@/lib/report-labels'
 
 interface DashboardData {
   stats: {
@@ -606,7 +607,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
                       </p>
                     </div>
                     <div className="text-left shrink-0">
-                      <p className="font-semibold text-sm">{r.dailyMeters} {isRtl ? 'م' : 'm'}</p>
+                      <p className="font-semibold text-sm">{fmtNum(r.dailyMeters)} {isRtl ? 'م' : 'm'}</p>
                       <Badge variant={r.status === 'approved' ? 'default' : r.status === 'rejected' ? 'destructive' : 'secondary'} className="text-xs">
                         {r.status === 'approved' ? (isRtl ? 'معتمد' : 'Approved') :
                          r.status === 'submitted' ? (isRtl ? 'مرسل' : 'Submitted') :
