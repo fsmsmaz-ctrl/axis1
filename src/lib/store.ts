@@ -37,7 +37,17 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: 'axis-storage',
-      storage: createJSONStorage(() => localStorage),
+      // v104: وصول آمن للتخزين — بعض الأجهزة القديمة/الإعدادات الصارمة ترمي
+      // استثناء عند لمس localStorage أصلاً؛ هنا نُرجع undefined فيحاول zustand
+      // بمسح التحذير ويعمل بلا استمرار بدل كسر تهيئة التطبيق كلها.
+      storage: createJSONStorage(() => {
+        try {
+          if (typeof localStorage === 'undefined') return undefined as unknown as Storage
+          return localStorage
+        } catch {
+          return undefined as unknown as Storage
+        }
+      }),
       // Only persist preferences — NOT user session data
       // Session is managed by httpOnly cookie (ends when browser closes)
       partialize: (state) => ({
