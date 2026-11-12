@@ -158,9 +158,11 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const user = await getAuthUser(req)
   if (!user) return NextResponse.json({ error: 'unauthorized', message: 'يجب تسجيل الدخول' }, { status: 401 })
-  // v82: الحذف محجوب عن أدوار «الإنشاء فقط» — v83: بوابة المُنشئ تخوّل التعديل فقط، والحذف للإدارة حصراً
+  // v82: كان الحذف محجوباً عن أدوار «الإنشاء فقط» — v83: للإدارة حصراً
+  // v105 (قرار صاحب الموقع): أُرجع الحذف لكل من يملك صلاحية الوصول للقسم،
+  // نفس بوابة التعديل تماماً، والمساءلة عبر المفكرة الموحدة
   if (!canModifyCompanyAsset(user)) {
-    return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية لحذف الأصول — الحذف متاح للإدارة فقط' }, { status: 403 })
+    return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية لحذف الأصول' }, { status: 403 })
   }
 
   var rl = checkRateLimit(req, RateLimitPresets.write)
