@@ -144,6 +144,9 @@ async function buildDashboard(canSeePrice: boolean, costsPeriod: 'month' | 'year
     notificationsResult,
     equipmentResult,
     costsByCategoryResult,
+    // v105: الأصول والمستأجرات — القسم الثاني في صفحة المعدات لم يكن يظهر
+    // في اللوحة إطلاقاً؛ الآن يُجلب بجانب المعدات بنفس الاستعلام المتوازي
+    companyAssetsResult,
   ] = await Promise.allSettled([
     db.project.count({ where: { status: 'in_progress' } }),
 
@@ -246,6 +249,20 @@ async function buildDashboard(canSeePrice: boolean, costsPeriod: 'month' | 'year
       include: { project: { select: { name: true } } },
     }),
 
+    // v105: الأصول والمستأجرات (قسم «الأصول والمستأجرات» في صفحة المعدات)
+    db.companyAsset.findMany({
+      select: {
+        id: true,
+        name: true,
+        itemType: true,
+        ownership: true,
+        status: true,
+        quantity: true,
+        project: { select: { name: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    }),
+
     // v36: Costs by category — النطاق حسب اختيار اللوحة (الشهر/العام/الكل)
     db.cost.groupBy({
       by: ['category'],
@@ -329,6 +346,8 @@ async function buildDashboard(canSeePrice: boolean, costsPeriod: 'month' | 'year
   const recentReports = unwrap(recentReportsResult, [], 'recentReports')
   const notifications = unwrap(notificationsResult, [], 'notifications')
   const equipment = unwrap(equipmentResult, [], 'equipment')
+  // v105: الأصول والمستأجرات — فك نتيجة الاستعلام بأمان (فشلٌ لا يُسقط اللوحة)
+  const companyAssets = unwrap(companyAssetsResult, [], 'companyAssets')
   const costsByCategoryRaw = unwrap(costsByCategoryResult, [], 'costsByCategory')
   const costsByCategory = (costsByCategoryRaw as any[]).map((c) => ({
     category: c.category,
@@ -383,6 +402,8 @@ async function buildDashboard(canSeePrice: boolean, costsPeriod: 'month' | 'year
     recentReports,
     notifications,
     equipment,
+    // v105: تُرسل للواجهة لتظهر في بطاقة «الأصول والمستأجرات» بجانب المعدات
+    companyAssets,
     costsByCategory,
     // Signal to client whether any reports were found today (helpful for
     // UI to know whether "0" is real or a missing-data situation).
@@ -396,4 +417,4 @@ async function buildDashboard(canSeePrice: boolean, costsPeriod: 'month' | 'year
   }
 }
 
-                                                
+                                                  
