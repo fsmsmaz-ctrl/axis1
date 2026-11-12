@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 import { getAuthUser } from '@/lib/auth-server'
 import { db } from '@/lib/db'
-import { handleDbError, validateRequired, parseNumber, safeDbOp, sanitizeDriveLine } from '@/lib/api-helpers'
+import { handleDbError, validateRequired, parseNumber, safeDbOp, sanitizeDriveLine, roundMeters, roundMoney } from '@/lib/api-helpers'
 import { canWrite, hasPermission, canViewPricing } from '@/lib/auth'
 import { ensureDriveLineDates } from '@/lib/db-selfheal'
 import { notifyUsers } from '@/lib/notify'
@@ -76,8 +76,9 @@ export async function GET(req: NextRequest) {
         // Apply to each drive line
         for (var j = 0; j < driveLines.length; j++) {
           var dl = driveLines[j]
-          var completedLength = readingMap[dl.id] || 0
-          var progress = dl.totalLength > 0 ? (completedLength / dl.totalLength) * 100 : 0
+          // v103: تقريب لتفادي تلوث النقطة العائمة
+          var completedLength = roundMeters(readingMap[dl.id] || 0)
+          var progress = roundMoney(dl.totalLength > 0 ? (completedLength / dl.totalLength) * 100 : 0)
           dl.completedLength = completedLength
           dl.progress = Math.min(progress, 100)
           dl.status = progress >= 100 ? 'completed' : (completedLength > 0 ? 'in_progress' : dl.status)
@@ -165,4 +166,3 @@ export async function POST(req: NextRequest) {
     return handleDbError(error, 'إنشاء خط الحفر')
   }
 }
-
