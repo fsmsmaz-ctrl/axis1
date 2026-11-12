@@ -112,7 +112,8 @@ export default function EquipmentPage() {
     return !!eq?.id && !!user && canEditAnyEquipment(user)
   }
   function canDeleteEq() {
-    // v83: الحذف للإدارة حصراً — بوابة المُنشئ تخوّل التعديل فقط (مطابق للخادم)
+    // v105 (قرار صاحب الموقع): الحذف أُرجع لكل من يملك صلاحية الوصول للقسم —
+    // نفس بوابة التعديل تماماً (كان حصراً بالإدارة في v83)
     return !!user && canModifyEquipment(user)
   }
   function canEditAsset(a: any) {
@@ -121,7 +122,8 @@ export default function EquipmentPage() {
     return !!a?.id && !!user && canEditAnyCompanyAsset(user)
   }
   function canDeleteAsset() {
-    // v83: الحذف للإدارة حصراً (مطابق للخادم)
+    // v105 (قرار صاحب الموقع): الحذف أُرجع لكل من يملك صلاحية الوصول للقسم —
+    // نفس بوابة التعديل تماماً (كان حصراً بالإدارة في v83) (مطابق للخادم)
     return !!user && canModifyCompanyAsset(user)
   }
 
