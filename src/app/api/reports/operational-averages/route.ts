@@ -3,7 +3,7 @@ import { getAuthUser } from '@/lib/auth-server'
 import { SYSTEM_ADMIN_EMAIL } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
-import { safeDbOp, handleDbError, parseDateRange } from '@/lib/api-helpers'
+import { safeDbOp, handleDbError, parseDateRange, roundMeters, roundMoney } from '@/lib/api-helpers'
 
 export const dynamic = 'force-dynamic'
 
@@ -165,25 +165,26 @@ export async function GET(req: NextRequest) {
 
     var netProfit: number | null = null
     if (!lineSelected && costTotal != null) {
-      netProfit = workValue - costTotal
+      netProfit = roundMoney(workValue - costTotal)
     }
 
+    // v103: تقريب الإجماليات لتفادي تلوث النقطة العائمة في المجاميع
     var metrics = {
       // الإجماليات
-      totalMeters: totalMeters,
+      totalMeters: roundMeters(totalMeters),
       workingDays: workingDays,
       workersSum: workersSum,
-      costTotal: costTotal,
-      workValue: workValue,
+      costTotal: costTotal != null ? roundMoney(costTotal) : null,
+      workValue: roundMoney(workValue),
       netProfit: netProfit,
       // المتوسطات (null = لا توجد بيانات كافية للقسمة)
-      avgDailyMeters: div(totalMeters, workingDays),
+      avgDailyMeters: div(roundMeters(totalMeters), workingDays) != null ? roundMeters(div(totalMeters, workingDays) as number) : null,
       avgWorkers: div(workersSum, workingDays),
-      avgCostPerMeter: !lineSelected ? div(costTotal || 0, totalMeters) : null,
-      avgDailySpend: !lineSelected ? div(costTotal || 0, workingDays) : null,
-      avgDailyProfit: !lineSelected ? div(netProfit || 0, workingDays) : null,
-      profitPerMeter: !lineSelected ? div(netProfit || 0, totalMeters) : null,
-      profitMarginPct: (!lineSelected && workValue > 0 && netProfit != null) ? (netProfit / workValue) * 100 : null,
+      avgCostPerMeter: !lineSelected ? (div(costTotal || 0, totalMeters) != null ? roundMoney(div(costTotal || 0, totalMeters) as number) : null) : null,
+      avgDailySpend: !lineSelected ? (div(costTotal || 0, workingDays) != null ? roundMoney(div(costTotal || 0, workingDays) as number) : null) : null,
+      avgDailyProfit: !lineSelected ? (div(netProfit || 0, workingDays) != null ? roundMoney(div(netProfit || 0, workingDays) as number) : null) : null,
+      profitPerMeter: !lineSelected ? (div(netProfit || 0, totalMeters) != null ? roundMoney(div(netProfit || 0, totalMeters) as number) : null) : null,
+      profitMarginPct: (!lineSelected && workValue > 0 && netProfit != null) ? roundMoney((netProfit / workValue) * 100) : null,
     }
 
     var lineInfo = null
