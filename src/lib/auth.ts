@@ -122,10 +122,11 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
     'libraries', // v97
   ],
   // v83 (قرار صاحب الموقع): المشرف (الفورمان) يرى قسم المعدات ويسجّل معدات
-  // وأصولاً جديدة بكافة بياناتها ومن ضمنها الأسعار — إنشاء فقط (انظر
-  // EQUIPMENT_CREATE_ONLY_ROLES و COMPANY_ASSET_CREATE_ONLY_ROLES أدناه)،
-  // ويستطيع تعديل ما سجّله هو فقط (بوابة المُنشئ في مسارات المعدات)،
-  // وكل ما يفعله يظهر باسمه في مفكرة المعدات أسفل الصفحة.
+  // وأصولاً جديدة بكافة بياناتها ومن ضمنها الأسعار.
+  // v105 (قرار صاحب الموقع): أُلغي نظام «الإنشاء فقط» في المعدات والأصول —
+  // كل من يملك صلاحية الوصول للقسم (بالرتبة أو بمنح فردي من إدارة المستخدمين)
+  // يعدّل ويحذف مثل بقية الموظفين، وكل ما يفعله يظهر باسمه وتوقيته
+  // في مفكرة المعدات أسفل الصفحة (المساءلة بدل الحظر).
   foreman: [
     'projects', 'daily_reports', 'finishings', 'equipment', 'tasks', 'reports', 'notifications',
     'libraries', // v97
@@ -396,25 +397,22 @@ export function canModifyDriveLines(
   return canWrite(user.role || '', 'drive_lines', user.permissions)
 }
 
-// ─── v82/v83: المعدات وأصول الشركة — أدوار «الإنشاء فقط» ──────────
-// قرار صاحب الموقع (v82): مسؤول السلامة يستطيع إضافة معدة جديدة أو أصل/مستأجر
-// جديد — إنشاء فقط بلا تعديل/حذف. نفس نمط خطوط الحفر v81: canWrite تقبل دوره
-// في الإنشاء، وcanModifyEquipment/canModifyCompanyAsset ترفضانه في التعديل والحذف.
-// v84 (قرار صاحب الموقع الجديد): التعديل فُتح للجميع عبر canEditAnyEquipment /
-// canEditAnyCompanyAsset — أدوار «الإنشاء فقط» الآن تعدّل أي معدة/أصل،
-// وتظهر كل تغييراتها في السجل المصغر على المعدة نفسها. canModify* أعيد
-// تخصيصها لبوابة الحذف فقط (الإدارة حصراً).
-// قرار صاحب الموقع (v83 — توسعة ورفع الحظر المالي):
-//   1) المشرف (foreman) يُضاف لدورَي «الإنشاء فقط» في المعدات والأصول.
-//   2) مَن سجّل المعدة/الأصل يستطيع تعديل ما سجّله هو — بوابة المُنشئ
-//      (createdById === user.id) في مسارات المعدات والأصول والصيانة.
-//   3) أُلغي إخفاء الأسعار عن هذين الدورين كلياً (حُذفت hideEquipmentMoney
-//      التي كانت تُعقّم الردود وتشطب الحقول المالية) — البديل مساءلة كاملة:
-//      كل معدة تُظهر مَن سجّلها، وكل تغيير (إنشاء/تعديل/حذف/صيانة/أصل)
-//      يُسجّل باسم صاحبه وتوقيته في مفكرة المعدات أسفل الصفحة.
-// مدير النظام (admin@axis.om أو علم isSystemAdmin) يتجاوز دائماً.
-export const EQUIPMENT_CREATE_ONLY_ROLES = ['hse_officer', 'foreman'] as const
-export const COMPANY_ASSET_CREATE_ONLY_ROLES = ['hse_officer', 'foreman'] as const
+// ─── v82/v83/v84: المعدات وأصول الشركة — سجل قرارات البوابات ─────
+// v82: مسؤول السلامة أُتيح له إضافة معدة/أصل جديد (كانت «إنشاء فقط»).
+// v83: المشرف أُتيح له تسجيل معدات وأصول بالأسعار، وحُذف إخفاء الأموال عنهما،
+//      وأُتيح التعديل لمن سجّل بنفسه (بوابة المُنشئ).
+// v84 (قرار صاحب الموقع): التعديل فُتح للجميع عبر canEditAnyEquipment /
+// canEditAnyCompanyAsset — كل من يجتاز فحص الكتابة يعدّل أي معدة/أصل،
+// وكل تغيير يظهر في السجل المصغر على المعدة نفسها باسم صاحبه.
+// v105 (قرار صاحب الموقع): أُلغي حصر الحذف بالإدارة — أُلغيت أدوار «الإنشاء
+// فقط» في المعدات والأصول، وصار الحذف والتعديل ببوابة واحدة متساوية:
+// كل من يملك صلاحية الوصول للقسم (canWrite بالرتبة أو بمنح فردي من إدارة
+// المستخدمين) يعدّل ويحذف. المساءلة عبر المفكرة الموحدة: كل حذف يُسجّل
+// باسم صاحبه وتوقيته. مدير النظام (admin@axis.om أو علم isSystemAdmin)
+// يتجاوز دائماً. القائمتان أدناه بقيتا تصديراً للتوافق فقط — لا يقرأهما
+// أي باب حماية بعد الآن.
+export const EQUIPMENT_CREATE_ONLY_ROLES = [] as const
+export const COMPANY_ASSET_CREATE_ONLY_ROLES = [] as const
 
 export function canModifyEquipment(
   user: { role?: string; email?: string; isSystemAdmin?: boolean; permissions?: Record<string, boolean> | null } | null | undefined
@@ -422,8 +420,9 @@ export function canModifyEquipment(
   if (!user) return false
   if (user.isSystemAdmin === true) return true
   if (user.email && user.email.toLowerCase().trim() === SYSTEM_ADMIN_EMAIL) return true
-  // أدوار الإنشاء فقط: إنشاء نعم — حذف/إدارة لا (v84: التعديل عبر canEditAnyEquipment)
-  if ((EQUIPMENT_CREATE_ONLY_ROLES as readonly string[]).includes(normalizeRole(user.role))) return false
+  // v105 (قرار صاحب الموقع): الحذف أُرجع لكل من يملك صلاحية الوصول للقسم —
+  // نفس بوابة التعديل تماماً (canWrite). رتب العامل وحامل التصريح تبقى
+  // محجوبة كما هي (canWrite ترفضهما بقرارات v85/v86/v90 السابقة).
   return canWrite(user.role || '', 'equipment', user.permissions)
 }
 
@@ -433,8 +432,8 @@ export function canModifyCompanyAsset(
   if (!user) return false
   if (user.isSystemAdmin === true) return true
   if (user.email && user.email.toLowerCase().trim() === SYSTEM_ADMIN_EMAIL) return true
-  // أدوار الإنشاء فقط: إنشاء نعم — حذف/إدارة لا (v84: التعديل عبر canEditAnyCompanyAsset)
-  if ((COMPANY_ASSET_CREATE_ONLY_ROLES as readonly string[]).includes(normalizeRole(user.role))) return false
+  // v105 (قرار صاحب الموقع): نفس بوابة المعدات — الحذف لكل من يملك
+  // صلاحية الوصول للقسم (canWrite)، والعامل محجوب كما كان.
   return canWrite(user.role || '', 'company_assets', user.permissions)
 }
 
@@ -445,7 +444,8 @@ export function canModifyCompanyAsset(
 // النظام وحده. الفرق عن canModify*: هنا يتجاوز فحص «أدوار الإنشاء فقط» —
 // كل من يجتاز فحص الكتابة (canWrite) على المورد يستطيع التعديل، ومدير
 // النظام (العلم من القاعدة أو البريد الرئيسي) يتجاوز دائماً.
-// الحذف يبقى محصوراً بـ canModify* (الإدارة) كما هو.
+// v105: الفرق بين الدالتين أصبح صفرياً عملياً — الحذف والتعديل ببوابة
+// واحدة (canWrite) بعد ألغاء أدوار «الإنشاء فقط» بقرار صاحب الموقع.
 export function canEditAnyEquipment(
   user: { role?: string; email?: string; isSystemAdmin?: boolean; permissions?: Record<string, boolean> | null } | null | undefined
 ): boolean {
