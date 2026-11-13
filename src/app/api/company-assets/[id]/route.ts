@@ -4,7 +4,7 @@ import { db } from '@/lib/db'
 import { buildAuditDetails, getChangesDiff, safeDbOp, handleDbError, validImageDataUrl, logAssetChange } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 import { hasPermission, canModifyCompanyAsset, canEditAnyCompanyAsset } from '@/lib/auth'
-import { ensureEquipmentLogSupport } from '@/lib/db-selfheal'
+import { ensureEquipmentLogSupport, ensureAssetOperationalSupport } from '@/lib/db-selfheal'
 
 var MAX_IMAGE_SIZE = 700000
 
@@ -19,6 +19,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   }
   try {
     var { id } = await params
+    // v106: شفاء ذاتي — العمود الجديد قبل أي قراءة كاملة الصف (include يُرجع كل الأعمدة)
+    await ensureAssetOperationalSupport()
     var result = await safeDbOp(
       () => db.companyAsset.findUnique({
         where: { id },
@@ -110,6 +112,11 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     if (body.quantity !== undefined) updateData.quantity = (body.quantity === null || body.quantity === '') ? null : parseInt(body.quantity)
     if (body.ownership !== undefined) updateData.ownership = String(body.ownership).slice(0, 50)
     if (body.status !== undefined) updateData.status = String(body.status).slice(0, 50)
+    // v106: حالة التشغيل «هل الأصل يعمل؟» — تقبل true/false/'true'/'false'/'yes'/'no'
+    if (body.isOperational !== undefined) {
+      var b = body.isOperational
+      updateData.isOperational = !(b === false || b === 'false' || b === 'no' || b === '0' || b === 0)
+    }
     if (body.supplier !== undefined) updateData.supplier = body.supplier ? String(body.supplier).trim().slice(0, 200) : null
     if (body.rentalCost !== undefined) updateData.rentalCost = (body.rentalCost !== null && body.rentalCost !== '') ? parseFloat(body.rentalCost) : null
     if (body.rentalStart !== undefined) updateData.rentalStart = body.rentalStart ? new Date(body.rentalStart) : null
@@ -124,6 +131,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       updateData.image = body.image ? validImageDataUrl(body.image) : null
     }
 
+    // v106: شفاء ذاتي قبل القراءة الكاملة (findUnique بلا select يُرجع كل الأعمدة)
+    await ensureAssetOperationalSupport()
     // v22: جلب القيم القديمة لتوثيق التغييرات قبل ← الآن
     var oldAssetResult = await safeDbOp(() => db.companyAsset.findUnique({ where: { id } }), 'جلب الأصل قبل التعديل')
     var oldAsset = oldAssetResult.success && oldAssetResult.data ? oldAssetResult.data : null
@@ -196,4 +205,3 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     return handleDbError(error, 'حذف الأصل')
   }
 }
-
