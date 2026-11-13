@@ -46,6 +46,8 @@ interface DashboardData {
   equipment: any[]
   // v105: الأصول والمستأجرات — القسم الثاني في صفحة المعدات يظهر الآن في اللوحة
   companyAssets: any[]
+  // v106: ملخص الأرقام الفوري من الخادم (الإجمالي/تعمل/متوقفة/ملك/مستأجر/معار)
+  assetsSummary?: { total: number; working: number; notWorking: number; owned: number; rented: number; borrowed: number }
   costsByCategory: Array<{ category: string; amount: number }>
 }
 
@@ -266,6 +268,15 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
   const equipment = Array.isArray(data.equipment) ? data.equipment : []
   // v105: الأصول والمستأجرات — دفاعية أمام ردود قديمة مخزنة (بلا الحقل تعرض فارغة)
   const companyAssets = Array.isArray(data.companyAssets) ? data.companyAssets : []
+  // v106: الملخص يُحسب من الخادم على القائمة كاملة؛ وإن غاب (رد مخزن قديم) يُحسب محلياً
+  const assetsSummary = data.assetsSummary || {
+    total: companyAssets.length,
+    working: companyAssets.filter(function(a) { return a.isOperational !== false }).length,
+    notWorking: companyAssets.filter(function(a) { return a.isOperational === false }).length,
+    owned: companyAssets.filter(function(a) { return a.ownership === 'owned' }).length,
+    rented: companyAssets.filter(function(a) { return a.ownership === 'rented' }).length,
+    borrowed: companyAssets.filter(function(a) { return a.ownership === 'borrowed' }).length,
+  }
   const costsByCategory = Array.isArray(data.costsByCategory) ? data.costsByCategory : []
 
   const fmt = function(n: number) { return (n || 0).toLocaleString(isRtl ? 'ar-EG' : 'en-US', { maximumFractionDigits: 1 }) }
@@ -708,7 +719,9 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
 
         {/* v105: الأصول والمستأجرات — القسم الثاني في صفحة المعدات لم يكن
             يظهر في اللوحة إطلاقاً؛ الآن بطاقة مستقلة بجانب المعدات بنفس
-            التسميات والألوان، وعرض الكل يفتح قسم المعدات نفسه */}
+            التسميات والألوان، وعرض الكل يفتح قسم المعدات نفسه
+            v106: صف ملخص فوق القائمة + شارة «تعمل/متوقفة» لكل أصل —
+            الأرقام تُحسب من القائمة كاملة (القديمة والجديدة معاً) فلا يُخفى شيء */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center justify-between">
@@ -722,7 +735,25 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
               </Button>
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2 max-h-80 overflow-y-auto">
+          <CardContent className="space-y-2">
+            {/* v106: صف الملخص — الأعداد الحقيقية لكل الحالات من كل السجلات */}
+            <div className="flex items-center gap-2 flex-wrap pb-2 border-b">
+              <span className="inline-flex items-center gap-1 text-xs font-medium bg-muted px-2 py-1 rounded-full">
+                {isRtl ? 'الإجمالي' : 'Total'}: {assetsSummary.total}
+              </span>
+              <span className="inline-flex items-center gap-1 text-xs font-medium bg-emerald-50 text-emerald-700 px-2 py-1 rounded-full">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
+                {isRtl ? 'تعمل' : 'Working'}: {assetsSummary.working}
+              </span>
+              <span className="inline-flex items-center gap-1 text-xs font-medium bg-red-50 text-red-700 px-2 py-1 rounded-full">
+                <span className="w-2 h-2 rounded-full bg-red-500 inline-block" />
+                {isRtl ? 'متوقفة' : 'Not working'}: {assetsSummary.notWorking}
+              </span>
+              <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                {isRtl ? 'ملك' : 'Owned'}: {assetsSummary.owned} • {isRtl ? 'مستأجر' : 'Rented'}: {assetsSummary.rented} • {isRtl ? 'معار' : 'Borrowed'}: {assetsSummary.borrowed}
+              </span>
+            </div>
+            <div className="space-y-2 max-h-72 overflow-y-auto">
             {companyAssets.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground text-sm">
                 {isRtl ? 'لا توجد أصول أو مستأجرات' : 'No assets or rentals'}
@@ -732,10 +763,13 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
                 var st = assetStatusLabels[a.status] || { ar: a.status || '-', variant: 'secondary' as const }
                 var ownership = assetOwnershipLabels[a.ownership] || a.ownership || '-'
                 var type = assetTypeLabels[a.itemType] || a.itemType || '-'
+                var isWorking = a.isOperational !== false
                 return (
                   <div key={a.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 transition">
                     <div className={'w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ' +
-                      (assetStatusColors[a.status] || 'bg-gray-100 text-gray-600')}>
+                      (isWorking
+                        ? (assetStatusColors[a.status] || 'bg-gray-100 text-gray-600')
+                        : 'bg-red-100 text-red-600')}>
                       <Package className="h-4 w-4" />
                     </div>
                     <div className="flex-1 min-w-0">
@@ -745,6 +779,12 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
                         {a.project?.name ? ' • ' + a.project.name : ''}
                       </p>
                     </div>
+                    {/* v106: شارة التشغيل — تعمل/متوقفة بوضوح لكل أصل */}
+                    <Badge className={isWorking
+                      ? 'bg-emerald-100 text-emerald-700 border-0 text-xs shrink-0'
+                      : 'bg-red-100 text-red-700 border-0 text-xs shrink-0'}>
+                      {isWorking ? (isRtl ? 'تعمل' : 'Working') : (isRtl ? 'متوقفة' : 'Not working')}
+                    </Badge>
                     <Badge variant={st.variant} className="text-xs shrink-0">
                       {isRtl ? st.ar : a.status}
                     </Badge>
@@ -752,6 +792,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
                 )
               })
             )}
+            </div>
           </CardContent>
         </Card>
       </div>
