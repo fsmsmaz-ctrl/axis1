@@ -43,24 +43,47 @@ export async function GET(req: NextRequest) {
   // v107: أُلغي حد 500 سجل — كانت الأصول الأقدم من الحد تختفي من قائمة
   // القسم بينما اللوحة تعرضها بلا حد، فتختلف الأرقام والقوائم بين الطرفين.
   // الآن الطرفان يعرضان نفس مجموعة الأصول كاملة مهما كان عددها.
-  const result = await safeDbOp(
-    () => db.companyAsset.findMany({
-      where, orderBy: { createdAt: 'desc' },
-      select: {
-        id: true, projectId: true, name: true, itemType: true, quantity: true,
-        ownership: true, supplier: true, rentalCost: true, rentalStart: true,
-        rentalEnd: true, responsibleId: true, status: true,
-        isOperational: true, // v106: هل الأصل يعمل؟
-        notes: true,
-        createdById: true, restoredById: true, restoredAt: true,
-        createdAt: true, updatedAt: true,
-        project: { select: { id: true, name: true, code: true } },
-        responsible: { select: { id: true, name: true, nameEn: true } },
-        createdBy: { select: { id: true, name: true } },
-        restoredBy: { select: { id: true, name: true } },
-      },
-    }), 'جلب الأصول والمستأجرات'
-  )
+  // v108: الجلب بطبقتين — إن فشل الاستعلام الكامل لغياب عمود isOperational
+  // على القاعدة (فشل صامت للشفاء الذاتي عبر الاتصال المُجمّع)، تُعاد المحاولة
+  // بقلب الحقول المُثبتة (نفس حقول v105) حتى لا تصبح القائمة فارغة أبداً.
+  var fetchAssetList = async function () {
+    try {
+      return await db.companyAsset.findMany({
+        where, orderBy: { createdAt: 'desc' },
+        select: {
+          id: true, projectId: true, name: true, itemType: true, quantity: true,
+          ownership: true, supplier: true, rentalCost: true, rentalStart: true,
+          rentalEnd: true, responsibleId: true, status: true,
+          isOperational: true, // v106: هل الأصل يعمل؟
+          notes: true,
+          createdById: true, restoredById: true, restoredAt: true,
+          createdAt: true, updatedAt: true,
+          project: { select: { id: true, name: true, code: true } },
+          responsible: { select: { id: true, name: true, nameEn: true } },
+          createdBy: { select: { id: true, name: true } },
+          restoredBy: { select: { id: true, name: true } },
+        },
+      })
+    } catch (fullErr: any) {
+      console.error('v108: full asset list failed — retrying minimal:', fullErr?.message)
+      return await db.companyAsset.findMany({
+        where, orderBy: { createdAt: 'desc' },
+        select: {
+          id: true, projectId: true, name: true, itemType: true, quantity: true,
+          ownership: true, supplier: true, rentalCost: true, rentalStart: true,
+          rentalEnd: true, responsibleId: true, status: true,
+          notes: true,
+          createdById: true, restoredById: true, restoredAt: true,
+          createdAt: true, updatedAt: true,
+          project: { select: { id: true, name: true, code: true } },
+          responsible: { select: { id: true, name: true, nameEn: true } },
+          createdBy: { select: { id: true, name: true } },
+          restoredBy: { select: { id: true, name: true } },
+        },
+      })
+    }
+  }
+  const result = await safeDbOp(fetchAssetList, 'جلب الأصول والمستأجرات')
   if (!result.success) return result.response
 
   // v74: أي الأصول تملك صورة؟ — استعلام خفيف بالمعرفات فقط
@@ -155,30 +178,48 @@ export async function POST(req: NextRequest) {
         include: { createdBy: { select: { id: true, name: true } }, restoredBy: { select: { id: true, name: true } } },
       }), 'إنشاء الأصل'
     )
-    if (!createResult.success) return createResult.response
+    // v108: إن فشل الإنشاء لغياب عمود isOperational على القاعدة، أُعادت
+    // المحاولة بدونه حتى لا يُفقد تسجيل الأصل — الشفاء الذاتي سيُنشئ العمود
+    // لاحقاً وتُستأنف الخاصية كاملة تلقائياً
+    var v108CreateRetry: any = null
+    if (!createResult.success) {
+      v108CreateRetry = await safeDbOp(
+        () => db.companyAsset.create({
+          data: { projectId: body.projectId || null, name: String(body.name).trim(), itemType: String(body.itemType), quantity: parseInt(body.quantity) || 1, ownership: String(body.ownership), supplier: body.supplier ? String(body.supplier).trim() : null, rentalCost: body.rentalCost ? parseFloat(body.rentalCost) : null, rentalStart: body.rentalStart ? new Date(body.rentalStart) : null, rentalEnd: body.rentalEnd ? new Date(body.rentalEnd) : null, responsibleId: body.responsibleId || null, status: String(body.status || 'available'), notes: body.notes ? String(body.notes).slice(0, 2000) : null, createdAt: restoreMeta ? restoreMeta.createdAt : undefined, createdById: restoreMeta ? restoreMeta.createdById : user.id, restoredById: restoreMeta ? user.id : null, restoredAt: restoreMeta ? new Date() : null, image: validImageDataUrl(body.image) },
+          include: { createdBy: { select: { id: true, name: true } }, restoredBy: { select: { id: true, name: true } } },
+        }), 'إنشاء الأصل'
+      )
+      if (v108CreateRetry.success) {
+        console.warn('v108: تم إنشاء الأصل بلا عمود isOperational (سيُستأنف العمود تلقائياً بعد الشفاء)')
+      }
+    }
+    var v108Created: any = (v108CreateRetry && v108CreateRetry.success) ? v108CreateRetry.data : (createResult.success ? createResult.data : null)
+    if (!v108Created) {
+      return createResult.success ? createResult.response : (v108CreateRetry && v108CreateRetry.response ? v108CreateRetry.response : createResult.response)
+    }
 
-    safeDbOp(() => db.auditLog.create({ data: { userId: user.id, projectId: body.projectId, action: 'create', entity: 'company_asset', entityId: createResult.data.id, details: 'Added asset: ' + body.name } }), 'سجل التدقيق').catch(() => {})
+    safeDbOp(() => db.auditLog.create({ data: { userId: user.id, projectId: body.projectId, action: 'create', entity: 'company_asset', entityId: v108Created.id, details: 'Added asset: ' + body.name } }), 'سجل التدقيق').catch(() => {})
 
     // v83: الأصل الجديد في مفكرة المعدات الموحدة — باسم مَن سجّله وتوقيته
     var v83OwnAr = String(body.ownership) === 'owned' ? 'ملك الشركة' : String(body.ownership) === 'rented' ? 'مستأجر' : 'معار'
     var v83OwnEn = String(body.ownership) === 'owned' ? 'Company Owned' : String(body.ownership) === 'rented' ? 'Rented' : 'Borrowed'
     if (restoreMeta) {
       await logAssetChange({
-        assetId: createResult.data.id, assetName: createResult.data.name, user,
+        assetId: v108Created.id, assetName: v108Created.name, user,
         action: 'restore',
-        changesAr: 'أعاد إنشاء الأصل «' + createResult.data.name + '» من سجل التدقيق (نوع الملكية: ' + v83OwnAr + ') — حُفظ تاريخ التسجيل واسم المنشئ الأصلي',
-        changesEn: 'Re-created asset "' + createResult.data.name + '" from the audit log (' + v83OwnEn + ') — original date and creator preserved',
+        changesAr: 'أعاد إنشاء الأصل «' + v108Created.name + '» من سجل التدقيق (نوع الملكية: ' + v83OwnAr + ') — حُفظ تاريخ التسجيل واسم المنشئ الأصلي',
+        changesEn: 'Re-created asset "' + v108Created.name + '" from the audit log (' + v83OwnEn + ') — original date and creator preserved',
       })
     } else {
       await logAssetChange({
-        assetId: createResult.data.id, assetName: createResult.data.name, user,
+        assetId: v108Created.id, assetName: v108Created.name, user,
         action: 'create',
-        changesAr: 'سجّل أصلاً جديداً «' + createResult.data.name + '» (نوع الملكية: ' + v83OwnAr + ')',
-        changesEn: 'Registered new asset "' + createResult.data.name + '" (' + v83OwnEn + ')',
+        changesAr: 'سجّل أصلاً جديداً «' + v108Created.name + '» (نوع الملكية: ' + v83OwnAr + ')',
+        changesEn: 'Registered new asset "' + v108Created.name + '" (' + v83OwnEn + ')',
       })
     }
 
-    return NextResponse.json({ asset: createResult.data, success: true })
+    return NextResponse.json({ asset: v108Created, success: true })
   } catch (error: any) {
     return handleDbError(error, 'إنشاء الأصل')
   }
