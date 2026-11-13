@@ -21,17 +21,40 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     var { id } = await params
     // v106: شفاء ذاتي — العمود الجديد قبل أي قراءة كاملة الصف (include يُرجع كل الأعمدة)
     await ensureAssetOperationalSupport()
-    var result = await safeDbOp(
-      () => db.companyAsset.findUnique({
-        where: { id },
-        include: {
-          project: { select: { id: true, name: true, code: true } },
-          responsible: { select: { id: true, name: true, nameEn: true } },
-          createdBy: { select: { id: true, name: true } },
-          restoredBy: { select: { id: true, name: true } },
-        },
-      }), 'جلب الأصل'
-    )
+    // v108: القراءة بطبقتين — إن فشلت القراءة الكاملة لغياب عمود isOperational
+    // على القاعدة، تُعاد المحاولة بحقول صريحة بلا العمود الجديد حتى لا تختفي
+    // تفاصيل الأصل وصورته
+    var fetchAssetFull = async function () {
+      try {
+        return await db.companyAsset.findUnique({
+          where: { id },
+          include: {
+            project: { select: { id: true, name: true, code: true } },
+            responsible: { select: { id: true, name: true, nameEn: true } },
+            createdBy: { select: { id: true, name: true } },
+            restoredBy: { select: { id: true, name: true } },
+          },
+        })
+      } catch (fullErr: any) {
+        console.error('v108: full asset row failed — retrying explicit fields:', fullErr?.message)
+        return await db.companyAsset.findUnique({
+          where: { id },
+          select: {
+            id: true, projectId: true, name: true, itemType: true, quantity: true,
+            ownership: true, supplier: true, rentalCost: true, rentalStart: true,
+            rentalEnd: true, responsibleId: true, status: true,
+            notes: true, image: true,
+            createdById: true, restoredById: true, restoredAt: true,
+            createdAt: true, updatedAt: true,
+            project: { select: { id: true, name: true, code: true } },
+            responsible: { select: { id: true, name: true, nameEn: true } },
+            createdBy: { select: { id: true, name: true } },
+            restoredBy: { select: { id: true, name: true } },
+          },
+        })
+      }
+    }
+    var result = await safeDbOp(fetchAssetFull, 'جلب الأصل')
     if (!result.success) return result.response
     if (!result.data) return NextResponse.json({ error: 'not_found', message: 'الأصل غير موجود' }, { status: 404 })
     // v84: سجل هذا الأصل الكامل يُعاد مع تفاصيله — نقاط التغييرات باسم أصحابها
@@ -133,19 +156,51 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
     // v106: شفاء ذاتي قبل القراءة الكاملة (findUnique بلا select يُرجع كل الأعمدة)
     await ensureAssetOperationalSupport()
-    // v22: جلب القيم القديمة لتوثيق التغييرات قبل ← الآن
-    var oldAssetResult = await safeDbOp(() => db.companyAsset.findUnique({ where: { id } }), 'جلب الأصل قبل التعديل')
+    // v108: القيم القديمة بطبقتين — إن فشلت القراءة الكاملة لغياب العمود الجديد
+    // تُقرأ الحقول الصريحة المُثبتة فقط
+    var fetchOldAsset = async function () {
+      try {
+        return await db.companyAsset.findUnique({ where: { id } })
+      } catch (fullErr: any) {
+        console.error('v108: full old-asset read failed — retrying explicit fields:', fullErr?.message)
+        return await db.companyAsset.findUnique({
+          where: { id },
+          select: {
+            id: true, projectId: true, name: true, itemType: true, quantity: true,
+            ownership: true, supplier: true, rentalCost: true, rentalStart: true,
+            rentalEnd: true, responsibleId: true, status: true,
+            notes: true, createdById: true, restoredById: true, restoredAt: true,
+            createdAt: true, updatedAt: true,
+          },
+        })
+      }
+    }
+    var oldAssetResult = await safeDbOp(fetchOldAsset, 'جلب الأصل قبل التعديل')
     var oldAsset = oldAssetResult.success && oldAssetResult.data ? oldAssetResult.data : null
 
     var updateResult = await safeDbOp(() => db.companyAsset.update({ where: { id }, data: updateData }), 'تحديث الأصل')
+    // v108: إن فشل التحديث لغياب عمود isOperational على القاعدة، تُعاد المحاولة
+    // بدونه حتى لا يُفقد تعديل المستخدم — الشفاء الذاتي سيُنشئ العمود لاحقاً
+    // وتُستأنف الخاصية كاملة تلقائياً
+    var v108SavedData = updateData
+    if (!updateResult.success && updateData.isOperational !== undefined) {
+      var v108RetryUpdate = Object.assign({}, updateData)
+      delete v108RetryUpdate.isOperational
+      var v108RetryResult = await safeDbOp(() => db.companyAsset.update({ where: { id }, data: v108RetryUpdate }), 'تحديث الأصل')
+      if (v108RetryResult.success) {
+        console.warn('v108: تم تحديث الأصل بلا عمود isOperational (سيُستأنف العمود تلقائياً بعد الشفاء)')
+        updateResult = v108RetryResult
+        v108SavedData = v108RetryUpdate
+      }
+    }
     if (!updateResult.success) return updateResult.response
 
-    // v22: توثيق دقيق — القيمة قبل ← القيمة الآن
-    safeDbOp(() => db.auditLog.create({ data: { userId: user.id, projectId: updateResult.data.projectId, action: 'update', entity: 'company_asset', entityId: id, details: oldAsset ? buildAuditDetails(oldAsset as unknown as Record<string, any>, updateData, 'تعديل أصل شركة: ' + updateResult.data.name, { skipFields: ['id', 'createdAt', 'updatedAt', 'projectId', 'cuid', 'image', 'responsibleId'] }) : ('تعديل أصل شركة: ' + updateResult.data.name) } }), 'سجل التدقيق').catch(() => {})
+    // v22: توثيق دقيق — القيمة قبل ← القيمة الآن (v108: ببيانات الحفظ الفعلية)
+    safeDbOp(() => db.auditLog.create({ data: { userId: user.id, projectId: updateResult.data.projectId, action: 'update', entity: 'company_asset', entityId: id, details: oldAsset ? buildAuditDetails(oldAsset as unknown as Record<string, any>, v108SavedData, 'تعديل أصل شركة: ' + updateResult.data.name, { skipFields: ['id', 'createdAt', 'updatedAt', 'projectId', 'cuid', 'image', 'responsibleId'] }) : ('تعديل أصل شركة: ' + updateResult.data.name) } }), 'سجل التدقيق').catch(() => {})
 
     // v83: التعديل في مفكرة المعدات الموحدة — «أي تغيّر يظهر في السجل في الأسفل»
     if (oldAsset) {
-      var v83Diff = getChangesDiff(oldAsset as unknown as Record<string, any>, updateData, { skipFields: ['id', 'createdAt', 'updatedAt', 'projectId', 'cuid', 'image', 'responsibleId'] })
+      var v83Diff = getChangesDiff(oldAsset as unknown as Record<string, any>, v108SavedData, { skipFields: ['id', 'createdAt', 'updatedAt', 'projectId', 'cuid', 'image', 'responsibleId'] })
       if (v83Diff.changes.length > 0) {
         var v83ArParts = v83Diff.changes.map(function(c) { return c.field + ': من «' + c.old + '» إلى «' + c.new + '»' })
         var v83EnParts = v83Diff.changes.map(function(c) { return c.fieldEn + ': from "' + c.old + '" to "' + c.new + '"' })
@@ -186,6 +241,21 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     if (!delTarget.success) return delTarget.response
     if (!delTarget.data) return NextResponse.json({ error: 'not_found', message: 'الأصل غير موجود' }, { status: 404 })
     var deleteResult = await safeDbOp(() => db.companyAsset.delete({ where: { id } }), 'حذف الأصل')
+    // v108: إن فشل الحذف لغياب عمود isOperational على القاعدة (Prisma يقرأ كل
+    // الأعمدة عند الحذف)، يُنفَّذ حذف SQL مباشر بعد فحص الوجود أعلاه — حتى
+    // يستطيع المستخدم حذف أي أصل أو تكرار في كل الأحوال
+    if (!deleteResult.success) {
+      var v108RawDel = 0
+      try {
+        v108RawDel = await db.$executeRawUnsafe('DELETE FROM "CompanyAsset" WHERE "id" = $1', id)
+      } catch (rawErr: any) {
+        console.error('v108: raw asset delete also failed:', rawErr?.message)
+      }
+      if (v108RawDel > 0) {
+        console.warn('v108: تم حذف الأصل بحذف SQL مباشر (العمود الجديد غير مُنشأ بعد)')
+        deleteResult = { success: true, data: delTarget.data } as any
+      }
+    }
     if (!deleteResult.success) return deleteResult.response
 
     // v83: حذف الأصل لم يكن يُسجل إطلاقاً — الآن في المفكرة الموحدة وسجل التدقيق
