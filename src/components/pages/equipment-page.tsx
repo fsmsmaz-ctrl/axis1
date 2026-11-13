@@ -87,6 +87,8 @@ export default function EquipmentPage() {
   // فيظهر معدتان أو أكثر في الواجهة رغم أنها في الواقع واحدة. الآن يُعطَّل الزر
   // أثناء الانتظار ولا يُعاد تفعيله إلا بعد انتهاء الطلب (نجاحاً أو فشلاً).
   const [submitting, setSubmitting] = useState(false)
+  // v107: حارس مخصص لنموذج الصيانة — نفس منطق منع التكرار
+  const [maintSubmitting, setMaintSubmitting] = useState(false)
   const [editSubmitting, setEditSubmitting] = useState(false)
   const user = useAppStore((s) => s.user)
   // FIX-6.6: Use role-based check instead of hardcoded admin email
@@ -457,6 +459,12 @@ export default function EquipmentPage() {
 
   async function handleAssetSubmit(e: React.FormEvent) {
     e.preventDefault()
+    // v107: حارس النقر المزدوج — نفس حارس v101 لنموذج المعدات. النقر السريع
+    // المتتالي كان يرسل طلبين POST فيُنشأ الأصل مرتين أو أكثر فتختل الأعداد
+    // في القسم وفي لوحة التحكم (تبدو البيانات «غير دقيقة»). الزر يُعطّل
+    // أثناء الطلب ولا يُعاد تفعيله إلا بعد انتهائه نجاحاً أو فشلاً.
+    if (submitting) return
+    setSubmitting(true)
     try {
       var payload: any = { ...assetForm }
       // v106: تحويل حالة التشغيل إلى قيمة منطقية قبل الإرسال
@@ -501,6 +509,8 @@ export default function EquipmentPage() {
       }
     } catch {
       toast.error(isRtl ? 'حدث خطأ' : 'Error')
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -655,6 +665,9 @@ export default function EquipmentPage() {
 
   async function handleMaintenanceSubmit(e: React.FormEvent) {
     e.preventDefault()
+    // v107: حارس النقر المزدوج — منع تسجيل نفس الصيانة مرتين بالنقر السريع
+    if (maintSubmitting) return
+    setMaintSubmitting(true)
     try {
       var res = await authedFetch('/api/equipment/' + maintenanceForm.equipmentId + '/maintenance', {
         method: 'POST',
@@ -673,6 +686,8 @@ export default function EquipmentPage() {
       }
     } catch {
       toast.error(isRtl ? 'حدث خطأ' : 'Error')
+    } finally {
+      setMaintSubmitting(false)
     }
   }
 
@@ -1602,8 +1617,9 @@ export default function EquipmentPage() {
             )}
             <div className="space-y-1.5"><Label>{isRtl ? 'ملاحظات' : 'Notes'}</Label><Textarea value={assetForm.notes} onChange={(e) => setAssetForm({ ...assetForm, notes: e.target.value })} rows={2} /></div>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => { setAssetDialogOpen(false); setEditingAsset(null) }}>{isRtl ? 'إلغاء' : 'Cancel'}</Button>
-              <Button type="submit">{editingAsset ? (isRtl ? 'تحديث' : 'Update') : (isRtl ? 'إضافة' : 'Add')}</Button>
+              <Button type="button" variant="outline" onClick={() => { setAssetDialogOpen(false); setEditingAsset(null) }} disabled={submitting}>{isRtl ? 'إلغاء' : 'Cancel'}</Button>
+              {/* v107: زر الحفظ يُعطّل أثناء الطلب — منع تكرار الأصل بالنقر السريع */}
+              <Button type="submit" disabled={submitting}>{submitting ? (<><Loader2 className="h-4 w-4 ml-2 animate-spin" />{isRtl ? (editingAsset ? 'جارٍ التحديث...' : 'جارٍ الإضافة...') : (editingAsset ? 'Updating...' : 'Adding...')}</>) : (editingAsset ? (isRtl ? 'تحديث' : 'Update') : (isRtl ? 'إضافة' : 'Add'))}</Button>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -1780,8 +1796,9 @@ export default function EquipmentPage() {
             </div>
             <div className="space-y-1.5"><Label>{isRtl ? 'قطع الغيار المستخدمة' : 'Parts Used'}</Label><Input value={maintenanceForm.partsUsed} onChange={(e) => setMaintenanceForm({ ...maintenanceForm, partsUsed: e.target.value })} /></div>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setMaintenanceDialogOpen(false)}>{isRtl ? 'إلغاء' : 'Cancel'}</Button>
-              <Button type="submit">{isRtl ? 'حفظ' : 'Save'}</Button>
+              <Button type="button" variant="outline" onClick={() => setMaintenanceDialogOpen(false)} disabled={maintSubmitting}>{isRtl ? 'إلغاء' : 'Cancel'}</Button>
+              {/* v107: زر الحفظ يُعطّل أثناء الطلب — منع تكرار تسجيل الصيانة */}
+              <Button type="submit" disabled={maintSubmitting}>{maintSubmitting ? (<><Loader2 className="h-4 w-4 ml-2 animate-spin" />{isRtl ? 'جارٍ الحفظ...' : 'Saving...'}</>) : (isRtl ? 'حفظ' : 'Save')}</Button>
             </DialogFooter>
           </form>
         </DialogContent>
