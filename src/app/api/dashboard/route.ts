@@ -3,6 +3,7 @@ import { getAuthUser } from '@/lib/auth-server'
 import { canAccessDashboard, canViewPricing } from '@/lib/auth'
 import { db, cached } from '@/lib/db'
 import { roundMeters, roundMoney } from '@/lib/api-helpers'
+import { ensureAssetOperationalSupport } from '@/lib/db-selfheal'
 
 // ────────────────────────────────────────────────────────────────
 // Helpers
@@ -122,6 +123,8 @@ export async function GET(req: NextRequest) {
 // ────────────────────────────────────────────────────────────────
 
 async function buildDashboard(canSeePrice: boolean, costsPeriod: 'month' | 'year' | 'all' = 'month') {
+  // v106: عمود حالة تشغيل الأصول يجب أن يكون موجوداً قبل أي استعلام يلمسه
+  await ensureAssetOperationalSupport()
   const todayRange = getDateRange(0)
   const monthRange = getMonthRange()
   const yearRange = getYearRange()
@@ -188,8 +191,10 @@ async function buildDashboard(canSeePrice: boolean, costsPeriod: 'month' | 'year
     }),
 
     // Stopped equipment
+    // v106: المحذوفة ناعماً (deletedAt) كانت تُحسب هنا وترتفع الإحصائية خطأً —
+    // صفحة المعدات تخفيها بفلتر deletedAt=null واللوحة الآن مطابقة لها
     db.equipment.count({
-      where: { status: { in: ['stopped', 'maintenance_needed'] } },
+      where: { deletedAt: null, status: { in: ['stopped', 'maintenance_needed'] } },
     }),
 
     // Unread notifications
@@ -245,11 +250,14 @@ async function buildDashboard(canSeePrice: boolean, costsPeriod: 'month' | 'year
     }),
 
     // Equipment
+    // v106: استبعاد المحذوفة ناعماً — كانت تظهر في اللوحة بينما صفحة المعدات تخفيها
     db.equipment.findMany({
+      where: { deletedAt: null },
       include: { project: { select: { name: true } } },
     }),
 
     // v105: الأصول والمستأجرات (قسم «الأصول والمستأجرات» في صفحة المعدات)
+    // v106: بلا حد عدد — كل الأصول القديمة والجديدة تظهر، مع حالة التشغيل
     db.companyAsset.findMany({
       select: {
         id: true,
@@ -257,6 +265,7 @@ async function buildDashboard(canSeePrice: boolean, costsPeriod: 'month' | 'year
         itemType: true,
         ownership: true,
         status: true,
+        isOperational: true, // v106: هل الأصل يعمل؟
         quantity: true,
         project: { select: { name: true } },
       },
@@ -348,6 +357,17 @@ async function buildDashboard(canSeePrice: boolean, costsPeriod: 'month' | 'year
   const equipment = unwrap(equipmentResult, [], 'equipment')
   // v105: الأصول والمستأجرات — فك نتيجة الاستعلام بأمان (فشلٌ لا يُسقط اللوحة)
   const companyAssets = unwrap(companyAssetsResult, [], 'companyAssets')
+  // v106: ملخص الأصول — يُحسب من القائمة كاملة (القديمة والجديدة معاً) فيرى
+  // صاحب الموقع الأعداد الحقيقية حتى لو احتاجت القائمة تمريراً للأسفل
+  // الأصل بلا قيمة (سجل قبل وصول العمود) يُعامل كعامل — لا يظهر «متوقفة» خطأً
+  const assetsSummary = {
+    total: companyAssets.length,
+    working: companyAssets.filter((a: any) => a.isOperational !== false).length,
+    notWorking: companyAssets.filter((a: any) => a.isOperational === false).length,
+    owned: companyAssets.filter((a: any) => a.ownership === 'owned').length,
+    rented: companyAssets.filter((a: any) => a.ownership === 'rented').length,
+    borrowed: companyAssets.filter((a: any) => a.ownership === 'borrowed').length,
+  }
   const costsByCategoryRaw = unwrap(costsByCategoryResult, [], 'costsByCategory')
   const costsByCategory = (costsByCategoryRaw as any[]).map((c) => ({
     category: c.category,
@@ -404,6 +424,8 @@ async function buildDashboard(canSeePrice: boolean, costsPeriod: 'month' | 'year
     equipment,
     // v105: تُرسل للواجهة لتظهر في بطاقة «الأصول والمستأجرات» بجانب المعدات
     companyAssets,
+    // v106: ملخص الأرقام الفوري (الإجمالي/تعمل/متوقفة/ملك/مستأجر/معار)
+    assetsSummary,
     costsByCategory,
     // Signal to client whether any reports were found today (helpful for
     // UI to know whether "0" is real or a missing-data situation).
