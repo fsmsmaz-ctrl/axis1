@@ -762,3 +762,23 @@ export async function ensureLibrariesSupport(): Promise<void> {
   }
 }
 
+
+// ─── v106: حالة تشغيل الأصول — «هل الأصل يعمل؟» ─────────────────────────────
+// قرار صاحب الموقع: الأصول والمستأجرات (CompanyAsset) لم يكن لها أي خاصية
+// تشغيل — الأصل «متاح» قد يكون معطلاً في الواقع ولا أحد يعلم. أُضيف عمود
+// isOperational (افتراضي true لكل الأصول القديمة والجديدة حتى لا يختل سلوكها)
+// ويحدده الموظف عند التسجيل/التعديل، ويظهر في اللوحة وبطاقات الأصول.
+// نفس نمط الشفاء المُثبت: ALTER آمن (idempotent) — عمود موجود = لا DDL،
+// والعلم لا يُثبَّت عند الفشل فتُعاد المحاولة في الطلب التالي.
+var v106AssetOperationalChecked = false
+
+export async function ensureAssetOperationalSupport(): Promise<void> {
+  if (v106AssetOperationalChecked) return
+  try {
+    await db.$executeRawUnsafe('ALTER TABLE "CompanyAsset" ADD COLUMN IF NOT EXISTS "isOperational" BOOLEAN NOT NULL DEFAULT true')
+    v106AssetOperationalChecked = true
+  } catch (e) {
+    // لا نُثبّت العلم عند الفشل — تُعاد المحاولة في الطلب التالي
+    console.error('v106: asset operational self-heal skipped (will retry):', e)
+  }
+}
