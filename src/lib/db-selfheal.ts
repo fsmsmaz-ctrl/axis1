@@ -7,6 +7,7 @@
 // - أي فشل يُسجَّل في السجل ولا يعطّل الطلب الأصلي
 
 import bcrypt from 'bcryptjs'
+import { PrismaClient } from '@prisma/client'
 import { db } from '@/lib/db'
 
 // v70: أعمدة الوسائط وأعمدة/فهارس وُجدت في المخطط دون أثر في سجل المديشنات —
@@ -776,9 +777,36 @@ export async function ensureAssetOperationalSupport(): Promise<void> {
   if (v106AssetOperationalChecked) return
   try {
     await db.$executeRawUnsafe('ALTER TABLE "CompanyAsset" ADD COLUMN IF NOT EXISTS "isOperational" BOOLEAN NOT NULL DEFAULT true')
+  } catch (e1) {
+    // v108: المحاولة الأولى (الاتصال المُجمّع DATABASE_URL) فشلت — بعض الاتصالات
+    // المُجمّعة تُسقط أو ترفض عبارات DDL بصمت، فيبقى العمود غير مُنشأ ويفشل
+    // كل استعلام يلمسه فتفرغ قائمة الأصول في القسم واللوحة. المحاولة الثانية
+    // عبر الاتصال المباشر DIRECT_URL (نفس عنوان مهام الترحيل في Prisma) إن وُجد.
+    console.error('v108: asset operational ALTER via pooled DATABASE_URL failed:', (e1 as { message?: string })?.message)
+    var directUrl = process.env.DIRECT_URL
+    if (!directUrl) {
+      console.error('v108: DIRECT_URL غير مضبوط — لا توجد محاولة بديلة للعمود (سيُعاد لاحقاً)')
+      return // لا نُثبّت العلم — تُعاد المحاولة في الطلب التالي
+    }
+    try {
+      var g = globalThis as unknown as { __axisDdlClient?: PrismaClient }
+      if (!g.__axisDdlClient) {
+        g.__axisDdlClient = new PrismaClient({ datasources: { db: { url: directUrl } }, log: [] })
+      }
+      await g.__axisDdlClient.$executeRawUnsafe('ALTER TABLE "CompanyAsset" ADD COLUMN IF NOT EXISTS "isOperational" BOOLEAN NOT NULL DEFAULT true')
+      console.warn('v108: عمود isOperational أُنشئ عبر الاتصال المباشر DIRECT_URL')
+    } catch (e2) {
+      console.error('v108: asset operational ALTER via DIRECT_URL also failed (will retry):', (e2 as { message?: string })?.message)
+      return // لا نُثبّت العلم — تُعاد المحاولة في الطلب التالي
+    }
+  }
+  // v108: تحقق فعلي قبل تثبيت العلم — نجاح عبارة ALTER وحده لا يكفي؛
+  // نقرأ العمود نفسه بالاتصال نفسه المستخدم في القراءة، فإن فشلت القراءة
+  // لا يُثبَّت العلم وتُعاد المحاولة كاملة في الطلب التالي
+  try {
+    await db.$queryRawUnsafe('SELECT "isOperational" FROM "CompanyAsset" LIMIT 1')
     v106AssetOperationalChecked = true
-  } catch (e) {
-    // لا نُثبّت العلم عند الفشل — تُعاد المحاولة في الطلب التالي
-    console.error('v106: asset operational self-heal skipped (will retry):', e)
+  } catch (e3) {
+    console.error('v108: isOperational probe failed — column still unreadable (will retry):', (e3 as { message?: string })?.message)
   }
 }
