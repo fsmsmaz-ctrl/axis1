@@ -29,6 +29,18 @@ const nextConfig: NextConfig = {
           },
         ],
       },
+      {
+        // v109: ملف عامل الخدمة يُجلب بلا تخزين — المتصفح يتحقق من وجود نسخة
+        // جديدة في كل زيارة بدل الاعتماد على كاش HTTP الذي قد يمتد 24 ساعة،
+        // فيصل تحديث النظام إلى الأجهزة فوراً بعد كل نشر.
+        source: '/sw.js',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'no-cache, no-store, must-revalidate',
+          },
+        ],
+      },
     ]
   },
 }
