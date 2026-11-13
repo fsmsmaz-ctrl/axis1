@@ -61,6 +61,51 @@ function getYearRange(): { gte: Date; lt: Date } {
 // Main handler
 // ────────────────────────────────────────────────────────────────
 
+// v108: جلب الأصول بطبقتين حتى لا تظهر بطاقة «الأصول والمستأجرات» فارغة أبداً.
+// السبب الجذري لحالة «البيانات لم تظهر»: إذا لم يكن عمود isOperational مُنشأً
+// على قاعدة البيانات بعد (فشل صامت للشفاء الذاتي عبر الاتصال المُجمّع)، فإن
+// أي استعلام يلمس العمود يفشل كاملاً فتستلم الواجهة قائمة فارغة.
+// الطبقة 1: الاستعلام الكامل (كل الحقول).
+// الطبقة 2: عند أي فشل — نفس الاستعلام بالحقول الأساسية المُثبتة والمجربة
+// (نفس حقول v105 التي عملت على هذه القاعدة فعلاً) بلا isOperational ولا
+// الحقول الإضافية؛ الواجهة تعامل غياب isOperational كـ«تعمل» تلقائياً.
+async function fetchCompanyAssetsResilient() {
+  try {
+    return await db.companyAsset.findMany({
+      select: {
+        id: true,
+        name: true,
+        itemType: true,
+        ownership: true,
+        status: true,
+        isOperational: true, // v106: هل الأصل يعمل؟
+        quantity: true,
+        project: { select: { name: true } },
+        // v107: نفس تفاصيل صفحة المعدات — الجهة/المسؤول/الإيجار/تاريخ الإرجاع
+        supplier: true,
+        rentalCost: true,
+        rentalEnd: true,
+        responsible: { select: { name: true, nameEn: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    })
+  } catch (fullErr: any) {
+    console.error('[Dashboard] companyAssets full select failed — retrying minimal (v108):', fullErr?.message)
+    return await db.companyAsset.findMany({
+      select: {
+        id: true,
+        name: true,
+        itemType: true,
+        ownership: true,
+        status: true,
+        quantity: true,
+        project: { select: { name: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    })
+  }
+}
+
 export async function GET(req: NextRequest) {
   const startedAt = Date.now()
   try {
@@ -263,25 +308,8 @@ async function buildDashboard(canSeePrice: boolean, costsPeriod: 'month' | 'year
 
     // v105: الأصول والمستأجرات (قسم «الأصول والمستأجرات» في صفحة المعدات)
     // v106: بلا حد عدد — كل الأصول القديمة والجديدة تظهر، مع حالة التشغيل
-    db.companyAsset.findMany({
-      select: {
-        id: true,
-        name: true,
-        itemType: true,
-        ownership: true,
-        status: true,
-        isOperational: true, // v106: هل الأصل يعمل؟
-        quantity: true,
-        project: { select: { name: true } },
-        // v107: نفس تفاصيل صفحة المعدات — الجهة/المسؤول/الإيجار/تاريخ الإرجاع
-        // حتى يُعرَف كل أصل في اللوحة بنفس ما يُعرَف في القسم بلا أي اختلاف
-        supplier: true,
-        rentalCost: true,
-        rentalEnd: true,
-        responsible: { select: { name: true, nameEn: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-    }),
+    // v108: بطبقتين — لا تظهر البطاقة فارغة أبداً حتى لو فشل العمود الجديد
+    fetchCompanyAssetsResilient(),
 
     // v36: Costs by category — النطاق حسب اختيار اللوحة (الشهر/العام/الكل)
     db.cost.groupBy({
@@ -450,4 +478,4 @@ async function buildDashboard(canSeePrice: boolean, costsPeriod: 'month' | 'year
   }
 }
 
-                                                  
+                                                
