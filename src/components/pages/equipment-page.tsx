@@ -130,7 +130,7 @@ export default function EquipmentPage() {
   const [assets, setAssets] = useState<any[]>([])
   const [assetsLoading, setAssetsLoading] = useState(false)
   const [assetDialogOpen, setAssetDialogOpen] = useState(false)
-  const [assetStats, setAssetStats] = useState<any>({ ownedCount: 0, rentedCount: 0, borrowedCount: 0, totalRentalCost: 0 })
+  const [assetStats, setAssetStats] = useState<any>({ ownedCount: 0, rentedCount: 0, borrowedCount: 0, totalRentalCost: 0, workingCount: 0, notWorkingCount: 0 })
   const [editingAsset, setEditingAsset] = useState<any | null>(null)
   const [assetFilter, setAssetFilter] = useState<string>('all')
   const [viewAsset, setViewAsset] = useState<any | null>(null)
@@ -164,7 +164,10 @@ export default function EquipmentPage() {
     projectId: '', name: '', itemType: 'machine', quantity: '1',
     ownership: 'owned', supplier: '', rentalCost: '',
     rentalStart: '', rentalEnd: '', responsibleId: '',
-    status: 'available', notes: '', image: '' as string,
+    status: 'available',
+    // v106: حالة التشغيل «هل الأصل يعمل؟» — نعم افتراضياً، وتُحفظ كقيمة منطقية
+    isOperational: 'yes',
+    notes: '', image: '' as string,
   })
 
   // Image upload handler for assets
@@ -357,7 +360,7 @@ export default function EquipmentPage() {
       if (res.ok) {
         var data = await res.json()
         setAssets(data.assets || [])
-        setAssetStats(data.stats || { ownedCount: 0, rentedCount: 0, borrowedCount: 0, totalRentalCost: 0 })
+        setAssetStats(data.stats || { ownedCount: 0, rentedCount: 0, borrowedCount: 0, totalRentalCost: 0, workingCount: 0, notWorkingCount: 0 })
       }
     } catch {
       setAssets([])
@@ -456,6 +459,8 @@ export default function EquipmentPage() {
     e.preventDefault()
     try {
       var payload: any = { ...assetForm }
+      // v106: تحويل حالة التشغيل إلى قيمة منطقية قبل الإرسال
+      payload.isOperational = assetForm.isOperational !== 'no'
       // Handle image removal
       if (payload.image === 'REMOVE') {
         payload.image = null
@@ -525,7 +530,10 @@ export default function EquipmentPage() {
         rentalStart: asset.rentalStart ? asset.rentalStart.split('T')[0] : '',
         rentalEnd: asset.rentalEnd ? asset.rentalEnd.split('T')[0] : '',
         responsibleId: asset.responsibleId || '',
-        status: asset.status, notes: asset.notes || '',
+        status: asset.status,
+        // v106: الأصل القديم بلا قيمة مخزنة يُعرض كعامل (نفس افتراضي الخادم)
+        isOperational: asset.isOperational === false ? 'no' : 'yes',
+        notes: asset.notes || '',
         image: '',
       })
       // v74: الصورة تُجلب بالخلفية — والحفظ بلا رفع بديل يُبقي صورة الأصل (الخادم لا يلمس المفتاح الغائب)
@@ -542,7 +550,7 @@ export default function EquipmentPage() {
         projectId: projects[0]?.id || '', name: '', itemType: 'machine', quantity: '1',
         ownership: 'owned', supplier: '', rentalCost: '',
         rentalStart: '', rentalEnd: '', responsibleId: '',
-        status: 'available', notes: '', image: '',
+        status: 'available', isOperational: 'yes', notes: '', image: '',
       })
     }
     setAssetDialogOpen(true)
@@ -580,6 +588,8 @@ export default function EquipmentPage() {
       rentalCost: item.rentalCost && Number(item.rentalCost) > 0 ? String(item.rentalCost) : '',
       rentalStart: '', rentalEnd: '', responsibleId: '',
       status: 'available',
+      // v106: الأصل المستعاد يبدأ «يعمل» ويؤكده المستخدم عند الإكمال
+      isOperational: 'yes',
       notes: isRtl ? 'مستعاد من سجل التدقيق — راجع وأكمل البيانات الناقصة' : 'Recovered from audit log — review and complete missing data',
       image: '',
     })
@@ -980,7 +990,16 @@ export default function EquipmentPage() {
           </Card>
         )}
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-4">
+          {/* v106: بطاقة التشغيل — تعمل/متوقفة بالأعداد الحقيقية لكل الأصول */}
+          <Card>
+            <CardContent className="p-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center"><Wrench className="h-4 w-4 text-emerald-600" /></div>
+                <div><p className="text-lg font-bold">{assetStats.workingCount || 0}<span className="text-sm font-medium text-red-600"> / {assetStats.notWorkingCount || 0}</span></p><p className="text-xs text-muted-foreground">{isRtl ? 'تعمل / متوقفة' : 'Working / Stopped'}</p></div>
+              </div>
+            </CardContent>
+          </Card>
           <Card className="cursor-pointer" onClick={() => setAssetFilter(assetFilter === 'owned' ? 'all' : 'owned')}>
             <CardContent className="p-3">
               <div className="flex items-center gap-2">
@@ -1050,6 +1069,10 @@ export default function EquipmentPage() {
                           <Badge variant="outline" className={`text-xs ${own.color} border-0`}>{isRtl ? own.ar : own.en}</Badge>
                           <Badge variant="secondary" className="text-xs">{isRtl ? aType.ar : aType.en}</Badge>
                           <Badge className={`text-xs ${aStatus.color} border-0`}>{isRtl ? aStatus.ar : aStatus.en}</Badge>
+                          {/* v106: شارة التشغيل — تعمل/متوقفة بوضوح على بطاقة الأصل نفسها */}
+                          <Badge className={`text-xs border-0 ${a.isOperational === false ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                            {a.isOperational === false ? (isRtl ? 'متوقفة' : 'Not working') : (isRtl ? 'تعمل' : 'Working')}
+                          </Badge>
                           {a.restoredBy && (
                             <Badge className="bg-indigo-100 text-indigo-800 border-0 text-xs">
                               <RotateCcw className="h-3 w-3 ml-1" />
@@ -1531,6 +1554,18 @@ export default function EquipmentPage() {
                   </SelectContent>
                 </Select>
               </div>
+              {/* v106: حالة التشغيل — قرار صاحب الموقع: الأصل «متاح» قد يكون معطلاً؛
+                  الآن حالة العمل تُحدد صراحةً وتظهر في اللوحة وبطاقات الأصول */}
+              <div className="space-y-1.5">
+                <Label>{isRtl ? 'هل الأصل يعمل؟' : 'Is it working?'}</Label>
+                <Select value={assetForm.isOperational} onValueChange={(v) => setAssetForm({ ...assetForm, isOperational: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="yes">{isRtl ? 'نعم — يعمل' : 'Yes — working'}</SelectItem>
+                    <SelectItem value="no">{isRtl ? 'لا — متوقف' : 'No — not working'}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="space-y-1.5">
                 <Label>{isRtl ? 'المشروع' : 'Project'}</Label>
                 <Select value={assetForm.projectId} onValueChange={(v) => setAssetForm({ ...assetForm, projectId: v })}>
@@ -1592,6 +1627,8 @@ export default function EquipmentPage() {
                 <div><p className="text-xs text-muted-foreground">{isRtl ? 'نوع الملكية' : 'Ownership'}</p><p className="font-medium">{(ownershipLabels[viewAsset.ownership] || ownershipLabels.owned)[isRtl ? 'ar' : 'en']}</p></div>
                 <div><p className="text-xs text-muted-foreground">{isRtl ? 'الكمية' : 'Quantity'}</p><p className="font-medium">{viewAsset.quantity}</p></div>
                 <div><p className="text-xs text-muted-foreground">{isRtl ? 'الحالة' : 'Status'}</p><Badge className={(assetStatusLabels[viewAsset.status] || assetStatusLabels.available).color + ' border-0'}>{(assetStatusLabels[viewAsset.status] || assetStatusLabels.available)[isRtl ? 'ar' : 'en']}</Badge></div>
+                {/* v106: حالة التشغيل في تفاصيل الأصل */}
+                <div><p className="text-xs text-muted-foreground">{isRtl ? 'التشغيل' : 'Operational'}</p><Badge className={(viewAsset.isOperational === false ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700') + ' border-0'}>{viewAsset.isOperational === false ? (isRtl ? 'لا — متوقف' : 'No — not working') : (isRtl ? 'نعم — يعمل' : 'Yes — working')}</Badge></div>
                 {viewAsset.project && (<div><p className="text-xs text-muted-foreground">{isRtl ? 'المشروع' : 'Project'}</p><p className="font-medium">{viewAsset.project.name}</p></div>)}
                 {viewAsset.responsible && (<div><p className="text-xs text-muted-foreground">{isRtl ? 'المسؤول' : 'Responsible'}</p><p className="font-medium">{viewAsset.responsible.name}</p></div>)}
                 {viewAsset.createdBy && (<div><p className="text-xs text-muted-foreground">{isRtl ? 'سجّله' : 'Registered by'}</p><p className="font-medium">{viewAsset.createdBy.name}{viewAsset.createdAt ? ' • ' + new Date(viewAsset.createdAt).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US') : ''}</p></div>)}
