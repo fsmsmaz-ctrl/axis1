@@ -583,6 +583,10 @@ model CompanyAsset {
   rentalEnd      DateTime?
   responsibleId  String?
   status         String   @default("available")
+  // v106: حالة التشغيل — «هل الأصل يعمل؟» قرار صاحب الموقع. الافتراضي true
+  // لكل الأصول القديمة والجديدة حتى لا يختل سلوكها، والعمود يُنشأ ذاتياً
+  // على القاعدة القائمة عبر ensureAssetOperationalSupport
+  isOperational  Boolean  @default(true)
   notes          String?
   createdById    String?
   restoredById   String?
@@ -782,4 +786,3 @@ model LibraryFile {
   @@index([sectionId])
   @@index([libraryId])
 }
-
