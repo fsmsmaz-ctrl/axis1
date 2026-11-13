@@ -77,30 +77,36 @@ const categoryLabelsAr: Record<string, string> = {
   other: 'أخرى',
 }
 
-// v105: تسميات قسم «الأصول والمستأجرات» في لوحة التحكم — نفس تسميات صفحة
-// المعدات حرفياً (نوع الأصل / الملكية / الحالة) بلا أي مصدر جديد للحقول
-const assetTypeLabels: Record<string, string> = {
-  machine: 'آلة/ماكينة',
-  vehicle: 'مركبة',
-  tool: 'أداة',
-  pipe: 'أنابيب',
-  safety_gear: 'معدات سلامة',
-  electrical: 'معدات كهربائية',
-  other: 'أخرى',
+// v105: تسميات قسم «الأصول والمستأجرات» في لوحة التحكم
+// v107: أصبحت مطابقة لصفحة المعدات حرفياً — نفس النصوص عربي/إنجليزي ونفس
+// الاحتياطيات (نوع غير معروف = «أخرى»، حالة غير معروفة = «متاح»، ملكية غير
+// معروفة = «ملك الشركة») حتى لا يظهر الأصل الواحد بشكل مختلف بين القسم
+// واللوحة أبداً كما كان يحدث مع السجلات القديمة
+const assetTypeLabels: Record<string, { ar: string; en: string }> = {
+  machine: { ar: 'آلة/ماكينة', en: 'Machine' },
+  vehicle: { ar: 'مركبة', en: 'Vehicle' },
+  tool: { ar: 'أداة', en: 'Tool' },
+  pipe: { ar: 'أنابيب', en: 'Pipes' },
+  safety_gear: { ar: 'معدات سلامة', en: 'Safety Gear' },
+  electrical: { ar: 'معدات كهربائية', en: 'Electrical' },
+  other: { ar: 'أخرى', en: 'Other' },
 }
+const assetTypeFallback = { ar: 'أخرى', en: 'Other' }
 
-const assetOwnershipLabels: Record<string, string> = {
-  owned: 'ملك الشركة',
-  rented: 'مستأجر',
-  borrowed: 'معار',
+const assetOwnershipLabels: Record<string, { ar: string; en: string }> = {
+  owned: { ar: 'ملك الشركة', en: 'Company Owned' },
+  rented: { ar: 'مستأجر', en: 'Rented' },
+  borrowed: { ar: 'معار', en: 'Borrowed' },
 }
+const assetOwnershipFallback = { ar: 'ملك الشركة', en: 'Company Owned' }
 
-const assetStatusLabels: Record<string, { ar: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
-  available: { ar: 'متاح', variant: 'default' },
-  in_use: { ar: 'قيد الاستخدام', variant: 'secondary' },
-  returned: { ar: 'تم الإرجاع', variant: 'outline' },
-  damaged: { ar: 'متلف', variant: 'destructive' },
+const assetStatusLabels: Record<string, { ar: string; en: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
+  available: { ar: 'متاح', en: 'Available', variant: 'default' },
+  in_use: { ar: 'قيد الاستخدام', en: 'In Use', variant: 'secondary' },
+  returned: { ar: 'تم الإرجاع', en: 'Returned', variant: 'outline' },
+  damaged: { ar: 'متلف', en: 'Damaged', variant: 'destructive' },
 }
+const assetStatusFallback = { ar: 'متاح', en: 'Available', variant: 'default' as const }
 
 const assetStatusColors: Record<string, string> = {
   available: 'bg-emerald-100 text-emerald-600',
@@ -144,7 +150,9 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
       // should see a retry button rather than staring at a spinner forever.
       const controller = new AbortController()
       const timeout = setTimeout(() => controller.abort(), 15000)
-      const r = await authedFetch('/api/dashboard?costsPeriod=' + costsPeriod, { signal: controller.signal })
+      // v107: جلب حي دائماً — بلا ذاكرة متصفح ومع طابع زمني، تماماً مثل صفحة
+      // المعدات، حتى لا تعرض اللوحة قائمة/أرقاماً قديمة بعد أي تعديل في القسم
+      const r = await authedFetch('/api/dashboard?costsPeriod=' + costsPeriod + '&_t=' + Date.now(), { signal: controller.signal, cache: 'no-store' })
       clearTimeout(timeout)
       if (!r.ok) {
         const body = await r.json().catch(function() { return {} })
@@ -750,20 +758,30 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
                 {isRtl ? 'متوقفة' : 'Not working'}: {assetsSummary.notWorking}
               </span>
               <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                {isRtl ? 'ملك' : 'Owned'}: {assetsSummary.owned} • {isRtl ? 'مستأجر' : 'Rented'}: {assetsSummary.rented} • {isRtl ? 'معار' : 'Borrowed'}: {assetsSummary.borrowed}
+                {isRtl ? 'ملك الشركة' : 'Owned'}: {assetsSummary.owned} • {isRtl ? 'مستأجر' : 'Rented'}: {assetsSummary.rented} • {isRtl ? 'معار' : 'Borrowed'}: {assetsSummary.borrowed}
               </span>
             </div>
-            <div className="space-y-2 max-h-72 overflow-y-auto">
+            {/* v107: البطاقة أطول + إرشاد واضح — كانت الأصول الأقدم مخفية خلف
+                التمرير فتبدو «غير موجودة» مقارنة بقسم المعدات الذي يعرض الكل */}
+            <div className="space-y-2 max-h-[420px] overflow-y-auto">
             {companyAssets.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground text-sm">
                 {isRtl ? 'لا توجد أصول أو مستأجرات' : 'No assets or rentals'}
               </div>
             ) : (
               companyAssets.map(function(a) {
-                var st = assetStatusLabels[a.status] || { ar: a.status || '-', variant: 'secondary' as const }
-                var ownership = assetOwnershipLabels[a.ownership] || a.ownership || '-'
-                var type = assetTypeLabels[a.itemType] || a.itemType || '-'
+                // v107: نفس تسميات صفحة المعدات ونفس احتياطياتها حرفياً
+                var st = assetStatusLabels[a.status] || assetStatusFallback
+                var ownership = assetOwnershipLabels[a.ownership] || assetOwnershipFallback
+                var type = assetTypeLabels[a.itemType] || assetTypeFallback
                 var isWorking = a.isOperational !== false
+                var qty = Number(a.quantity) || 1
+                // v107: نفس تفاصيل صف الأصل في القسم — الجهة/المسؤول/الإيجار/الإرجاع
+                var extras: string[] = []
+                if (a.supplier) extras.push((isRtl ? 'الجهة: ' : 'From: ') + a.supplier)
+                if (a.responsible && a.responsible.name) extras.push((isRtl ? 'المسؤول: ' : 'Responsible: ') + a.responsible.name)
+                if (a.ownership === 'rented' && Number(a.rentalCost) > 0) extras.push(a.rentalCost + ' ' + (isRtl ? 'ر.ع/شهر' : 'OMR/mo'))
+                if (a.ownership === 'borrowed' && a.rentalEnd) extras.push((isRtl ? 'الإرجاع: ' : 'Return: ') + new Date(a.rentalEnd).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US'))
                 return (
                   <div key={a.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 transition">
                     <div className={'w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ' +
@@ -775,9 +793,12 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-sm truncate">{a.name}</p>
                       <p className="text-xs text-muted-foreground truncate">
-                        {type} • {ownership}{a.quantity && Number(a.quantity) > 1 ? ' • ×' + a.quantity : ''}
+                        {(isRtl ? type.ar : type.en)} • {(isRtl ? ownership.ar : ownership.en)} • ×{qty}
                         {a.project?.name ? ' • ' + a.project.name : ''}
                       </p>
+                      {extras.length > 0 && (
+                        <p className="text-[11px] text-muted-foreground/80 truncate">{extras.join(' • ')}</p>
+                      )}
                     </div>
                     {/* v106: شارة التشغيل — تعمل/متوقفة بوضوح لكل أصل */}
                     <Badge className={isWorking
@@ -786,13 +807,20 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
                       {isWorking ? (isRtl ? 'تعمل' : 'Working') : (isRtl ? 'متوقفة' : 'Not working')}
                     </Badge>
                     <Badge variant={st.variant} className="text-xs shrink-0">
-                      {isRtl ? st.ar : a.status}
+                      {isRtl ? st.ar : st.en}
                     </Badge>
                   </div>
                 )
               })
             )}
             </div>
+            {companyAssets.length > 6 && (
+              <p className="text-center text-[11px] text-muted-foreground pt-1 border-t">
+                {isRtl
+                  ? 'مرّر داخل البطاقة لعرض بقية الأصول — كلها معروضة بالترتيب من الأحدث إلى الأقدم'
+                  : 'Scroll inside the card to see the rest — all assets listed, newest first'}
+              </p>
+            )}
           </CardContent>
         </Card>
       </div>
