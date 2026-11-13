@@ -40,9 +40,12 @@ export async function GET(req: NextRequest) {
   // v74: إصلاح قنبلة الحمولة — القائمة كانت تُرسل صور الأصول (base64) مع كل سجل
   // (حتى 200 سجل × نحو 150KB ≈ عشرات الميغابايت). الآن: القائمة خفيفة بلا صور
   // + علم hasImage، والصورة تُجلب عند الطلب من GET /api/company-assets/[id]
+  // v107: أُلغي حد 500 سجل — كانت الأصول الأقدم من الحد تختفي من قائمة
+  // القسم بينما اللوحة تعرضها بلا حد، فتختلف الأرقام والقوائم بين الطرفين.
+  // الآن الطرفان يعرضان نفس مجموعة الأصول كاملة مهما كان عددها.
   const result = await safeDbOp(
     () => db.companyAsset.findMany({
-      where, orderBy: { createdAt: 'desc' }, take: 500,
+      where, orderBy: { createdAt: 'desc' },
       select: {
         id: true, projectId: true, name: true, itemType: true, quantity: true,
         ownership: true, supplier: true, rentalCost: true, rentalStart: true,
