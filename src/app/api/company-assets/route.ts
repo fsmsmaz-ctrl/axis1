@@ -4,7 +4,7 @@ import { db } from '@/lib/db'
 import { handleDbError, validateRequired, parseNumber, safeDbOp, validImageDataUrl } from '@/lib/api-helpers'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 import { canWrite, hasPermission, normalizeRole } from '@/lib/auth'
-import { ensureCompanyAssetFk, ensureCompanyAssetRestoreMeta, ensureMediaSupport, ensureEquipmentLogSupport } from '@/lib/db-selfheal'
+import { ensureCompanyAssetFk, ensureCompanyAssetRestoreMeta, ensureMediaSupport, ensureEquipmentLogSupport, ensureAssetOperationalSupport } from '@/lib/db-selfheal'
 import { logAssetChange } from '@/lib/api-helpers'
 
 export async function GET(req: NextRequest) {
@@ -25,6 +25,9 @@ export async function GET(req: NextRequest) {
   // يعالج خطأ «قاعدة البيانات غير مهيأة» عندما لا تكون التراخيم مطبقة بعد
   await ensureCompanyAssetRestoreMeta()
 
+  // v106: شفاء ذاتي — عمود حالة التشغيل isOperational قبل أي قراءة/كتابة
+  await ensureAssetOperationalSupport()
+
   const searchParams = new URL(req.url).searchParams
   const projectId = searchParams.get('projectId')
   const ownership = searchParams.get('ownership')
@@ -39,11 +42,13 @@ export async function GET(req: NextRequest) {
   // + علم hasImage، والصورة تُجلب عند الطلب من GET /api/company-assets/[id]
   const result = await safeDbOp(
     () => db.companyAsset.findMany({
-      where, orderBy: { createdAt: 'desc' }, take: 200,
+      where, orderBy: { createdAt: 'desc' }, take: 500,
       select: {
         id: true, projectId: true, name: true, itemType: true, quantity: true,
         ownership: true, supplier: true, rentalCost: true, rentalStart: true,
-        rentalEnd: true, responsibleId: true, status: true, notes: true,
+        rentalEnd: true, responsibleId: true, status: true,
+        isOperational: true, // v106: هل الأصل يعمل؟
+        notes: true,
         createdById: true, restoredById: true, restoredAt: true,
         createdAt: true, updatedAt: true,
         project: { select: { id: true, name: true, code: true } },
@@ -88,11 +93,14 @@ export async function GET(req: NextRequest) {
   const rentedCount = assets.filter(function(a: any) { return a.ownership === 'rented' }).length
   const borrowedCount = assets.filter(function(a: any) { return a.ownership === 'borrowed' }).length
   var totalRentalCost = assets.reduce(function(s: number, a: any) { return s + (a.rentalCost || 0) }, 0)
+  // v106: إحصاء التشغيل — الأصل بلا قيمة (سجل قديم قبل وصول العمود) يُعامل كعامل
+  var workingCount = assets.filter(function(a: any) { return a.isOperational !== false }).length
+  var notWorkingCount = assets.length - workingCount
 
   // v83: أُلغي تعقيم قيم الإيجار عن مسؤول السلامة — قرار صاحب الموقع:
   // مَن يسجّل معدة/أصلاً يُدخل كافة بياناتها ومن ضمنها الأسعار، والمساءلة عبر المفكرة
 
-  return NextResponse.json({ assets, stats: { ownedCount, rentedCount, borrowedCount, totalRentalCost } })
+  return NextResponse.json({ assets, stats: { ownedCount, rentedCount, borrowedCount, totalRentalCost, workingCount, notWorkingCount } })
 }
 
 export async function POST(req: NextRequest) {
@@ -115,6 +123,8 @@ export async function POST(req: NextRequest) {
 
     // v43: الاستعادة تحافظ على هوية الأصل الأصلي — نفس تاريخ التسجيل واسم منشئه الأصلي،
     // ومن أجرى الاستعادة يُسجَّل في حقول منفصلة (restoredBy/restoredAt) لا تحل محل المنشئ الأصلي أبداً.
+    // v106: شفاء ذاتي قبل أي كتابة/قراءة كاملة الصف
+    await ensureAssetOperationalSupport()
     var restoreMeta: { createdAt: Date; createdById: string | null } | null = null
     var isRestorer = normalizeRole(user.role) === 'top_management' || normalizeRole(user.role) === 'project_manager' || user.isSystemAdmin === true
     if (isRestorer && body.restore && typeof body.restore === 'object') {
@@ -138,7 +148,7 @@ export async function POST(req: NextRequest) {
 
     const createResult = await safeDbOp(
       () => db.companyAsset.create({
-        data: { projectId: body.projectId || null, name: String(body.name).trim(), itemType: String(body.itemType), quantity: parseInt(body.quantity) || 1, ownership: String(body.ownership), supplier: body.supplier ? String(body.supplier).trim() : null, rentalCost: body.rentalCost ? parseFloat(body.rentalCost) : null, rentalStart: body.rentalStart ? new Date(body.rentalStart) : null, rentalEnd: body.rentalEnd ? new Date(body.rentalEnd) : null, responsibleId: body.responsibleId || null, status: String(body.status || 'available'), notes: body.notes ? String(body.notes).slice(0, 2000) : null, createdAt: restoreMeta ? restoreMeta.createdAt : undefined, createdById: restoreMeta ? restoreMeta.createdById : user.id, restoredById: restoreMeta ? user.id : null, restoredAt: restoreMeta ? new Date() : null, image: validImageDataUrl(body.image) },
+        data: { projectId: body.projectId || null, name: String(body.name).trim(), itemType: String(body.itemType), quantity: parseInt(body.quantity) || 1, ownership: String(body.ownership), supplier: body.supplier ? String(body.supplier).trim() : null, rentalCost: body.rentalCost ? parseFloat(body.rentalCost) : null, rentalStart: body.rentalStart ? new Date(body.rentalStart) : null, rentalEnd: body.rentalEnd ? new Date(body.rentalEnd) : null, responsibleId: body.responsibleId || null, status: String(body.status || 'available'), isOperational: !(body.isOperational === false || body.isOperational === 'false' || body.isOperational === 'no'), notes: body.notes ? String(body.notes).slice(0, 2000) : null, createdAt: restoreMeta ? restoreMeta.createdAt : undefined, createdById: restoreMeta ? restoreMeta.createdById : user.id, restoredById: restoreMeta ? user.id : null, restoredAt: restoreMeta ? new Date() : null, image: validImageDataUrl(body.image) },
         include: { createdBy: { select: { id: true, name: true } }, restoredBy: { select: { id: true, name: true } } },
       }), 'إنشاء الأصل'
     )
