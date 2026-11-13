@@ -15,12 +15,14 @@ import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   Cell
 } from 'recharts'
-import { Plus, DollarSign, TrendingUp, TrendingDown, Wallet, BarChart3, Search, FileText, Filter, History } from 'lucide-react'
+import { Plus, DollarSign, TrendingUp, TrendingDown, Wallet, BarChart3, Search, FileText, Filter, History, Upload } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
-import { SYSTEM_ADMIN_EMAIL, canViewPricing } from '@/lib/auth'
+import { SYSTEM_ADMIN_EMAIL, canViewPricing, canWrite } from '@/lib/auth'
 import { localTodayISO } from '@/lib/utils'
 import { toast } from 'sonner'
+// v110: نافذة رفع ملف الفواتير — مكوّن مستقل تماماً (إضافة بحتة لا يمس أي منطق قائم)
+import InvoiceImportDialog from '@/components/costs/invoice-import-dialog'
 
 const categoryLabels: Record<string, { ar: string; en: string }> = {
   labor: { ar: 'أجور العمال', en: 'Labor' },
@@ -65,6 +67,8 @@ export default function CostsPage() {
   const [loading, setLoading] = useState(true)
   const [selectedProject, setSelectedProject] = useState<string>('all')
   const [dialogOpen, setDialogOpen] = useState(false)
+  // v110: نافذة رفع ملف الفواتير (استيراد إكسل تلقائي إلى التكاليف)
+  const [importOpen, setImportOpen] = useState(false)
   const [editingCostId, setEditingCostId] = useState<string | null>(null)
   const language = useAppStore((s) => s.language)
   const isRtl = language === 'ar'
@@ -73,6 +77,9 @@ export default function CostsPage() {
   const isAdmin = ((user && user.email) || '').toLowerCase().trim() === SYSTEM_ADMIN_EMAIL
   // v70: الإيراد يُحسب من dailyRevenue الذي يفرغه الخادم لغير المصرح لهم — البطاقات كانت تعرض أرقاماً خاطئة (صفر/خسارة وهمية) بدل إخفائها
   const seePricing = !!(user && canViewPricing(user))
+  // v110: زر «رفع ملف فواتير» يظهر لمن يملك صلاحية كتابة التكاليف —
+  // نفس بوابة الخادم تماماً (نمط drive-lines-page) فلا يرى الزر من لا يستطيع استخدامه
+  const canImport = !!(user && canWrite(user.role, 'costs', user.permissions))
 
   const [revenue, setRevenue] = useState(0)
   // v80: تمييز فشل جلب الإيراد عن الإيراد الصفري الحقيقي — فشل الجلب لا يعني خسارة!
@@ -383,6 +390,13 @@ export default function CostsPage() {
             <Button variant="outline" onClick={function() { setRestoreScan(null); setRestoreOpen(true); runRestoreScan() }} className="shadow-sm">
               <History className="h-4 w-4 ml-2" />
               {isRtl ? 'استرجاع فواتير محذوفة' : 'Restore invoices'}
+            </Button>
+          )}
+          {/* v110: رفع ملف الفواتير — استيراد إكسل تلقائي إلى التكاليف */}
+          {canImport && (
+            <Button variant="outline" onClick={function() { setImportOpen(true) }} className="shadow-sm border-emerald-600/40 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10">
+              <Upload className="h-4 w-4 ml-2" />
+              {isRtl ? 'رفع ملف فواتير' : 'Upload invoices file'}
             </Button>
           )}
           <Button onClick={function() {
@@ -896,6 +910,14 @@ export default function CostsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* v110 نافذة رفع ملف الفواتير — مكوّن مستقل، لا يمس أي نافذة قائمة */}
+      <InvoiceImportDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        projects={projects}
+        onImported={fetchCosts}
+      />
     </div>
   )
 }
