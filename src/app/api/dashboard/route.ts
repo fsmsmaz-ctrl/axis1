@@ -94,7 +94,10 @@ export async function GET(req: NextRequest) {
     // استثناء المشرف العام من الأسعار يبقى سارياً في بقية الأقسام عبر
     // canViewPricing دون أي تغيير — هذا التعديل محصور بلوحة التحكم فقط.
     const canSeePrice = canViewPricing(user) || canAccessDashboard(user)
-    const payload = await cached(cacheKey, 30_000, () => buildDashboard(canSeePrice, costsPeriod))
+    // v107: عمر ذاكرة اللوحة خُفّض من 30 ثانية إلى 10 ثوانٍ — كان الخادم
+    // يعيد قائمة الأصول القديمة حتى 30 ثانية بعد أي إضافة/تعديل/حذف في قسم
+    // المعدات، فتبدو بيانات اللوحة «غير دقيقة» مقارنة بالقسم.
+    const payload = await cached(cacheKey, 10_000, () => buildDashboard(canSeePrice, costsPeriod))
 
     // Helpful for debugging latency issues from the client.
     const duration = Date.now() - startedAt
@@ -102,9 +105,11 @@ export async function GET(req: NextRequest) {
       { ...payload, _meta: { durationMs: duration, cached: duration > 30 } },
       {
         headers: {
-          // Allow the browser to reuse the response for 15s while we
-          // revalidate server-side.
-          'Cache-Control': 'private, max-age=15, stale-while-revalidate=30',
+          // v107: بلا تخزين في المتصفح — كل فتح للوحة يجلب البيانات الحية
+          // من الخادم. كانت ذاكرة المتصفح (15-45 ثانية) تعيد قائمة أصول
+          // وأرقاماً قديمة بعد التعديل في قسم المعدات. حماية قاعدة البيانات
+          // من الضغط تبقى بذاكرة الخادم القصيرة (10 ثوانٍ) أعلاه.
+          'Cache-Control': 'private, no-store',
         },
       }
     )
@@ -268,6 +273,12 @@ async function buildDashboard(canSeePrice: boolean, costsPeriod: 'month' | 'year
         isOperational: true, // v106: هل الأصل يعمل؟
         quantity: true,
         project: { select: { name: true } },
+        // v107: نفس تفاصيل صفحة المعدات — الجهة/المسؤول/الإيجار/تاريخ الإرجاع
+        // حتى يُعرَف كل أصل في اللوحة بنفس ما يُعرَف في القسم بلا أي اختلاف
+        supplier: true,
+        rentalCost: true,
+        rentalEnd: true,
+        responsible: { select: { name: true, nameEn: true } },
       },
       orderBy: { createdAt: 'desc' },
     }),
