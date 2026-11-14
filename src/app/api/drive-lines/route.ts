@@ -5,8 +5,9 @@ import { db } from '@/lib/db'
 import { handleDbError, validateRequired, parseNumber, safeDbOp, sanitizeDriveLine, roundMeters, roundMoney } from '@/lib/api-helpers'
 import { canWrite, hasPermission, canViewPricing } from '@/lib/auth'
 import { ensureDriveLineDates } from '@/lib/db-selfheal'
-// v114: خوارزمية «فاتورة المقاول» الآلية — فاتورة لكل 10 أمتار محفورة في كل خط
-import { syncContractorInvoices } from '@/lib/contractor-invoices'
+// v116: فواتير المقاول — توليد مقترحات بانتظار الموافقة (بدون تسجيل آلي)
+// + التنظيف الرجعي لفواتير v114 الآلية عند فتح القسم
+import { maintainContractorInvoices } from '@/lib/contractor-invoices'
 import { notifyUsers } from '@/lib/notify'
 
 export async function GET(req: NextRequest) {
@@ -39,13 +40,13 @@ export async function GET(req: NextRequest) {
     // يُكمل المعالجة الشاملة (كل الخطوط الموجودة من تقاريرها المعتمدة) قبل العرض
     await ensureDriveLineDates()
 
-    // v114: مزامنة «فاتورة المقاول» — فاتورة لكل 10 أمتار من كل خط حفر
-    // (شاملة الخطوط القديمة والمنتهية). مُقيَّدة زمنياً داخلياً (60 ثانية)
-    // وأي خلل داخلي لا يمنع جلب الخطوط أبداً.
+    // v116: التنظيف الرجعي لفواتير v114 الآلية — لم تعد الخوارزمية تسجل
+    // أي فاتورة تلقائياً؛ المقترحات تنتظر إدخال السعر والاعتماد من النافذة.
+    // مُقيَّدة زمنياً داخلياً (60 ثانية) وأي خلل داخلي لا يمنع جلب الخطوط أبداً.
     try {
-      await syncContractorInvoices()
+      await maintainContractorInvoices()
     } catch (e) {
-      console.error('[drive-lines GET] contractor-invoices sync failed (non-fatal):', e)
+      console.error('[drive-lines GET] contractor-invoices maintenance failed (non-fatal):', e)
     }
 
     const result = await safeDbOp(
