@@ -1,127 +1,82 @@
 // ============================================================
-// v114 — خوارزمية «فاتورة المقاول» الآلية
+// v116 — «فاتورة المقاول»: توليد آلي + موافقة بشرية قبل التسجيل
 // AXIS Pipe Jacking Management System
 // ============================================================
-// الفكرة:
-//   كل 10 أمتار محفورة في أي خط حفر = فاتورة تكلفة واحدة باسم
-//   «فاتورة المقاول» تُسجَّل آلياً في قسم الإيرادات والتكاليف
-//   (جدول Cost الحالي) دون أي تدخل بشري — وتعمل رجعياً على
-//   الخطوط القديمة والمنتهية من أول تشغيل.
+// التعديل على v114 (طلب صاحب الموقع):
+//   لم تعد الفواتير تُسجَّل تلقائياً في التكاليف. النظام يولّد
+//   «مقترحات فواتير» لكل 10 أمتار من كل خط حفر (شاملة الخطوط
+//   القديمة والمنتهية) ويرسلها إلى نافذة منبثقة خاصة في قسم
+//   الإيرادات والتكاليف؛ يقرأ الموظف كل فاتورة ويدخل السعر يدوياً
+//   ويوافق عليها، وبعد الموافقة فقط تُسجَّل كفاتورة عادية ضمن
+//   الفواتير في القسم.
 //
-// قواعد الحساب:
-//   1) الأمتار المحفورة لكل خط = نفس الطريقة المعتمدة في النظام
-//      (أقصى endReading أو مجموع الأمتار اليومية من تقارير الخط) —
-//      وهي نفسها التي تظهر كنسبة إنجاز في قسم خطوط الحفر.
-//   2) سعر المتر = سعر متر الخط، وإن كان فارغاً يُلجأ لسعر متر
-//      المشروع (نفس قاعدة حساب الإيراد). خط بلا سعر إطلاقاً =
-//      يُتخطى حتى يُدخل سعره ثم تصدر فواتيره في المزامنة التالية.
-//   3) كل مقطع كامل (10 م) = فاتورة بمبلغ 10 × سعر المتر، وتاريخها
-//      هو تاريخ التقرير اليومي الذي عبر فيه الحفر نهاية المقطع
-//      (فالفواتير القديمة تأخذ تواريخها الحقيقية من تقاريرها).
-//   4) الخط المنتهي (حالته «مكتمل» أو وصل الحفر طوله الكلي) يصدر
-//      فاتورة أخيرة للباقي غير المكتمل — مثال: 47 م مكتمل =
-//      4 فواتير كاملة (10+10+10+10 م) + فاتورة أخيرة لـ 7 أمتار.
+// قواعد الحساب (كما في v114 بدون تغيير):
+//   1) الأمتار المحفورة = نفس صيغة النظام المعتمدة (أقصى endReading
+//      أو مجموع الأمتار اليومية من تقارير الخط).
+//   2) سعر المتر = سعر متر الخط وإلا سعر متر المشروع — يُعرض
+//      كـ«مقترح آلي» إرشادي فقط، والسعر النهائي يُدخله الموظف يدوياً.
+//   3) كل مقطع كامل (10 م) = مقترح فاتورة، وتاريخه يوم عبور نهاية
+//      المقطع في تقارير الحفر (فالمقترحات القديمة تأخذ تواريخها
+//      الحقيقية).
+//   4) الخط المنتهي يولّد مقترح «فاتورة أخيرة» للباقي غير المكتمل
+//      (مثال: 47 م مكتمل = 4 مقترحات كاملة + مقترح أخير لـ 7 أمتار).
 //   5) خطوط قديمة مكتملة بلا أي تقارير: يُعتمد طولها الكلي كمقدار
-//      حفر (وهو الواقع الهندسي لخط منتهٍ) حتى لا تفوتهم الفواتير.
+//      حفر (الواقع الهندسي لخط منتهٍ) حتى لا تفوتهم المقترحات.
 //
-// منع التكرار (Idempotency):
-//   كل فاتورة آلية تحمل في حقل الملاحظات بصمة ثابتة بالشكل:
-//   «فاتورة مقاول آلية #<معرف الخط>#<رقم المقطع أو tail>»
-//   المزامنة تقارن المطلوب بالموجود فتُنشئ الناقص فقط، وتصحح
-//   مبالغ/تواريخ/أوصاف ما تغيّرت بياناته، وتحذف الزائد (بعد تصحيح
-//   قراءات نزّل الأمتار أو حذف خط) وتنظف أي نسخ مكررة نتجت عن
-//   تزامن لحظي بين خادمَين. الفواتير اليدوية (بلا البصمة) لا تُمس
-//   نهائياً.
+// حذف فواتير v114 القديمة (تنظيف رجعي):
+//   كل ما سجلته خوارزمية v114 آلياً يحمل البصمة القديمة
+//   «فاتورة مقاول آلية #» — تُحذف هذه الصفوف كلها من القاعدة
+//   تلقائياً عند أول تشغيل بعد النشر وبلا أي تدخل بشري. التكرار
+//   لاحقاً يحذف صفراً لأن v116 لا ينشئ بهذه البصمة أبداً.
 //
-// التشغيل التلقائي:
-//   - عند فتح قسم الإيرادات والتكاليف (قبل الجلب مباشرة)
-//   - عند فتح قسم خطوط الحفر
-//   - عبر مسار cron يومي: GET /api/cron/contractor-invoices (vercel.json)
-//   مقيَّدة بـ 60 ثانية بين التشغيلات داخل نفس الخادم + قفل تشغيل واحد،
-//   وأي خطأ داخلي لا يُفشل العملية المستدعية أبداً.
+// منع التكرار:
+//   الفاتورة المعتمدة يدوياً تحمل بصمة «فاتورة مقاول معتمدة #» +
+//   معرف الخط ورقم المقطع؛ المقطع المعتمد لا يُقترح مرة أخرى،
+//   والفواتير اليدوية الأخرى (بلا بصمة) لا تُمس نهائياً. قبل إنشاء
+//   أي فاتورة يُعاد التحقق من صلاحية المقطع ببيانات الحفر الحالية —
+//   فإن تغيرت البيانات يُرد الاعتماد برسالة واضحة بدل تسجيل خاطئ.
+//
+// التشغيل:
+//   - التنظيف الرجعي: عند فتح قسم الإيرادات والتكاليف، وفتح قسم
+//     خطوط الحفر، وعبر مسار cron اليومي (مُقيَّد 60 ثانية).
+//   - قائمة المقترحات: GET /api/contractor-invoices.
+//   - الاعتماد: POST /api/contractor-invoices (صلاحية كتابة التكاليف).
 // ============================================================
 
 import { db, invalidateCachePrefix } from '@/lib/db'
 import { roundMeters, roundMoney } from '@/lib/api-helpers'
 import { notifyUsers } from '@/lib/notify'
 
-/** طول المقطع الواحد الذي تصدر عنه فاتورة (بالأمتار) */
+/** طول المقطع الواحد الذي يولَّد عنه مقترح فاتورة (بالأمتار) */
 export const CONTRACTOR_SEGMENT_METERS = 10
 
 /**
- * البصمة الثابتة في حقل ملاحظات الفاتورة الآلية.
- * تحذير: لا تعدّل نصها بعد الإطلاق — بها تُعرَّف فواتير النظام
- * ولا تُمس الفواتير اليدوية.
+ * بصمة فواتير v114 الآلية القديمة — كل صف يحملها يُحذف تلقائياً
+ * (تنظيف v116 الرجعي). لا ينشئها النظام بعد v115 إطلاقاً.
  */
-export const CONTRACTOR_INVOICE_MARKER = 'فاتورة مقاول آلية #'
+export const CONTRACTOR_LEGACY_MARKER = 'فاتورة مقاول آلية #'
 
-/** فئة التكلفة المخصصة لفواتير المقاول الآلية */
+/**
+ * بصمة الفواتير المعتمدة يدوياً (v116). تحذير: لا تعدّل نصها بعد
+ * الإطلاق — بها يُمنع اقتراح المقطع المعتمد مرة أخرى.
+ */
+export const CONTRACTOR_INVOICE_MARKER = 'فاتورة مقاول معتمدة #'
+
+/** فئة التكلفة المخصصة لفواتير المقاول */
 export const CONTRACTOR_COST_CATEGORY = 'contractor'
 
-export interface ContractorInvoiceSyncResult {
-  ran: boolean
-  created: number
-  updated: number
-  deleted: number
-  createdAmount: number
-  linesChecked: number
-  skippedNoPrice: number
-  skipped?: 'throttled'
-  error?: string
-}
+/** سقف عدد المقترحات المعادة للنافذة (حماية من قوائم عملاقة) */
+const MAX_PENDING_RETURNED = 500
+
+/** المدة الدنيا بين تشغيلتين داخل نفس الخادم */
+const MIN_INTERVAL_MS = 60_000
+
+// ── أدوات حسابية صرفة ──
 
 interface LineReportRow {
   date: Date
   inc: number
 }
-
-interface NeededInvoice {
-  projectId: string | null
-  segKey: string
-  amount: number
-  date: Date
-  description: string
-}
-
-// ── حالة المزامنة داخل الخادم (منع الازدواج والاندفاع) ──
-const syncState: { lastRunAt: number; running: Promise<ContractorInvoiceSyncResult> | null } = {
-  lastRunAt: 0,
-  running: null,
-}
-const MIN_INTERVAL_MS = 60_000
-
-/**
- * تشغيل مزامنة فواتير المقاول (آمنة للاستدعاء المتكرر).
- * - force: تجاوز مهلة الـ 60 ثانية (لمسار cron اليومي).
- */
-export async function syncContractorInvoices(opts?: { force?: boolean }): Promise<ContractorInvoiceSyncResult> {
-  if (syncState.running) return syncState.running
-  if (!opts?.force && Date.now() - syncState.lastRunAt < MIN_INTERVAL_MS) {
-    return { ran: false, created: 0, updated: 0, deleted: 0, createdAmount: 0, linesChecked: 0, skippedNoPrice: 0, skipped: 'throttled' }
-  }
-
-  syncState.running = runSync()
-    .then(function (res) {
-      syncState.lastRunAt = Date.now()
-      return res
-    })
-    .catch(function (err: any) {
-      syncState.lastRunAt = Date.now()
-      console.error('[contractor-invoices] sync failed:', err)
-      return {
-        ran: true, created: 0, updated: 0, deleted: 0, createdAmount: 0,
-        linesChecked: 0, skippedNoPrice: 0,
-        error: String((err && err.message) || err),
-      } as ContractorInvoiceSyncResult
-    })
-    .finally(function () {
-      syncState.running = null
-    })
-
-  return syncState.running
-}
-
-// ── أدوات حسابية صرفة ──
 
 function sumIncrements(rows: LineReportRow[]): number {
   var total = 0
@@ -129,7 +84,7 @@ function sumIncrements(rows: LineReportRow[]): number {
   return total
 }
 
-/** تاريخ أول تقرير عبر فيه الحفر التراكمي حدّ targetMeters (تاريخ إصدار الفاتورة الطبيعي) */
+/** تاريخ أول تقرير عبر فيه الحفر التراكمي حدّ targetMeters (تاريخ الفاتورة الطبيعي) */
 function crossingDate(rows: LineReportRow[], targetMeters: number): Date | null {
   var cumulative = 0
   for (var i = 0; i < rows.length; i++) {
@@ -139,19 +94,160 @@ function crossingDate(rows: LineReportRow[], targetMeters: number): Date | null 
   return null
 }
 
-/** استخراج بصمة الفاتورة الآلية من نص الملاحظات — null يعني «ليست فاتورة آلية» */
-function parseAutoToken(notes: string | null | undefined): string | null {
+/** استخراج بصمة الفاتورة المعتمدة من نص الملاحظات — null يعني «ليست منها» */
+function parseApprovedToken(notes: string | null | undefined): string | null {
   if (!notes || notes.indexOf(CONTRACTOR_INVOICE_MARKER) !== 0) return null
   var rest = notes.slice(CONTRACTOR_INVOICE_MARKER.length)
   return rest.length > 0 ? rest : null
 }
 
-// ── جسم المزامنة ──
+// ════════════════════════════════════════════════════════════
+// 1) التنظيف الرجعي — حذف فواتير v114 الآلية من القاعدة
+// ════════════════════════════════════════════════════════════
 
-async function runSync(): Promise<ContractorInvoiceSyncResult> {
-  var result: ContractorInvoiceSyncResult = { ran: true, created: 0, updated: 0, deleted: 0, createdAmount: 0, linesChecked: 0, skippedNoPrice: 0 }
+export interface ContractorMaintenanceResult {
+  ran: boolean
+  deleted: number
+  skipped?: 'throttled'
+  error?: string
+}
 
-  // 1) الخطوط وأسعار المشاريع (الاحتياطي) — قراءتان خفيفتان
+const maintainState: { lastRunAt: number; running: Promise<ContractorMaintenanceResult> | null } = {
+  lastRunAt: 0,
+  running: null,
+}
+
+/**
+ * تنظيف رجعي: يحذف كل فواتير v114 الآلية من القاعدة تلقائياً.
+ * آمن للاستدعاء المتكرر: بعد أول تشغيل ناجح لا يبقى شيء بهذه
+ * البصمة، وفواتير v116 المعتمدة ببصمة أخرى فلا تمسها العملية أبداً.
+ * force: تجاوز مهلة الـ 60 ثانية (لمسار cron اليومي).
+ */
+export async function maintainContractorInvoices(opts?: { force?: boolean }): Promise<ContractorMaintenanceResult> {
+  if (maintainState.running) return maintainState.running
+  if (!opts?.force && Date.now() - maintainState.lastRunAt < MIN_INTERVAL_MS) {
+    return { ran: false, deleted: 0, skipped: 'throttled' }
+  }
+
+  maintainState.running = runMaintain()
+    .then(function (res) {
+      maintainState.lastRunAt = Date.now()
+      return res
+    })
+    .catch(function (err: any) {
+      maintainState.lastRunAt = Date.now()
+      console.error('[contractor-invoices] maintenance failed:', err)
+      return { ran: true, deleted: 0, error: String((err && err.message) || err) } as ContractorMaintenanceResult
+    })
+    .finally(function () {
+      maintainState.running = null
+    })
+
+  return maintainState.running
+}
+
+async function runMaintain(): Promise<ContractorMaintenanceResult> {
+  // حذف كل ما سجلته خوارزمية v114 آلياً (بالبصمة القديمة) — مرة واحدة تكفي،
+  // والتكرار لاحقاً يحذف صفراً لأن v116 لا ينشئ بهذه البصمة أبداً.
+  var deletedRes = await db.cost.deleteMany({
+    where: { notes: { startsWith: CONTRACTOR_LEGACY_MARKER } },
+  })
+  var deleted = deletedRes.count
+  if (deleted > 0) {
+    invalidateCachePrefix('dashboard:')
+    try {
+      await db.auditLog.create({
+        data: {
+          userId: null,
+          action: 'delete',
+          entity: 'cost',
+          entityId: 'contractor-invoices-legacy-cleanup',
+          details: 'تحديث v116: حُذفت ' + deleted + ' فاتورة مقاول كانت تُسجَّل آلياً — وبموجب السياسة الجديدة لا تُسجَّل أي فاتورة إلا بعد إدخال السعر يدوياً واعتمادها من الموظف، والمقترحات تظهر في نافذة فواتير المقاول بقسم الإيرادات والتكاليف.',
+        },
+      })
+    } catch (e) {
+      console.error('[contractor-invoices] cleanup audit log failed', e)
+    }
+  }
+  return { ran: true, deleted: deleted }
+}
+
+// ════════════════════════════════════════════════════════════
+// 2) قائمة المقترحات بانتظار الموافقة (لا تسجيل هنا إطلاقاً)
+// ════════════════════════════════════════════════════════════
+
+export interface PendingContractorInvoice {
+  /** بصمة المقطع: <معرف الخط>#<رقم المقطع أو tail> */
+  token: string
+  lineId: string
+  lineNumber: string
+  projectId: string | null
+  projectName: string
+  segmentLabel: string
+  meters: number
+  /** سعر مقترح إرشادي (المقطع × سعر المتر) — النهائي يُدخله الموظف */
+  suggestedAmount: number
+  dateISO: string
+  isFinal: boolean
+}
+
+export interface ContractorPendingResult {
+  ran: boolean
+  pending: PendingContractorInvoice[]
+  count: number
+  truncated: boolean
+  skippedNoPrice: number
+  linesChecked: number
+  skipped?: 'throttled'
+  error?: string
+}
+
+const pendingState: {
+  lastRunAt: number
+  running: Promise<ContractorPendingResult> | null
+  last: ContractorPendingResult | null
+} = { lastRunAt: 0, running: null, last: null }
+
+/**
+ * حساب مقترحات فواتير المقاول غير المعتمدة بعد (قراءة فقط — لا
+ * تسجيل). عند التقييد الزمني تُعاد آخر نتيجة ناجحة بدل قائمة فارغة
+ * حتى لا تظهر النافذة خالية زوراً.
+ */
+export async function listPendingContractorInvoices(opts?: { force?: boolean }): Promise<ContractorPendingResult> {
+  if (pendingState.running) return pendingState.running
+  if (!opts?.force && Date.now() - pendingState.lastRunAt < MIN_INTERVAL_MS && pendingState.last) {
+    var cached = pendingState.last
+    return Object.assign({}, cached, { ran: false, skipped: 'throttled' as const })
+  }
+
+  pendingState.running = runPending()
+    .then(function (res) {
+      pendingState.lastRunAt = Date.now()
+      pendingState.last = res
+      return res
+    })
+    .catch(function (err: any) {
+      pendingState.lastRunAt = Date.now()
+      console.error('[contractor-invoices] pending list failed:', err)
+      return {
+        ran: true, pending: [], count: 0, truncated: false,
+        skippedNoPrice: 0, linesChecked: 0,
+        error: String((err && err.message) || err),
+      } as ContractorPendingResult
+    })
+    .finally(function () {
+      pendingState.running = null
+    })
+
+  return pendingState.running
+}
+
+async function runPending(): Promise<ContractorPendingResult> {
+  var result: ContractorPendingResult = {
+    ran: true, pending: [], count: 0, truncated: false, skippedNoPrice: 0, linesChecked: 0,
+  }
+
+  // 1) الخطوط والمشاريع (سعر المتر الاحتياطي + اسم المشروع للعرض)
   var lines = await db.driveLine.findMany({
     select: {
       id: true, projectId: true, lineNumber: true, totalLength: true,
@@ -160,12 +256,11 @@ async function runSync(): Promise<ContractorInvoiceSyncResult> {
     },
     take: 5000,
   })
-  var projects = await db.project.findMany({ select: { id: true, pricePerMeter: true }, take: 5000 })
-  var projectPrice: Record<string, number | null> = {}
-  for (var p of projects) projectPrice[p.id] = p.pricePerMeter
+  var projects = await db.project.findMany({ select: { id: true, pricePerMeter: true, name: true }, take: 5000 })
+  var projectInfo: Record<string, { price: number | null; name: string }> = {}
+  for (var p of projects) projectInfo[p.id] = { price: p.pricePerMeter, name: p.name }
 
   // 2) تقارير الحفر لكل الخطوط — قارئ واحد ثم تجميع في الذاكرة
-  //    (نفس اتفاقية النظام: أقصى endReading أو مجموع الأمتار اليومية)
   var reports = await db.dailyReport.findMany({
     where: { driveLineId: { not: null } },
     select: { driveLineId: true, reportDate: true, startReading: true, endReading: true, dailyMeters: true },
@@ -190,34 +285,20 @@ async function runSync(): Promise<ContractorInvoiceSyncResult> {
     reportsByLine[key].sort(function (a, b) { return a.date.getTime() - b.date.getTime() })
   }
 
-  // 3) الفواتير الآلية الموجودة حالياً (بالبصمة) — خريطة البصمة → صفوفها
-  var existingRows = await db.cost.findMany({
+  // 3) المقاطع المعتمدة يدوياً (بالبصمة الجديدة) — لا تُقترح مرة أخرى
+  var approvedRows = await db.cost.findMany({
     where: { notes: { startsWith: CONTRACTOR_INVOICE_MARKER } },
-    select: { id: true, notes: true, amount: true, description: true, date: true, createdAt: true },
+    select: { notes: true },
     take: 20000,
   })
-  var tokenToRows = new Map<string, Array<{ id: string; amount: number; description: string; date: Date; createdAt: Date }>>()
-  for (var row of existingRows) {
-    var token = parseAutoToken(row.notes)
-    if (!token) continue // بصمة تالفة (فارغة بعد #) — تُترك ولا تُمس
-    if (!tokenToRows.has(token)) tokenToRows.set(token, [])
-    tokenToRows.get(token)!.push({ id: row.id, amount: row.amount, description: row.description, date: row.date, createdAt: row.createdAt })
+  var approvedTokens = new Set<string>()
+  for (var row of approvedRows) {
+    var tok = parseApprovedToken(row.notes)
+    if (tok) approvedTokens.add(tok)
   }
-  // نسخ مكررة لنفس البصمة (نتيجة تزامن لحظي) — يُبقى الأقدم ويُحذف البقية
-  var duplicateIds: string[] = []
-  var existingTokens = new Set<string>()
-  tokenToRows.forEach(function (rowsArr, tok) {
-    existingTokens.add(tok)
-    if (rowsArr.length > 1) {
-      rowsArr.sort(function (a, b) { return a.createdAt.getTime() - b.createdAt.getTime() })
-      for (var d = 1; d < rowsArr.length; d++) duplicateIds.push(rowsArr[d].id)
-    }
-  })
 
-  // 4) حساب الفواتير المطلوبة لكل خط من بياناته الحالية
-  var needed = new Map<string, NeededInvoice>()
+  // 4) توليد المقترحات لكل خط من بياناته الحالية
   var segLen = CONTRACTOR_SEGMENT_METERS
-
   for (var line of lines) {
     result.linesChecked++
     var lineReports = reportsByLine[line.id] || []
@@ -238,7 +319,7 @@ async function runSync(): Promise<ContractorInvoiceSyncResult> {
     }
     if (drilled <= 0.005) continue
 
-    var price = line.pricePerMeter != null ? line.pricePerMeter : (projectPrice[line.projectId] != null ? projectPrice[line.projectId] : null)
+    var price = line.pricePerMeter != null ? line.pricePerMeter : (projectInfo[line.projectId] ? projectInfo[line.projectId].price : null)
     if (price == null || price <= 0) {
       result.skippedNoPrice++
       continue
@@ -248,134 +329,270 @@ async function runSync(): Promise<ContractorInvoiceSyncResult> {
     var fullCount = Math.floor(drilled / segLen + 1e-9)
     var remainder = roundMeters(drilled - fullCount * segLen)
     var fallbackDate: Date = line.drillingEndDate || line.updatedAt || new Date()
+    var projName = line.projectId && projectInfo[line.projectId] ? projectInfo[line.projectId].name : ''
 
-    // فاتورة لكل مقطع كامل — تاريخها يوم عبور نهاية المقطع
+    // مقترح لكل مقطع كامل — تاريخه يوم عبور نهاية المقطع
     for (var k = 1; k <= fullCount; k++) {
+      var token = line.id + '#' + k
+      if (approvedTokens.has(token)) continue
       var from = roundMeters((k - 1) * segLen)
       var to = roundMeters(k * segLen)
-      needed.set(line.id + '#' + k, {
+      result.pending.push({
+        token: token,
+        lineId: line.id,
+        lineNumber: line.lineNumber,
         projectId: line.projectId,
-        segKey: String(k),
-        amount: roundMoney(segLen * price),
-        date: crossingDate(lineReports, k * segLen) || fallbackDate,
-        description: 'فاتورة المقاول — خط ' + line.lineNumber + ': المقطع ' + k + ' — من ' + from + ' إلى ' + to + ' متر',
+        projectName: projName,
+        segmentLabel: 'المقطع ' + k + ' — من ' + from + ' إلى ' + to + ' متر',
+        meters: segLen,
+        suggestedAmount: roundMoney(segLen * price),
+        dateISO: (crossingDate(lineReports, k * segLen) || fallbackDate).toISOString(),
+        isFinal: false,
       })
     }
 
-    // الخط المنتهي: فاتورة أخيرة للباقي غير المكتمل (مثال: 47 م = 4 فواتير + 7 م)
+    // الخط المنتهي: مقترح أخير للباقي غير المكتمل (مثال: 47 م = 4 مقترحات + 7 م)
     if (isCompleted && remainder > 0.005) {
-      needed.set(line.id + '#tail', {
-        projectId: line.projectId,
-        segKey: 'tail',
-        amount: roundMoney(remainder * price),
-        date: lineReports.length > 0 ? lineReports[lineReports.length - 1].date : fallbackDate,
-        description: 'فاتورة المقاول — خط ' + line.lineNumber + ': المقطع الأخير — من ' + roundMeters(fullCount * segLen) + ' إلى ' + drilled + ' متر',
-      })
+      var tailToken = line.id + '#tail'
+      if (!approvedTokens.has(tailToken)) {
+        result.pending.push({
+          token: tailToken,
+          lineId: line.id,
+          lineNumber: line.lineNumber,
+          projectId: line.projectId,
+          projectName: projName,
+          segmentLabel: 'المقطع الأخير — من ' + roundMeters(fullCount * segLen) + ' إلى ' + drilled + ' متر',
+          meters: remainder,
+          suggestedAmount: roundMoney(remainder * price),
+          dateISO: (lineReports.length > 0 ? lineReports[lineReports.length - 1].date : fallbackDate).toISOString(),
+          isFinal: true,
+        })
+      }
     }
   }
 
-  // 5) المطابقة: إنشاء الناقص + تصحيح المتغير + حذف الزائد والمكرر
-  var toCreate: Array<{
-    projectId: string | null
-    date: Date
-    category: string
-    description: string
-    amount: number
-    notes: string
-  }> = []
-  var toUpdate: Array<{ id: string; amount: number; date: Date; description: string }> = []
-  var toDeleteIds = duplicateIds.slice()
-
-  needed.forEach(function (inv, tok) {
-    var existingArr = tokenToRows.get(tok)
-    if (!existingArr || existingArr.length === 0) {
-      toCreate.push({
-        projectId: inv.projectId,
-        date: inv.date,
-        category: CONTRACTOR_COST_CATEGORY,
-        description: inv.description,
-        amount: inv.amount,
-        notes: CONTRACTOR_INVOICE_MARKER + tok,
-      })
-      return
-    }
-    var cur = existingArr[0]
-    var amountChanged = Math.abs((cur.amount || 0) - inv.amount) > 0.005
-    var dateChanged = Math.abs(cur.date.getTime() - inv.date.getTime()) > 60_000
-    var descChanged = cur.description !== inv.description
-    if (amountChanged || dateChanged || descChanged) {
-      toUpdate.push({ id: cur.id, amount: inv.amount, date: inv.date, description: inv.description })
-    }
-  })
-  // فواتير آلية لم تعد مطلوبة (تصحيح قراءات نزل الأمتار / خط محذوف / خط لم يعد منتهياً)
-  existingTokens.forEach(function (tok) {
-    if (!needed.has(tok)) {
-      var arr = tokenToRows.get(tok) || []
-      for (var j = 0; j < arr.length; j++) toDeleteIds.push(arr[j].id)
-    }
+  // 5) ترتيب مفهوم للموظف: رقم الخط تصاعدياً ثم رقم المقطع (الأخير في النهاية)
+  function segOrder(inv: PendingContractorInvoice): number {
+    if (inv.isFinal) return Number.MAX_SAFE_INTEGER
+    var n = parseInt(inv.token.slice(inv.token.indexOf('#') + 1), 10)
+    return Number.isFinite(n) ? n : 0
+  }
+  result.pending.sort(function (a, b) {
+    var lineCmp = String(a.lineNumber).localeCompare(String(b.lineNumber), undefined, { numeric: true })
+    if (lineCmp !== 0) return lineCmp
+    return segOrder(a) - segOrder(b)
   })
 
-  if (toCreate.length > 0) {
-    var createdRes = await db.cost.createMany({ data: toCreate })
-    result.created = createdRes.count
-    var sum = 0
-    for (var c of toCreate) sum += c.amount
-    result.createdAmount = roundMoney(sum)
+  result.count = result.pending.length
+  if (result.pending.length > MAX_PENDING_RETURNED) {
+    result.pending = result.pending.slice(0, MAX_PENDING_RETURNED)
+    result.truncated = true
+  }
+  return result
+}
+
+// ════════════════════════════════════════════════════════════
+// 3) الاعتماد اليدوي — إدخال السعر + موافقة الموظف ثم التسجيل
+// ════════════════════════════════════════════════════════════
+
+export interface ApproveContractorInvoiceResult {
+  ok: boolean
+  duplicate?: boolean
+  expired?: boolean
+  costId?: string
+  message?: string
+}
+
+interface SingleProposal {
+  projectId: string | null
+  date: Date
+  description: string
+  meters: number
+  suggestedAmount: number
+}
+
+/**
+ * إعادة حساب مقترح مقطع واحد ببيانات الحفر الحالية — حماية من
+ * اعتماد مقطع تغيّرت بياناته (تصحيح قراءات / حذف خط / نزول أمتار).
+ */
+async function computeSingleLineProposal(lineId: string, segKey: string): Promise<{ ok: true; proposal: SingleProposal } | { ok: false; reason: string; expired: boolean }> {
+  var line = await db.driveLine.findUnique({
+    where: { id: lineId },
+    select: {
+      id: true, projectId: true, lineNumber: true, totalLength: true,
+      pricePerMeter: true, status: true, completedLength: true,
+      drillingEndDate: true, updatedAt: true,
+    },
+  })
+  if (!line) return { ok: false, reason: 'خط الحفر غير موجود — ربما حُذف من النظام، حدث القائمة', expired: true }
+
+  var projectPrice: number | null = null
+  if (line.projectId) {
+    var proj = await db.project.findUnique({ where: { id: line.projectId }, select: { pricePerMeter: true } })
+    projectPrice = proj ? proj.pricePerMeter : null
+  }
+  var price = line.pricePerMeter != null ? line.pricePerMeter : projectPrice
+  if (price == null || price <= 0) {
+    return { ok: false, reason: 'لا يوجد سعر متر لهذا الخط ولا لمشروعه — أدخل سعر المتر أولاً ثم أعد الاعتماد', expired: false }
   }
 
-  for (var u of toUpdate) {
-    try {
-      await db.cost.update({
-        where: { id: u.id },
-        data: { amount: u.amount, date: u.date, description: u.description },
-      })
-      result.updated++
-    } catch (e) {
-      // الفاتورة ربما حُذفت يدوياً للحظة — تُلتقط في التشغيل التالي
-      console.error('[contractor-invoices] update failed for cost ' + u.id, e)
+  var reps = await db.dailyReport.findMany({
+    where: { driveLineId: lineId },
+    select: { reportDate: true, startReading: true, endReading: true, dailyMeters: true },
+    orderBy: { reportDate: 'asc' },
+    take: 5000,
+  })
+  var rows: LineReportRow[] = []
+  var maxEnd = 0
+  var sumStored = 0
+  for (var i = 0; i < reps.length; i++) {
+    var rr = reps[i]
+    var endReading = rr.endReading || 0
+    if (endReading > maxEnd) maxEnd = endReading
+    sumStored += rr.dailyMeters || 0
+    var inc = roundMeters(Math.max(0, endReading - (rr.startReading || 0)))
+    if (inc <= 0 && (rr.dailyMeters || 0) > 0) inc = roundMeters(rr.dailyMeters)
+    rows.push({ date: new Date(rr.reportDate), inc: inc })
+  }
+  rows.sort(function (a, b) { return a.date.getTime() - b.date.getTime() })
+
+  var drilled = roundMeters(Math.max(maxEnd, sumIncrements(rows), sumStored))
+  if (rows.length === 0) {
+    if (line.status === 'completed' && (line.totalLength || 0) > 0) drilled = roundMeters(line.totalLength)
+    else if ((line.completedLength || 0) > 0) drilled = roundMeters(line.completedLength)
+  }
+  if (drilled <= 0.005) return { ok: false, reason: 'لا يوجد حفر مسجل لهذا الخط بعد', expired: true }
+
+  var segLen = CONTRACTOR_SEGMENT_METERS
+  var isCompleted = line.status === 'completed' || ((line.totalLength || 0) > 0 && drilled >= line.totalLength - 0.005)
+  var fullCount = Math.floor(drilled / segLen + 1e-9)
+  var remainder = roundMeters(drilled - fullCount * segLen)
+  var fallbackDate: Date = line.drillingEndDate || line.updatedAt || new Date()
+
+  if (segKey === 'tail') {
+    if (!isCompleted || remainder <= 0.005) {
+      return { ok: false, reason: 'الفاتورة الأخيرة لم تعد مطلوبة — بيانات الحفر تغيرت، حدث القائمة', expired: true }
     }
+    return { ok: true, proposal: {
+      projectId: line.projectId,
+      date: rows.length > 0 ? rows[rows.length - 1].date : fallbackDate,
+      description: 'فاتورة المقاول — خط ' + line.lineNumber + ': المقطع الأخير — من ' + roundMeters(fullCount * segLen) + ' إلى ' + drilled + ' متر',
+      meters: remainder,
+      suggestedAmount: roundMoney(remainder * price),
+    } }
   }
 
-  if (toDeleteIds.length > 0) {
-    // حزام أمان مضاعف: لا يُحذف إلا صف يحمل البصمة فعلاً
-    var deletedRes = await db.cost.deleteMany({
-      where: { id: { in: toDeleteIds }, notes: { startsWith: CONTRACTOR_INVOICE_MARKER } },
+  var k = parseInt(segKey, 10)
+  if (!(k >= 1 && k <= fullCount)) {
+    return { ok: false, reason: 'هذا المقطع لم يعد ضمن الأمتار المحفورة — بيانات الحفر تغيرت، حدث القائمة', expired: true }
+  }
+  var from = roundMeters((k - 1) * segLen)
+  var to = roundMeters(k * segLen)
+  return { ok: true, proposal: {
+    projectId: line.projectId,
+    date: crossingDate(rows, k * segLen) || fallbackDate,
+    description: 'فاتورة المقاول — خط ' + line.lineNumber + ': المقطع ' + k + ' — من ' + from + ' إلى ' + to + ' متر',
+    meters: segLen,
+    suggestedAmount: roundMoney(segLen * price),
+  } }
+}
+
+/**
+ * اعتماد مقترح فاتورة: السعر يُدخله الموظف يدوياً وبعد الموافقة
+ * تُسجَّل الفاتورة ضمن التكاليف (وبها بصمة تمنع اقتراح المقطع مجدداً).
+ */
+export async function approveContractorInvoice(opts: { token: string; amount: number; userId: string }): Promise<ApproveContractorInvoiceResult> {
+  try {
+    var token = String(opts.token || '')
+    var hashIndex = token.indexOf('#')
+    if (hashIndex <= 0 || hashIndex !== token.lastIndexOf('#')) {
+      return { ok: false, message: 'بصمة الفاتورة غير صالحة — حدث القائمة وأعد المحاولة' }
+    }
+    var lineId = token.slice(0, hashIndex)
+    var segKey = token.slice(hashIndex + 1)
+    if (!lineId || !(segKey === 'tail' || /^[1-9][0-9]*$/.test(segKey))) {
+      return { ok: false, message: 'بصمة الفاتورة غير صالحة — حدث القائمة وأعد المحاولة' }
+    }
+    var amount = Number(opts.amount)
+    if (!Number.isFinite(amount) || amount <= 0 || amount > 10_000_000) {
+      return { ok: false, message: 'السعر يجب أن يكون رقماً موجباً ومعقولاً (أقل من 10,000,000)' }
+    }
+
+    // معتمد مسبقاً؟ (نقر مزدوج أو اعتماد متزامن من نافذة أخرى)
+    var existing = await db.cost.findFirst({
+      where: { notes: CONTRACTOR_INVOICE_MARKER + token },
+      select: { id: true },
     })
-    result.deleted = deletedRes.count
-  }
+    if (existing) return { ok: true, duplicate: true, costId: existing.id }
 
-  // 6) آثار جانبية عند أي تغيير: إبطال ذاكرة لوحة التحكم + سجل تدقيق ملخص + تنبيه واحد
-  if (result.created > 0 || result.updated > 0 || result.deleted > 0) {
+    var computed = await computeSingleLineProposal(lineId, segKey)
+    if (!computed.ok) {
+      return { ok: false, message: computed.reason, expired: computed.expired }
+    }
+    var prop = computed.proposal
+
+    var created = await db.cost.create({
+      data: {
+        projectId: prop.projectId,
+        date: prop.date,
+        category: CONTRACTOR_COST_CATEGORY,
+        description: prop.description,
+        amount: roundMoney(amount),
+        notes: CONTRACTOR_INVOICE_MARKER + token,
+        recordedById: opts.userId,
+      },
+    })
+
+    // حماية تزامن: لو أُنشئت نسختان لنفس المقطع يُبقى الأقدم فقط
+    var sameToken = await db.cost.findMany({
+      where: { notes: CONTRACTOR_INVOICE_MARKER + token },
+      select: { id: true, createdAt: true },
+      orderBy: { createdAt: 'asc' },
+    })
+    if (sameToken.length > 1) {
+      var staleIds = sameToken.slice(1).map(function (r) { return r.id })
+      await db.cost.deleteMany({
+        where: { id: { in: staleIds }, notes: CONTRACTOR_INVOICE_MARKER + token },
+      })
+    }
+
     invalidateCachePrefix('dashboard:')
     try {
       await db.auditLog.create({
         data: {
-          userId: null,
-          action: result.created > 0 ? 'create' : 'update',
+          userId: opts.userId,
+          projectId: prop.projectId,
+          action: 'create',
           entity: 'cost',
-          entityId: 'contractor-invoices-auto',
-          details: 'خوارزمية فاتورة المقاول: أُصدرت ' + result.created + ' فاتورة آلية بقيمة ' + result.createdAmount + ' ر.ع، صُححت ' + result.updated + '، حُذفت ' + result.deleted + ' غير مطابقة — فُحص ' + result.linesChecked + ' خط حفر (منها ' + result.skippedNoPrice + ' بلا سعر متر)',
+          entityId: created.id,
+          details: 'اعتماد فاتورة مقاول: ' + prop.description + ' — المبلغ ' + roundMoney(amount) + ' ر.ع (سعر مُدخل يدوياً واعتمده الموظف)',
         },
       })
     } catch (e) {
-      console.error('[contractor-invoices] audit log failed', e)
+      console.error('[contractor-invoices] approve audit log failed', e)
     }
-    if (result.created > 0) {
+    try {
       await notifyUsers({
-        type: 'contractor_invoice_auto',
-        title: 'فواتير مقاول آلية جديدة',
-        message: 'أصدر النظام تلقائياً ' + result.created + ' فاتورة مقاول بقيمة ' + result.createdAmount + ' ر.ع (فاتورة لكل 10 أمتار من خطوط الحفر) وسجلها ضمن التكاليف في قسم الإيرادات والتكاليف.',
+        type: 'contractor_invoice_approved',
+        title: 'فاتورة مقاول معتمدة',
+        message: 'سُجلت فاتورة مقاول بعد اعتماد يدوي: ' + prop.description + ' — المبلغ ' + roundMoney(amount) + ' ر.ع (دخله الموظف يدوياً ثم وافق عليها).',
         severity: 'info',
+        projectId: prop.projectId,
         entityType: 'cost',
-        entityId: 'contractor-invoices-auto',
+        entityId: created.id,
         permissions: ['costs'],
         roles: ['top_management', 'project_manager', 'accountant'],
+        excludeUserIds: [opts.userId],
         includeSystemAdmin: true,
         link: 'costs',
-        dedupeHours: 24,
       })
+    } catch (e) {
+      console.error('[contractor-invoices] approve notify failed', e)
     }
-  }
 
-  return result
+    return { ok: true, costId: created.id }
+  } catch (err: any) {
+    console.error('[contractor-invoices] approve failed:', err)
+    return { ok: false, message: 'تعذر تسجيل الفاتورة — أعد المحاولة' }
+  }
 }
