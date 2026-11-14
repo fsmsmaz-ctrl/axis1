@@ -282,6 +282,14 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
   const projects = Array.isArray(data.projects) ? data.projects : []
   const trend = Array.isArray(data.trend) ? data.trend : []
   const recentReports = Array.isArray(data.recentReports) ? data.recentReports : []
+  // v115: عدّ حالات التقارير لصف الملخص في بطاقة «التقارير الأخيرة» —
+  // نفس فئات الشارات المعروضة في القائمة (معتمد/مرسل/مرفوض/مسودة)
+  const reportStatusCounts = {
+    approved: recentReports.filter(function(r: any) { return r.status === 'approved' }).length,
+    submitted: recentReports.filter(function(r: any) { return r.status === 'submitted' }).length,
+    rejected: recentReports.filter(function(r: any) { return r.status === 'rejected' }).length,
+    draft: recentReports.filter(function(r: any) { return r.status !== 'approved' && r.status !== 'submitted' && r.status !== 'rejected' }).length,
+  }
   const notifications = Array.isArray(data.notifications) ? data.notifications : []
   const equipment = Array.isArray(data.equipment) ? data.equipment : []
   // v105: الأصول والمستأجرات — دفاعية أمام ردود قديمة مخزنة (بلا الحقل تعرض فارغة)
@@ -686,13 +694,39 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
               </Button>
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2 max-h-80 overflow-y-auto">
+          <CardContent className="space-y-2">
+            {/* v115: مساواة بطاقة «التقارير الأخيرة» مع «الأصول والمستأجرات» المجاورة —
+                نفس البنية حرفياً: صف ملخص أعلى القائمة + قائمة بنفس الارتفاع القابل
+                للتمرير + سطر إرشاد سفلي، وعرض كل التقارير لا 8 فقط */}
+            <div className="flex items-center gap-2 flex-wrap pb-2 border-b">
+              <span className="inline-flex items-center gap-1 text-xs font-medium bg-muted px-2 py-1 rounded-full">
+                {isRtl ? 'الإجمالي' : 'Total'}: {recentReports.length}
+              </span>
+              <span className="inline-flex items-center gap-1 text-xs font-medium bg-emerald-50 text-emerald-700 px-2 py-1 rounded-full">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
+                {isRtl ? 'معتمد' : 'Approved'}: {reportStatusCounts.approved}
+              </span>
+              <span className="inline-flex items-center gap-1 text-xs font-medium bg-sky-50 text-sky-700 px-2 py-1 rounded-full">
+                <span className="w-2 h-2 rounded-full bg-sky-500 inline-block" />
+                {isRtl ? 'مرسل' : 'Submitted'}: {reportStatusCounts.submitted}
+              </span>
+              <span className="inline-flex items-center gap-1 text-xs font-medium bg-red-50 text-red-700 px-2 py-1 rounded-full">
+                <span className="w-2 h-2 rounded-full bg-red-500 inline-block" />
+                {isRtl ? 'مرفوض' : 'Rejected'}: {reportStatusCounts.rejected}
+              </span>
+              <span className="inline-flex items-center gap-1 text-xs font-medium bg-slate-100 text-slate-600 px-2 py-1 rounded-full">
+                <span className="w-2 h-2 rounded-full bg-slate-400 inline-block" />
+                {isRtl ? 'مسودة' : 'Draft'}: {reportStatusCounts.draft}
+              </span>
+            </div>
+            {/* v115: نفس ارتفاع قائمة الأصول المجاورة تماماً */}
+            <div className="space-y-2 max-h-[420px] overflow-y-auto">
             {recentReports.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground text-sm">
                 {isRtl ? 'لا توجد تقارير' : 'No reports'}
               </div>
             ) : (
-              recentReports.slice(0, 8).map(function(r) {
+              recentReports.map(function(r) {
                 return (
                   <div key={r.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 transition">
                     <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
@@ -727,6 +761,15 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
                   </div>
                 )
               })
+            )}
+            </div>
+            {/* v115: سطر الإرشاد السفلي — مطابق لسطر قسم الأصول المجاور */}
+            {recentReports.length > 6 && (
+              <p className="text-center text-[11px] text-muted-foreground pt-1 border-t">
+                {isRtl
+                  ? 'التقارير مرتبة من الأحدث إلى الأقدم — مرّر داخل البطاقة لعرضها كلها'
+                  : 'Reports are newest first — scroll inside the card to see them all'}
+              </p>
             )}
           </CardContent>
         </Card>
@@ -1361,3 +1404,4 @@ function PendingApprovalsSection({ isRtl, onChanged }: { isRtl: boolean; onChang
     </Card>
   )
 }
+
