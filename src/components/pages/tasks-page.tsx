@@ -14,7 +14,8 @@ import {
 } from '@/components/ui/dialog'
 import {
   ListChecks, Plus, Paperclip, History, Play, PauseCircle, Send, CheckCircle2,
-  Undo2, XCircle, Loader2, Clock, AlertTriangle, Filter, BarChart3, Download, ShieldCheck
+  Undo2, XCircle, Loader2, Clock, AlertTriangle, Filter, BarChart3, Download, ShieldCheck,
+  Search, BellRing, CalendarClock, ArrowUpDown
 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
@@ -76,6 +77,17 @@ const STATUS_FROM_TO: Record<string, { ar: string; en: string }> = {
   cancelled: { ar: 'ملغاة', en: 'Cancelled' },
 }
 
+// v119: الحالات التي يُسمح فيها للموظف بإعادة ترتيب موعد مهمته (نفس قواعد API reschedule)
+const RESCHEDULABLE_STATUSES = ['new', 'in_progress', 'waiting', 'returned']
+const PRIORITY_RANK: Record<string, number> = { urgent: 0, high: 1, normal: 2, low: 3 }
+
+/** فرق أيام التقويم بين تاريخين (0 = نفس اليوم، 1 = غداً) */
+function dayDiff(d: Date, now: Date): number {
+  const a = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  const b = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+  return Math.round((b - a) / 86400000)
+}
+
 // ─── أدوات مساعدة ───────────────────────────────────────────────
 
 function pad2(n: number) { return String(n).padStart(2, '0') }
@@ -115,7 +127,7 @@ export default function TasksPage() {
   const user = useAppStore((s) => s.user)
   const isAr = language === 'ar'
 
-  const [tab, setTab] = useState<'tasks' | 'perf'>('tasks')
+  const [tab, setTab] = useState<'tasks' | 'perf' | 'reminders'>('tasks')
   const [tasks, setTasks] = useState<any[]>([])
   const [users, setUsers] = useState<any[]>([])
   const [viewer, setViewer] = useState<{ isManager: boolean; userId: string; email?: string; role?: string }>({ isManager: false, userId: '' })
@@ -129,6 +141,17 @@ export default function TasksPage() {
     createdFrom: '', createdTo: '', dueFrom: '', dueTo: '', lateOnly: false,
   })
   const [showFilters, setShowFilters] = useState(false)
+
+  // v119: البحث السريع + الفلاتر السريعة + الترتيب — تسهيل الاستخدام
+  const [q, setQ] = useState('')
+  const [quick, setQuick] = useState<'all' | 'today' | 'week' | 'late' | 'done'>('all')
+  const [sortBy, setSortBy] = useState<'due' | 'created' | 'priority'>('due')
+
+  // v119: قسم «تذكيراتي» — تصنيف العرض + تنبيهات مهامي + نافذة تعديل الموعد
+  const [remBucket, setRemBucket] = useState<'all' | 'overdue' | 'today' | 'tomorrow' | 'week' | 'later'>('all')
+  const [myNotifs, setMyNotifs] = useState<any[]>([])
+  const [notifsLoading, setNotifsLoading] = useState(false)
+  const [resched, setResched] = useState<{ id: string; title: string; taskNumber: number; dueDate: string; note: string } | null>(null)
 
   // نافذة إنشاء مهمة جديدة (للإدارة ومدير النظام فقط)
   const [showCreate, setShowCreate] = useState(false)
@@ -199,6 +222,26 @@ export default function TasksPage() {
 
   useEffect(() => { if (tab === 'perf') fetchPerf(perfMonth) }, [tab])
 
+  // v119: آخر التنبيهات الشخصية المتعلقة بالمهام — تُجلب عند فتح تبويب «تذكيراتي» فقط
+  // (المنطق داخل التأثير نفسه لتفادي تحذير تبعيات react-hooks — نفس نمط بقية التأثيرات)
+  useEffect(() => {
+    if (tab !== 'reminders' || !viewer.userId) return
+    let cancelled = false
+    ;(async () => {
+      setNotifsLoading(true)
+      try {
+        const res = await authedFetch('/api/notifications', { noCache: true })
+        const data = await res.json().catch(() => ({} as any))
+        if (!cancelled && res.ok) {
+          const mine = (data.notifications || []).filter((n: any) => n.userId === viewer.userId && String(n.type || '').startsWith('task_'))
+          setMyNotifs(mine.slice(0, 8))
+        }
+      } catch {}
+      if (!cancelled) setNotifsLoading(false)
+    })()
+    return () => { cancelled = true }
+  }, [tab, viewer.userId])
+
   async function fetchPerf(month: string) {
     setPerfLoading(true)
     try {
@@ -214,7 +257,7 @@ export default function TasksPage() {
   // ─── فلاتر محلية ───
   const filtered = useMemo(() => {
     const now = Date.now()
-    return tasks.filter((t) => {
+    const list = tasks.filter((t) => {
       // v77: نظام حماية عرض المهام — طبقة دفاعية ثانية في الواجهة:
       // للموظف (غير المدير) لا تُعرض أبداً مهام غير المسندة إليه،
       // حتى لو أرجع الخادم قائمة أوسع بسبب أي خلل مستقبلي.
@@ -231,9 +274,32 @@ export default function TasksPage() {
         const open = !['closed', 'cancelled'].includes(t.status)
         if (!(open && new Date(t.dueDate).getTime() < now)) return false
       }
+      // v119: البحث السريع — عنوان المهمة أو رقمها (#12) أو التصنيف أو الوصف
+      const needle = q.trim().toLowerCase()
+      if (needle) {
+        const qn = needle.replace(/^#/, '')
+        const hit = (t.title || '').toLowerCase().includes(needle)
+          || (t.category || '').toLowerCase().includes(needle)
+          || (t.description || '').toLowerCase().includes(needle)
+          || (!!qn && /^\d+$/.test(qn) && t.taskNumber === Number(qn))
+        if (!hit) return false
+      }
+      // v119: الفلاتر السريعة (اليوم / هذا الأسبوع / متأخرة / المنجزة)
+      const openQ = !['closed', 'cancelled'].includes(t.status)
+      const dueT = new Date(t.dueDate)
+      if (quick === 'today' && !(openQ && dayDiff(dueT, new Date(now)) === 0)) return false
+      if (quick === 'week' && !(openQ && dueT.getTime() >= now && dueT.getTime() <= now + 7 * 86400000)) return false
+      if (quick === 'late' && !(openQ && dueT.getTime() < now)) return false
+      if (quick === 'done' && openQ) return false
       return true
     })
-  }, [tasks, f, viewer])
+    // v119: الترتيب — الأقرب موعداً (الافتراضي) / الأولوية / الأحدث إنشاءً
+    const sorted = [...list]
+    if (sortBy === 'created') sorted.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    else if (sortBy === 'priority') sorted.sort((a, b) => ((PRIORITY_RANK[a.priority] ?? 2) - (PRIORITY_RANK[b.priority] ?? 2)) || (new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()))
+    else sorted.sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
+    return sorted
+  }, [tasks, f, viewer, q, quick, sortBy])
 
   // ─── الملخص السريع ───
   const summary = useMemo(() => {
@@ -250,6 +316,42 @@ export default function TasksPage() {
     }
     return s
   }, [tasks])
+
+  // ─── v119: تذكيراتي — مهامي الشخصية وتصنيفات المواعيد ───
+  // (للموظف: الخادم يعيد مهامه فقط، وللمدير: تُصفّى هنا لمهامه هو — القسم شخصي دائماً)
+  const myTasks = useMemo(() => tasks.filter((t) => !viewer.userId || t.assigneeId === viewer.userId), [tasks, viewer])
+  const remCounts = useMemo(() => {
+    const now = Date.now()
+    const c = { overdue: 0, today: 0, tomorrow: 0, week: 0, later: 0, done: 0 }
+    for (const t of myTasks) {
+      if (['closed', 'cancelled'].includes(t.status)) { c.done += 1; continue }
+      const dueT = new Date(t.dueDate)
+      if (dueT.getTime() < now) { c.overdue += 1; continue }
+      const dd = dayDiff(dueT, new Date(now))
+      if (dd === 0) { c.today += 1 }
+      else if (dd === 1) { c.tomorrow += 1 }
+      else if (dueT.getTime() <= now + 7 * 86400000) { c.week += 1 }
+      else { c.later += 1 }
+    }
+    return c
+  }, [myTasks])
+  const remList = useMemo(() => {
+    const open = myTasks.filter((t) => !['closed', 'cancelled'].includes(t.status))
+    open.sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
+    return open
+  }, [myTasks])
+
+  /** تصنيف المهمة زمنياً: متأخرة / اليوم / غداً / خلال أسبوع / أبعد */
+  function bucketOf(t: any): 'overdue' | 'today' | 'tomorrow' | 'week' | 'later' {
+    const now = Date.now()
+    const dueT = new Date(t.dueDate)
+    if (dueT.getTime() < now) return 'overdue'
+    const dd = dayDiff(dueT, new Date(now))
+    if (dd === 0) return 'today'
+    if (dd === 1) return 'tomorrow'
+    if (dueT.getTime() <= now + 7 * 86400000) return 'week'
+    return 'later'
+  }
 
   // ─── إنشاء مهمة ───
   async function submitNew(e: React.FormEvent) {
@@ -446,6 +548,42 @@ export default function TasksPage() {
     }
   }
 
+  // ─── v119: تعديل موعد المهمة (الموظف المسؤول من «تذكيراتي» أو من التفاصيل) ───
+  function openResched(task: any) {
+    setResched({
+      id: task.id,
+      title: task.title,
+      taskNumber: task.taskNumber,
+      dueDate: toLocalInput(new Date(task.dueDate)),
+      note: '',
+    })
+  }
+
+  async function submitResched() {
+    if (!resched || !resched.dueDate) return
+    setBusy(true)
+    try {
+      const res = await authedFetch('/api/tasks/' + resched.id + '/reschedule', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dueDate: new Date(resched.dueDate).toISOString(), note: resched.note || undefined }),
+      })
+      const data = await res.json().catch(() => ({} as any))
+      if (!res.ok) {
+        toast.error(data.message || (isAr ? 'فشل تعديل الموعد' : 'Reschedule failed'))
+        return
+      }
+      toast.success(isAr ? 'تم تعديل موعد الإنجاز — التعديل مسجل في سجل المهمة' : 'Due date updated — change logged in task history')
+      setResched(null)
+      fetchTasks()
+      if (detailId) refreshDetail(detailId)
+    } catch {
+      toast.error(isAr ? 'تعذر الوصول للخادم — تحقق من الاتصال' : 'Network error — check connection')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   // ─── ألوان الصفوف: متأخرة/قرب الموعد/الحالة ───
   function rowTone(t: any): { border: string; bg: string } {
     const now = Date.now()
@@ -479,6 +617,18 @@ export default function TasksPage() {
 
   const t = (ar: string, en: string) => (isAr ? ar : en)
 
+  // v119: شارة الوقت النسبي لموعد الإنجاز (متأخرة / اليوم / غداً / متبقٍ)
+  function relDueLabel(task: any): { text: string; cls: string } {
+    const now = Date.now()
+    const dueT = new Date(task.dueDate)
+    const diffMs = dueT.getTime() - now
+    if (diffMs < 0) return { text: t('متأخرة ', 'Late ') + fmtDur(-diffMs / 60000, isAr), cls: 'bg-red-100 text-red-700' }
+    const dd = dayDiff(dueT, new Date(now))
+    if (dd === 0) return { text: t('تستحق اليوم', 'Due today'), cls: 'bg-orange-100 text-orange-700' }
+    if (dd === 1) return { text: t('تستحق غداً', 'Due tomorrow'), cls: 'bg-amber-100 text-amber-700' }
+    return { text: t('متبقٍ ', 'Remaining ') + fmtDur(diffMs / 60000, isAr), cls: 'bg-blue-50 text-blue-700' }
+  }
+
   // ─── الواجهة ───
   return (
     <div className="p-4 lg:p-6 space-y-5 max-w-[1600px] mx-auto">
@@ -491,24 +641,33 @@ export default function TasksPage() {
           <div>
             <h1 className="text-xl lg:text-2xl font-bold">
               {t('إدارة المهام', 'Task Management')}
-              <span className="ms-2 align-middle text-[10px] font-mono font-normal text-muted-foreground border border-border rounded px-1.5 py-0.5" title="Build version marker">v12.7</span>
+              <span className="ms-2 align-middle text-[10px] font-mono font-normal text-muted-foreground border border-border rounded px-1.5 py-0.5" title="Build version marker">v13.0</span>
             </h1>
             <p className="text-xs text-muted-foreground">{t('تنظيم مهام الموظفين ومتابعة الإنجاز والتأخير', 'Assign, track and evaluate employee tasks')}</p>
           </div>
         </div>
-        {viewer.isManager && (
-          <div className="flex flex-wrap items-center gap-1.5">
-            <Button variant={tab === 'tasks' ? 'default' : 'outline'} size="sm" onClick={() => setTab('tasks')}>
-              <ListChecks className="h-4 w-4 ms-1" /> {t('المهام', 'Tasks')}
-            </Button>
-            <Button variant={tab === 'perf' ? 'default' : 'outline'} size="sm" onClick={() => setTab('perf')}>
-              <BarChart3 className="h-4 w-4 ms-1" /> {t('تقرير الأداء', 'Performance')}
-            </Button>
-            <Button size="sm" className="shadow-sm" onClick={() => setShowCreate(true)}>
-              <Plus className="h-4 w-4 ms-1" /> {t('إنشاء مهمة جديدة', 'New Task')}
-            </Button>
-          </div>
-        )}
+        {/* v119: تبويب «تذكيراتي» متاح لكل الموظفين مع شارة عدد المستحق — بقية التبويبات للإدارة */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Button variant={tab === 'reminders' ? 'default' : 'outline'} size="sm" onClick={() => setTab('reminders')}>
+            <BellRing className="h-4 w-4 ms-1" /> {t('تذكيراتي', 'My Reminders')}
+            {remCounts.overdue + remCounts.today > 0 && (
+              <span className="ms-1 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[10px] font-bold">{remCounts.overdue + remCounts.today}</span>
+            )}
+          </Button>
+          {viewer.isManager && (
+            <>
+              <Button variant={tab === 'tasks' ? 'default' : 'outline'} size="sm" onClick={() => setTab('tasks')}>
+                <ListChecks className="h-4 w-4 ms-1" /> {t('المهام', 'Tasks')}
+              </Button>
+              <Button variant={tab === 'perf' ? 'default' : 'outline'} size="sm" onClick={() => setTab('perf')}>
+                <BarChart3 className="h-4 w-4 ms-1" /> {t('تقرير الأداء', 'Performance')}
+              </Button>
+              <Button size="sm" className="shadow-sm" onClick={() => setShowCreate(true)}>
+                <Plus className="h-4 w-4 ms-1" /> {t('إنشاء مهمة جديدة', 'New Task')}
+              </Button>
+            </>
+          )}
+        </div>
       </div>
 
       {/* إشعار خطأ تحميل المهام — يظهر فقط عند فشل الطلب (لا عناصر تشخيصية في الوضع الطبيعي) */}
@@ -560,20 +719,46 @@ export default function TasksPage() {
 
           {/* نموذج الإضافة السريع استُبدل بنافذة إنشاء كاملة تُفتح من زر الرأس */}
 
-          {/* شريط الفلاتر */}
-          <div className="flex flex-wrap items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => setShowFilters(!showFilters)}>
-              <Filter className="h-4 w-4 ms-1" /> {t('فلاتر', 'Filters')}
-              {(f.assigneeId || f.status || f.priority || f.category || f.createdFrom || f.createdTo || f.dueFrom || f.dueTo || f.lateOnly) && (
-                <span className="h-2 w-2 rounded-full bg-primary ms-1" />
-              )}
-            </Button>
-            {(f.assigneeId || f.status || f.priority || f.category || f.createdFrom || f.createdTo || f.dueFrom || f.dueTo || f.lateOnly) && (
-              <Button variant="ghost" size="sm" onClick={() => setF({ assigneeId: '', status: '', priority: '', category: '', createdFrom: '', createdTo: '', dueFrom: '', dueTo: '', lateOnly: false })}>
-                <XCircle className="h-4 w-4 ms-1" /> {t('مسح الفلاتر', 'Clear')}
+          {/* v119: البحث السريع + الفلاتر السريعة + الترتيب — تسهيل الاستخدام */}
+          <div className="space-y-2.5">
+            <div className="relative">
+              <Search className="h-4 w-4 absolute start-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('بحث سريع: عنوان المهمة أو رقمها #12 أو التصنيف...', 'Quick search: title, #12 or category...')} className="ps-9" />
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {([
+                { k: 'all', label: t('الكل', 'All') },
+                { k: 'today', label: t('تستحق اليوم', 'Due today') },
+                { k: 'week', label: t('هذا الأسبوع', 'This week') },
+                { k: 'late', label: t('متأخرة', 'Late') },
+                { k: 'done', label: t('المنجزة', 'Completed') },
+              ] as const).map((c) => (
+                <button key={c.k} onClick={() => setQuick(c.k)} className={'rounded-full border px-3 py-1 text-xs font-medium transition-colors ' + (quick === c.k ? 'bg-primary text-primary-foreground border-primary' : 'bg-card text-muted-foreground border-border hover:bg-muted/50')}>
+                  {c.label}
+                </button>
+              ))}
+              <span className="w-px h-5 bg-border mx-1 hidden sm:block" />
+              <Select value={sortBy} onValueChange={(v) => setSortBy(v as any)}>
+                <SelectTrigger className="h-8 w-[180px] text-xs"><ArrowUpDown className="h-3.5 w-3.5 me-1" /><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="due">{t('الترتيب: الأقرب موعداً', 'Sort: soonest due')}</SelectItem>
+                  <SelectItem value="priority">{t('الترتيب: الأولوية', 'Sort: priority')}</SelectItem>
+                  <SelectItem value="created">{t('الترتيب: الأحدث إنشاءً', 'Sort: newest first')}</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button variant="outline" size="sm" onClick={() => setShowFilters(!showFilters)}>
+                <Filter className="h-4 w-4 ms-1" /> {t('فلاتر متقدمة', 'Advanced filters')}
+                {(f.assigneeId || f.status || f.priority || f.category || f.createdFrom || f.createdTo || f.dueFrom || f.dueTo || f.lateOnly) && (
+                  <span className="h-2 w-2 rounded-full bg-primary ms-1" />
+                )}
               </Button>
-            )}
-            <span className="text-xs text-muted-foreground">{filtered.length} / {tasks.length} {t('مهمة', 'tasks')}</span>
+              {(q || quick !== 'all' || f.assigneeId || f.status || f.priority || f.category || f.createdFrom || f.createdTo || f.dueFrom || f.dueTo || f.lateOnly) && (
+                <Button variant="ghost" size="sm" onClick={() => { setQ(''); setQuick('all'); setF({ assigneeId: '', status: '', priority: '', category: '', createdFrom: '', createdTo: '', dueFrom: '', dueTo: '', lateOnly: false }) }}>
+                  <XCircle className="h-4 w-4 ms-1" /> {t('مسح الكل', 'Clear all')}
+                </Button>
+              )}
+              <span className="text-xs text-muted-foreground">{filtered.length} / {tasks.length} {t('مهمة', 'tasks')}</span>
+            </div>
           </div>
 
           {showFilters && (
@@ -737,6 +922,117 @@ export default function TasksPage() {
             </>
           )}
         </>
+      )}
+
+      {/* ── v119: تذكيراتي — منظم مهامي ومواعيدي (شخصي لكل موظف) ── */}
+      {tab === 'reminders' && (
+        <div className="space-y-4">
+          {/* لافتة التنبيه اليومية */}
+          {(() => {
+            const urgent = remCounts.overdue
+            const todayN = remCounts.today
+            if (urgent > 0 || todayN > 0) {
+              const parts: string[] = []
+              if (urgent > 0) parts.push(isAr ? (urgent === 1 ? 'مهمة واحدة متأخرة عن موعدها' : urgent + ' مهام متأخرة عن مواعيدها') : (urgent === 1 ? '1 overdue task' : urgent + ' overdue tasks'))
+              if (todayN > 0) parts.push(isAr ? (todayN === 1 ? 'مهمة واحدة تستحق اليوم' : todayN + ' مهام تستحق اليوم') : (todayN === 1 ? '1 task due today' : todayN + ' tasks due today'))
+              const msg = isAr ? 'لديك ' + parts.join(' و') + ' — رتّب أولوياتك وابدأ بها الآن.' : 'You have ' + parts.join(' and ') + ' — prioritize and start now.'
+              return (
+                <div className="flex items-start gap-2.5 rounded-lg border border-orange-500/40 bg-orange-500/10 px-3 py-2.5 text-xs leading-relaxed text-orange-800 dark:text-orange-300">
+                  <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                  <p className="font-semibold">{msg}</p>
+                </div>
+              )
+            }
+            return (
+              <div className="flex items-start gap-2.5 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2.5 text-xs leading-relaxed text-emerald-800 dark:text-emerald-300">
+                <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" />
+                <p className="font-semibold">{t('لا توجد مهام متأخرة أو مستحقة اليوم — مواعيدك تحت السيطرة، وتابع مهامك القادمة أدناه.', 'No overdue or due-today tasks — you are on track. Your upcoming tasks are listed below.')}</p>
+              </div>
+            )
+          })()}
+
+          {/* بطاقات تصنيف المواعيد — تعمل كفلاتر */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2.5">
+            {([
+              { k: 'overdue', label: t('متأخرة', 'Overdue'), v: remCounts.overdue, cls: 'bg-red-50 text-red-700' },
+              { k: 'today', label: t('اليوم', 'Today'), v: remCounts.today, cls: 'bg-orange-50 text-orange-700' },
+              { k: 'tomorrow', label: t('غداً', 'Tomorrow'), v: remCounts.tomorrow, cls: 'bg-amber-50 text-amber-700' },
+              { k: 'week', label: t('خلال أسبوع', 'Within a week'), v: remCounts.week, cls: 'bg-blue-50 text-blue-700' },
+              { k: 'later', label: t('أبعد من ذلك', 'Later'), v: remCounts.later, cls: 'bg-slate-100 text-slate-700' },
+              { k: 'done', label: t('منجزة', 'Completed'), v: remCounts.done, cls: 'bg-emerald-50 text-emerald-700' },
+            ] as any[]).map((c) => (
+              <button key={c.k} onClick={() => setRemBucket(remBucket === c.k ? 'all' : c.k)} className={'text-start rounded-xl border p-3 transition-shadow hover:shadow-sm ' + c.cls + (remBucket === c.k ? ' ring-2 ring-primary/40' : '')}>
+                <div className="text-2xl font-bold leading-none">{c.v}</div>
+                <div className="text-xs mt-1.5 opacity-80">{c.label}</div>
+              </button>
+            ))}
+          </div>
+
+          {/* قائمة التذكيرات مرتبة بالأقرب موعداً — مع تعديل الموعد مباشرة */}
+          {(() => {
+            const list = remBucket === 'all' ? remList : remList.filter((tk) => bucketOf(tk) === remBucket)
+            if (list.length === 0) {
+              return <Card><CardContent className="py-14 text-center text-muted-foreground">{t('لا توجد تذكيرات في هذا التصنيف — كل شيء تحت السيطرة.', 'Nothing in this bucket — all clear.')}</CardContent></Card>
+            }
+            return (
+              <div className="space-y-2">
+                {list.map((task) => {
+                  const tone = rowTone(task)
+                  const rel = relDueLabel(task)
+                  return (
+                    <div key={task.id} className={'rounded-xl border border-s-4 bg-card p-3.5 shadow-sm ' + tone.border + ' ' + tone.bg}>
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <button onClick={() => openDetail(task.id)} className="text-start min-w-0 flex-1">
+                          <div className="font-medium text-[15px] leading-snug hover:underline">#{task.taskNumber} {task.title}</div>
+                          <div className="text-xs text-muted-foreground mt-1">{fmtDT(task.dueDate, isAr)}{task.category ? ' · ' + task.category : ''}</div>
+                        </button>
+                        <Chip id={task.status} />
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 mt-2.5">
+                        <span className={'rounded-full px-2 py-0.5 text-[11px] font-semibold ' + rel.cls}>{rel.text}</span>
+                        <span className={'rounded-full px-2 py-0.5 text-[11px] font-medium ' + PRIORITY[task.priority]?.chip}>{isAr ? PRIORITY[task.priority]?.ar : PRIORITY[task.priority]?.en}</span>
+                        {task.recurring && <Badge variant="outline" className="text-[10px] px-1.5 py-0">{t('متكررة', 'Recurring')}</Badge>}
+                        <span className="flex-1" />
+                        {RESCHEDULABLE_STATUSES.includes(task.status) && (
+                          <Button variant="outline" size="sm" onClick={() => openResched(task)}>
+                            <CalendarClock className="h-3.5 w-3.5 ms-1" /> {t('تعديل الموعد', 'Reschedule')}
+                          </Button>
+                        )}
+                        <Button variant="ghost" size="sm" onClick={() => openDetail(task.id)}>{t('التفاصيل', 'Details')}</Button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )
+          })()}
+
+          {/* آخر التنبيهات المتعلقة بمهامي (صفوف شخصية موجّهة لي فقط) */}
+          <Card>
+            <CardContent className="p-4 space-y-2.5">
+              <div className="text-sm font-semibold inline-flex items-center gap-1.5"><BellRing className="h-4 w-4" />{t('آخر التنبيهات المتعلقة بمهامي', 'Recent task notifications')}</div>
+              {notifsLoading ? (
+                <div className="flex justify-center py-6"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+              ) : myNotifs.length === 0 ? (
+                <div className="text-xs text-muted-foreground">{t('لا تنبيهات بعد — ستظهر هنا إشعارات إسناد المهام وتذكيرات المواعيد المتعلقة بمهامك أنت.', 'No notifications yet — task assignments and deadline reminders for your own tasks will appear here.')}</div>
+              ) : (
+                <div className="space-y-1.5">
+                  {myNotifs.map((n) => (
+                    <div key={n.id} className={'flex items-start gap-2 rounded-lg border px-2.5 py-2 text-xs ' + (n.read ? 'opacity-70' : 'bg-muted/30')}>
+                      <span className={'h-2 w-2 rounded-full mt-1.5 shrink-0 ' + (n.severity === 'critical' ? 'bg-red-500' : n.severity === 'warning' ? 'bg-amber-500' : 'bg-blue-500')} />
+                      <div className="min-w-0">
+                        <div className="font-medium">{n.title}</div>
+                        <div className="text-muted-foreground break-words">{n.message}</div>
+                        <div className="text-[10px] text-muted-foreground mt-0.5">{fmtDT(n.createdAt, isAr)}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <p className="text-[11px] text-muted-foreground">{t('كل التنبيهات تجدها في جرس الإشعارات أعلى الشاشة.', 'All notifications live in the bell icon at the top of the screen.')}</p>
+            </CardContent>
+          </Card>
+        </div>
       )}
 
       {/* ── تقرير الأداء ── */}
@@ -989,6 +1285,9 @@ export default function TasksPage() {
                     {canEmployeeAct && st === 'waiting' && (
                       <Button size="sm" onClick={() => doAction('resume')} disabled={busy}><Play className="h-4 w-4 ms-1" />{t('استئناف', 'Resume')}</Button>
                     )}
+                    {canEmployeeAct && RESCHEDULABLE_STATUSES.includes(st) && (
+                      <Button size="sm" variant="outline" onClick={() => openResched(detail)} disabled={busy}><CalendarClock className="h-4 w-4 ms-1" />{t('تعديل موعد الإنجاز', 'Reschedule')}</Button>
+                    )}
                     {canEmployeeAct && ['new', 'in_progress', 'returned', 'waiting'].includes(st) && (
                       <>
                         <Button size="sm" variant="outline" onClick={() => setAct({ mode: 'wait', note: '' })} disabled={busy}><PauseCircle className="h-4 w-4 ms-1" />{t('بانتظار جهة أخرى', 'Waiting (3rd party)')}</Button>
@@ -1126,6 +1425,37 @@ export default function TasksPage() {
               disabled={busy || !act.note.trim()}
             >
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : t('تأكيد', 'Confirm')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── v119: نافذة تعديل موعد الإنجاز (تذكيراتي) ── */}
+      <Dialog open={!!resched} onOpenChange={(o) => { if (!o) setResched(null) }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-start flex items-center gap-2">
+              <CalendarClock className="h-4 w-4" /> {t('تعديل موعد الإنجاز', 'Reschedule task')}
+            </DialogTitle>
+            <DialogDescription className="text-start">
+              {resched ? '#' + resched.taskNumber + ' — ' + resched.title : ''}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs">{t('موعد الإنجاز الجديد *', 'New due date *')}</Label>
+              <Input type="datetime-local" value={resched?.dueDate || ''} onChange={(e) => setResched(resched ? { ...resched, dueDate: e.target.value } : resched)} />
+              <p className="text-[11px] text-muted-foreground">{t('اختر تاريخاً ووقتاً في المستقبل. التعديل يُسجَّل في سجل المهمة باسمك ويصل تنبيه للإدارة.', 'Pick a future date & time. The change is logged in the task history under your name and management is notified.')}</p>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">{t('سبب التعديل (اختياري)', 'Reason (optional)')}</Label>
+              <Input value={resched?.note || ''} onChange={(e) => setResched(resched ? { ...resched, note: e.target.value } : resched)} placeholder={t('مثال: انتظار توريد مواد', 'e.g. waiting for material delivery')} />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setResched(null)}>{t('إلغاء', 'Cancel')}</Button>
+            <Button onClick={submitResched} disabled={busy || !resched?.dueDate}>
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : t('حفظ الموعد الجديد', 'Save new date')}
             </Button>
           </DialogFooter>
         </DialogContent>
