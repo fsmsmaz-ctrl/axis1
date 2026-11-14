@@ -5,11 +5,14 @@
 // هذه الاستعادة تُكمل تصميم v62: الملف الشخصي هو الموطن الوحيد — الواجهة مدمجة
 // في «بياناتي الوظيفية والإجازات» (hr-file-page) والخادم هنا.
 //
-// GET  — طلباتي + رصيدي + السياسة والعطلات (لاحتساب الأيام في النموذج) + أعلام الصلاحية
+// v118: خوارزمية الإجازات التلقائية — طلب السنوية لا يُرفض بسبب الرصيد:
+// إذا تجاوز الطلب الاستحقاق يُقبل الطلب ويصبح الرصيد سالباً عند الاعتماد،
+// ويتعافى تلقائياً 2.5 يوم مع اكتمال كل شهر من تاريخ بدء العقد.
+// GET  — طلباتي + رصيدي (الفعلي المحسوب آلياً) + السياسة والعطلات (لاحتساب الأيام في النموذج) + أعلام الصلاحية
 //        ?scope=team — طلبات فريق المسؤول المباشر (أو كل الطلبات للإدارة)
 // POST — إنشاء طلب جديد بحالة «بانتظار الموافقة»:
 //   • حساب الأيام تلقائياً وفق أيام العمل (استبعاد نهاية الأسبوع من السياسة والعطلات الرسمية)
-//   • الإجازة السنوية تُرفض إذا كان الرصيد غير كافٍ
+//   • الإجازة السنوية مسموحة حتى لو تجاوزت الرصيد — يصبح الرصيد سالباً عند الاعتماد (v118)
 //   • منع التداخل مع طلب آخر (بانتظار أو معتمد) لنفس الموظف
 //   • المستند إلزامي للإجازة المرضية (وفق السياسة)
 //   • إشعار للمسؤول المباشر (أو الإدارة عند غيابه) + إشعار استلام للموظف
@@ -28,6 +31,7 @@ import {
   countWorkingDays, loadHolidayKeys, fmtDay, LEAVE_TYPE_LABELS_AR,
   computeCompleteness,
 } from '@/lib/hr'
+import { computeEffectiveLeave } from '@/lib/leave-accrual'
 
 var MAX_ATTACHMENT_CHARS = 6000000 // ~4.5MB base64 — نفس حد صور الفواتير
 
@@ -78,7 +82,7 @@ export async function GET(req: NextRequest) {
           reason: true, substituteName: true, attachmentName: true,
           reviewNote: true, createdAt: true, reviewedAt: true,
           employeeId: true,
-          employee: { select: { id: true, name: true, nameEn: true, role: true, jobTitle: true, supervisorId: true } },
+          employee: { select: { id: true, name: true, nameEn: true, role: true, jobTitle: true, supervisorId: true, contractStart: true, joinDate: true } },
           reviewedBy: { select: { name: true, nameEn: true } },
         },
       })
@@ -94,23 +98,25 @@ export async function GET(req: NextRequest) {
           if (a.attachmentData) attMap[a.id] = a.attachmentData
         }
       }
-      // أرصدة أصحاب الطلبات السنوية المعلقة — لتساعد المعتمد على القرار (بدون رواتب)
-      var pendingAnnual = teamRequests.filter(function(r) { return r.type === 'annual' && r.status === 'pending' })
+      // v118: أرصدة أصحاب الطلبات السنوية — محسوبة آلياً من تاريخ بدء العقد
+      // (المستحق − المستخدم) لتساعد المعتمد على القرار، وسالبة إن تجاوز الاستحقاق
+      var annualReqs = teamRequests.filter(function(r) { return r.type === 'annual' })
       var balancesById: Record<string, any> = {}
-      if (pendingAnnual.length > 0) {
-        var empIds = Array.from(new Set(pendingAnnual.map(function(r) { return r.employeeId })))
+      if (annualReqs.length > 0) {
+        var empIds = Array.from(new Set(annualReqs.map(function(r) { return r.employeeId })))
         var bals = await db.leaveBalance.findMany({ where: { userId: { in: empIds } } })
         for (var b of bals) balancesById[b.userId] = b
       }
       teamRequests = teamRequests.map(function(r) {
         var b = balancesById[r.employeeId]
+        var eff = computeEffectiveLeave(r.employee || {}, b ? b.used : 0)
         return {
           id: r.id, type: r.type, startDate: r.startDate, endDate: r.endDate, days: r.days,
           status: r.status, reason: r.reason, substituteName: r.substituteName,
           attachmentName: r.attachmentName, attachmentData: attMap[r.id] || null,
           reviewNote: r.reviewNote, createdAt: r.createdAt, reviewedAt: r.reviewedAt,
           employee: r.employee,
-          remainingBalance: b ? (b.annualTotal + b.carriedOver - b.used) : null,
+          remainingBalance: eff.basis ? eff.remaining : null,
         }
       })
     }
@@ -151,9 +157,11 @@ export async function GET(req: NextRequest) {
     // v68: اكتمال بيانات الموظف — نفس بوابات hr-file-page (للاتساق مع أي واجهة تستدعي هذا المسار)
     var meRow = await db.user.findUnique({
       where: { id: me.id },
-      select: { jobTitle: true, department: true, joinDate: true },
+      select: { jobTitle: true, department: true, joinDate: true, contractStart: true },
     })
     var completeness = computeCompleteness(meRow || {}, balance)
+    // v118: الرصيد الفعلي المحسوب آلياً — الاستحقاق من تاريخ بدء العقد/الالتحاق
+    var effectiveBalance = computeEffectiveLeave(meRow || {}, balance.used)
 
     return NextResponse.json({
       requests: requestsOut,
@@ -161,6 +169,8 @@ export async function GET(req: NextRequest) {
       teamCount,
       isHR: manager,
       balance,
+      // v118: الرصيد الفعلي المحسوب آلياً — الواجهة تعرضه بدل الحساب اليدوي القديم
+      effectiveBalance,
       completeness,
       policy: {
         weekendDays: policy.weekendDays,
@@ -247,17 +257,16 @@ export async function POST(req: NextRequest) {
       }, { status: 400 })
     }
 
-    // الإجازة السنوية: شرط كفاية الرصيد
+    // الإجازة السنوية — v118: لا رفض بسبب الرصيد. نحسب الرصيد الفعلي ونرفق
+    // إشارة willGoNegative ليعرف الموظف أن رصيده سيسالب عند الاعتماد ويتعافى شهرياً
     var remaining: number | null = null
+    var willGoNegative = false
     if (type === 'annual') {
       var balance = await getOrCreateBalance(me.id, policy.defaultAnnualDays)
-      remaining = balance.annualTotal + balance.carriedOver - balance.used
-      if (days > remaining) {
-        return NextResponse.json({
-          error: 'insufficient_balance',
-          message: 'الرصيد السنوي غير كافٍ — المتبقي ' + remaining + ' يوم والمطلوب ' + days + ' يوم',
-        }, { status: 400 })
-      }
+      var meRowA = await db.user.findUnique({ where: { id: me.id }, select: { contractStart: true, joinDate: true } })
+      var eff = computeEffectiveLeave(meRowA || {}, balance.used)
+      remaining = eff.remaining
+      willGoNegative = days > remaining
     }
 
     var created = await db.leaveRequest.create({
@@ -327,7 +336,7 @@ export async function POST(req: NextRequest) {
       console.warn('v68 leave notifications skipped:', notifyErr)
     }
 
-    return NextResponse.json({ request: created, remaining })
+    return NextResponse.json({ request: created, remaining, willGoNegative })
   } catch (error) {
     return handleDbError(error, 'إنشاء طلب الإجازة')
   }
