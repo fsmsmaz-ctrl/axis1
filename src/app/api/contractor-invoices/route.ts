@@ -4,7 +4,7 @@
 // GET  /api/contractor-invoices — مقترحات الفواتير بانتظار الموافقة.
 //      النظام ولّدها لكل 10 أمتار من كل خط حفر (شاملة الخطوط
 //      القديمة والمنتهية) لكنه لم يسجلها — تُعرض في نافذة منبثقة
-//      خاصة بقسم الإيرادات والتكاليف ليدخل الموظف السعر يدوياً.
+//      خاصة بقسم التكاليف ليدخل الموظف السعر يدوياً.
 //      قبل الجلب يعمل التنظيف الرجعي الذي يحذف فواتير v114 الآلية.
 // POST /api/contractor-invoices — اعتماد فاتورة: يقرأ الموظف
 //      المقترح ويدخل السعر يدوياً ويوافق، وبعد الموافقة فقط تُسجَّل
@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
     || hasPermission(user.role, 'rpt_revenue', user.permissions, user.email)
     || hasPermission(user.role, 'rpt_profit', user.permissions, user.email)
   if (!canReadCosts) {
-    return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية عرض التكاليف والإيرادات' }, { status: 403 })
+    return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية عرض التكاليف' }, { status: 403 })
   }
 
   // v116: التنظيف الرجعي لفواتير v114 الآلية يعمل هنا أيضاً (مُقيَّد زمنياً داخلياً)
