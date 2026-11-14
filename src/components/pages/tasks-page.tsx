@@ -15,7 +15,7 @@ import {
 import {
   ListChecks, Plus, Paperclip, History, Play, PauseCircle, Send, CheckCircle2,
   Undo2, XCircle, Loader2, Clock, AlertTriangle, Filter, BarChart3, Download, ShieldCheck,
-  Search, BellRing, CalendarClock, ArrowUpDown
+  Search, BellRing, CalendarClock, ArrowUpDown, NotebookPen, Pencil, Trash2, FileText
 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
@@ -101,6 +101,40 @@ function emptyTaskForm() {
   return { title: '', assigneeId: '', dueDate: toLocalInput(d), priority: 'normal', size: 'medium', category: '', description: '', recurring: '' }
 }
 
+/** v120: نموذج مهمة شخصية فارغ (تذكيراتي) — موعد افتراضي: غداً 9:00 صباحاً */
+function emptyPersonalForm() {
+  const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(9, 0, 0, 0)
+  return { title: '', details: '', dueDate: toLocalInput(d), priority: 'normal' }
+}
+
+/** v120: تنزيل التقرير الشخصي بصيغة CSV (يدعم العربية في Excel عبر BOM) */
+function downloadPersonalCsv(rows: any[]) {
+  const P: Record<string, string> = { urgent: 'عاجلة', high: 'عالية', normal: 'عادية', low: 'منخفضة' }
+  const head = ['العنوان', 'الضرورة', 'تاريخ النهاية', 'الحالة', 'أُنجزت في', 'سُجلت في', 'التفاصيل']
+  const esc = (v: any) => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"'
+  const lines = [head.map(esc).join(',')]
+  for (const r of rows) {
+    const st = r.done ? 'منجزة' : (new Date(r.dueDate).getTime() < Date.now() ? 'متأخرة' : 'قيد الانتظار')
+    lines.push([
+      r.title,
+      P[r.priority] || r.priority,
+      new Date(r.dueDate).toLocaleString('ar-EG'),
+      st,
+      r.doneAt ? new Date(r.doneAt).toLocaleString('ar-EG') : '',
+      new Date(r.createdAt).toLocaleString('ar-EG'),
+      r.details || '',
+    ].map(esc).join(','))
+  }
+  const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' })
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = 'تقرير-تذكيراتي-' + new Date().toISOString().split('T')[0] + '.csv'
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(a.href)
+}
+
 function fmtDT(v: any, ar: boolean) {
   if (!v) return '—'
   const d = new Date(v)
@@ -152,6 +186,19 @@ export default function TasksPage() {
   const [myNotifs, setMyNotifs] = useState<any[]>([])
   const [notifsLoading, setNotifsLoading] = useState(false)
   const [resched, setResched] = useState<{ id: string; title: string; taskNumber: number; dueDate: string; note: string } | null>(null)
+
+  // v120: مهامي الخاصة «تذكيراتي» — جدول مستقل لا يراه أحد غير صاحبه
+  const [personal, setPersonal] = useState<any[]>([])
+  const [personalLoading, setPersonalLoading] = useState(false)
+  const [pFilter, setPFilter] = useState<'all' | 'overdue' | 'today' | 'week' | 'done'>('all')
+  const [showPersonalForm, setShowPersonalForm] = useState(false)
+  const [pForm, setPForm] = useState(emptyPersonalForm)
+  const [pEditing, setPEditing] = useState<any>(null)
+  const [pDeletingId, setPDeletingId] = useState<string | null>(null)
+  const [pBusy, setPBusy] = useState(false)
+  // v120: التقرير الشخصي من تذكيراتي (يومي / أسبوعي / شهري)
+  const [showPReport, setShowPReport] = useState(false)
+  const [pReportPeriod, setPReportPeriod] = useState<'day' | 'week' | 'month'>('week')
 
   // نافذة إنشاء مهمة جديدة (للإدارة ومدير النظام فقط)
   const [showCreate, setShowCreate] = useState(false)
@@ -212,8 +259,128 @@ export default function TasksPage() {
     } catch {}
   }
 
+  // ─── v120: تذكيراتي — المهام الشخصية (جلب / إنشاء / تعديل / إنجاز / حذف) ───
+  async function fetchPersonal() {
+    setPersonalLoading(true)
+    try {
+      const res = await authedFetch('/api/my-reminders', { noCache: true })
+      const data = await res.json().catch(() => ({} as any))
+      if (res.ok) setPersonal(data.reminders || [])
+    } catch {}
+    setPersonalLoading(false)
+  }
+
+  async function submitPersonal(e: React.FormEvent) {
+    e.preventDefault()
+    if (!pForm.title.trim() || !pForm.dueDate) {
+      toast.error(isAr ? 'أكمل: العنوان وتاريخ النهاية' : 'Title and end date are required')
+      return
+    }
+    setPBusy(true)
+    try {
+      const res = await authedFetch('/api/my-reminders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: pForm.title,
+          details: pForm.details || undefined,
+          priority: pForm.priority,
+          dueDate: new Date(pForm.dueDate).toISOString(),
+        }),
+      })
+      const data = await res.json().catch(() => ({} as any))
+      if (!res.ok) {
+        toast.error(data.message || (isAr ? 'فشل إنشاء المهمة الشخصية' : 'Failed to create personal task'))
+        return
+      }
+      toast.success(isAr ? 'سُجّلت مهمتك الشخصية — ستصل تنبيهاتها تلقائياً حتى موعد النهاية' : 'Personal task saved — automatic reminders are on')
+      setPForm(emptyPersonalForm())
+      setShowPersonalForm(false)
+      fetchPersonal()
+    } catch {
+      toast.error(isAr ? 'تعذر الوصول للخادم — تحقق من الاتصال' : 'Network error — check connection')
+    } finally {
+      setPBusy(false)
+    }
+  }
+
+  async function savePersonalEdit() {
+    if (!pEditing || !String(pEditing.title || '').trim() || !pEditing.dueDate) return
+    setPBusy(true)
+    try {
+      const res = await authedFetch('/api/my-reminders', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: pEditing.id,
+          title: pEditing.title,
+          details: pEditing.details || undefined,
+          priority: pEditing.priority,
+          dueDate: new Date(pEditing.dueDate).toISOString(),
+        }),
+      })
+      const data = await res.json().catch(() => ({} as any))
+      if (!res.ok) {
+        toast.error(data.message || (isAr ? 'فشل حفظ التعديل' : 'Update failed'))
+        return
+      }
+      toast.success(isAr ? 'تم حفظ التعديل' : 'Changes saved')
+      setPEditing(null)
+      fetchPersonal()
+    } catch {
+      toast.error(isAr ? 'تعذر الوصول للخادم — تحقق من الاتصال' : 'Network error — check connection')
+    } finally {
+      setPBusy(false)
+    }
+  }
+
+  async function togglePersonalDone(r: any) {
+    setPBusy(true)
+    try {
+      const res = await authedFetch('/api/my-reminders', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: r.id, done: !r.done }),
+      })
+      const data = await res.json().catch(() => ({} as any))
+      if (!res.ok) {
+        toast.error(data.message || (isAr ? 'فشل تحديث الحالة' : 'Update failed'))
+        return
+      }
+      toast.success(r.done ? (isAr ? 'أُعيد فتح المهمة' : 'Task reopened') : (isAr ? 'أُنجزت المهمة — أحسنت!' : 'Task completed — well done!'))
+      fetchPersonal()
+    } catch {
+      toast.error(isAr ? 'تعذر الوصول للخادم — تحقق من الاتصال' : 'Network error — check connection')
+    } finally {
+      setPBusy(false)
+    }
+  }
+
+  // حذف بضغطتين: الأولى تسلّح التأكيد، والثانية تحذف فعلٍ (حماية من الحذف الخاطئ)
+  async function deletePersonal(id: string) {
+    if (pDeletingId !== id) { setPDeletingId(id); return }
+    setPBusy(true)
+    try {
+      const res = await authedFetch('/api/my-reminders?id=' + encodeURIComponent(id), { method: 'DELETE' })
+      const data = await res.json().catch(() => ({} as any))
+      if (!res.ok) {
+        toast.error(data.message || (isAr ? 'فشل الحذف' : 'Delete failed'))
+        return
+      }
+      toast.success(isAr ? 'حُذف التذكير' : 'Reminder deleted')
+      setPDeletingId(null)
+      fetchPersonal()
+    } catch {
+      toast.error(isAr ? 'تعذر الوصول للخادم — تحقق من الاتصال' : 'Network error — check connection')
+    } finally {
+      setPBusy(false)
+    }
+  }
+
   useEffect(() => {
     fetchTasks()
+    // v120: جلب مهامي الخاصة عند الفتح — يفعّل أيضاً فحص التنبيهات المستمرة على الخادم
+    fetchPersonal()
   }, [])
 
   // v77: قائمة الموظفين تُجلب للمديرين فقط —
@@ -223,6 +390,8 @@ export default function TasksPage() {
   useEffect(() => { if (tab === 'perf') fetchPerf(perfMonth) }, [tab])
 
   // v119: آخر التنبيهات الشخصية المتعلقة بالمهام — تُجلب عند فتح تبويب «تذكيراتي» فقط
+  // v120: مهامي الخاصة تُجلب أولاً (يفعّل فحص التنبيهات المستمرة على الخادم)، ثم تنبيهاتي،
+  // مع تحديث خفيف كل 60 ثانية طوال فتح التبويب — تنبيهات حية بلا إعادة تحميل يدوي
   // (المنطق داخل التأثير نفسه لتفادي تحذير تبعيات react-hooks — نفس نمط بقية التأثيرات)
   useEffect(() => {
     if (tab !== 'reminders' || !viewer.userId) return
@@ -230,16 +399,18 @@ export default function TasksPage() {
     ;(async () => {
       setNotifsLoading(true)
       try {
+        await fetchPersonal()
         const res = await authedFetch('/api/notifications', { noCache: true })
         const data = await res.json().catch(() => ({} as any))
         if (!cancelled && res.ok) {
-          const mine = (data.notifications || []).filter((n: any) => n.userId === viewer.userId && String(n.type || '').startsWith('task_'))
+          const mine = (data.notifications || []).filter((n: any) => n.userId === viewer.userId && (String(n.type || '').startsWith('task_') || String(n.type || '').startsWith('personal_reminder_')))
           setMyNotifs(mine.slice(0, 8))
         }
       } catch {}
       if (!cancelled) setNotifsLoading(false)
     })()
-    return () => { cancelled = true }
+    const iv = setInterval(() => { fetchPersonal() }, 60000)
+    return () => { cancelled = true; clearInterval(iv) }
   }, [tab, viewer.userId])
 
   async function fetchPerf(month: string) {
@@ -340,6 +511,36 @@ export default function TasksPage() {
     open.sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
     return open
   }, [myTasks])
+
+  // ─── v120: تذكيراتي — مهامي الخاصة (جدول مستقل لا يراه أحد غيري) ───
+  const pCounts = useMemo(() => {
+    const now = Date.now()
+    const c = { overdue: 0, today: 0, week: 0, later: 0, done: 0 }
+    for (const r of personal) {
+      if (r.done) { c.done += 1; continue }
+      const dueT = new Date(r.dueDate)
+      if (dueT.getTime() < now) { c.overdue += 1; continue }
+      const dd = dayDiff(dueT, new Date(now))
+      if (dd === 0) c.today += 1
+      else if (dueT.getTime() <= now + 7 * 86400000) c.week += 1
+      else c.later += 1
+    }
+    return c
+  }, [personal])
+
+  const personalList = useMemo(() => {
+    const now = Date.now()
+    const list = personal.filter((r) => {
+      if (pFilter === 'done') return r.done
+      if (r.done) return false
+      const dueT = new Date(r.dueDate)
+      if (pFilter === 'overdue') return dueT.getTime() < now
+      if (pFilter === 'today') return dayDiff(dueT, new Date(now)) === 0 && dueT.getTime() >= now
+      if (pFilter === 'week') return dueT.getTime() >= now && dueT.getTime() <= now + 7 * 86400000
+      return true
+    })
+    return [...list].sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
+  }, [personal, pFilter])
 
   /** تصنيف المهمة زمنياً: متأخرة / اليوم / غداً / خلال أسبوع / أبعد */
   function bucketOf(t: any): 'overdue' | 'today' | 'tomorrow' | 'week' | 'later' {
@@ -641,7 +842,7 @@ export default function TasksPage() {
           <div>
             <h1 className="text-xl lg:text-2xl font-bold">
               {t('إدارة المهام', 'Task Management')}
-              <span className="ms-2 align-middle text-[10px] font-mono font-normal text-muted-foreground border border-border rounded px-1.5 py-0.5" title="Build version marker">v13.0</span>
+              <span className="ms-2 align-middle text-[10px] font-mono font-normal text-muted-foreground border border-border rounded px-1.5 py-0.5" title="Build version marker">v14.0</span>
             </h1>
             <p className="text-xs text-muted-foreground">{t('تنظيم مهام الموظفين ومتابعة الإنجاز والتأخير', 'Assign, track and evaluate employee tasks')}</p>
           </div>
@@ -650,8 +851,8 @@ export default function TasksPage() {
         <div className="flex flex-wrap items-center gap-1.5">
           <Button variant={tab === 'reminders' ? 'default' : 'outline'} size="sm" onClick={() => setTab('reminders')}>
             <BellRing className="h-4 w-4 ms-1" /> {t('تذكيراتي', 'My Reminders')}
-            {remCounts.overdue + remCounts.today > 0 && (
-              <span className="ms-1 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[10px] font-bold">{remCounts.overdue + remCounts.today}</span>
+            {(remCounts.overdue + remCounts.today + pCounts.overdue + pCounts.today) > 0 && (
+              <span className="ms-1 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[10px] font-bold">{remCounts.overdue + remCounts.today + pCounts.overdue + pCounts.today}</span>
             )}
           </Button>
           {viewer.isManager && (
@@ -927,10 +1128,10 @@ export default function TasksPage() {
       {/* ── v119: تذكيراتي — منظم مهامي ومواعيدي (شخصي لكل موظف) ── */}
       {tab === 'reminders' && (
         <div className="space-y-4">
-          {/* لافتة التنبيه اليومية */}
+          {/* لافتة التنبيه اليومية — v120: تشمل المهام الموكّلة والمهام الشخصية معاً */}
           {(() => {
-            const urgent = remCounts.overdue
-            const todayN = remCounts.today
+            const urgent = remCounts.overdue + pCounts.overdue
+            const todayN = remCounts.today + pCounts.today
             if (urgent > 0 || todayN > 0) {
               const parts: string[] = []
               if (urgent > 0) parts.push(isAr ? (urgent === 1 ? 'مهمة واحدة متأخرة عن موعدها' : urgent + ' مهام متأخرة عن مواعيدها') : (urgent === 1 ? '1 overdue task' : urgent + ' overdue tasks'))
@@ -950,6 +1151,97 @@ export default function TasksPage() {
               </div>
             )
           })()}
+
+          {/* ── v120: مهامي الخاصة — ينشئها الموظف لنفسه ولا يراها أي شخص آخر ── */}
+          <Card>
+            <CardContent className="p-4 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold inline-flex flex-wrap items-center gap-1.5">
+                    <NotebookPen className="h-4 w-4 shrink-0" /> {t('مهامي الخاصة', 'My personal tasks')}
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-emerald-50 text-emerald-700 border-emerald-300">{t('خصوصية كاملة — لا تظهر لأي شخص آخر', 'Fully private — visible to you only')}</Badge>
+                  </div>
+                  <div className="text-[11px] text-muted-foreground mt-1">{t('سجّل مهامك وأعمالك الخاصة مع تاريخ نهاية لكل منها — يصلك تنبيه يومي حتى تنجزها. محفوظة لك وحدك: لا تراها الإدارة ولا الموظفون الآخرون.', 'Record your own tasks with an end date — you get daily reminders until done. Stored for you alone: management and other employees never see them.')}</div>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Button variant="outline" size="sm" onClick={() => setShowPReport(true)}>
+                    <FileText className="h-3.5 w-3.5 ms-1" /> {t('تقريري', 'My report')}
+                  </Button>
+                  <Button size="sm" className="shadow-sm" onClick={() => { setPForm(emptyPersonalForm()); setShowPersonalForm(true) }}>
+                    <Plus className="h-4 w-4 ms-1" /> {t('مهمة شخصية جديدة', 'New personal task')}
+                  </Button>
+                </div>
+              </div>
+
+              {/* فلاتر سريعة للمهام الشخصية */}
+              <div className="flex flex-wrap items-center gap-1.5">
+                {([
+                  { k: 'all', label: t('الكل', 'All'), v: personal.length, hot: false },
+                  { k: 'overdue', label: t('متأخرة', 'Overdue'), v: pCounts.overdue, hot: true },
+                  { k: 'today', label: t('اليوم', 'Today'), v: pCounts.today, hot: true },
+                  { k: 'week', label: t('هذا الأسبوع', 'This week'), v: pCounts.week, hot: false },
+                  { k: 'done', label: t('منجزة', 'Completed'), v: pCounts.done, hot: false },
+                ] as any[]).map((c) => (
+                  <button key={c.k} onClick={() => setPFilter(pFilter === c.k ? 'all' : (c.k as any))} className={'rounded-full border px-2.5 py-1 text-xs transition-colors ' + (pFilter === c.k ? 'bg-primary text-primary-foreground border-primary' : (c.hot && c.v > 0 ? 'border-red-300 bg-red-50 text-red-700' : 'border-border hover:bg-muted'))}>
+                    {c.label} <span className="font-bold">{c.v}</span>
+                  </button>
+                ))}
+              </div>
+
+              {/* قائمة المهام الشخصية — مرتبة بالأقرب موعداً */}
+              {personalLoading && personal.length === 0 ? (
+                <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+              ) : personalList.length === 0 ? (
+                <div className="py-8 text-center text-xs text-muted-foreground">
+                  {personal.length === 0
+                    ? t('لا مهام شخصية بعد — اضغط «مهمة شخصية جديدة» لترتيب عملك ومواعيدك، وسيصلك تنبيه يومي لكل مهمة حتى موعد نهايتها.', 'No personal tasks yet — tap "New personal task" to organize your work and deadlines; you will get a daily reminder for each task until its end date.')
+                    : t('لا توجد تذكيرات في هذا التصنيف.', 'Nothing in this filter.')}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {personalList.map((r) => {
+                    const rel = relDueLabel(r)
+                    const dueMs = new Date(r.dueDate).getTime()
+                    const tone = r.done
+                      ? ' border-s-emerald-500'
+                      : (dueMs < Date.now() ? ' border-s-red-500 bg-red-50/40' : (dueMs - Date.now() < 24 * 3600 * 1000 ? ' border-s-orange-400 bg-orange-50/30' : ' border-s-slate-300'))
+                    return (
+                      <div key={r.id} className={'rounded-xl border border-s-4 bg-card p-3 shadow-sm' + tone + (r.done ? ' opacity-70' : '')}>
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div className="min-w-0 flex-1">
+                            <div className={'font-medium text-[15px] leading-snug break-words' + (r.done ? ' line-through text-muted-foreground' : '')}>{r.title}</div>
+                            {r.details && <div className="text-xs text-muted-foreground mt-1 whitespace-pre-wrap break-words">{r.details}</div>}
+                            <div className="text-xs text-muted-foreground mt-1">{t('تاريخ النهاية', 'End date')}: {fmtDT(r.dueDate, isAr)}</div>
+                          </div>
+                          <div className="flex flex-col items-end gap-1.5 shrink-0">
+                            {r.done ? (
+                              <span className="rounded-full px-2 py-0.5 text-[11px] font-semibold bg-emerald-100 text-emerald-700">{t('منجزة', 'Completed')}</span>
+                            ) : (
+                              <span className={'rounded-full px-2 py-0.5 text-[11px] font-semibold ' + rel.cls}>{rel.text}</span>
+                            )}
+                            <span className={'rounded-full px-2 py-0.5 text-[11px] font-medium ' + (PRIORITY[r.priority]?.chip || 'bg-slate-100 text-slate-700')}>{isAr ? (PRIORITY[r.priority]?.ar || r.priority) : (PRIORITY[r.priority]?.en || r.priority)}</span>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2 mt-2.5">
+                          <Button variant={r.done ? 'outline' : 'default'} size="sm" className={r.done ? '' : 'bg-emerald-600 hover:bg-emerald-600'} onClick={() => togglePersonalDone(r)} disabled={pBusy}>
+                            {r.done ? <Undo2 className="h-3.5 w-3.5 ms-1" /> : <CheckCircle2 className="h-3.5 w-3.5 ms-1" />}
+                            {r.done ? t('إعادة فتح', 'Reopen') : t('تم الإنجاز', 'Mark done')}
+                          </Button>
+                          <Button variant="outline" size="sm" onClick={() => setPEditing({ id: r.id, title: r.title, details: r.details || '', priority: r.priority, dueDate: toLocalInput(new Date(r.dueDate)) })} disabled={pBusy}>
+                            <Pencil className="h-3.5 w-3.5 ms-1" /> {t('تعديل', 'Edit')}
+                          </Button>
+                          <Button variant={pDeletingId === r.id ? 'destructive' : 'ghost'} size="sm" onClick={() => deletePersonal(r.id)} disabled={pBusy}>
+                            <Trash2 className="h-3.5 w-3.5 ms-1" /> {pDeletingId === r.id ? t('اضغط مجدداً للتأكيد', 'Click again to confirm') : t('حذف', 'Delete')}
+                          </Button>
+                          {r.done && r.doneAt && <span className="text-[11px] text-emerald-700 ms-auto">{t('أُنجزت في', 'Completed at')} {fmtDT(r.doneAt, isAr)}</span>}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
           {/* بطاقات تصنيف المواعيد — تعمل كفلاتر */}
           <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2.5">
@@ -1460,6 +1752,206 @@ export default function TasksPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* ── v120: نافذة إنشاء مهمة شخصية (تذكيراتي) ── */}
+      <Dialog open={showPersonalForm} onOpenChange={(o) => { if (!o) setShowPersonalForm(false) }}>
+        <DialogContent className="sm:max-w-[520px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-start flex items-center gap-2">
+              <NotebookPen className="h-4 w-4" /> {t('مهمة شخصية جديدة', 'New personal task')}
+            </DialogTitle>
+            <DialogDescription className="text-start">
+              {t('تُسجّل لنفسك فقط: عنوان المهمة، تاريخ نهايتها، ضرورتها، وتفاصيلها. يصلك تنبيه يومي حتى موعد النهاية حتى تنجزها — ولا يراها أي شخص آخر.', 'Recorded for you only: task title, end date, priority and details. You get daily reminders until done — nobody else can see them.')}
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={submitPersonal} className="space-y-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs">{t('عنوان المهمة *', 'Task title *')}</Label>
+              <Input value={pForm.title} onChange={(e) => setPForm({ ...pForm, title: e.target.value })} placeholder={t('مثال: متابعة توريد المواد مع المورد', 'e.g. follow up material delivery with supplier')} />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <div className="space-y-1.5">
+                <Label className="text-xs">{t('تاريخ نهاية المهمة *', 'End date & time *')}</Label>
+                <Input type="datetime-local" value={pForm.dueDate} onChange={(e) => setPForm({ ...pForm, dueDate: e.target.value })} />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">{t('ضرورة المهمة', 'Priority')}</Label>
+                <Select value={pForm.priority} onValueChange={(v) => setPForm({ ...pForm, priority: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(PRIORITY).map(([k, p]) => (<SelectItem key={k} value={k}>{isAr ? p.ar : p.en}</SelectItem>))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">{t('تفاصيل المهمة (اختياري)', 'Details (optional)')}</Label>
+              <Textarea rows={3} value={pForm.details} onChange={(e) => setPForm({ ...pForm, details: e.target.value })} placeholder={t('اكتب ما يتعلق بالمهمة: جهات الاتصال، الأرقام، الملاحظات...', 'Write anything related: contacts, numbers, notes...')} />
+            </div>
+            <DialogFooter className="gap-2">
+              <Button type="button" variant="outline" onClick={() => setShowPersonalForm(false)}>{t('إلغاء', 'Cancel')}</Button>
+              <Button type="submit" disabled={pBusy}>
+                {pBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : (<><Plus className="h-4 w-4 ms-1" />{t('حفظ التذكير', 'Save reminder')}</>)}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── v120: نافذة تعديل مهمة شخصية ── */}
+      <Dialog open={!!pEditing} onOpenChange={(o) => { if (!o) setPEditing(null) }}>
+        <DialogContent className="sm:max-w-[520px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-start flex items-center gap-2">
+              <Pencil className="h-4 w-4" /> {t('تعديل المهمة الشخصية', 'Edit personal task')}
+            </DialogTitle>
+            <DialogDescription className="text-start">
+              {t('تعديل بيانات تذكيرك الخاص: العنوان، تاريخ النهاية، الضرورة والتفاصيل. تغيير الموعد يوقف تنبيهات التأخير القديمة ويعيد الحساب على الموعد الجديد.', 'Edit your private reminder: title, end date, priority and details. Changing the date stops old overdue alerts and recalculates on the new date.')}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs">{t('عنوان المهمة *', 'Task title *')}</Label>
+              <Input value={pEditing?.title || ''} onChange={(e) => setPEditing(pEditing ? { ...pEditing, title: e.target.value } : pEditing)} />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <div className="space-y-1.5">
+                <Label className="text-xs">{t('تاريخ نهاية المهمة *', 'End date & time *')}</Label>
+                <Input type="datetime-local" value={pEditing?.dueDate || ''} onChange={(e) => setPEditing(pEditing ? { ...pEditing, dueDate: e.target.value } : pEditing)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">{t('ضرورة المهمة', 'Priority')}</Label>
+                <Select value={pEditing?.priority || 'normal'} onValueChange={(v) => setPEditing(pEditing ? { ...pEditing, priority: v } : pEditing)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(PRIORITY).map(([k, p]) => (<SelectItem key={k} value={k}>{isAr ? p.ar : p.en}</SelectItem>))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">{t('تفاصيل المهمة (اختياري)', 'Details (optional)')}</Label>
+              <Textarea rows={3} value={pEditing?.details || ''} onChange={(e) => setPEditing(pEditing ? { ...pEditing, details: e.target.value } : pEditing)} />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setPEditing(null)}>{t('إلغاء', 'Cancel')}</Button>
+            <Button onClick={savePersonalEdit} disabled={pBusy || !String(pEditing?.title || '').trim() || !pEditing?.dueDate}>
+              {pBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : t('حفظ التعديل', 'Save changes')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── v120: التقرير الشخصي (يومي / أسبوعي / شهري) من تذكيراتي ── */}
+      <Dialog open={showPReport} onOpenChange={(o) => { if (!o) setShowPReport(false) }}>
+        <DialogContent className="sm:max-w-[680px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-start flex items-center gap-2">
+              <FileText className="h-4 w-4" /> {t('تقريري الشخصي — تذكيراتي', 'My personal report')}
+            </DialogTitle>
+            <DialogDescription className="text-start">
+              {t('تقرير خاص بمهامك الشخصية المسجلة في تذكيراتي فقط — لا يشمل المهام الموكّلة إليك من الإدارة ولا أي بيانات لموظف آخر. يمكن طباعته أو تنزيله بصيغة CSV.', 'A report of your personal tasks recorded in My Reminders only — excludes management-assigned tasks and any other employee data. Print it or download as CSV.')}
+            </DialogDescription>
+          </DialogHeader>
+          {(() => {
+            const now = new Date()
+            let start: Date
+            let labelAr = ''
+            if (pReportPeriod === 'day') { start = new Date(now.getFullYear(), now.getMonth(), now.getDate()); labelAr = 'تقرير اليوم' }
+            else if (pReportPeriod === 'week') { start = new Date(now.getTime() - 7 * 86400000); labelAr = 'تقرير آخر 7 أيام' }
+            else { start = new Date(now.getFullYear(), now.getMonth(), 1); labelAr = 'تقرير هذا الشهر' }
+            const rows = personal.filter((r) => new Date(r.createdAt).getTime() >= start.getTime())
+            const doneN = rows.filter((r) => r.done).length
+            const openRows = rows.filter((r) => !r.done)
+            const lateN = openRows.filter((r) => new Date(r.dueDate).getTime() < Date.now()).length
+            const P: Record<string, string> = { urgent: 'عاجلة', high: 'عالية', normal: 'عادية', low: 'منخفضة' }
+            return (
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {([
+                    { k: 'day', label: t('يومي', 'Daily') },
+                    { k: 'week', label: t('أسبوعي', 'Weekly') },
+                    { k: 'month', label: t('شهري', 'Monthly') },
+                  ] as any[]).map((p) => (
+                    <Button key={p.k} size="sm" variant={pReportPeriod === p.k ? 'default' : 'outline'} onClick={() => setPReportPeriod(p.k)}>{p.label}</Button>
+                  ))}
+                  <span className="text-xs text-muted-foreground ms-auto">{t('الفترة', 'Period')}: {labelAr}</span>
+                </div>
+                <div className="pr-print-area space-y-3">
+                  <div className="text-center space-y-1 border-b pb-2">
+                    <div className="font-bold">{t('تقرير المهام الشخصية', 'Personal Tasks Report')} — {labelAr}</div>
+                    <div className="text-xs text-muted-foreground">{userName(user)} · {fmtDT(now, isAr)}</div>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {([
+                      { label: t('سُجلت', 'Recorded'), v: rows.length, cls: 'bg-slate-100 text-slate-700' },
+                      { label: t('منجزة', 'Completed'), v: doneN, cls: 'bg-emerald-50 text-emerald-700' },
+                      { label: t('قيد الانتظار', 'Pending'), v: openRows.length - lateN, cls: 'bg-blue-50 text-blue-700' },
+                      { label: t('متأخرة', 'Overdue'), v: lateN, cls: 'bg-red-50 text-red-700' },
+                    ] as any[]).map((c, i) => (
+                      <div key={i} className={'rounded-xl border p-3 ' + c.cls}>
+                        <div className="text-2xl font-bold leading-none">{c.v}</div>
+                        <div className="text-xs mt-1.5 opacity-80">{c.label}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="overflow-x-auto rounded-xl border">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b bg-muted/50 text-muted-foreground text-xs">
+                          <th className="p-2.5 text-start font-medium">{t('المهمة', 'Task')}</th>
+                          <th className="p-2.5 text-start font-medium">{t('الضرورة', 'Priority')}</th>
+                          <th className="p-2.5 text-start font-medium">{t('تاريخ النهاية', 'End date')}</th>
+                          <th className="p-2.5 text-start font-medium">{t('الحالة', 'Status')}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rows.length === 0 ? (
+                          <tr><td colSpan={4} className="p-6 text-center text-muted-foreground">{t('لا مهام شخصية مسجلة خلال هذه الفترة', 'No personal tasks recorded in this period')}</td></tr>
+                        ) : rows.map((r) => {
+                          const late = !r.done && new Date(r.dueDate).getTime() < Date.now()
+                          return (
+                            <tr key={r.id} className="border-b last:border-b-0 align-top">
+                              <td className="p-2.5">
+                                <div className={'font-medium' + (r.done ? ' line-through text-muted-foreground' : '')}>{r.title}</div>
+                                {r.details && <div className="text-[11px] text-muted-foreground mt-0.5 whitespace-pre-wrap break-words max-w-[280px]">{r.details}</div>}
+                              </td>
+                              <td className="p-2.5 whitespace-nowrap">{P[r.priority] || r.priority}</td>
+                              <td className="p-2.5 whitespace-nowrap">{fmtDT(r.dueDate, isAr)}</td>
+                              <td className="p-2.5 whitespace-nowrap">
+                                {r.done ? (
+                                  <span className="rounded-full px-2 py-0.5 text-[11px] font-semibold bg-emerald-100 text-emerald-700">{t('منجزة', 'Completed')}</span>
+                                ) : late ? (
+                                  <span className="rounded-full px-2 py-0.5 text-[11px] font-semibold bg-red-100 text-red-700">{t('متأخرة', 'Overdue')}</span>
+                                ) : (
+                                  <span className="rounded-full px-2 py-0.5 text-[11px] font-semibold bg-blue-50 text-blue-700">{t('قيد الانتظار', 'Pending')}</span>
+                                )}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">{t('ملاحظة: هذا التقرير شخصي ويُستخرج من مهامك الخاصة في تذكيراتي فقط، ولا يراه أي شخص آخر غيرك.', 'Note: this report is personal and comes from your own tasks in My Reminders only — nobody else can see it.')}</p>
+                </div>
+                <div className="flex flex-wrap gap-2 justify-end">
+                  <Button variant="outline" size="sm" onClick={() => downloadPersonalCsv(rows)} disabled={rows.length === 0}>
+                    <Download className="h-3.5 w-3.5 ms-1" /> {t('تنزيل CSV', 'Download CSV')}
+                  </Button>
+                  <Button size="sm" onClick={() => window.print()} disabled={rows.length === 0}>
+                    <FileText className="h-3.5 w-3.5 ms-1" /> {t('طباعة التقرير', 'Print report')}
+                  </Button>
+                </div>
+              </div>
+            )
+          })()}
+        </DialogContent>
+      </Dialog>
+
+      {/* v120: أنماط الطباعة — عند الطباعة يُخرج محتوى التقرير الشخصي وحده */}
+      <style>{'@media print { body * { visibility: hidden !important; } .pr-print-area, .pr-print-area * { visibility: visible !important; } .pr-print-area { position: absolute !important; top: 0 !important; left: 0 !important; width: 100% !important; max-height: none !important; overflow: visible !important; } }'}</style>
     </div>
   )
 }
