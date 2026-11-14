@@ -34,6 +34,8 @@ const categoryLabels: Record<string, { ar: string; en: string }> = {
   oil: { ar: 'زيوت', en: 'Oil' },
   safety: { ar: 'سلامة', en: 'Safety' },
   rental: { ar: 'إيجار', en: 'Rental' },
+  // v114: فئة فواتير المقاول الآلية (كل 10 أمتار من خط الحفر) — تُنشئها الخوارزمية تلقائياً
+  contractor: { ar: 'فاتورة المقاول', en: 'Contractor Invoice' },
   other: { ar: 'أخرى', en: 'Other' },
 }
 
@@ -47,6 +49,7 @@ const categoryColors: Record<string, string> = {
   oil: '#6366f1',
   safety: '#ef4444',
   rental: '#14b8a6',
+  contractor: '#0ea5e9',
   other: '#64748b',
 }
 
@@ -54,6 +57,12 @@ const categoryColors: Record<string, string> = {
 // («مسترجعة من سجل الإشعارات» أو «مسترجعة من سجل التدقيق»)
 function isRestoredCost(c: any) {
   return !!(c && typeof c.notes === 'string' && c.notes.indexOf('مسترجعة من سجل') === 0)
+}
+
+// v114: فاتورة المقاول الآلية تُعرَف ببصمة الملاحظات التي تكتبها الخوارزمية تلقائياً
+const AUTO_CONTRACTOR_MARKER = 'فاتورة مقاول آلية #'
+function isAutoContractorCost(c: any) {
+  return !!(c && typeof c.notes === 'string' && c.notes.indexOf(AUTO_CONTRACTOR_MARKER) === 0)
 }
 
 export default function CostsPage() {
@@ -721,7 +730,14 @@ export default function CostsPage() {
                         </td>
                         <td className="p-2.5 max-w-[200px]">
                           <p className="font-medium text-sm truncate">{c.description}</p>
-                          {c.notes && <p className="text-xs text-muted-foreground truncate mt-0.5">{c.notes}</p>}
+                          {/* v114: الفواتير الآلية من خوارزمية «فاتورة المقاول» تظهر بشارة نظيفة بدل البصمة الخام */}
+                          {isAutoContractorCost(c) ? (
+                            <span className="mt-0.5 inline-block bg-sky-500/10 text-sky-700 dark:text-sky-300 border border-sky-500/30 rounded px-1.5 text-[10px] leading-4 font-medium">
+                              {isRtl ? 'صادرة آلياً — لكل 10 أمتار' : 'Auto-issued — per 10 m'}
+                            </span>
+                          ) : (
+                            c.notes && <p className="text-xs text-muted-foreground truncate mt-0.5">{c.notes}</p>
+                          )}
                         </td>
                         <td className="p-2.5 text-xs text-muted-foreground">{c.project ? c.project.name : (isRtl ? 'بدون مشروع' : 'No project')}</td>
                         <td className="p-2.5 font-semibold text-rose-600 whitespace-nowrap">
