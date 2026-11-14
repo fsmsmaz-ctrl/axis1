@@ -60,7 +60,8 @@ const navItems: NavItem[] = [
   { id: 'dailyReports', labelAr: 'التقارير اليومية', labelEn: 'Daily Reports', icon: FileText, resource: 'daily_reports' },
   { id: 'safety', labelAr: 'السلامة', labelEn: 'Safety', icon: ShieldCheck, resource: 'safety' },
   { id: 'equipment', labelAr: 'المعدات', labelEn: 'Equipment', icon: Wrench, resource: 'equipment' },
-  { id: 'costs', labelAr: 'التكاليف والإيرادات', labelEn: 'Costs & Revenue', icon: DollarSign, resource: 'costs' },
+  // v117: الاسم الجديد «التكاليف» — القسم للتكاليف فقط (أُخفي منه الإيرادات والأرباح)
+  { id: 'costs', labelAr: 'التكاليف', labelEn: 'Costs', icon: DollarSign, resource: 'costs' },
   { id: 'finishings', labelAr: 'التشطيبات', labelEn: 'Finishings', icon: CheckCircle2, resource: 'finishings' },
   { id: 'tasks', labelAr: 'إدارة المهام', labelEn: 'Task Management', icon: ListChecks, resource: 'tasks' },
   // v97: «المكتبات» — قسم عام يظهر لكل الموظفين (كل موظف ينشئ مكتباته وأقسامه الخاصة/العامة)
