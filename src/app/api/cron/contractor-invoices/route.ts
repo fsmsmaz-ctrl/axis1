@@ -1,21 +1,25 @@
 // ============================================================
-// v114 — التشغيل اليومي الآلي لخوارزمية «فاتورة المقاول»
+// v116 — التشغيل اليومي لفواتير المقاول (بدون تسجيل آلي)
 // ============================================================
-// يُستدعى من Vercel Cron (معرَّف في vercel.json) مرة واحدة يومياً
-// صباحاً — فيصدر النظام فواتير كل 10 أمتار من خطوط الحفر ويصحح
-// أي تغيّر دون تدخل بشري حتى لو لم يفتح أحد النظام.
+// يُستدعى من Vercel Cron (معرَّف في vercel.json) مرة واحدة يومياً:
+//  1) ينفذ التنظيف الرجعي: يحذف كل فواتير «فاتورة المقاول» التي
+//     سجلتها خوارزمية v114 آلياً (إن وُجدت) بلا تدخل بشري.
+//  2) يحسب مقترحات الفواتير بانتظار الموافقة ويرسل تنبيهاً واحداً
+//     في اليوم لذوي صلاحية التكاليف بعددهم — التسجيل نفسه لا يتم
+//     إلا بعد إدخال السعر يدوياً واعتماد الفاتورة من النافذة
+//     المنبثقة بقسم الإيرادات والتكاليف.
 //
 // الأمان:
 //  - إن ضُبط متغير البيئة CRON_SECRET في Vercel فلا يُقبل أي
 //    استدعاء إلا بتوقيع Vercel الرسمي (Authorization: Bearer).
-//  - إن لم يُضبط يبقى المسار آمناً لأن العملية رجعية حكيمة:
-//    تنشئ الناقص فقط وتصحح المتغير وتحذف الزائد بالبصمة،
-//    ولا تُرجع أي بيانات حساسة — فقط عدّادات ملخصة.
+//  - إن لم يُضبط يبقى المسار آمناً لأنه لا يرجع أي بيانات حساسة —
+//    فقط عدّادات ملخصة.
 // GET /api/cron/contractor-invoices
 // ============================================================
 
 import { NextRequest, NextResponse } from 'next/server'
-import { syncContractorInvoices } from '@/lib/contractor-invoices'
+import { maintainContractorInvoices, listPendingContractorInvoices } from '@/lib/contractor-invoices'
+import { notifyUsers } from '@/lib/notify'
 
 export const dynamic = 'force-dynamic'
 
@@ -28,18 +32,41 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  var result = await syncContractorInvoices({ force: true })
+  // 1) التنظيف الرجعي لفواتير v114 الآلية
+  var maint = await maintainContractorInvoices({ force: true })
+
+  // 2) مقترحات بانتظار الموافقة — قراءة فقط بلا أي تسجيل
+  var pendingRes = await listPendingContractorInvoices({ force: true })
+
+  if (!pendingRes.error && pendingRes.count > 0) {
+    try {
+      await notifyUsers({
+        type: 'contractor_invoice_approval',
+        title: 'فواتير مقاول بانتظار الموافقة',
+        message: 'توجد ' + pendingRes.count + ' فاتورة مقاول ولّدها النظام (فاتورة لكل 10 أمتار من خطوط الحفر) بانتظار إدخال السعر يدوياً واعتمادها في قسم الإيرادات والتكاليف — لن تُسجل أي منها دون موافقتكم.',
+        severity: 'info',
+        entityType: 'cost',
+        entityId: 'contractor-invoices-pending',
+        permissions: ['costs'],
+        roles: ['top_management', 'project_manager', 'accountant'],
+        includeSystemAdmin: true,
+        link: 'costs',
+        dedupeHours: 24,
+      })
+    } catch (e) {
+      console.error('[cron contractor-invoices] notify failed:', e)
+    }
+  }
 
   return NextResponse.json({
-    ok: !result.error,
+    ok: !maint.error && !pendingRes.error,
     job: 'contractor-invoices',
-    created: result.created,
-    updated: result.updated,
-    deleted: result.deleted,
-    createdAmount: result.createdAmount,
-    linesChecked: result.linesChecked,
-    skippedNoPrice: result.skippedNoPrice,
-    error: result.error || null,
+    legacyDeleted: maint.deleted,
+    pendingCount: pendingRes.count,
+    truncated: pendingRes.truncated,
+    linesChecked: pendingRes.linesChecked,
+    skippedNoPrice: pendingRes.skippedNoPrice,
+    error: maint.error || pendingRes.error || null,
     time: new Date().toISOString(),
   })
 }
