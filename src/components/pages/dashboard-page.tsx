@@ -115,6 +115,16 @@ const assetStatusColors: Record<string, string> = {
   damaged: 'bg-red-100 text-red-600',
 }
 
+// v113: شارات ناعمة عصرية — خلفية فاتحة + نص ملوّن + إطار خفيف
+// بدل الشارات الصلبة الغامقة (البرتقالي/الأحمر الداكن) في لوحة التحكم
+const assetStatusSoft: Record<string, string> = {
+  available: 'bg-sky-100 text-sky-700 border-sky-200',
+  in_use: 'bg-blue-100 text-blue-700 border-blue-200',
+  returned: 'bg-slate-100 text-slate-600 border-slate-200',
+  damaged: 'bg-red-100 text-red-700 border-red-200',
+}
+const assetStatusSoftFallback = 'bg-slate-100 text-slate-600 border-slate-200'
+
 export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) => void }) {
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -355,6 +365,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
             <Button
               variant="outline"
               size="sm"
+              className="rounded-full"
               onClick={recalcAll}
               disabled={recalculating}
               title={isRtl ? 'إعادة حساب جميع البيانات (يصلح القيم 0)' : 'Recalculate all data (fixes 0 values)'}
@@ -365,11 +376,11 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
                 : (isRtl ? 'تحديث البيانات' : 'Recalc Data')}
             </Button>
           )}
-          <Button variant="outline" size="sm" onClick={fetchDashboard}>
+          <Button variant="outline" size="sm" className="rounded-full" onClick={fetchDashboard}>
             <RefreshCw className="h-4 w-4 ml-2" />
             {isRtl ? 'تحديث' : 'Refresh'}
           </Button>
-          <Button variant="outline" size="sm" onClick={function() { onNavigate('reports') }}>
+          <Button variant="outline" size="sm" className="rounded-full" onClick={function() { onNavigate('reports') }}>
             <Calendar className="h-4 w-4 ml-2" />
             {isRtl ? 'التقارير' : 'Reports'}
           </Button>
@@ -434,16 +445,18 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
         )}
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        <MiniStat icon={Users} label={isRtl ? 'العمال اليوم' : 'Workers Today'} value={'' + stats.presentWorkers} color="text-blue-600" />
-        <MiniStat icon={Wrench} label={isRtl ? 'معدات متوقفة' : 'Stopped Eq.'} value={'' + stats.stoppedEquipment} color="text-red-600" />
-        <MiniStat icon={AlertTriangle} label={isRtl ? 'تنبيهات' : 'Alerts'} value={'' + stats.unreadNotifications} color="text-orange-600" />
+      {/* v113: شريط إحصاءات مرن — الخانات تتوزع بالتساوي في صف واحد على الشاشات
+          الكبيرة سواء كانت 6 أو 7 خانات، وتلتف بصفوف متوازنة على الهاتف والآيباد */}
+      <div className="flex flex-wrap gap-3">
+        <MiniStat icon={Users} label={isRtl ? 'العمال اليوم' : 'Workers Today'} value={'' + stats.presentWorkers} color="text-blue-600" bg="bg-blue-50" />
+        <MiniStat icon={Wrench} label={isRtl ? 'معدات متوقفة' : 'Stopped Eq.'} value={'' + stats.stoppedEquipment} color="text-red-600" bg="bg-red-50" />
+        <MiniStat icon={AlertTriangle} label={isRtl ? 'تنبيهات' : 'Alerts'} value={'' + stats.unreadNotifications} color="text-orange-600" bg="bg-orange-50" />
         {seePricing && (
-        <MiniStat icon={TrendingUp} label={isRtl ? 'الإيراد اليوم' : "Today's Rev."} value={fmtCurrency(stats.revenueToday)} color="text-emerald-600" />
+        <MiniStat icon={TrendingUp} label={isRtl ? 'الإيراد اليوم' : "Today's Rev."} value={fmtCurrency(stats.revenueToday)} color="text-emerald-600" bg="bg-emerald-50" />
         )}
-        <MiniStat icon={Wallet} label={isRtl ? 'إجمالي التكاليف' : 'Total Costs'} value={fmtCurrency(stats.totalCosts)} color="text-purple-700" />
-        <MiniStat icon={TrendingDown} label={isRtl ? 'تكاليف الشهر' : 'Month Costs'} value={fmtCurrency(stats.monthCosts)} color="text-purple-600" />
-        <MiniStat icon={Activity} label={isRtl ? 'أمتار الشهر' : 'Month Meters'} value={fmt(stats.metersThisMonth) + ' م'} color="text-cyan-600" />
+        <MiniStat icon={Wallet} label={isRtl ? 'إجمالي التكاليف' : 'Total Costs'} value={fmtCurrency(stats.totalCosts)} color="text-purple-700" bg="bg-purple-50" />
+        <MiniStat icon={TrendingDown} label={isRtl ? 'تكاليف الشهر' : 'Month Costs'} value={fmtCurrency(stats.monthCosts)} color="text-purple-600" bg="bg-purple-50" />
+        <MiniStat icon={Activity} label={isRtl ? 'أمتار الشهر' : 'Month Meters'} value={fmt(stats.metersThisMonth) + ' م'} color="text-cyan-600" bg="bg-cyan-50" />
       </div>
 
       {/* v59: قسم «تقارير بانتظار الاعتماد» نُقل إلى أعلى اللوحة في v63 —
@@ -515,13 +528,14 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
             </CardDescription>
             {/* v36: الفواتير المسترجعة تحمل تواريخ تسجيلها الأصلية — بدّل النطاق لرؤيتها كلها */}
             <div className="flex gap-1.5 mt-1">
-              <Button type="button" size="sm" variant={costsPeriod === 'month' ? 'default' : 'outline'} onClick={function() { setCostsPeriod('month') }}>
+              {/* v113: أزرار حبّات ناعمة — المختار بخلفية برتقالية فاتحة بدل الصلبة */}
+              <Button type="button" size="sm" variant={costsPeriod === 'month' ? 'default' : 'outline'} className={costsPeriod === 'month' ? 'rounded-full bg-orange-100 text-orange-700 hover:bg-orange-200 hover:text-orange-800' : 'rounded-full text-slate-500 hover:text-slate-700'} onClick={function() { setCostsPeriod('month') }}>
                 {isRtl ? 'الشهر' : 'Month'}
               </Button>
-              <Button type="button" size="sm" variant={costsPeriod === 'year' ? 'default' : 'outline'} onClick={function() { setCostsPeriod('year') }}>
+              <Button type="button" size="sm" variant={costsPeriod === 'year' ? 'default' : 'outline'} className={costsPeriod === 'year' ? 'rounded-full bg-orange-100 text-orange-700 hover:bg-orange-200 hover:text-orange-800' : 'rounded-full text-slate-500 hover:text-slate-700'} onClick={function() { setCostsPeriod('year') }}>
                 {isRtl ? 'العام' : 'Year'}
               </Button>
-              <Button type="button" size="sm" variant={costsPeriod === 'all' ? 'default' : 'outline'} onClick={function() { setCostsPeriod('all') }}>
+              <Button type="button" size="sm" variant={costsPeriod === 'all' ? 'default' : 'outline'} className={costsPeriod === 'all' ? 'rounded-full bg-orange-100 text-orange-700 hover:bg-orange-200 hover:text-orange-800' : 'rounded-full text-slate-500 hover:text-slate-700'} onClick={function() { setCostsPeriod('all') }}>
                 {isRtl ? 'كل الفترات' : 'All time'}
               </Button>
             </div>
@@ -697,7 +711,13 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
                     </div>
                     <div className="text-left shrink-0">
                       <p className="font-semibold text-sm">{fmtNum(r.dailyMeters)} {isRtl ? 'م' : 'm'}</p>
-                      <Badge variant={r.status === 'approved' ? 'default' : r.status === 'rejected' ? 'destructive' : 'secondary'} className="text-xs">
+                      <Badge className={
+                      'text-xs rounded-full px-2.5 ' +
+                      (r.status === 'approved' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' :
+                       r.status === 'rejected' ? 'bg-red-100 text-red-700 border-red-200' :
+                       r.status === 'submitted' ? 'bg-sky-100 text-sky-700 border-sky-200' :
+                       'bg-slate-100 text-slate-600 border-slate-200')
+                    }>
                         {r.status === 'approved' ? (isRtl ? 'معتمد' : 'Approved') :
                          r.status === 'submitted' ? (isRtl ? 'مرسل' : 'Submitted') :
                          r.status === 'rejected' ? (isRtl ? 'مرفوض' : 'Rejected') :
@@ -779,10 +799,12 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
                       <Badge variant="outline" className="text-[10px] text-muted-foreground shrink-0">
                         {isRtl ? 'معدات' : 'Machine'}
                       </Badge>
-                      <Badge variant={
-                        item.status === 'operational' ? 'default' :
-                        item.status === 'stopped' ? 'destructive' : 'secondary'
-                      } className="text-xs shrink-0">
+                      <Badge className={
+                        'text-xs shrink-0 rounded-full px-2.5 ' +
+                        (item.status === 'operational' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' :
+                         item.status === 'stopped' ? 'bg-red-100 text-red-700 border-red-200' :
+                         'bg-amber-100 text-amber-700 border-amber-200')
+                      }>
                         {item.status === 'operational' ? (isRtl ? 'تعمل' : 'Operational') :
                          item.status === 'stopped' ? (isRtl ? 'متوقفة' : 'Stopped') :
                          (isRtl ? 'تحتاج صيانة' : 'Maintenance')}
@@ -822,11 +844,11 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
                     </div>
                     {/* v106: شارة التشغيل — تعمل/متوقفة بوضوح لكل أصل */}
                     <Badge className={isWorking
-                      ? 'bg-emerald-100 text-emerald-700 border-0 text-xs shrink-0'
-                      : 'bg-red-100 text-red-700 border-0 text-xs shrink-0'}>
+                      ? 'bg-emerald-100 text-emerald-700 text-xs shrink-0 rounded-full px-2.5'
+                      : 'bg-red-100 text-red-700 text-xs shrink-0 rounded-full px-2.5'}>
                       {isWorking ? (isRtl ? 'تعمل' : 'Working') : (isRtl ? 'متوقفة' : 'Not working')}
                     </Badge>
-                    <Badge variant={st.variant} className="text-xs shrink-0">
+                    <Badge className={'text-xs shrink-0 rounded-full px-2.5 ' + (assetStatusSoft[item.status] || assetStatusSoftFallback)}>
                       {isRtl ? st.ar : st.en}
                     </Badge>
                   </div>
@@ -859,15 +881,15 @@ function StatCard({
   icon: any; label: string; value: string; subtext?: string; color: string; bgColor: string
 }) {
   return (
-    <Card>
+    <Card className="transition-shadow hover:shadow-md">
       <CardContent className="p-5">
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
-            <p className="text-sm text-muted-foreground font-medium">{label}</p>
-            <p className="text-2xl font-bold mt-1 truncate">{value}</p>
+            <p className="text-[13px] text-muted-foreground font-medium">{label}</p>
+            <p className="text-2xl font-bold mt-1.5 truncate text-slate-800">{value}</p>
             {subtext && <p className="text-xs text-muted-foreground mt-1 truncate">{subtext}</p>}
           </div>
-          <div className={'w-10 h-10 rounded-lg ' + bgColor + ' flex items-center justify-center shrink-0'}>
+          <div className={'w-11 h-11 rounded-xl ' + bgColor + ' flex items-center justify-center shrink-0'}>
             <Icon className={'h-5 w-5 ' + color} />
           </div>
         </div>
@@ -876,15 +898,17 @@ function StatCard({
   )
 }
 
-function MiniStat({ icon: Icon, label, value, color }: { icon: any; label: string; value: string; color: string }) {
+function MiniStat({ icon: Icon, label, value, color, bg }: { icon: any; label: string; value: string; color: string; bg: string }) {
   return (
-    <Card>
+    <Card className="flex-1 min-w-[130px] transition-shadow hover:shadow-md">
       <CardContent className="p-3">
-        <div className="flex items-center gap-2">
-          <Icon className={'h-4 w-4 ' + color + ' shrink-0'} />
+        <div className="flex items-center gap-2.5">
+          <div className={'w-9 h-9 rounded-lg ' + bg + ' flex items-center justify-center shrink-0'}>
+            <Icon className={'h-4 w-4 ' + color} />
+          </div>
           <div className="min-w-0">
-            <p className="text-xs text-muted-foreground truncate">{label}</p>
-            <p className="font-semibold text-sm truncate">{value}</p>
+            <p className="text-[11px] text-muted-foreground truncate">{label}</p>
+            <p className="font-bold text-sm text-slate-800 truncate">{value}</p>
           </div>
         </div>
       </CardContent>
@@ -973,7 +997,7 @@ function InvoicesReviewSection({ isRtl, projects, onChanged }: { isRtl: boolean;
           <span className="flex items-center gap-2">
             <Receipt className="h-5 w-5 text-primary" />
             {isRtl ? 'مراجعة فواتير المشتريات' : 'Purchase Invoices Review'}
-            {pending.length > 0 && <Badge className="text-xs">{pending.length}</Badge>}
+            {pending.length > 0 && <Badge className="text-xs rounded-full px-2.5 bg-orange-100 text-orange-700 border-orange-200">{pending.length}</Badge>}
           </span>
           <Button variant="ghost" size="sm" onClick={fetchInvoices}>
             <RefreshCw className="h-4 w-4" />
@@ -1010,11 +1034,11 @@ function InvoicesReviewSection({ isRtl, projects, onChanged }: { isRtl: boolean;
                       </p>
                     </div>
                     <div className="flex gap-1 shrink-0">
-                      <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" disabled={busyId === p.id} onClick={function() { review(p, 'approve') }}>
+                      <Button size="sm" variant="outline" className="text-emerald-700 border-emerald-200 hover:bg-emerald-50 hover:text-emerald-800" disabled={busyId === p.id} onClick={function() { review(p, 'approve') }}>
                         {busyId === p.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4 ml-1" />}
                         {isRtl ? 'اعتماد' : 'Approve'}
                       </Button>
-                      <Button size="sm" variant="destructive" disabled={busyId === p.id} onClick={function() { review(p, 'reject') }}>
+                      <Button size="sm" variant="outline" className="text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700" disabled={busyId === p.id} onClick={function() { review(p, 'reject') }}>
                         <X className="h-4 w-4 ml-1" />
                         {isRtl ? 'رفض' : 'Reject'}
                       </Button>
@@ -1053,7 +1077,7 @@ function InvoicesReviewSection({ isRtl, projects, onChanged }: { isRtl: boolean;
                 <div key={p.id} className="p-2.5 rounded-lg border opacity-75">
                   <div className="flex items-center gap-2 flex-wrap">
                     <p className="text-sm font-medium">{p.title} — {p.amount} ر.ع</p>
-                    <Badge variant={p.status === 'approved' ? 'default' : 'destructive'} className="text-xs">
+                    <Badge className={'text-xs rounded-full px-2.5 ' + (p.status === 'approved' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-red-100 text-red-700 border-red-200')}>
                       {p.status === 'approved' ? (isRtl ? 'معتمدة' : 'Approved') : (isRtl ? 'مرفوضة' : 'Rejected')}
                     </Badge>
                     <span className="text-xs text-muted-foreground">
@@ -1337,4 +1361,3 @@ function PendingApprovalsSection({ isRtl, onChanged }: { isRtl: boolean; onChang
     </Card>
   )
 }
-
