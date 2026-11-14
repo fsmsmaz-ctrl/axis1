@@ -126,11 +126,13 @@ export const LEAVE_TYPE_LABELS_AR: Record<string, string> = {
 // ============================================================
 // v61: اكتمال بيانات الموظف — شرط ظهور الملف والإجازات للموظف
 // البيانات الوظيفية الأساسية: المسمى الوظيفي + القسم/المشروع + تاريخ الالتحاق
-// بيانات الإجازة: رصيد حدّدته الإدارة فعلياً (configured) أو لديه استخدام فعلي سابق
+// v118: بيانات الإجازة تلقائية — يكفي وجود تاريخ بدء الاحتساب (تاريخ بدء العقد
+// أو تاريخ الالتحاق) ليكتمل بند الإجازة، لأن الرصيد يُحتسب آلياً (2.5 يوم/شهر)
+// ولا يحتاج إدخال رصيد من الإدارة. استخدام فعلي سابق يكتمل البند أيضاً.
 // الموظف غير المكتمل يرى رسالة «انت غير مكتمل البيانات , قم بمراجعة الادارة» فقط
 // ============================================================
 export function computeCompleteness(
-  user: { jobTitle?: string | null; department?: string | null; joinDate?: Date | string | null },
+  user: { jobTitle?: string | null; department?: string | null; joinDate?: Date | string | null; contractStart?: Date | string | null },
   balance: { configured?: boolean; used?: number } | null | undefined
 ): {
   job: boolean; leave: boolean; complete: boolean; missing: string[]
@@ -140,7 +142,9 @@ export function computeCompleteness(
   var hasDepartment = !!(user.department && String(user.department).trim())
   var hasJoinDate = !!user.joinDate
   var job = hasJobTitle && hasDepartment && hasJoinDate
-  var leave = !!(balance && (balance.configured === true || (typeof balance.used === 'number' && balance.used > 0)))
+  // v118: الاحتساب التلقائي يبدأ من بدء العقد أو الالتحاق — وجود أحدهما يكفي
+  var hasLeaveBasis = !!(user.contractStart || user.joinDate)
+  var leave = hasLeaveBasis || !!(balance && typeof balance.used === 'number' && balance.used > 0)
   if (!hasJobTitle) missing.push('jobTitle')
   if (!hasDepartment) missing.push('department')
   if (!hasJoinDate) missing.push('joinDate')
