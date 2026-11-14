@@ -18,7 +18,7 @@
 
 // v110: رفع الاسم إلى axis-v12 — يجبر كل الأجهزة على تحميل واجهة ميزة
 // «رفع ملف الفواتير» الجديدة فوراً ومسح أي كاش قديم عند أول زيارة بعد النشر.
-var CACHE_NAME = 'axis-v12';
+var CACHE_NAME = 'axis-v13';
 var MAX_CACHE_ENTRIES = 300;
 var STATIC_ASSETS = [
   '/manifest.json',
