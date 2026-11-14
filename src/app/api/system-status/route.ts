@@ -12,7 +12,7 @@ import { db } from '@/lib/db'
 
 export const dynamic = 'force-dynamic'
 
-var APP_VERSION = 'v119'
+var APP_VERSION = 'v120'
 
 // الجداول الحرجة لعمل الأقسام المتعثرة (السلامة + الموارد البشرية) وبقية الأقسام الأساسية
 var CRITICAL_TABLES = [
@@ -32,6 +32,7 @@ var CRITICAL_TABLES = [
   { name: 'Holiday', label: 'العطلات الرسمية' },
   { name: 'LeavePolicy', label: 'سياسة الإجازات' },
   { name: 'LeaveAdjustment', label: 'تعديلات الرصيد' },
+  { name: 'PersonalReminder', label: 'تذكيراتي (المهام الشخصية)' },
 ]
 
 // الأعمدة الحرجة التي أُضيفت للنموذج بعد آخر migration وتُقرأ في مسارات فعّالة
@@ -57,6 +58,12 @@ var CRITICAL_COLUMNS: Array<{ table: string; column: string; label: string }> = 
   { table: 'User', column: 'residenceExpiry', label: 'انتهاء الإقامة' },
   { table: 'User', column: 'absenceDays', label: 'أيام الغياب' },
   { table: 'User', column: 'lateDays', label: 'أيام التأخير' },
+  { table: 'PersonalReminder', column: 'userId', label: 'مالك التذكير الشخصي' },
+  { table: 'PersonalReminder', column: 'title', label: 'عنوان المهمة الشخصية' },
+  { table: 'PersonalReminder', column: 'details', label: 'تفاصيل المهمة الشخصية' },
+  { table: 'PersonalReminder', column: 'priority', label: 'ضرورة المهمة الشخصية' },
+  { table: 'PersonalReminder', column: 'dueDate', label: 'تاريخ نهاية المهمة الشخصية' },
+  { table: 'PersonalReminder', column: 'done', label: 'حالة إنجاز التذكير' },
 ]
 
 export async function GET(req: NextRequest) {
