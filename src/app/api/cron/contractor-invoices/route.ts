@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
       await notifyUsers({
         type: 'contractor_invoice_approval',
         title: 'فواتير مقاول بانتظار الموافقة',
-        message: 'توجد ' + pendingRes.count + ' فاتورة مقاول ولّدها النظام (فاتورة لكل 10 أمتار من خطوط الحفر) بانتظار إدخال السعر يدوياً واعتمادها في قسم الإيرادات والتكاليف — لن تُسجل أي منها دون موافقتكم.',
+        message: 'توجد ' + pendingRes.count + ' فاتورة مقاول ولّدها النظام (فاتورة لكل 10 أمتار من خطوط الحفر) بانتظار إدخال السعر يدوياً واعتمادها في قسم التكاليف — لن تُسجل أي منها دون موافقتكم.',
         severity: 'info',
         entityType: 'cost',
         entityId: 'contractor-invoices-pending',
