@@ -42,6 +42,9 @@ const typeLabels: Record<string, { ar: string; en: string }> = {
   cost_overrun: { ar: 'تجاوز التكاليف', en: 'Cost overrun' },
   // v114: فواتير المقاول الآلية — تصدر تلقائياً لكل 10 أمتار من خطوط الحفر
   contractor_invoice_auto: { ar: 'فاتورة مقاول آلية', en: 'Auto contractor invoice' },
+  // v116: فواتير المقاول — تنبيه يومي بعدد المقترحات بانتظار الموافقة + إشعار الاعتماد اليدوي
+  contractor_invoice_approval: { ar: 'فواتير مقاول بانتظار الموافقة', en: 'Contractor invoices awaiting approval' },
+  contractor_invoice_approved: { ar: 'فاتورة مقاول معتمدة', en: 'Contractor invoice approved' },
   deadline_near: { ar: 'اقتراب موعد التسليم', en: 'Deadline near' },
   // تنبيهات المهام الشخصية — تبقى في هذا القسم لصاحبها (v19)
   task_assigned: { ar: 'إسناد مهمة إليك', en: 'Task assigned to you' },
@@ -69,6 +72,8 @@ const typeIcons: Record<string, any> = {
   finishing_incomplete: LayoutList,
   performance_ready: FileCheck,
   contractor_invoice_auto: FileCheck,
+  contractor_invoice_approval: FileCheck,
+  contractor_invoice_approved: FileCheck,
 }
 
 type FilterKey = 'all' | 'unread' | 'warning' | 'critical'
