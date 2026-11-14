@@ -240,7 +240,9 @@ async function buildDashboard(canSeePrice: boolean, costsPeriod: 'month' | 'year
       _sum: { dailyRevenue: true },
     }),
 
-    // Stopped equipment
+    // Stopped equipment (جدول المعدات فقط — الأصول والمستأجرات المتوقفة تُضاف
+    // أدناه من قائمة الأصول في v112 حتى يعرض عدّاد «معدات متوقفة» في اللوحة
+    // كل ما توقف في النظام: المعدات + الأصول + المستأجرات برقم واحد)
     // v106: المحذوفة ناعماً (deletedAt) كانت تُحسب هنا وترتفع الإحصائية خطأً —
     // صفحة المعدات تخفيها بفلتر deletedAt=null واللوحة الآن مطابقة لها
     db.equipment.count({
@@ -301,9 +303,17 @@ async function buildDashboard(canSeePrice: boolean, costsPeriod: 'month' | 'year
 
     // Equipment
     // v106: استبعاد المحذوفة ناعماً — كانت تظهر في اللوحة بينما صفحة المعدات تخفيها
+    // v112: حقول مختصرة فقط — بطاقة «حالة المعدات» اندمجت في بطاقة «الأصول
+    // والمستأجرات» فلم تعد اللوحة تحتاج سوى (الاسم/الرقم/الحالة/المشروع/تاريخ
+    // الإنشاء). كان الرد يعيد كل حقول المعدة بما فيها الصورة base64
+    // (عشرات الكيلوبايتات لكل معدة) دون أي استخدام في اللوحة — حمولة زائدة
+    // ثقيلة على كل فتح للوحة، والآن الحزمة أخف وأسرع بنفس المعلومات
     db.equipment.findMany({
       where: { deletedAt: null },
-      include: { project: { select: { name: true } } },
+      select: {
+        id: true, name: true, number: true, status: true, createdAt: true,
+        project: { select: { name: true } },
+      },
     }),
 
     // v36: Costs by category — النطاق حسب اختيار اللوحة (الشهر/العام/الكل)
@@ -414,6 +424,13 @@ async function buildDashboard(canSeePrice: boolean, costsPeriod: 'month' | 'year
     rented: companyAssets.filter((a: any) => a.ownership === 'rented').length,
     borrowed: companyAssets.filter((a: any) => a.ownership === 'borrowed').length,
   }
+  // v112: عدّاد «معدات متوقفة» في اللوحة = المعدات المتوقفة (جدول المعدات)
+  // + الأصول والمستأجرات غير العاملة — كل ما توقف في النظام برقم واحد صحيح.
+  // يُحسب من قائمة الأصول نفسها المعروضة في البطاقة (بلا استعلام إضافي) فيطابق
+  // ملخص البطاقة دائماً حتى مع القائمة الاحتياطية (v108) إن فشل العمود الجديد
+  const stoppedAssetsCount = companyAssets.filter((a: any) => a.isOperational === false).length
+  const stoppedEquipmentTotal = stoppedEquipment + stoppedAssetsCount
+
   const costsByCategoryRaw = unwrap(costsByCategoryResult, [], 'costsByCategory')
   const costsByCategory = (costsByCategoryRaw as any[]).map((c) => ({
     category: c.category,
@@ -459,7 +476,7 @@ async function buildDashboard(canSeePrice: boolean, costsPeriod: 'month' | 'year
       totalCosts: totalCostsSumR,
       monthCosts: monthCostsSumR,
       netProfit: canSeePrice ? netProfit : 0,
-      stoppedEquipment,
+      stoppedEquipment: stoppedEquipmentTotal,
       presentWorkers,
       unreadNotifications,
     },
@@ -485,4 +502,4 @@ async function buildDashboard(canSeePrice: boolean, costsPeriod: 'month' | 'year
   }
 }
 
-                                              
+                                            
