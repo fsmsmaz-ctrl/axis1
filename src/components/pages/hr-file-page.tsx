@@ -276,8 +276,7 @@ var EMPTY_FORM = {
   baseSalary: '', allowances: '',
   passportNo: '', passportExpiry: '', idNo: '', idExpiry: '', residenceNo: '', residenceExpiry: '',
   absenceDays: '', lateDays: '',
-  // v61: بيانات الإجازة — تُحفظ عبر /api/hr/admin (set_balance) وليس PUT /api/hr
-  annualTotal: '', carriedOver: '',
+  // v118: الرصيد تلقائي بالكامل (2.5 يوم/شهر من تاريخ بدء العقد) — لا حقول رصيد يدوية
 }
 
 export default function HRFilePage() {
@@ -300,8 +299,6 @@ export default function HRFilePage() {
   const [rosterSearch, setRosterSearch] = useState('')
   const [rosterFilter, setRosterFilter] = useState<'all' | 'incomplete' | 'complete'>('all')
   const [fillLoadingId, setFillLoadingId] = useState('')
-  // v61: قيم الرصيد عند فتح النافذة — لكشف التغيير (لا نُرسل set_balance إلا عند التعديل الفعلي)
-  const [balanceBaseline, setBalanceBaseline] = useState<{ annualTotal: string; carriedOver: string } | null>(null)
   // v68: هوية المستخدم الحالي — قسم «طلبات الإجازة» يظهر للملف الذاتي فقط
   // (عندما تعرض الإدارة ملف موظف آخر من قائمة التعبئة يختفي القسم)
   const meId = useAppStore((s) => s.user?.id || '')
@@ -358,8 +355,8 @@ export default function HRFilePage() {
     return d.toISOString().slice(0, 10)
   }
 
-  // v61: بناء النموذج من الملف + الرصيد (يشمل بيانات الإجازة)
-  function buildForm(p: any, b?: any) {
+  // v118: بناء النموذج من الملف — بيانات الإجازة تلقائية ولا تُعدّل يدوياً
+  function buildForm(p: any) {
     return {
       employeeNo: p.employeeNo || '',
       jobTitle: p.jobTitle || '',
@@ -379,8 +376,6 @@ export default function HRFilePage() {
       residenceExpiry: toDayInput(p.residenceExpiry),
       absenceDays: p.absenceDays === null || p.absenceDays === undefined ? '' : String(p.absenceDays),
       lateDays: p.lateDays === null || p.lateDays === undefined ? '' : String(p.lateDays),
-      annualTotal: b && b.annualTotal !== null && b.annualTotal !== undefined ? String(b.annualTotal) : '',
-      carriedOver: b && b.carriedOver !== null && b.carriedOver !== undefined ? String(b.carriedOver) : '',
     }
   }
 
@@ -402,11 +397,7 @@ export default function HRFilePage() {
       // عرض ملف الموظف المعني تحت النافذة — يتسق مع ما يُعدَّل
       setTargetId(userId)
       setData(d)
-      setForm(buildForm(d.profile, d.balance))
-      setBalanceBaseline({
-        annualTotal: d.balance && d.balance.annualTotal !== null && d.balance.annualTotal !== undefined ? String(d.balance.annualTotal) : '',
-        carriedOver: d.balance && d.balance.carriedOver !== null && d.balance.carriedOver !== undefined ? String(d.balance.carriedOver) : '',
-      })
+      setForm(buildForm(d.profile))
       setEditOpen(true)
     } catch {
       toast.error(isAr ? 'خطأ في الاتصال' : 'Connection error')
@@ -419,71 +410,17 @@ export default function HRFilePage() {
     if (!data?.profile) return
     setSaving(true)
     try {
-      // v61: بيانات الإجازة — تُحفظ فقط إذا أدخلها المدير فعلياً وتغيّرت عن القيم المحمّلة
-      var balChanged = false
-      var annualNum: number | null = null
-      var carriedNum = 0
-      var annualRaw = String(form.annualTotal ?? '').trim()
-      var carriedRaw = String(form.carriedOver ?? '').trim()
-      if (annualRaw !== '' || carriedRaw !== '') {
-        annualNum = annualRaw === '' ? null : parseFloat(annualRaw)
-        carriedNum = carriedRaw === '' ? 0 : parseFloat(carriedRaw)
-        if (annualNum !== null && (isNaN(annualNum) || annualNum < 0 || annualNum > 365)) {
-          toast.error(isAr ? 'الرصيد السنوي المعتمد يجب أن يكون بين 0 و365' : 'Annual balance must be between 0 and 365')
-          return
-        }
-        if (isNaN(carriedNum) || carriedNum < 0 || carriedNum > 365) {
-          toast.error(isAr ? 'الرصيد المرحّل يجب أن يكون بين 0 و365' : 'Carried-over balance must be between 0 and 365')
-          return
-        }
-        var base = balanceBaseline || { annualTotal: '', carriedOver: '' }
-        balChanged = annualRaw !== base.annualTotal || carriedRaw !== base.carriedOver
-      }
-      var jobForm = { ...form }
-      delete jobForm.annualTotal
-      delete jobForm.carriedOver
+      // v118: حفظ الملف الوظيفي فقط — رصيد الإجازات تلقائي بالكامل (2.5 يوم/شهر
+      // من تاريخ بدء العقد) ولا يُدخل يدوياً بعد الآن
       const r = await authedFetch('/api/hr', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: data.profile.id, ...jobForm }),
+        body: JSON.stringify({ userId: data.profile.id, ...form }),
       })
       const d = await r.json()
       if (!r.ok) {
         toast.error(d.message || (isAr ? 'فشل حفظ التعديلات' : 'Failed to save'))
         return
-      }
-      if (balChanged && annualNum !== null) {
-        const r2 = await authedFetch('/api/hr/admin', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'set_balance', userId: data.profile.id, annualTotal: annualNum, carriedOver: carriedNum }),
-        })
-        const d2 = await r2.json().catch(() => null)
-        if (!r2.ok || !d2) {
-          toast.error((d2 && d2.message) || (isAr ? 'تم حفظ البيانات الوظيفية لكن فشل حفظ رصيد الإجازة' : 'File saved but leave balance failed'))
-          load(targetId || undefined)
-          return
-        }
-      } else if (balChanged) {
-        // v72: تعديل «الرصيد المرحّل» وحده — الخادم يشترط الرصيد السنوي معه،
-        // فنسحب القيمة الأساسية المحمّلة بدل إهمال التغيير بصمت مع رسالة نجاح كاذبة
-        var baseAnnual = balanceBaseline && balanceBaseline.annualTotal !== '' ? parseFloat(balanceBaseline.annualTotal) : NaN
-        if (isNaN(baseAnnual)) {
-          toast.error(isAr ? 'تعديل الرصيد المرحّل يتطلب إدخال الرصيد السنوي أيضاً — لم يُحفظ الرصيد' : 'Carried-over edit requires the annual balance too — balance not saved')
-          load(targetId || undefined)
-          return
-        }
-        const r3 = await authedFetch('/api/hr/admin', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'set_balance', userId: data.profile.id, annualTotal: baseAnnual, carriedOver: carriedNum }),
-        })
-        const d3 = await r3.json().catch(() => null)
-        if (!r3.ok || !d3) {
-          toast.error((d3 && d3.message) || (isAr ? 'تم حفظ البيانات الوظيفية لكن فشل حفظ رصيد الإجازة' : 'File saved but leave balance failed'))
-          load(targetId || undefined)
-          return
-        }
       }
       toast.success(isAr ? 'تم حفظ بيانات الموظف بنجاح' : 'Employee data saved successfully')
       setEditOpen(false)
@@ -536,7 +473,9 @@ export default function HRFilePage() {
 
   var p = data.profile
   var b = data.balance
-  var totalBalance = b ? (b.annualTotal + b.carriedOver - b.used) : 0
+  // v118: الرصيد الفعلي المحسوب آلياً من الخادم (2.5 يوم/شهر من تاريخ بدء العقد)
+  var eb = data.effectiveBalance || null
+  var totalBalance = eb ? eb.remaining : (b ? (b.annualTotal + b.carriedOver - b.used) : 0)
   var displayName = isRtl ? p.name : (p.nameEn || p.name)
   var contractExpiryBadge = expiryBadge(p.contractEnd, isAr)
 
@@ -610,20 +549,33 @@ export default function HRFilePage() {
           <CardContent className="pt-0">
             <div className="grid grid-cols-3 gap-2 my-2">
               <div className="rounded-xl bg-muted/60 p-3 text-center">
-                <p className="text-[11px] text-muted-foreground">{isAr ? 'الرصيد الكلي' : 'Total'}</p>
-                <p className="text-xl font-bold">{b ? b.annualTotal + b.carriedOver : 0}</p>
+                <p className="text-[11px] text-muted-foreground">{isAr ? 'المستحق حتى اليوم' : 'Accrued'}</p>
+                <p className="text-xl font-bold">{eb ? eb.accrued : (b ? b.annualTotal + b.carriedOver : 0)}</p>
               </div>
               <div className="rounded-xl bg-muted/60 p-3 text-center">
                 <p className="text-[11px] text-muted-foreground">{isAr ? 'المستخدم' : 'Used'}</p>
-                <p className="text-xl font-bold">{b ? b.used : 0}</p>
+                <p className="text-xl font-bold">{eb ? eb.used : (b ? b.used : 0)}</p>
               </div>
-              <div className="rounded-xl bg-emerald-500/10 p-3 text-center">
+              <div className={'rounded-xl p-3 text-center ' + (totalBalance < 0 ? 'bg-rose-500/10' : 'bg-emerald-500/10')}>
                 <p className="text-[11px] text-muted-foreground">{isAr ? 'المتبقي' : 'Remaining'}</p>
-                <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400">{totalBalance}</p>
+                <p className={'text-xl font-bold ' + (totalBalance < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400')}>{totalBalance}</p>
               </div>
             </div>
-            {b && b.carriedOver > 0 && (
-              <p className="text-xs text-muted-foreground mb-2">{isAr ? 'يشمل رصيداً مرحّلاً: ' : 'Includes carried-over: '}{b.carriedOver} {isAr ? 'يوم' : 'days'}</p>
+            {eb && eb.basisDate ? (
+              <p className="text-xs text-muted-foreground mb-2">
+                {isAr
+                  ? 'الاحتساب التلقائي: يُضاف ' + eb.monthlyAccrual + ' يوم مع اكتمال كل شهر يبدأ من ' + eb.basisDate + (eb.basis === 'join' ? ' (تاريخ الالتحاق — لم تُدخل بداية العقد)' : ' (تاريخ بدء العقد)') + ' — اكتمل ' + eb.months + ' شهر حتى اليوم'
+                  : 'Automatic accrual: +' + eb.monthlyAccrual + ' days per completed month since ' + eb.basisDate + ' — ' + eb.months + ' month(s) completed'}
+              </p>
+            ) : (
+              <p className="text-xs text-amber-600 dark:text-amber-400 mb-2">
+                {isAr ? 'لا يبدأ الاحتساب التلقائي حتى تُدخل الإدارة تاريخ بدء العقد أو تاريخ الالتحاق' : 'Automatic accrual starts once HR sets the contract start or join date'}
+              </p>
+            )}
+            {totalBalance < 0 && (
+              <p className="text-xs text-rose-600 dark:text-rose-400 mb-2">
+                {isAr ? 'الرصيد سالب — يتعافى تلقائياً بمقدار 2.5 يوم مع اكتمال كل شهر' : 'Negative balance — recovers automatically by 2.5 days every completed month'}
+              </p>
             )}
             <InfoRow label={isAr ? 'أيام الغياب' : 'Absence Days'} value={String(p.absenceDays ?? 0)} isAr={isAr} />
             <InfoRow label={isAr ? 'أيام التأخير' : 'Late Days'} value={String(p.lateDays ?? 0)} isAr={isAr} />
@@ -860,23 +812,17 @@ export default function HRFilePage() {
               <Label>{isAr ? 'أيام التأخير' : 'Late Days'}</Label>
               <Input type="number" min="0" step="0.5" value={form.lateDays} onChange={(e) => setForm({ ...form, lateDays: e.target.value })} />
             </div>
-            {/* v61: بيانات الإجازة — جزء من اكتمال بيانات الموظف، تُحفظ عبر set_balance */}
+            {/* v118: الرصيد تلقائي بالكامل — لا إدخال يدوي للرصيد */}
             <div className="sm:col-span-2 border-t border-border pt-3 mt-1">
               <p className="text-sm font-medium flex items-center gap-1.5">
                 <Plane className="h-4 w-4 text-primary" />
-                {isAr ? 'بيانات الإجازة — تُحتسب ضمن اكتمال بيانات الموظف' : 'Leave data — counts toward employee data completeness'}
+                {isAr ? 'رصيد الإجازات — تلقائي بالكامل' : 'Leave balance — fully automatic'}
               </p>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {isAr ? 'اتركهما فارغين للإبقاء على الرصيد الحالي دون تغيير' : 'Leave empty to keep the current balance unchanged'}
+              <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                {isAr
+                  ? 'يُضاف 2.5 يوم إجازة تلقائياً مع اكتمال كل شهر يبدأ من «بداية العقد» أعلاه (أو من تاريخ الالتحاق إن لم تُدخل بداية العقد). لا حاجة لإدخال رصيد يدوي: الطلب مسموح حتى لو أصبح الرصيد سالباً، ويتعافى 2.5 يوم مع اكتمال كل شهر.'
+                  : '2.5 leave days are added automatically for every completed month starting from the contract start above (or the join date if not set). No manual balance entry needed: requests are allowed even into a negative balance, recovering 2.5 days per completed month.'}
               </p>
-            </div>
-            <div className="space-y-1">
-              <Label>{isAr ? 'الرصيد السنوي المعتمد (يوم)' : 'Approved Annual Balance (days)'}</Label>
-              <Input type="number" min="0" max="365" step="1" value={form.annualTotal} onChange={(e) => setForm({ ...form, annualTotal: e.target.value })} placeholder={isAr ? 'مثال: 30' : 'e.g. 30'} />
-            </div>
-            <div className="space-y-1">
-              <Label>{isAr ? 'الرصيد المرحّل من العام السابق (يوم)' : 'Carried-over Balance (days)'}</Label>
-              <Input type="number" min="0" max="365" step="1" value={form.carriedOver} onChange={(e) => setForm({ ...form, carriedOver: e.target.value })} placeholder="0" />
             </div>
           </div>
           <DialogFooter>
@@ -1026,7 +972,11 @@ function LeaveFlowSection({ isAr, isRtl }: { isAr: boolean; isRtl: boolean }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  var myRemaining = leaveData?.balance ? (leaveData.balance.annualTotal + leaveData.balance.carriedOver - leaveData.balance.used) : 0
+  // v118: الرصيد الفعلي المحسوب آلياً من الخادم — المستحق/المستخدم/المتبقي
+  var lvEff = leaveData?.effectiveBalance || null
+  var myAccrued = lvEff ? lvEff.accrued : (leaveData?.balance ? leaveData.balance.annualTotal + leaveData.balance.carriedOver : 0)
+  var myUsed = lvEff ? lvEff.used : (leaveData?.balance ? leaveData.balance.used : 0)
+  var myRemaining = lvEff ? lvEff.remaining : (leaveData?.balance ? (leaveData.balance.annualTotal + leaveData.balance.carriedOver - leaveData.balance.used) : 0)
   // بوابة الموافقات: الإدارة/الموارد البشرية أو من لديه مرؤوسون (مسؤول مباشر)
   var canApprove = !!(leaveData && (leaveData.isHR || leaveData.teamCount > 0))
   var teamPending = (leaveData?.teamRequests || []).filter(function(r: any) { return r.status === 'pending' })
@@ -1186,9 +1136,10 @@ function LeaveFlowSection({ isAr, isRtl }: { isAr: boolean; isRtl: boolean }) {
                   {r.reason && <p className="text-xs text-muted-foreground">{isAr ? 'السبب: ' : 'Reason: '}{r.reason}</p>}
                   {r.substituteName && <p className="text-xs text-muted-foreground">{isAr ? 'الموظف البديل: ' : 'Substitute: '}{r.substituteName}</p>}
                   {r.type === 'annual' && r.remainingBalance !== null && (
-                    <p className="text-xs flex items-center gap-1 text-muted-foreground">
+                    <p className={'text-xs flex items-center gap-1 ' + (r.remainingBalance < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-muted-foreground')}>
                       <Wallet className="h-3.5 w-3.5" />
                       {isAr ? 'رصيده المتبقي: ' : 'Their remaining balance: '}{r.remainingBalance} {isAr ? 'يوم' : 'days'}
+                      {r.remainingBalance < 0 ? (isAr ? ' (سالب — يتعافى 2.5 يوم مع كل شهر)' : ' (negative — recovers 2.5 days/month)') : ''}
                     </p>
                   )}
                   <div className="flex items-center gap-2 flex-wrap pt-1">
@@ -1234,10 +1185,10 @@ function LeaveFlowSection({ isAr, isRtl }: { isAr: boolean; isRtl: boolean }) {
         </CardHeader>
         <CardContent className="pt-0 space-y-2">
           <div className="flex items-center gap-2 flex-wrap pb-1">
-            <Badge variant="secondary" className="gap-1"><CalendarDays className="h-3.5 w-3.5" /> {isAr ? 'الرصيد الكلي' : 'Total'}: {leaveData.balance ? leaveData.balance.annualTotal + leaveData.balance.carriedOver : 0}</Badge>
-            <Badge variant="outline" className="gap-1"><Clock className="h-3.5 w-3.5" /> {isAr ? 'المستخدم' : 'Used'}: {leaveData.balance?.used ?? 0}</Badge>
-            <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300 border-0 gap-1">
-              <CheckCircle2 className="h-3.5 w-3.5" /> {isAr ? 'المتبقي' : 'Remaining'}: {myRemaining}
+            <Badge variant="secondary" className="gap-1"><CalendarDays className="h-3.5 w-3.5" /> {isAr ? 'المستحق حتى اليوم' : 'Accrued'}: {myAccrued}</Badge>
+            <Badge variant="outline" className="gap-1"><Clock className="h-3.5 w-3.5" /> {isAr ? 'المستخدم' : 'Used'}: {myUsed}</Badge>
+            <Badge className={(myRemaining < 0 ? 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300' : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300') + ' border-0 gap-1'}>
+              <CheckCircle2 className="h-3.5 w-3.5" /> {isAr ? 'المتبقي' : 'Remaining'}: {myRemaining}{myRemaining < 0 ? (isAr ? ' (سالب — يتعافى 2.5 يوم شهرياً)' : ' (negative — recovers 2.5/mo)') : ''}
             </Badge>
           </div>
           {myPending.length === 0 && myDecided.length === 0 ? (
@@ -1376,8 +1327,13 @@ function LeaveFlowSection({ isAr, isRtl }: { isAr: boolean; isRtl: boolean }) {
                     : (isAr ? 'لا أيام عمل في هذه الفترة' : 'No working days in this period')}
                 </Badge>
                 {newForm.type === 'annual' && (
-                  <span className="text-xs text-muted-foreground">
+                  <span className={'text-xs ' + (previewDays > myRemaining ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground')}>
                     {isAr ? 'المتبقي لديك: ' : 'Your remaining: '}{myRemaining}
+                    {previewDays > myRemaining
+                      ? (isAr
+                        ? ' — سيصبح رصيدك سالباً بمقدار ' + (Math.round((previewDays - myRemaining) * 10) / 10) + ' يوم ويتعافى 2.5 يوم مع اكتمال كل شهر'
+                        : ' — your balance will go negative by ' + (Math.round((previewDays - myRemaining) * 10) / 10) + ' days and recovers 2.5 days per month')
+                      : ''}
                   </span>
                 )}
               </div>
