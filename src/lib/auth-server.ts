@@ -7,7 +7,8 @@ import { SignJWT, jwtVerify } from 'jose'
 import { db } from './db'
 import { SessionUser, SESSION_COOKIE, getSessionMaxAge, getCookieOptions, normalizeRole } from './auth'
 // v50: الشفاء الذاتي لجلسات المستخدمين عند نقص أعمدة/جداول حديثة
-import { ensurePurchasesSupport, ensureHRSupport } from './db-selfheal'
+// v120: إنشاء جدول «تذكيراتي» الشخصية تلقائياً عند أول دخول بعد النشر
+import { ensurePurchasesSupport, ensureHRSupport, ensurePersonalRemindersSupport } from './db-selfheal'
 
 // v14 SECURITY: hash وهمي لمقارنات مستخدم غير موجود — تسوية زمن الدخول (منع timing enumeration)
 const DUMMY_HASH = '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy'
@@ -132,6 +133,10 @@ export async function getSessionUser(token: string | undefined): Promise<Session
       }
     }
     if (!user || !user.active) return null
+
+    // v120: ضمان جاهزية جدول «تذكيراتي» للمهام الشخصية — شفاء ذاتي آمن بلا migrate،
+    // لا يلمس أي جدول قائم، وينشئ الجدول مرة واحدة فقط لكل نسخة خادم
+    await ensurePersonalRemindersSupport()
 
     // v14 SECURITY: إبطال الجلسات — إذا رُفعت tokenVersion في قاعدة البيانات
     // (تغيير كلمة مرور/تعطيل) فإن كل التوكنات القديمة تصبح غير صالحة فوراً.
