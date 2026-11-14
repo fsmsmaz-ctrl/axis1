@@ -18,6 +18,7 @@ import { handleDbError } from '@/lib/api-helpers'
 import { isHRManager } from '@/lib/auth'
 import { ensureHRSupport } from '@/lib/db-selfheal'
 import { getOrCreateBalance, getPolicy, parseDay, fmtDay, dayKey } from '@/lib/hr'
+import { computeEffectiveLeave } from '@/lib/leave-accrual'
 
 var DOC_KINDS: Record<string, { ar: string }> = {
   passport: { ar: 'جواز السفر' },
@@ -46,7 +47,7 @@ export async function GET(req: NextRequest) {
       select: {
         id: true, name: true, nameEn: true, email: true, role: true, active: true,
         jobTitle: true, department: true, workLocation: true, employeeNo: true,
-        joinDate: true, contractEnd: true, absenceDays: true, lateDays: true,
+        joinDate: true, contractStart: true, contractEnd: true, absenceDays: true, lateDays: true,
         supervisorId: true,
         supervisor: { select: { name: true, nameEn: true } },
       },
@@ -85,7 +86,10 @@ export async function GET(req: NextRequest) {
 
     var employees = users.map(function(u) {
       var bal = balMap[u.id]
-      var remaining = bal ? (bal.annualTotal + bal.carriedOver - bal.used) : null
+      // v118: الرصيد محسوب آلياً — 2.5 يوم عن كل شهر مكتمل من تاريخ بدء العقد
+      // (أو الالتحاق إن لم يُدخل تاريخ العقد) والمتبقي = المستحق − المستخدم
+      var eff = computeEffectiveLeave(u, bal ? bal.used : 0)
+      var remaining = eff.basis ? eff.remaining : null
       var status = 'on_duty'
       var leaveUntil: string | null = null
       if (!u.active) status = 'inactive'
@@ -97,13 +101,16 @@ export async function GET(req: NextRequest) {
       return {
         id: u.id, name: u.name, nameEn: u.nameEn, email: u.email, role: u.role, active: u.active,
         jobTitle: u.jobTitle, department: u.department, workLocation: u.workLocation, employeeNo: u.employeeNo,
-        joinDate: u.joinDate, contractEnd: u.contractEnd, absenceDays: u.absenceDays, lateDays: u.lateDays,
+        joinDate: u.joinDate, contractStart: u.contractStart, contractEnd: u.contractEnd, absenceDays: u.absenceDays, lateDays: u.lateDays,
         supervisorId: u.supervisorId,
         supervisor: u.supervisor,
         remainingBalance: remaining,
-        annualTotal: bal ? bal.annualTotal : null,
-        carriedOver: bal ? bal.carriedOver : null,
-        used: bal ? bal.used : null,
+        // v118: بيانات الاحتساب التلقائي — المستحق وتاريخ بدئه والاستحقاق الشهري
+        accrued: eff.basis ? eff.accrued : null,
+        used: bal ? bal.used : 0,
+        leaveBasis: eff.basis,
+        leaveBasisDate: eff.basisDate,
+        monthlyAccrual: eff.monthlyAccrual,
         status, leaveUntil,
       }
     })
