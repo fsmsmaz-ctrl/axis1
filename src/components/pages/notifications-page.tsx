@@ -40,6 +40,8 @@ const typeLabels: Record<string, { ar: string; en: string }> = {
   equipment_breakdown: { ar: 'عطل في المعدة', en: 'Equipment breakdown' },
   mass_absence: { ar: 'غياب جماعي', en: 'Mass absence' },
   cost_overrun: { ar: 'تجاوز التكاليف', en: 'Cost overrun' },
+  // v114: فواتير المقاول الآلية — تصدر تلقائياً لكل 10 أمتار من خطوط الحفر
+  contractor_invoice_auto: { ar: 'فاتورة مقاول آلية', en: 'Auto contractor invoice' },
   deadline_near: { ar: 'اقتراب موعد التسليم', en: 'Deadline near' },
   // تنبيهات المهام الشخصية — تبقى في هذا القسم لصاحبها (v19)
   task_assigned: { ar: 'إسناد مهمة إليك', en: 'Task assigned to you' },
@@ -66,6 +68,7 @@ const typeIcons: Record<string, any> = {
   drive_line_completed: HardHat,
   finishing_incomplete: LayoutList,
   performance_ready: FileCheck,
+  contractor_invoice_auto: FileCheck,
 }
 
 type FilterKey = 'all' | 'unread' | 'warning' | 'critical'
