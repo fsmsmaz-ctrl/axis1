@@ -6,7 +6,8 @@
 // PATCH /api/hr/leave/[id]  body: { action: 'approve' | 'reject' | 'cancel', note? }
 // • الموافقة/الرفض: المسؤول المباشر (employee.supervisorId) أو الإدارة/الموارد البشرية
 //   (isHRManager يحترم مفتاح hr_manage من إدارة المستخدمين — v67)
-// • الموافقة على السنوية تخصم الأيام من الرصيد تلقائياً (مع إعادة فحص الكفاية)
+// • v118: الموافقة على السنوية تخصم الأيام من الرصيد تلقائياً — حتى لو أصبح
+//   الرصيد سالباً (مسموح)، ويتعافى 2.5 يوم مع اكتمال كل شهر من بدء العقد
 // • الإلغاء: الموظف لطلبه المعلق؛ الإدارة أي طلب — وإلغاء المعتمد السنوي يُرجع الرصيد
 // • إشعار للموظف بالقرار + نسخة للإدارة/الموارد البشرية
 
@@ -18,7 +19,8 @@ import { isHRManager } from '@/lib/auth'
 import { ensureHRSupport } from '@/lib/db-selfheal'
 import { notifyUsers } from '@/lib/notify'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
-import { getOrCreateBalance, getPolicy, fmtDay, LEAVE_TYPE_LABELS_AR } from '@/lib/hr'
+import { getOrCreateBalance, fmtDay, LEAVE_TYPE_LABELS_AR } from '@/lib/hr'
+import { computeEffectiveLeave } from '@/lib/leave-accrual'
 
 export async function PATCH(
   req: NextRequest,
@@ -46,7 +48,7 @@ export async function PATCH(
       where: { id },
       select: {
         id: true, employeeId: true, type: true, startDate: true, endDate: true, days: true, status: true,
-        employee: { select: { id: true, name: true, nameEn: true, supervisorId: true } },
+        employee: { select: { id: true, name: true, nameEn: true, supervisorId: true, contractStart: true, joinDate: true } },
       },
     })
     if (!request) {
@@ -58,6 +60,8 @@ export async function PATCH(
     var isOwner = request.employeeId === me.id
     var typeLabel = LEAVE_TYPE_LABELS_AR[request.type] || request.type
     var periodMsg = typeLabel + ' من ' + fmtDay(new Date(request.startDate)) + ' إلى ' + fmtDay(new Date(request.endDate))
+    // v118: ملاحظة تُلحق بإشعار الاعتماد إذا أصبح الرصيد سالباً بعد الخصم
+    var negativeNote = ''
 
     // ── الموافقة / الرفض ──
     if (action === 'approve' || action === 'reject') {
@@ -74,17 +78,10 @@ export async function PATCH(
         return NextResponse.json({ error: 'missing_fields', message: 'سبب الرفض إلزامي' }, { status: 400 })
       }
 
-      // الموافقة على السنوية: إعادة فحص الرصيد ثم الخصم داخل معاملة واحدة
+      // الموافقة على السنوية — v118: الخصم دائماً بدون فحص كفاية (السالب مسموح
+      // ويتعافى تلقائياً 2.5 يوم مع كل شهر مكتمل) — الخصم داخل معاملة واحدة
       if (action === 'approve' && request.type === 'annual') {
-        var policy = await getPolicy()
-        var balance = await getOrCreateBalance(request.employeeId, policy.defaultAnnualDays)
-        var remaining = balance.annualTotal + balance.carriedOver - balance.used
-        if (request.days > remaining) {
-          return NextResponse.json({
-            error: 'insufficient_balance',
-            message: 'لا يمكن الاعتماد — رصيد الموظف غير كافٍ (المتبقي ' + remaining + ' والمطلوب ' + request.days + ')',
-          }, { status: 400 })
-        }
+        var balance = await getOrCreateBalance(request.employeeId)
         await db.$transaction([
           db.leaveRequest.update({
             where: { id },
@@ -95,6 +92,11 @@ export async function PATCH(
             data: { used: { increment: request.days } },
           }),
         ])
+        // v118: إن أصبح الرصيد سالباً أبلغنا الموظف بمقداره وطريقة التعافي
+        var effAfter = computeEffectiveLeave(request.employee || {}, balance.used + request.days)
+        if (effAfter.remaining < 0) {
+          negativeNote = ' رصيدك الحالي: ' + effAfter.remaining + ' يوم (سالب — يتعافى تلقائياً 2.5 يوم مع اكتمال كل شهر من تاريخ بدء عقدك)'
+        }
       } else {
         await db.leaveRequest.update({
           where: { id },
@@ -110,7 +112,7 @@ export async function PATCH(
               userId: request.employeeId,
               type: 'leave_approved',
               title: 'تم اعتماد طلب إجازتك',
-              message: periodMsg + ' — اعتُمد من ' + me.name + (note ? ' ملاحظة: ' + note : '') + '، تم خصم الأيام من رصيدك',
+              message: periodMsg + ' — اعتُمد من ' + me.name + (note ? ' ملاحظة: ' + note : '') + '، تم خصم الأيام من رصيدك.' + negativeNote,
               severity: 'info',
               link: 'profile',
               entityType: 'leave_request',
