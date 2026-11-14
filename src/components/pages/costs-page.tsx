@@ -13,12 +13,15 @@ import {
 } from '@/components/ui/dialog'
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  Cell
+  Cell, AreaChart, Area
 } from 'recharts'
-import { Plus, DollarSign, TrendingUp, TrendingDown, Wallet, BarChart3, Search, FileText, Filter, History, Upload, FileCheck } from 'lucide-react'
+// v117: أُزيل DollarSign وTrendingUp (كانا لبطاقتي الإيرادات وهامش الربح المحذوفتين)
+// وأُضيف Ruler وCalendarDays لمؤشرات التكلفة الجديدة
+import { Plus, TrendingDown, Wallet, BarChart3, Search, FileText, Filter, History, Upload, FileCheck, Ruler, CalendarDays } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
-import { SYSTEM_ADMIN_EMAIL, canViewPricing, canWrite } from '@/lib/auth'
+// v117: canViewPricing حُذفت — لا يبقى في القسم أي عنصر تسعير/إيراد يحتاجها
+import { SYSTEM_ADMIN_EMAIL, canWrite } from '@/lib/auth'
 import { localTodayISO } from '@/lib/utils'
 import { toast } from 'sonner'
 // v110: نافذة رفع ملف الفواتير — مكوّن مستقل تماماً (إضافة بحتة لا يمس أي منطق قائم)
@@ -94,15 +97,12 @@ export default function CostsPage() {
   const user = useAppStore((s) => s.user)
   // v31: الاسترجاع لمدير النظام فقط
   const isAdmin = ((user && user.email) || '').toLowerCase().trim() === SYSTEM_ADMIN_EMAIL
-  // v70: الإيراد يُحسب من dailyRevenue الذي يفرغه الخادم لغير المصرح لهم — البطاقات كانت تعرض أرقاماً خاطئة (صفر/خسارة وهمية) بدل إخفائها
-  const seePricing = !!(user && canViewPricing(user))
   // v110: زر «رفع ملف فواتير» يظهر لمن يملك صلاحية كتابة التكاليف —
   // نفس بوابة الخادم تماماً (نمط drive-lines-page) فلا يرى الزر من لا يستطيع استخدامه
   const canImport = !!(user && canWrite(user.role, 'costs', user.permissions))
 
-  const [revenue, setRevenue] = useState(0)
-  // v80: تمييز فشل جلب الإيراد عن الإيراد الصفري الحقيقي — فشل الجلب لا يعني خسارة!
-  const [revenueUnavailable, setRevenueUnavailable] = useState(false)
+  // v117: القسم أصبح للتكاليف فقط — حالات الإيرادات والإيراد غير المتاح حُذفت كلياً.
+  // تبقى تقارير الحفر المعتمدة تُجلب فقط لعدّ الأمتار المحفورة وحساب «تكلفة المتر» (مؤشر تكلفة خالص)
   const [approvedReports, setApprovedReports] = useState<any[]>([])
   const [fetchError, setFetchError] = useState('')
   // Search & filter
@@ -170,18 +170,12 @@ export default function CostsPage() {
       if (selectedProject !== 'all') repParams.set('projectId', selectedProject)
       repParams.set('limit', '500')
       const repRes = await authedFetch('/api/daily-reports?' + repParams.toString())
-      // v80 إصلاح: لم يكن يفحص res.ok — فشل جلب التقارير كان يجعل الإيراد صفراً
-      // فتعرض بطاقة صافي الربح خسارة وهمية تساوي كل التكاليف!
+      // v117: التقارير المعتمدة تُجلب فقط لعدّ أمتار الحفر (تكلفة المتر) — لا يُحسب أي إيراد أو ربح هنا
       if (!repRes.ok) {
-        setRevenueUnavailable(true)
-        setRevenue(0)
         setApprovedReports([])
       } else {
         const repData = await repRes.json()
         var reports = (repData.reports || []).filter(function(r: any) { return r.status === 'approved' })
-        var totalRev = reports.reduce(function(s: number, r: any) { return s + (r.dailyRevenue || 0) }, 0)
-        setRevenueUnavailable(false)
-        setRevenue(totalRev)
         setApprovedReports(reports)
       }
     } catch (e) {
@@ -457,10 +451,41 @@ export default function CostsPage() {
     }
   }
 
-  var netProfit = revenueUnavailable ? 0 : revenue - grandTotal
-  var profitMargin = revenue > 0 ? (netProfit / revenue) * 100 : 0
+  // v117: مؤشرات تكلفة خالصة فقط — لا إيرادات ولا أرباح ولا هوامش
   var totalMeters = approvedReports.reduce(function(s, r) { return s + (r.dailyMeters || 0) }, 0)
   var costPerMeter = totalMeters > 0 ? total / totalMeters : 0
+  // تكاليف الشهر الحالي (عدد الفواتير ومجموعها حسب تاريخ كل فاتورة)
+  var nowDate = new Date()
+  var monthCosts = costs.reduce(function(s: number, c: any) {
+    var d = new Date(c.date)
+    return (d.getFullYear() === nowDate.getFullYear() && d.getMonth() === nowDate.getMonth()) ? s + (c.amount || 0) : s
+  }, 0)
+  var monthCount = costs.filter(function(c: any) {
+    var d = new Date(c.date)
+    return d.getFullYear() === nowDate.getFullYear() && d.getMonth() === nowDate.getMonth()
+  }).length
+
+  // v117: اتجاه التكاليف آخر 6 أشهر — الرسم البياني الثاني (تنظيم عصري ومتناسق مع رسم الفئات)
+  var monthlyTrend = (function() {
+    var buckets: Record<string, number> = {}
+    var labels: { key: string; label: string }[] = []
+    for (var i = 5; i >= 0; i--) {
+      var d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - i)
+      var key = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2)
+      buckets[key] = 0
+      labels.push({ key: key, label: d.toLocaleDateString(isRtl ? 'ar-EG' : 'en-US', { month: 'short' }) })
+    }
+    for (var j = 0; j < costs.length; j++) {
+      var cd = new Date(costs[j].date)
+      var ck = cd.getFullYear() + '-' + ('0' + (cd.getMonth() + 1)).slice(-2)
+      if (buckets[ck] !== undefined) buckets[ck] += costs[j].amount || 0
+    }
+    var out: { name: string; amount: number }[] = []
+    for (var k = 0; k < labels.length; k++) {
+      out.push({ name: labels[k].label, amount: Math.round(buckets[labels[k].key] * 100) / 100 })
+    }
+    return out
+  })()
 
   var pieData = byCategory.map(function(c) {
     return {
@@ -472,12 +497,12 @@ export default function CostsPage() {
 
   return (
     <div className="space-y-5">
-      {/* Page Header */}
+      {/* Page Header — v117: الاسم الجديد «التكاليف» وبدون أي إشارة للإيرادات أو الأرباح */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">{isRtl ? 'التكاليف والإيرادات' : 'Costs & Revenue'}</h1>
+          <h1 className="text-2xl font-bold tracking-tight">{isRtl ? 'التكاليف' : 'Costs'}</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            {isRtl ? 'متابعة التكاليف والإيرادات وحساب الأرباح' : 'Track costs, revenue, and profit'}
+            {isRtl ? 'متابعة التكاليف وإدارة الفواتير' : 'Track and manage costs'}
           </p>
         </div>
         <div className="flex gap-2">
@@ -520,32 +545,9 @@ export default function CostsPage() {
         </div>
       </div>
 
-      {/* Summary Cards - Modern Design */}
+      {/* v117: بطاقات مؤشرات تكلفة خالصة — حُذفت بطاقات الإيرادات وصافي الربح وهامش الربح كلياً
+          وشبكة 4 بطاقات متناسقة: عمودان على الجوال و4 على الشاشات الكبيرة */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {seePricing && (
-        <Card className="border-0 shadow-sm bg-gradient-to-br from-emerald-500 to-emerald-600 text-white">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center">
-                <TrendingUp className="h-4 w-4" />
-              </div>
-              <span className="text-xs text-white/80">{isRtl ? 'الإيرادات' : 'Revenue'}</span>
-            </div>
-            <p className="text-xl font-bold">
-              {/* v80: عند فشل جلب التقارير نعرض «—» بدل صفر لأن الصفر يعني خسارة وهمية في بطاقة الربح */}
-              {revenueUnavailable
-                ? '—'
-                : revenue.toLocaleString(isRtl ? 'ar-EG' : 'en-US', { maximumFractionDigits: 0 })}
-              <span className="text-sm font-normal ml-1 text-white/80">{revenueUnavailable ? '' : (isRtl ? 'ر.ع' : 'OMR')}</span>
-            </p>
-            <p className="text-xs text-white/60 mt-1">
-              {revenueUnavailable
-                ? (isRtl ? 'تعذر جلب الإيرادات الآن' : 'Revenue unavailable')
-                : approvedReports.length + ' ' + (isRtl ? 'تقرير معتمد' : 'approved reports')}
-            </p>
-          </CardContent>
-        </Card>
-        )}
         <Card className="border-0 shadow-sm bg-gradient-to-br from-rose-500 to-rose-600 text-white">
           <CardContent className="p-4">
             <div className="flex items-center gap-2 mb-2">
@@ -565,59 +567,61 @@ export default function CostsPage() {
             )}
           </CardContent>
         </Card>
-        {seePricing && (
-        <Card className={"border-0 shadow-sm bg-gradient-to-br text-white " + (netProfit >= 0 ? 'from-blue-500 to-blue-600' : 'from-red-500 to-red-600')}>
+        <Card className="border-0 shadow-sm bg-gradient-to-br from-amber-500 to-orange-500 text-white">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center">
+                <CalendarDays className="h-4 w-4" />
+              </div>
+              <span className="text-xs text-white/80">{isRtl ? 'تكاليف الشهر الحالي' : 'This Month'}</span>
+            </div>
+            <p className="text-xl font-bold">
+              {monthCosts.toLocaleString(isRtl ? 'ar-EG' : 'en-US', { maximumFractionDigits: 0 })}
+              <span className="text-sm font-normal ml-1 text-white/80">{isRtl ? 'ر.ع' : 'OMR'}</span>
+            </p>
+            <p className="text-xs text-white/60 mt-1">
+              {monthCount + ' ' + (isRtl ? 'فاتورة هذا الشهر' : 'invoices this month')}
+            </p>
+          </CardContent>
+        </Card>
+        <Card className="border-0 shadow-sm bg-gradient-to-br from-sky-500 to-indigo-500 text-white">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center">
+                <Ruler className="h-4 w-4" />
+              </div>
+              <span className="text-xs text-white/80">{isRtl ? 'تكلفة المتر' : 'Cost per Meter'}</span>
+            </div>
+            <p className="text-xl font-bold">
+              {totalMeters > 0 ? costPerMeter.toFixed(2) : '—'}
+              {totalMeters > 0 && <span className="text-sm font-normal ml-1 text-white/80">{isRtl ? 'ر.ع' : 'OMR'}</span>}
+            </p>
+            <p className="text-xs text-white/60 mt-1">
+              {totalMeters > 0
+                ? totalMeters.toLocaleString(isRtl ? 'ar-EG' : 'en-US', { maximumFractionDigits: 0 }) + ' ' + (isRtl ? 'متر محفور (تقارير معتمدة)' : 'm drilled (approved reports)')
+                : (isRtl ? 'بانتظار تقارير معتمدة' : 'Awaiting approved reports')}
+            </p>
+          </CardContent>
+        </Card>
+        <Card className="border-0 shadow-sm bg-gradient-to-br from-teal-500 to-teal-600 text-white">
           <CardContent className="p-4">
             <div className="flex items-center gap-2 mb-2">
               <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center">
                 <Wallet className="h-4 w-4" />
               </div>
-              <span className="text-xs text-white/80">{isRtl ? 'صافي الربح' : 'Net Profit'}</span>
+              <span className="text-xs text-white/80">{isRtl ? 'الإيجارات الشهرية' : 'Monthly Rentals'}</span>
             </div>
             <p className="text-xl font-bold">
-              {netProfit.toLocaleString(isRtl ? 'ar-EG' : 'en-US', { maximumFractionDigits: 0 })}
-              <span className="text-sm font-normal ml-1 text-white/80">{isRtl ? 'ر.ع' : 'OMR'}</span>
+              {totalRentalCost.toLocaleString(isRtl ? 'ar-EG' : 'en-US', { maximumFractionDigits: 0 })}
+              <span className="text-sm font-normal ml-1 text-white/80">{isRtl ? 'ر.ع/شهر' : 'OMR/mo'}</span>
             </p>
-          </CardContent>
-        </Card>
-        )}
-        {seePricing && (
-        <Card className="border-0 shadow-sm bg-gradient-to-br from-violet-500 to-violet-600 text-white">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center">
-                <DollarSign className="h-4 w-4" />
-              </div>
-              <span className="text-xs text-white/80">{isRtl ? 'هامش الربح' : 'Profit Margin'}</span>
-            </div>
-            <p className="text-xl font-bold">{profitMargin.toFixed(1)}%</p>
             <p className="text-xs text-white/60 mt-1">
-              {isRtl ? 'تكلفة المتر' : 'Cost/m'}: {costPerMeter.toFixed(1)} {isRtl ? 'ر.ع' : 'OMR'}
+              {rentalAssets.length > 0
+                ? rentalAssets.length + ' ' + (isRtl ? 'معدة نشطة (من قسم المعدات)' : 'active assets (Equipment)')
+                : (isRtl ? 'من قسم المعدات والأصول' : 'From Equipment section')}
             </p>
           </CardContent>
         </Card>
-        )}
-      </div>
-
-      {/* Project Filter */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <Select value={selectedProject} onValueChange={setSelectedProject}>
-          <SelectTrigger className="w-full sm:w-[280px]">
-            <SelectValue placeholder={isRtl ? 'اختر المشروع' : 'Select project'} />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">{isRtl ? 'كل المشاريع' : 'All Projects'}</SelectItem>
-            {projects.map(function(p) {
-              return <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-            })}
-          </SelectContent>
-        </Select>
-        <Badge variant="secondary" className="text-xs px-2.5 py-1">
-          {costs.length} {isRtl ? 'فاتورة' : 'invoices'}
-        </Badge>
-        <Badge variant="outline" className="text-xs px-2.5 py-1">
-          {filteredCosts.length} {isRtl ? 'معروضة' : 'shown'}
-        </Badge>
       </div>
 
       {/* Active Rental Assets Details */}
@@ -653,41 +657,91 @@ export default function CostsPage() {
         </Card>
       )}
 
-      {/* Chart */}
-      <Card className="shadow-sm">
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <div className="w-7 h-7 rounded-md bg-primary/10 text-primary flex items-center justify-center">
-              <BarChart3 className="h-4 w-4" />
-            </div>
-            {isRtl ? 'التكاليف حسب الفئة' : 'Costs by Category'}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {pieData.length === 0 ? (
-            <div className="h-64 flex items-center justify-center text-muted-foreground text-sm">
-              {isRtl ? 'لا توجد بيانات' : 'No data'}
-            </div>
-          ) : (
-            <ResponsiveContainer width="100%" height={Math.max(300, pieData.length * 45)}>
-              <BarChart data={pieData} layout="vertical" margin={{ left: 20, right: 20 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                <XAxis type="number" tick={{ fontSize: 11 }} reversed={isRtl} />
-                <YAxis dataKey="name" type="category" tick={{ fontSize: 11 }} width={80} orientation={isRtl ? 'right' : 'left'} />
-                <Tooltip
-                  contentStyle={{ direction: isRtl ? 'rtl' : 'ltr', borderRadius: 8, fontSize: 12 }}
-                  formatter={function(value: any) { return [value.toLocaleString() + ' ر.ع', isRtl ? 'المبلغ' : 'Amount'] }}
+      {/* v117: الرسوم البيانية — شبكة متجاوبة: جنباً إلى جنب على الشاشات الكبيرة ومكدسة على الصغيرة */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 items-start">
+        <Card className="shadow-sm">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <div className="w-7 h-7 rounded-md bg-primary/10 text-primary flex items-center justify-center">
+                <BarChart3 className="h-4 w-4" />
+              </div>
+              {isRtl ? 'التكاليف حسب الفئة' : 'Costs by Category'}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {pieData.length === 0 ? (
+              <div className="h-64 flex items-center justify-center text-muted-foreground text-sm">
+                {isRtl ? 'لا توجد بيانات' : 'No data'}
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height={Math.max(280, pieData.length * 42)}>
+                <BarChart data={pieData} layout="vertical" margin={{ left: 4, right: 24, top: 4, bottom: 4 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#94a3b8" strokeOpacity={0.25} />
+                  <XAxis type="number" tick={{ fontSize: 11 }} reversed={isRtl} />
+                  <YAxis dataKey="name" type="category" tick={{ fontSize: 11 }} width={isRtl ? 110 : 96} orientation={isRtl ? 'right' : 'left'} />
+                  <Tooltip
+                    cursor={{ fill: 'rgba(148,163,184,0.12)' }}
+                    contentStyle={{ direction: isRtl ? 'rtl' : 'ltr', borderRadius: 10, fontSize: 12, border: '1px solid rgba(148,163,184,0.35)' }}
+                    formatter={function(value: any) { return [Number(value).toLocaleString() + ' ر.ع', isRtl ? 'المبلغ' : 'Amount'] }}
+                  />
+                  <Bar dataKey="value" radius={[0, 4, 4, 0]} maxBarSize={28}>
+                    {pieData.map(function(entry, idx) {
+                      return <Cell key={idx} fill={entry.color} />
+                    })}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-sm">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <div className="w-7 h-7 rounded-md bg-rose-100 text-rose-600 flex items-center justify-center">
+                <TrendingDown className="h-4 w-4" />
+              </div>
+              {isRtl ? 'اتجاه التكاليف — آخر 6 أشهر' : 'Costs Trend — Last 6 Months'}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={280}>
+              <AreaChart data={monthlyTrend} margin={{ left: 0, right: 12, top: 8, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="costTrendFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#f43f5e" stopOpacity={0.35} />
+                    <stop offset="100%" stopColor="#f43f5e" stopOpacity={0.02} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#94a3b8" strokeOpacity={0.25} vertical={false} />
+                <XAxis dataKey="name" tick={{ fontSize: 11 }} reversed={isRtl} />
+                <YAxis
+                  tick={{ fontSize: 11 }}
+                  width={54}
+                  orientation={isRtl ? 'right' : 'left'}
+                  tickFormatter={function(v: number) { return v >= 1000 ? (Math.round(v / 100) / 10) + 'k' : String(v) }}
                 />
-                <Bar dataKey="value" radius={[0, 4, 4, 0]}>
-                  {pieData.map(function(entry, idx) {
-                    return <Cell key={idx} fill={entry.color} />
-                  })}
-                </Bar>
-              </BarChart>
+                <Tooltip
+                  contentStyle={{ direction: isRtl ? 'rtl' : 'ltr', borderRadius: 10, fontSize: 12, border: '1px solid rgba(148,163,184,0.35)' }}
+                  formatter={function(value: any) { return [Number(value).toLocaleString() + ' ر.ع', isRtl ? 'إجمالي الشهر' : 'Month total'] }}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="amount"
+                  stroke="#f43f5e"
+                  strokeWidth={2.5}
+                  fill="url(#costTrendFill)"
+                  dot={{ r: 3, fill: '#f43f5e', strokeWidth: 0 }}
+                  activeDot={{ r: 5 }}
+                />
+              </AreaChart>
             </ResponsiveContainer>
-          )}
-        </CardContent>
-      </Card>
+            <p className="text-center text-[11px] text-muted-foreground mt-2">
+              {isRtl ? 'مجموع فواتير كل شهر حسب تاريخها — لرصد الشهور الأعلى تكلفة بسرعة' : 'Total invoiced per month by invoice date — spot costly months fast'}
+            </p>
+          </CardContent>
+        </Card>
+      </div>
 
       {/* Costs List - Full Table View */}
       <Card className="shadow-sm">
@@ -704,8 +758,19 @@ export default function CostsPage() {
             </span>
           </div>
 
-          {/* Search & Filter Bar */}
+          {/* v117: شريط الفلترة الموحد — المشروع والبحث والفئة والمسترجعة والعدادات في مكان واحد */}
           <div className="flex items-center gap-2 mt-3 flex-wrap">
+            <Select value={selectedProject} onValueChange={setSelectedProject}>
+              <SelectTrigger className="w-full sm:w-[200px]">
+                <SelectValue placeholder={isRtl ? 'اختر المشروع' : 'Select project'} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{isRtl ? 'كل المشاريع' : 'All Projects'}</SelectItem>
+                {projects.map(function(p) {
+                  return <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                })}
+              </SelectContent>
+            </Select>
             <div className="relative flex-1 min-w-[200px]">
               <Search className={"absolute top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground " + (isRtl ? "right-3" : "left-3")} />
               <Input
@@ -738,6 +803,12 @@ export default function CostsPage() {
                 {isRtl ? 'المسترجعة' : 'Restored'} ({restoredCount})
               </Button>
             </div>
+            <Badge variant="secondary" className="text-xs px-2.5 py-1">
+              {costs.length} {isRtl ? 'فاتورة' : 'invoices'}
+            </Badge>
+            <Badge variant="outline" className="text-xs px-2.5 py-1">
+              {filteredCosts.length} {isRtl ? 'معروضة' : 'shown'}
+            </Badge>
           </div>
         </CardHeader>
         <CardContent>
@@ -761,7 +832,8 @@ export default function CostsPage() {
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              {/* v117: حد أدنى لعرض الجدول — الأعمدة تبقى مقروءة على الجوال مع تمرير أفقي سلس */}
+              <table className="w-full text-sm min-w-[680px]">
                 <thead>
                   <tr className="border-b bg-muted/30">
                     <th className="p-2.5 text-right font-medium text-xs uppercase tracking-wider text-muted-foreground w-8">#</th>
