@@ -25,7 +25,8 @@ import { checkRateLimit } from '@/lib/rate-limit'
 // - الفواتير اليتيمة (مشروعها الأصلي محذوف) تُسترجع بلا مشروع (v32) أو تُسند إلى defaultProjectId إن أُرسل.
 // - v33: يفحص مباشرة أن ترقية v32 (Cost.projectId اختياري) مطبقة في قاعدة البيانات ويكشف حالتها صراحة.
 
-var COST_CATEGORIES = ['labor', 'housing', 'transport', 'fuel', 'maintenance', 'parts', 'oil', 'safety', 'rental', 'other']
+// v114: أُضيفت فئة «contractor» حتى تعود فواتير المقاول المسترجعة بفئتها الصحيحة
+var COST_CATEGORIES = ['labor', 'housing', 'transport', 'fuel', 'maintenance', 'parts', 'oil', 'safety', 'rental', 'contractor', 'other']
 
 function parseCostDetails(details: string): { category: string; description: string; amount: number } | null {
   // الصيغة المعتمدة في POST /api/costs — المبلغ من النهاية (الوصف قد يحتوي أقواساً)
