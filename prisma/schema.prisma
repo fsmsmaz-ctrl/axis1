@@ -535,6 +535,28 @@ model Notification {
   @@index([type, entityId])
 }
 
+// ==================== v120: تذكيراتي — المهام الشخصية الخاصة ====================
+// مهمة يسجّلها الموظف لنفسه من قسم «تذكيراتي» في إدارة المهام:
+// خصوصية مطلقة — لا يراها أي شخص آخر إطلاقاً (لا الإدارة ولا مدير المهام).
+// جدول مستقل تماماً عن جدول المهام الرسمي (Task) حتى لا تختلط بالتقارير
+// أو برؤية الإدارة أو مؤشرات الأداء. يُنشأ في قاعدة البيانات تلقائياً
+// بالشفاء الذاتي (db-selfheal: ensurePersonalRemindersSupport) دون أي migrate.
+model PersonalReminder {
+  id        String    @id @default(cuid())
+  userId    String    // المالك الوحيد — صاحب التذكير، ولا وصول لأي حساب آخر
+  title     String    // عنوان المهمة الشخصية
+  details   String?   // تفاصيل المهمة
+  priority  String    @default("normal") // urgent, high, normal, low
+  dueDate   DateTime  // تاريخ نهاية المهمة
+  done      Boolean   @default(false)
+  doneAt    DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([userId, done])
+  @@index([userId, dueDate])
+}
+
 // ==================== Audit Log ====================
 model AuditLog {
   id          String   @id @default(cuid())
