@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import {
   Activity, TrendingUp, TrendingDown, DollarSign, Wallet,
   Users, AlertTriangle, Wrench, FolderKanban, ArrowLeft,
-  Trophy, AlertCircle, Calendar, Cpu, RefreshCw, Receipt, Check, X, Loader2,
+  Trophy, AlertCircle, Calendar, RefreshCw, Receipt, Check, X, Loader2,
   ClipboardCheck, CheckCircle2, Package
 } from 'lucide-react'
 import {
@@ -285,6 +285,40 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
     rented: companyAssets.filter(function(a) { return a.ownership === 'rented' }).length,
     borrowed: companyAssets.filter(function(a) { return a.ownership === 'borrowed' }).length,
   }
+  // v112: دمج بطاقة «حالة المعدات» داخل بطاقة «الأصول والمستأجرات» — قسم
+  // واحد يجمع معدات جدول المعدات مع الأصول والمستأجرات والمعار. الملخص
+  // أعلى البطاقة أصبح موحداً: الإجمالي/تعمل/متوقفة تشمل المعدات + الأصول معاً
+  const equipmentStoppedCount = equipment.filter(function(e) {
+    return e.status === 'stopped' || e.status === 'maintenance_needed'
+  }).length
+  const combinedSummary = {
+    total: equipment.length + assetsSummary.total,
+    working: (equipment.length - equipmentStoppedCount) + assetsSummary.working,
+    notWorking: equipmentStoppedCount + assetsSummary.notWorking,
+    owned: assetsSummary.owned,
+    rented: assetsSummary.rented,
+    borrowed: assetsSummary.borrowed,
+    machines: equipment.length,
+  }
+  // v112: القائمة الموحدة — كل صف معلّم بمصدره (معدة من جدول المعدات أو أصل/مستأجر)
+  // الترتيب: المتوقفة أولاً في أعلى القائمة فلا تضيع خلف التمرير، ثم من الأحدث إلى الأقدم
+  const mergedItems = ([] as any[]).concat(
+    equipment.map(function(e: any) {
+      return Object.assign({}, e, {
+        _kind: 'equipment',
+        _stopped: e.status === 'stopped' || e.status === 'maintenance_needed',
+      })
+    }),
+    companyAssets.map(function(a: any) {
+      return Object.assign({}, a, { _kind: 'asset', _stopped: a.isOperational === false })
+    })
+  ).sort(function(x: any, y: any) {
+    if (x._stopped !== y._stopped) return x._stopped ? -1 : 1
+    var tx = x.createdAt ? new Date(x.createdAt).getTime() : 0
+    var ty = y.createdAt ? new Date(y.createdAt).getTime() : 0
+    return ty - tx
+  })
+
   const costsByCategory = Array.isArray(data.costsByCategory) ? data.costsByCategory : []
 
   const fmt = function(n: number) { return (n || 0).toLocaleString(isRtl ? 'ar-EG' : 'en-US', { maximumFractionDigits: 1 }) }
@@ -677,59 +711,15 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center justify-between">
-              <span className="flex items-center gap-2">
-                <Cpu className="h-5 w-5 text-primary" />
-                {isRtl ? 'حالة المعدات' : 'Equipment Status'}
-              </span>
-              <Button variant="ghost" size="sm" onClick={function() { onNavigate('equipment') }}>
-                {isRtl ? 'عرض الكل' : 'View all'}
-                <ArrowLeft className="h-4 w-4 mr-1 rtl:rotate-180" />
-              </Button>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2 max-h-80 overflow-y-auto">
-            {equipment.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground text-sm">
-                {isRtl ? 'لا توجد معدات' : 'No equipment'}
-              </div>
-            ) : (
-              equipment.map(function(eq) {
-                return (
-                  <div key={eq.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 transition">
-                    <div className={'w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ' +
-                      (eq.status === 'operational' ? 'bg-emerald-100' :
-                       eq.status === 'stopped' ? 'bg-red-100' : 'bg-orange-100')}>
-                      <Wrench className={'h-4 w-4 ' +
-                        (eq.status === 'operational' ? 'text-emerald-600' :
-                         eq.status === 'stopped' ? 'text-red-600' : 'text-orange-600')} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-sm truncate">{eq.name}</p>
-                      <p className="text-xs text-muted-foreground">{eq.number} • {eq.project?.name || '-'}</p>
-                    </div>
-                    <Badge variant={
-                      eq.status === 'operational' ? 'default' :
-                      eq.status === 'stopped' ? 'destructive' : 'secondary'
-                    } className="text-xs">
-                      {eq.status === 'operational' ? (isRtl ? 'تعمل' : 'Operational') :
-                       eq.status === 'stopped' ? (isRtl ? 'متوقفة' : 'Stopped') :
-                       (isRtl ? 'تحتاج صيانة' : 'Maintenance')}
-                    </Badge>
-                  </div>
-                )
-              })
-            )}
-          </CardContent>
-        </Card>
-
         {/* v105: الأصول والمستأجرات — القسم الثاني في صفحة المعدات لم يكن
-            يظهر في اللوحة إطلاقاً؛ الآن بطاقة مستقلة بجانب المعدات بنفس
+            يظهر في اللوحة إطلاقاً؛ الآن بطاقة مستقلة بنفس
             التسميات والألوان، وعرض الكل يفتح قسم المعدات نفسه
             v106: صف ملخص فوق القائمة + شارة «تعمل/متوقفة» لكل أصل —
-            الأرقام تُحسب من القائمة كاملة (القديمة والجديدة معاً) فلا يُخفى شيء */}
+            الأرقام تُحسب من القائمة كاملة (القديمة والجديدة معاً) فلا يُخفى شيء
+            v112 (طلب صاحب الموقع): بطاقة «حالة المعدات» حُذفت ودمجت معداتها
+            هنا — قسم واحد يعرض كل ما في النظام: معدات الشركة + الأصول
+            + المستأجرات + المعار، والمتوقفة منها تظهر في أعلى القائمة،
+            والملخص الموحد أعلى البطاقة يشمل الجميع */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center justify-between">
@@ -747,54 +737,84 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
             {/* v106: صف الملخص — الأعداد الحقيقية لكل الحالات من كل السجلات */}
             <div className="flex items-center gap-2 flex-wrap pb-2 border-b">
               <span className="inline-flex items-center gap-1 text-xs font-medium bg-muted px-2 py-1 rounded-full">
-                {isRtl ? 'الإجمالي' : 'Total'}: {assetsSummary.total}
+                {isRtl ? 'الإجمالي' : 'Total'}: {combinedSummary.total}
               </span>
               <span className="inline-flex items-center gap-1 text-xs font-medium bg-emerald-50 text-emerald-700 px-2 py-1 rounded-full">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
-                {isRtl ? 'تعمل' : 'Working'}: {assetsSummary.working}
+                {isRtl ? 'تعمل' : 'Working'}: {combinedSummary.working}
               </span>
               <span className="inline-flex items-center gap-1 text-xs font-medium bg-red-50 text-red-700 px-2 py-1 rounded-full">
                 <span className="w-2 h-2 rounded-full bg-red-500 inline-block" />
-                {isRtl ? 'متوقفة' : 'Not working'}: {assetsSummary.notWorking}
+                {isRtl ? 'متوقفة' : 'Not working'}: {combinedSummary.notWorking}
               </span>
               <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                {isRtl ? 'ملك الشركة' : 'Owned'}: {assetsSummary.owned} • {isRtl ? 'مستأجر' : 'Rented'}: {assetsSummary.rented} • {isRtl ? 'معار' : 'Borrowed'}: {assetsSummary.borrowed}
+                {isRtl ? 'ملك الشركة' : 'Owned'}: {combinedSummary.owned} • {isRtl ? 'مستأجر' : 'Rented'}: {combinedSummary.rented} • {isRtl ? 'معار' : 'Borrowed'}: {combinedSummary.borrowed} • {isRtl ? 'معدات الشركة' : 'Machines'}: {combinedSummary.machines}
               </span>
             </div>
             {/* v107: البطاقة أطول + إرشاد واضح — كانت الأصول الأقدم مخفية خلف
                 التمرير فتبدو «غير موجودة» مقارنة بقسم المعدات الذي يعرض الكل */}
             <div className="space-y-2 max-h-[420px] overflow-y-auto">
-            {companyAssets.length === 0 ? (
+            {mergedItems.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground text-sm">
-                {isRtl ? 'لا توجد أصول أو مستأجرات' : 'No assets or rentals'}
+                {isRtl ? 'لا توجد معدات أو أصول' : 'No equipment or assets'}
               </div>
             ) : (
-              companyAssets.map(function(a) {
+              mergedItems.map(function(item: any) {
+                if (item._kind === 'equipment') {
+                  // v112: صف معدة من جدول المعدات — نفس شكل بطاقة «حالة المعدات»
+                  // السابقة حرفياً + شارة «معدات» لتمييز مصدرها في القائمة الموحدة
+                  return (
+                    <div key={'eq-' + item.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 transition">
+                      <div className={'w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ' +
+                        (item.status === 'operational' ? 'bg-emerald-100' :
+                         item.status === 'stopped' ? 'bg-red-100' : 'bg-orange-100')}>
+                        <Wrench className={'h-4 w-4 ' +
+                          (item.status === 'operational' ? 'text-emerald-600' :
+                           item.status === 'stopped' ? 'text-red-600' : 'text-orange-600')} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-sm truncate">{item.name}</p>
+                        <p className="text-xs text-muted-foreground">{item.number} • {item.project?.name || '-'}</p>
+                      </div>
+                      <Badge variant="outline" className="text-[10px] text-muted-foreground shrink-0">
+                        {isRtl ? 'معدات' : 'Machine'}
+                      </Badge>
+                      <Badge variant={
+                        item.status === 'operational' ? 'default' :
+                        item.status === 'stopped' ? 'destructive' : 'secondary'
+                      } className="text-xs shrink-0">
+                        {item.status === 'operational' ? (isRtl ? 'تعمل' : 'Operational') :
+                         item.status === 'stopped' ? (isRtl ? 'متوقفة' : 'Stopped') :
+                         (isRtl ? 'تحتاج صيانة' : 'Maintenance')}
+                      </Badge>
+                    </div>
+                  )
+                }
                 // v107: نفس تسميات صفحة المعدات ونفس احتياطياتها حرفياً
-                var st = assetStatusLabels[a.status] || assetStatusFallback
-                var ownership = assetOwnershipLabels[a.ownership] || assetOwnershipFallback
-                var type = assetTypeLabels[a.itemType] || assetTypeFallback
-                var isWorking = a.isOperational !== false
-                var qty = Number(a.quantity) || 1
+                var st = assetStatusLabels[item.status] || assetStatusFallback
+                var ownership = assetOwnershipLabels[item.ownership] || assetOwnershipFallback
+                var type = assetTypeLabels[item.itemType] || assetTypeFallback
+                var isWorking = item.isOperational !== false
+                var qty = Number(item.quantity) || 1
                 // v107: نفس تفاصيل صف الأصل في القسم — الجهة/المسؤول/الإيجار/الإرجاع
                 var extras: string[] = []
-                if (a.supplier) extras.push((isRtl ? 'الجهة: ' : 'From: ') + a.supplier)
-                if (a.responsible && a.responsible.name) extras.push((isRtl ? 'المسؤول: ' : 'Responsible: ') + a.responsible.name)
-                if (a.ownership === 'rented' && Number(a.rentalCost) > 0) extras.push(a.rentalCost + ' ' + (isRtl ? 'ر.ع/شهر' : 'OMR/mo'))
-                if (a.ownership === 'borrowed' && a.rentalEnd) extras.push((isRtl ? 'الإرجاع: ' : 'Return: ') + new Date(a.rentalEnd).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US'))
+                if (item.supplier) extras.push((isRtl ? 'الجهة: ' : 'From: ') + item.supplier)
+                if (item.responsible && item.responsible.name) extras.push((isRtl ? 'المسؤول: ' : 'Responsible: ') + item.responsible.name)
+                if (item.ownership === 'rented' && Number(item.rentalCost) > 0) extras.push(item.rentalCost + ' ' + (isRtl ? 'ر.ع/شهر' : 'OMR/mo'))
+                if (item.ownership === 'borrowed' && item.rentalEnd) extras.push((isRtl ? 'الإرجاع: ' : 'Return: ') + new Date(item.rentalEnd).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US'))
                 return (
-                  <div key={a.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 transition">
+                  <div key={'as-' + item.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 transition">
                     <div className={'w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ' +
                       (isWorking
-                        ? (assetStatusColors[a.status] || 'bg-gray-100 text-gray-600')
+                        ? (assetStatusColors[item.status] || 'bg-gray-100 text-gray-600')
                         : 'bg-red-100 text-red-600')}>
                       <Package className="h-4 w-4" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="font-medium text-sm truncate">{a.name}</p>
+                      <p className="font-medium text-sm truncate">{item.name}</p>
                       <p className="text-xs text-muted-foreground truncate">
                         {(isRtl ? type.ar : type.en)} • {(isRtl ? ownership.ar : ownership.en)} • ×{qty}
-                        {a.project?.name ? ' • ' + a.project.name : ''}
+                        {item.project?.name ? ' • ' + item.project.name : ''}
                       </p>
                       {extras.length > 0 && (
                         <p className="text-[11px] text-muted-foreground/80 truncate">{extras.join(' • ')}</p>
@@ -814,11 +834,11 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (page: any) 
               })
             )}
             </div>
-            {companyAssets.length > 6 && (
+            {mergedItems.length > 6 && (
               <p className="text-center text-[11px] text-muted-foreground pt-1 border-t">
                 {isRtl
-                  ? 'مرّر داخل البطاقة لعرض بقية الأصول — كلها معروضة بالترتيب من الأحدث إلى الأقدم'
-                  : 'Scroll inside the card to see the rest — all assets listed, newest first'}
+                  ? 'المعدات والأصول المتوقفة تظهر في أعلى القائمة، والبقية من الأحدث إلى الأقدم — مرّر داخل البطاقة لعرضها كلها'
+                  : 'Stopped items appear at the top, the rest newest first — scroll inside the card to see them all'}
               </p>
             )}
           </CardContent>
