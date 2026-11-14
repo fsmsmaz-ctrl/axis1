@@ -5,7 +5,8 @@ import { handleDbError, validateRequired, parseNumber, safeDbOp } from '@/lib/ap
 import { canWrite } from '@/lib/auth'
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 
-var COST_CATEGORIES = ['labor', 'housing', 'transport', 'fuel', 'maintenance', 'parts', 'oil', 'safety', 'rental', 'other']
+// v114: أُضيفت فئة «contractor» — فواتير المقاول الآلية (كل 10 أمتار من خط الحفر)
+var COST_CATEGORIES = ['labor', 'housing', 'transport', 'fuel', 'maintenance', 'parts', 'oil', 'safety', 'rental', 'contractor', 'other']
 
 function validateAmount(raw: any): { ok: true; amount: number } | { ok: false; error: NextResponse } {
   var amount = parseNumber(raw, NaN)
