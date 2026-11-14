@@ -1,5 +1,7 @@
 // v53: الملف الوظيفي — قراءة بيانات الموظف الوظيفية وتحديثها
 // GET  ?userId=...  — الملف الوظيفي (الذات افتراضياً) + الرصيد + سجل الإجازات + تعديلات الرصيد
+// v118: الرصيد الفعلي يُحتسب آلياً (2.5 يوم عن كل شهر مكتمل من تاريخ بدء العقد)
+// ويُعاد في effectiveBalance — سالباً كان أو موجباً — مع بقاء الرصيد الخام للتوافق
 //   • الموظف يرى ملفه فقط؛ الإدارة/الموارد البشرية (isHRManager) ترى أي ملف وتحصل على قائمة الموظفين
 //   • سرية الرواتب: baseSalary/allowances تُعاد فقط للموظف نفسه أو مدير الموارد البشرية —
 //     حظر سرية على مستوى الخادم لا يتأثر بصلاحيات الأقسام المخصصة
@@ -13,6 +15,7 @@ import { handleDbError } from '@/lib/api-helpers'
 import { isHRManager, normalizeRole } from '@/lib/auth'
 import { ensureHRSupport } from '@/lib/db-selfheal'
 import { getOrCreateBalance, getPolicy, parseDay, computeCompleteness } from '@/lib/hr'
+import { computeEffectiveLeave } from '@/lib/leave-accrual'
 
 const hrUserSelect = {
   id: true, email: true, name: true, nameEn: true, role: true, phone: true, active: true,
@@ -49,6 +52,9 @@ export async function GET(req: NextRequest) {
     }
     var policy = await getPolicy()
     var balance = await getOrCreateBalance(targetId, policy.defaultAnnualDays)
+    // v118: الرصيد الفعلي المحسوب آلياً — الاستحقاق من تاريخ بدء العقد (أو الالتحاق)
+    // والمتبقي = المستحق − المستخدم (سالب مسموح ويتعافى 2.5 يوم مع كل شهر مكتمل)
+    var effectiveBalance = computeEffectiveLeave(target, balance.used)
     // v61: اكتمال بيانات الموظف — يحكم ظهور الملف والإجازات للموظف نفسه
     var completeness = computeCompleteness(target, balance)
     var history = await db.leaveRequest.findMany({
@@ -77,7 +83,9 @@ export async function GET(req: NextRequest) {
         where: { role: { not: 'visitor' } },
         select: { id: true, name: true, nameEn: true, role: true, jobTitle: true, active: true,
           // v61: حقول اكتمال البيانات لقائمة «تعبئة بيانات المستخدمين»
-          department: true, joinDate: true, employeeNo: true },
+          department: true, joinDate: true, employeeNo: true,
+          // v118: تاريخ بدء العقد لاحتساب الرصيد التلقائي في القائمة
+          contractStart: true },
         orderBy: { name: 'asc' },
       })
       // v61: قائمة تعبئة بيانات الموظفين — حالة الاكتمال لكل موظف (وظيفية + إجازة)
@@ -89,11 +97,13 @@ export async function GET(req: NextRequest) {
       roster = employees.map(function(u: any) {
         var ub = balByUser[u.id] || null
         var c = computeCompleteness(u, ub)
+        // v118: الرصيد في القائمة محسوب آلياً من تاريخ بدء العقد/الالتحاق
+        var uEff = computeEffectiveLeave(u, ub ? ub.used : 0)
         return {
           id: u.id, name: u.name, nameEn: u.nameEn, role: u.role, active: u.active,
           jobTitle: u.jobTitle, department: u.department, joinDate: u.joinDate, employeeNo: u.employeeNo,
           jobComplete: c.job, leaveComplete: c.leave, complete: c.complete, missing: c.missing,
-          remainingBalance: ub ? (ub.annualTotal + ub.carriedOver - ub.used) : null,
+          remainingBalance: uEff.basis ? uEff.remaining : null,
         }
       })
     }
@@ -102,6 +112,8 @@ export async function GET(req: NextRequest) {
       canEdit: manager,
       canSeeSalary,
       balance,
+      // v118: الرصيد الفعلي المحسوب آلياً — الواجهة تعرضه بدل الحساب اليدوي القديم
+      effectiveBalance,
       history,
       adjustments,
       employees,
