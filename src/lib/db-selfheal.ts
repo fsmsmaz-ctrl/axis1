@@ -810,3 +810,48 @@ export async function ensureAssetOperationalSupport(): Promise<void> {
     console.error('v108: isOperational probe failed — column still unreadable (will retry):', (e3 as { message?: string })?.message)
   }
 }
+
+
+// v120: قسم «تذكيراتي» — جدول المهام الشخصية الخاصة لكل موظف
+// جدول جديد مستقل تماماً: لا يُجرى عليه أي ALTER على جدول قائم — يُنشأ مرة واحدة
+// عند أول استخدام (نفس نمط v48 لجدول المشتريات). خصوصية مطلقة: كل صف مرتبط
+// بمالكه الوحيد، ولا يوجد أي مسار يقرأ تذكيرات موظف آخر.
+var v120PersonalChecked = false
+
+export async function ensurePersonalRemindersSupport(): Promise<void> {
+  if (v120PersonalChecked) return
+  try {
+    var prTables = await db.$queryRawUnsafe<Array<{ table_name: string }>>(
+      "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'PersonalReminder'"
+    )
+    if ((prTables || []).length === 0) {
+      await db.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "PersonalReminder" (
+  "id" TEXT NOT NULL,
+  "userId" TEXT NOT NULL,
+  "title" TEXT NOT NULL,
+  "details" TEXT,
+  "priority" TEXT NOT NULL DEFAULT 'normal',
+  "dueDate" TIMESTAMP(3) NOT NULL,
+  "done" BOOLEAN NOT NULL DEFAULT false,
+  "doneAt" TIMESTAMP(3),
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" TIMESTAMP(3) NOT NULL,
+  CONSTRAINT "PersonalReminder_pkey" PRIMARY KEY ("id")
+)`)
+      await db.$executeRawUnsafe('CREATE INDEX IF NOT EXISTS "PersonalReminder_userId_done_idx" ON "PersonalReminder"("userId", "done")')
+      await db.$executeRawUnsafe('CREATE INDEX IF NOT EXISTS "PersonalReminder_userId_dueDate_idx" ON "PersonalReminder"("userId", "dueDate")')
+      try {
+        await db.$executeRawUnsafe('ALTER TABLE "PersonalReminder" ADD CONSTRAINT "PersonalReminder_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE')
+      } catch (fkE) {
+        var fkMsg = (fkE as { message?: string })?.message || ''
+        if (fkMsg.indexOf('already exists') === -1) console.error('v120: PersonalReminder FK skipped:', fkE)
+      }
+      console.warn('v120: PersonalReminder table created by self-heal')
+    }
+    // v120: تحقق فعلي قبل تثبيت العلم — نجاح الإنشاء وحده لا يكفي
+    await db.$queryRawUnsafe('SELECT "id" FROM "PersonalReminder" LIMIT 1')
+    v120PersonalChecked = true
+  } catch (e) {
+    console.error('v120: personal reminders self-heal skipped (will retry):', e)
+  }
+}
