@@ -53,7 +53,7 @@ export const MODULE_PERMISSION_LABELS: Record<string, { ar: string; en: string }
   daily_reports:  { ar: 'التقارير اليومية',  en: 'Daily Reports' },
   safety:         { ar: 'السلامة',           en: 'Safety' },
   equipment:      { ar: 'المعدات',           en: 'Equipment' },
-  costs:          { ar: 'التكاليف والإيرادات', en: 'Costs & Revenue' },
+  costs:          { ar: 'التكاليف',          en: 'Costs' },
   finishings:     { ar: 'التشطيبات',         en: 'Finishings' },
   tasks:          { ar: 'إدارة المهام',      en: 'Task Management' },
   performance:    { ar: 'تقييم الأداء',      en: 'Performance' },
