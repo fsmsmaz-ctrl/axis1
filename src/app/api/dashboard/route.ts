@@ -306,11 +306,6 @@ async function buildDashboard(canSeePrice: boolean, costsPeriod: 'month' | 'year
       include: { project: { select: { name: true } } },
     }),
 
-    // v105: الأصول والمستأجرات (قسم «الأصول والمستأجرات» في صفحة المعدات)
-    // v106: بلا حد عدد — كل الأصول القديمة والجديدة تظهر، مع حالة التشغيل
-    // v108: بطبقتين — لا تظهر البطاقة فارغة أبداً حتى لو فشل العمود الجديد
-    fetchCompanyAssetsResilient(),
-
     // v36: Costs by category — النطاق حسب اختيار اللوحة (الشهر/العام/الكل)
     db.cost.groupBy({
       by: ['category'],
@@ -321,6 +316,18 @@ async function buildDashboard(canSeePrice: boolean, costsPeriod: 'month' | 'year
           : { date: { gte: monthRange.gte, lt: monthRange.lt } },
       _sum: { amount: true },
     }),
+
+    // v111: الإصلاح الجذري لبطاقة «الأصول والمستأجرات» — كان استعلام الأصول
+    // في الموضع 15 من المصفوفة بينما التفكيك يستقبل النتيجة 15 باسم
+    // costsByCategoryResult، فكانت البطاقة تعرض تصنيفات التكاليف (تظهر بعدد
+    // التصنيفات ذات التكاليف في الفترة — «10 عناصر» — بلا اسم/ملكية/تشغيل
+    // فتُعرض كلها بالاحتياط «ملك الشركة/تعمل/متاح») والقائمة الحقيقية للأصول
+    // تذهب بالخطأ إلى رسم توزيع التكاليف البياني فيفرغ.
+    // الآن: ترتيب المصفوفة مطابق لترتيب التفكيك حرفياً — التكاليف 15 والأصول 16.
+    // v105: الأصول والمستأجرات (قسم «الأصول والمستأجرات» في صفحة المعدات)
+    // v106: بلا حد عدد — كل الأصول القديمة والجديدة تظهر، مع حالة التشغيل
+    // v108: بطبقتين — لا تظهر البطاقة فارغة أبداً حتى لو فشل العمود الجديد
+    fetchCompanyAssetsResilient(),
   ])
 
   // ── Helper to unwrap Promise.allSettled result ──
@@ -478,4 +485,4 @@ async function buildDashboard(canSeePrice: boolean, costsPeriod: 'month' | 'year
   }
 }
 
-                                                
+                                              
