@@ -6,7 +6,7 @@ import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 import { hasPermission, canWrite } from '@/lib/auth'
 import { notifyUsers } from '@/lib/notify'
 // v116: فواتير المقاول — النظام يولّد مقترحات لكل 10 أمتار لكنه لا يسجلها
-// آلياً؛ تظهر في نافذة منبثقة بقسم الإيرادات والتكاليف ويدخل الموظف السعر
+// آلياً؛ تظهر في نافذة منبثقة بقسم التكاليف ويدخل الموظف السعر
 // يدوياً ويوافق عليها. هنا يُشغَّل التنظيف الرجعي فقط (حذف فواتير v114 الآلية)
 import { maintainContractorInvoices } from '@/lib/contractor-invoices'
 
@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
     || hasPermission(user.role, 'rpt_revenue', user.permissions, user.email)
     || hasPermission(user.role, 'rpt_profit', user.permissions, user.email)
   if (!canReadCosts) {
-    return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية عرض التكاليف والإيرادات' }, { status: 403 })
+    return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية عرض التكاليف' }, { status: 403 })
   }
 
   // v116: قبل جلب التكاليف مباشرة يُشغَّل التنظيف الرجعي — يحذف كل فواتير
