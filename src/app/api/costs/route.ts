@@ -5,8 +5,11 @@ import { handleDbError, validateRequired, parseNumber, safeDbOp, parseDateRange 
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 import { hasPermission, canWrite } from '@/lib/auth'
 import { notifyUsers } from '@/lib/notify'
+// v114: خوارزمية «فاتورة المقاول» الآلية — فاتورة لكل 10 أمتار من كل خط حفر،
+// تُسجَّل تلقائياً ضمن التكاليف شاملة الخطوط القديمة والمنتهية دون تدخل بشري
+import { syncContractorInvoices } from '@/lib/contractor-invoices'
 
-var COST_CATEGORIES = ['labor', 'housing', 'transport', 'fuel', 'maintenance', 'parts', 'oil', 'safety', 'rental', 'other']
+var COST_CATEGORIES = ['labor', 'housing', 'transport', 'fuel', 'maintenance', 'parts', 'oil', 'safety', 'rental', 'contractor', 'other']
 
 export async function GET(req: NextRequest) {
   var user = await getAuthUser(req)
@@ -23,6 +26,15 @@ export async function GET(req: NextRequest) {
     || hasPermission(user.role, 'rpt_profit', user.permissions, user.email)
   if (!canReadCosts) {
     return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية عرض التكاليف والإيرادات' }, { status: 403 })
+  }
+
+  // v114: خوارزمية «فاتورة المقاول» — قبل جلب التكاليف مباشرة تُشغَّل مزامنة
+  // آلية مُقيَّدة زمنياً (60 ثانية) تصدر فاتورة لكل 10 أمتار من كل خط حفر
+  // وتصحّح ما تغيّر. أي خلل داخلي لا يمنع عرض التكاليف أبداً.
+  try {
+    await syncContractorInvoices()
+  } catch (e) {
+    console.error('[costs GET] contractor-invoices sync failed (non-fatal):', e)
   }
 
   var searchParams = new URL(req.url).searchParams
