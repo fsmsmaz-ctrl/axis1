@@ -5,9 +5,10 @@ import { handleDbError, validateRequired, parseNumber, safeDbOp, parseDateRange 
 import { checkRateLimit, RateLimitPresets } from '@/lib/rate-limit'
 import { hasPermission, canWrite } from '@/lib/auth'
 import { notifyUsers } from '@/lib/notify'
-// v114: خوارزمية «فاتورة المقاول» الآلية — فاتورة لكل 10 أمتار من كل خط حفر،
-// تُسجَّل تلقائياً ضمن التكاليف شاملة الخطوط القديمة والمنتهية دون تدخل بشري
-import { syncContractorInvoices } from '@/lib/contractor-invoices'
+// v116: فواتير المقاول — النظام يولّد مقترحات لكل 10 أمتار لكنه لا يسجلها
+// آلياً؛ تظهر في نافذة منبثقة بقسم الإيرادات والتكاليف ويدخل الموظف السعر
+// يدوياً ويوافق عليها. هنا يُشغَّل التنظيف الرجعي فقط (حذف فواتير v114 الآلية)
+import { maintainContractorInvoices } from '@/lib/contractor-invoices'
 
 var COST_CATEGORIES = ['labor', 'housing', 'transport', 'fuel', 'maintenance', 'parts', 'oil', 'safety', 'rental', 'contractor', 'other']
 
@@ -28,13 +29,14 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'forbidden', message: 'لا تملك صلاحية عرض التكاليف والإيرادات' }, { status: 403 })
   }
 
-  // v114: خوارزمية «فاتورة المقاول» — قبل جلب التكاليف مباشرة تُشغَّل مزامنة
-  // آلية مُقيَّدة زمنياً (60 ثانية) تصدر فاتورة لكل 10 أمتار من كل خط حفر
-  // وتصحّح ما تغيّر. أي خلل داخلي لا يمنع عرض التكاليف أبداً.
+  // v116: قبل جلب التكاليف مباشرة يُشغَّل التنظيف الرجعي — يحذف كل فواتير
+  // «فاتورة المقاول» التي سجلتها خوارزمية v114 آلياً (بلا تدخل بشري).
+  // التسجيل الجديد لا يتم إلا بعد إدخال السعر يدوياً والاعتماد من النافذة.
+  // مُقيَّد زمنياً (60 ثانية) وأي خلل داخلي لا يمنع عرض التكاليف أبداً.
   try {
-    await syncContractorInvoices()
+    await maintainContractorInvoices()
   } catch (e) {
-    console.error('[costs GET] contractor-invoices sync failed (non-fatal):', e)
+    console.error('[costs GET] contractor-invoices maintenance failed (non-fatal):', e)
   }
 
   var searchParams = new URL(req.url).searchParams
