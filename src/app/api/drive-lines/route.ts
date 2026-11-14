@@ -5,6 +5,8 @@ import { db } from '@/lib/db'
 import { handleDbError, validateRequired, parseNumber, safeDbOp, sanitizeDriveLine, roundMeters, roundMoney } from '@/lib/api-helpers'
 import { canWrite, hasPermission, canViewPricing } from '@/lib/auth'
 import { ensureDriveLineDates } from '@/lib/db-selfheal'
+// v114: خوارزمية «فاتورة المقاول» الآلية — فاتورة لكل 10 أمتار محفورة في كل خط
+import { syncContractorInvoices } from '@/lib/contractor-invoices'
 import { notifyUsers } from '@/lib/notify'
 
 export async function GET(req: NextRequest) {
@@ -36,6 +38,15 @@ export async function GET(req: NextRequest) {
     // v79: ضمان جاهزية عمودَي تواريخ الحفر قبل القراءة — أول استدعاء بعد النشر
     // يُكمل المعالجة الشاملة (كل الخطوط الموجودة من تقاريرها المعتمدة) قبل العرض
     await ensureDriveLineDates()
+
+    // v114: مزامنة «فاتورة المقاول» — فاتورة لكل 10 أمتار من كل خط حفر
+    // (شاملة الخطوط القديمة والمنتهية). مُقيَّدة زمنياً داخلياً (60 ثانية)
+    // وأي خلل داخلي لا يمنع جلب الخطوط أبداً.
+    try {
+      await syncContractorInvoices()
+    } catch (e) {
+      console.error('[drive-lines GET] contractor-invoices sync failed (non-fatal):', e)
+    }
 
     const result = await safeDbOp(
       () => db.driveLine.findMany({
