@@ -160,6 +160,8 @@ model DriveLine {
 
   project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   dailyReports  DailyReport[]
+  // v121: أعمال خطة الماكينات المرتبطة بهذا الخط — مصدر سحب الأمتار المنجزة فعلياً
+  machinePlans  MachinePlan[] @relation("MachinePlanDriveLine")
 
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -556,6 +558,79 @@ model PersonalReminder {
   @@index([userId, done])
   @@index([userId, dueDate])
 }
+
+// ==================== v121: خطة عمل الماكينات ====================
+// كل صف = شريط عمل واحد (نشاط واحد) في المخطط الزمني Gantt، تجمَع الأشرطة
+// في الواجهة حسب الماكينة أو حسب المشروع. لا يحتوي الجدول أي بيانات مالية
+// أو تعاقدية — آمن عرضه للزائر والجميع.
+model MachinePlan {
+  id             String   @id @default(cuid())
+  machineName    String   // رقم/اسم الماكينة — أساس التجميع والألوان وفحص التعارض
+  machineColor   String   @default("#2563eb") // لون الماكينة — يحدده مدير الخطة ويُطبّق على كل أعمال الماكينة
+  projectName    String   // اسم المشروع
+  location       String?  // الموقع / رقم التقاطع والخط
+  chainage       String?  // Chainage
+  tunnelLength   Float    @default(0) // طول النفق بالمتر
+  pipeDiameter   String?  // قطر الأنبوب (مم)
+  sleeveDiameter String?  // قطر Sleeve Pipe (مم)
+  remarks        String?  // الملاحظات
+
+  activityType   String   @default("digging") // mobilization, pit_prep, digging, demobilization, custom
+  activityName   String?  // اسم النشاط المخصص عندما activityType = custom
+
+  startDate      DateTime // بداية الشريط الزمني
+  endDate        DateTime // نهاية الشريط الزمني (المخططة)
+
+  // الحساب الهندسي — شريط الحفر (digging) تحديداً
+  planningMode   String   @default("by_rate")     // by_rate: حسب متوسط الإنتاج | by_end_date: حسب تاريخ النهاية
+  avgRate        Float?   // متوسط الإنتاج المتوقع (م/يوم) — إدخال مدير الخطة
+  requiredRate   Float?   // متوسط الإنتاج المطلوب (م/يوم) — يُحسب تلقائياً في وضع تاريخ النهاية
+  diggingDays    Int?     // عدد أيام الحفر (أيام عمل فعلية) — يُحسب تلقائياً
+  confidence     String   @default("gray")        // green, yellow, red, gray — درجة الثقة في متوسط الإنتاج
+  holidayConfig  String?  // JSON: { weekdays:[5], dates:[], shift:'single' } — تقويم العمل لهذا العمل
+
+  // متابعة الإنجاز — سحب تلقائي من التقارير اليومية المعتمدة عبر خط الحفر المرتبط
+  driveLineId    String?  // خط الحفر المرتبط (مصدر الأمتار المنجزة — بلا إعادة إدخال)
+  statusOverride String?  // تعيين يدوي لحالة «متوقف» فقط — بقية الحالات تُحسب تلقائياً
+
+  sortIndex      Int      @default(0) // ترتيب الأعمال داخل الماكينة
+
+  // المساءلة والإصدارات — كل تعديل يحفظ الإصدار السابق وتاريخه ومن قام به
+  currentVersion Int      @default(1)
+  createdById    String?
+  createdByName  String?
+  updatedById    String?
+  updatedByName  String?
+  lastUpdatedAt  DateTime @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  versions  MachinePlanVersion[]
+  driveLine DriveLine? @relation("MachinePlanDriveLine", fields: [driveLineId], references: [id], onDelete: SetNull)
+
+  @@index([machineName, startDate])
+  @@index([projectName])
+  @@index([driveLineId])
+}
+
+// إصدارات خطة الماكينات — لقطة كاملة لحالة العمل قبل كل تعديل؛
+// حفظ الإصدار السابق يجعل أي تغيير للتواريخ لا يُخفي التأخير السابق
+model MachinePlanVersion {
+  id            String   @id @default(cuid())
+  planId        String
+  version       Int      // رقم الإصدار المحفوظ (حالة العمل قبل التعديل)
+  snapshot      String   // JSON كامل لحالة العمل وقت الحفظ
+  note          String?  // وصف/سبب التغيير
+  changedById   String?
+  changedByName String?
+  changedAt     DateTime @default(now())
+
+  plan MachinePlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@index([planId, version])
+}
+
 
 // ==================== Audit Log ====================
 model AuditLog {
