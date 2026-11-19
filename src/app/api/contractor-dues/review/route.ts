@@ -114,7 +114,27 @@ export async function POST(req: NextRequest) {
     })
 
     // إنشاء مسودة الفاتورة الوحيدة — النظام يفعلها تلقائياً بعد الاعتماد
-    var draft = await createDraftInvoiceForLine(line.id, { id: me.id, name: me.name })
+    // v124: حماية المتانة — إن فشل الإنشاء بخطأ غير متوقع (تعطل اتصال/تعارض
+    // رقم فاتورة لحظي) نُعيد الخط تلقائياً إلى «بانتظار المراجعة» ليمكن
+    // إعادة الاعتماد بمجرد الضغط مجدداً — لا خط عالق بلا فاتورة أبداً
+    var draft: Awaited<ReturnType<typeof createDraftInvoiceForLine>>
+    try {
+      draft = await createDraftInvoiceForLine(line.id, { id: me.id, name: me.name })
+    } catch (dE: any) {
+      console.error('[contractor-dues review] draft creation failed, reverting line:', dE)
+      try {
+        await db.driveLine.update({
+          where: { id: line.id },
+          data: { status: 'pending_verification', verifiedById: null, verifiedByName: null, verifiedAt: null },
+        })
+        await db.auditLog.create({
+          data: { userId: me.id, projectId: line.projectId, action: 'update', entity: 'drive_line', entityId: line.id, details: 'فشل إنشاء مسودة فاتورة المقاول بعد الاعتماد الفني للخط ' + line.lineNumber + ' — أُعيد الخط تلقائياً إلى «بانتظار المراجعة الفنية» لإعادة الاعتماد — السبب التقني: ' + String(dE && dE.message || dE).slice(0, 300) },
+        }).catch(function() {})
+      } catch (rE) {
+        console.error('[contractor-dues review] revert failed:', rE)
+      }
+      return NextResponse.json({ error: 'draft_failed', message: 'تم اعتماد الأطوال لكن فشل إنشاء مسودة الفاتورة فنياً — أُعيد الخط تلقائياً إلى «بانتظار المراجعة» — أعد المحاولة (اضغط مراجعة الأطوال ثم اعتماد) وإذا تكرر الأمر أخبر مدير النظام' }, { status: 500 })
+    }
     if (!draft.ok) {
       // الخط معتمد فنياً لكن لا مستحق جديد (كل الأطوال مسويتاً سابقاً) — ليس خطأً
       try {
