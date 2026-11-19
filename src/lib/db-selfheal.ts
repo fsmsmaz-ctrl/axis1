@@ -855,3 +855,97 @@ export async function ensurePersonalRemindersSupport(): Promise<void> {
     console.error('v120: personal reminders self-heal skipped (will retry):', e)
   }
 }
+
+// ============================================================
+// v121 — جداول «خطة عمل الماكينات» — الشفاء الذاتي
+// إنشاء MachinePlan و MachinePlanVersion إن لم توجد مع فهرستها
+// ومفتاحها الأجنبي — نفس نمط v120 تماماً (تحقق فعلي قبل تثبيت العلم).
+// ============================================================
+var v121MachinePlanChecked = false
+
+export async function ensureMachinePlansSupport(): Promise<void> {
+  if (v121MachinePlanChecked) return
+  try {
+    var mpTables = await db.$queryRawUnsafe<Array<{ table_name: string }>>(
+      "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'MachinePlan'"
+    )
+    if ((mpTables || []).length === 0) {
+      await db.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "MachinePlan" (
+  "id" TEXT NOT NULL,
+  "machineName" TEXT NOT NULL,
+  "machineColor" TEXT NOT NULL DEFAULT '#2563eb',
+  "projectName" TEXT NOT NULL,
+  "location" TEXT,
+  "chainage" TEXT,
+  "tunnelLength" DOUBLE PRECISION NOT NULL DEFAULT 0,
+  "pipeDiameter" TEXT,
+  "sleeveDiameter" TEXT,
+  "remarks" TEXT,
+  "activityType" TEXT NOT NULL DEFAULT 'digging',
+  "activityName" TEXT,
+  "startDate" TIMESTAMP(3) NOT NULL,
+  "endDate" TIMESTAMP(3) NOT NULL,
+  "planningMode" TEXT NOT NULL DEFAULT 'by_rate',
+  "avgRate" DOUBLE PRECISION,
+  "requiredRate" DOUBLE PRECISION,
+  "diggingDays" INTEGER,
+  "confidence" TEXT NOT NULL DEFAULT 'gray',
+  "holidayConfig" TEXT,
+  "driveLineId" TEXT,
+  "statusOverride" TEXT,
+  "sortIndex" INTEGER NOT NULL DEFAULT 0,
+  "currentVersion" INTEGER NOT NULL DEFAULT 1,
+  "createdById" TEXT,
+  "createdByName" TEXT,
+  "updatedById" TEXT,
+  "updatedByName" TEXT,
+  "lastUpdatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" TIMESTAMP(3) NOT NULL,
+  CONSTRAINT "MachinePlan_pkey" PRIMARY KEY ("id")
+)`)
+      await db.$executeRawUnsafe('CREATE INDEX IF NOT EXISTS "MachinePlan_machineName_startDate_idx" ON "MachinePlan"("machineName", "startDate")')
+      await db.$executeRawUnsafe('CREATE INDEX IF NOT EXISTS "MachinePlan_projectName_idx" ON "MachinePlan"("projectName")')
+      await db.$executeRawUnsafe('CREATE INDEX IF NOT EXISTS "MachinePlan_driveLineId_idx" ON "MachinePlan"("driveLineId")')
+      try {
+        await db.$executeRawUnsafe('ALTER TABLE "MachinePlan" ADD CONSTRAINT "MachinePlan_driveLineId_fkey" FOREIGN KEY ("driveLineId") REFERENCES "DriveLine"("id") ON DELETE SET NULL ON UPDATE CASCADE')
+      } catch (fkE) {
+        var mpFkMsg = (fkE as { message?: string })?.message || ''
+        if (mpFkMsg.indexOf('already exists') === -1) console.error('v121: MachinePlan FK skipped:', fkE)
+      }
+      console.warn('v121: MachinePlan table created by self-heal')
+    }
+
+    var mpvTables = await db.$queryRawUnsafe<Array<{ table_name: string }>>(
+      "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'MachinePlanVersion'"
+    )
+    if ((mpvTables || []).length === 0) {
+      await db.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "MachinePlanVersion" (
+  "id" TEXT NOT NULL,
+  "planId" TEXT NOT NULL,
+  "version" INTEGER NOT NULL,
+  "snapshot" TEXT NOT NULL,
+  "note" TEXT,
+  "changedById" TEXT,
+  "changedByName" TEXT,
+  "changedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT "MachinePlanVersion_pkey" PRIMARY KEY ("id")
+)`)
+      await db.$executeRawUnsafe('CREATE INDEX IF NOT EXISTS "MachinePlanVersion_planId_version_idx" ON "MachinePlanVersion"("planId", "version")')
+      try {
+        await db.$executeRawUnsafe('ALTER TABLE "MachinePlanVersion" ADD CONSTRAINT "MachinePlanVersion_planId_fkey" FOREIGN KEY ("planId") REFERENCES "MachinePlan"("id") ON DELETE CASCADE ON UPDATE CASCADE')
+      } catch (fkE2) {
+        var mpvFkMsg = (fkE2 as { message?: string })?.message || ''
+        if (mpvFkMsg.indexOf('already exists') === -1) console.error('v121: MachinePlanVersion FK skipped:', fkE2)
+      }
+      console.warn('v121: MachinePlanVersion table created by self-heal')
+    }
+
+    // تحقق فعلي قبل تثبيت العلم — نجاح الإنشاء وحده لا يكفي
+    await db.$queryRawUnsafe('SELECT "id" FROM "MachinePlan" LIMIT 1')
+    await db.$queryRawUnsafe('SELECT "id" FROM "MachinePlanVersion" LIMIT 1')
+    v121MachinePlanChecked = true
+  } catch (e) {
+    console.error('v121: machine plans self-heal skipped (will retry):', e)
+  }
+}
