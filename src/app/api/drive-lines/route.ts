@@ -125,6 +125,17 @@ export async function POST(req: NextRequest) {
     const validationError = validateRequired(body, ['projectId', 'lineNumber', 'startPoint', 'endPoint', 'totalLength', 'diameter', 'pipeType', 'soilType'])
     if (validationError) return validationError
 
+    // v124: البند 2 من المواصفة — اسم المقاول المنفذ وتاريخ بدء العمل المخطط
+    // إجباريان عند فتح خط حفر جديد (التحقق من الواجهة فقط لا يكفي — الخادم هو المصدر)
+    var contractorNameInput = body.contractorName ? String(body.contractorName).trim() : ''
+    if (!contractorNameInput) {
+      return NextResponse.json({ error: 'bad_request', message: 'اسم المقاول المنفذ إجباري عند فتح خط حفر جديد — أدخل اسم شركة/مقاول الحفر' }, { status: 400 })
+    }
+    var plannedStartInput = body.plannedStartDate ? String(body.plannedStartDate).trim() : ''
+    if (!plannedStartInput || isNaN(new Date(plannedStartInput).getTime())) {
+      return NextResponse.json({ error: 'bad_request', message: 'تاريخ بدء العمل المخطط إجباري عند فتح خط حفر جديد — اختر تاريخاً صالحاً' }, { status: 400 })
+    }
+
     const createResult = await safeDbOp(
       () => db.driveLine.create({
         data: {
