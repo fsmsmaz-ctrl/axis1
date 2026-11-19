@@ -233,6 +233,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       machineRunningHours: (body.pipePaid === true || body.pipePaid === 'true' || body.pipePaid === 'yes')
         ? Math.max(0, parseFloat(body.machineRunningHours) || 0)
         : null,
+      // v123: طول الأنابيب المدفوعة اليوم (م) — مستقل عن طول الحفر الفعلي، للمراجعة الفنية فقط
+      pipeJackedMeters: (body.pipeJackedMeters !== undefined && body.pipeJackedMeters !== null && String(body.pipeJackedMeters).trim() !== '')
+        ? Math.max(0, parseFloat(body.pipeJackedMeters) || 0)
+        : (body.pipeJackedMeters === null ? null : existingReport.pipeJackedMeters),
       productionNotes: (body.productionNotes ? String(body.productionNotes).slice(0, 2000) : null),
       problems: (body.problems ? String(body.problems).slice(0, 2000) : null),
       // SECURITY FIX: التسليم حصراً عبر المسار المخصص /submit — كان قبول
