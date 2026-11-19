@@ -31,7 +31,7 @@ import {
   Wrench, DollarSign, CheckCircle2, FileBarChart, TrendingUp, ListChecks,
   Bell, LogOut, Menu, X, Globe,
   AlertTriangle, ChevronLeft, UserPlus, Users, Loader2, Shield, Pencil, Trash2, Check,
-  ShieldAlert, Eye, UserCircle, Library
+  ShieldAlert, Eye, UserCircle, Library, GanttChart
 } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 import { SectionErrorBoundary } from '@/components/section-error-boundary'
@@ -42,7 +42,7 @@ import dynamic from 'next/dynamic'
 type PageId =
   | 'dashboard' | 'projects' | 'driveLines' | 'dailyReports' | 'safety'
   | 'equipment' | 'costs' | 'finishings' | 'tasks' | 'reports' | 'performance' | 'notifications'
-  | 'oversight' | 'libraries'
+  | 'oversight' | 'libraries' | 'machinePlans'
   | 'profile'
 
 interface NavItem {
@@ -57,6 +57,8 @@ const navItems: NavItem[] = [
   { id: 'dashboard', labelAr: 'لوحة التحكم', labelEn: 'Dashboard', icon: LayoutDashboard, resource: 'dashboard' },
   { id: 'projects', labelAr: 'المشاريع', labelEn: 'Projects', icon: FolderKanban, resource: 'projects' },
   { id: 'driveLines', labelAr: 'خطوط الحفر', labelEn: 'Drive Lines', icon: GitBranch, resource: 'drive_lines' },
+  // v121: «خطة عمل الماكينات» — مخطط زمني تفاعلي ضمن العمليات: مشاهدة للجميع (ومنهم الزائر) والإدارة لحساب مدير الخطة
+  { id: 'machinePlans', labelAr: 'خطة عمل الماكينات', labelEn: 'Machines Work Plan', icon: GanttChart, resource: 'machine_plans' },
   { id: 'dailyReports', labelAr: 'التقارير اليومية', labelEn: 'Daily Reports', icon: FileText, resource: 'daily_reports' },
   { id: 'safety', labelAr: 'السلامة', labelEn: 'Safety', icon: ShieldCheck, resource: 'safety' },
   { id: 'equipment', labelAr: 'المعدات', labelEn: 'Equipment', icon: Wrench, resource: 'equipment' },
@@ -119,6 +121,8 @@ function SectionLoader() {
 const DashboardPage = dynamic(() => import('@/components/pages/dashboard-page'), { ssr: false, loading: SectionLoader })
 const ProjectsPage = dynamic(() => import('@/components/pages/projects-page'), { ssr: false, loading: SectionLoader })
 const DriveLinesPage = dynamic(() => import('@/components/pages/drive-lines-page'), { ssr: false, loading: SectionLoader })
+// v121: خطة عمل الماكينات — مخطط Gantt تفاعلي
+const MachinePlansPage = dynamic(() => import('@/components/pages/machines-plan-page'), { ssr: false, loading: SectionLoader })
 const DailyReportsPage = dynamic(() => import('@/components/pages/daily-reports-page'), { ssr: false, loading: SectionLoader })
 const SafetyPage = dynamic(() => import('@/components/pages/safety-page'), { ssr: false, loading: SectionLoader })
 const EquipmentPage = dynamic(() => import('@/components/pages/equipment-page'), { ssr: false, loading: SectionLoader })
@@ -141,6 +145,7 @@ const PAGE_CHUNK_PRELOADS: Record<string, () => Promise<unknown>> = {
   dashboard: () => import('@/components/pages/dashboard-page'),
   projects: () => import('@/components/pages/projects-page'),
   driveLines: () => import('@/components/pages/drive-lines-page'),
+  machinePlans: () => import('@/components/pages/machines-plan-page'),
   dailyReports: () => import('@/components/pages/daily-reports-page'),
   safety: () => import('@/components/pages/safety-page'),
   equipment: () => import('@/components/pages/equipment-page'),
