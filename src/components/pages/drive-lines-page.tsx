@@ -34,6 +34,8 @@ const emptyForm = {
   projectId: '', lineNumber: '', startPoint: '', endPoint: '',
   totalLength: '', pricePerMeter: '', diameter: '1200mm', pipeType: 'pipe', soilType: 'mixed',
   depth: '', status: 'not_started', problems: '',
+  // v123: عقد المقاول عند إنشاء الخط — الاسم إجباري للمستحقات + تاريخ بدء العمل المخطط
+  contractorName: '', plannedStartDate: '',
 }
 
 // v79: تنسيق تواريخ الحفر — نفس نمط صفحة التقارير اليومية (ar-EG / en-US)
@@ -169,6 +171,9 @@ export default function DriveLinesPage() {
       depth: line.depth != null ? String(line.depth) : '',
       status: line.status || 'not_started',
       problems: line.problems || '',
+      // v123: تعبئة بيانات عقد المقاول عند التعديل
+      contractorName: line.contractorName || '',
+      plannedStartDate: line.plannedStartDate ? String(line.plannedStartDate).slice(0, 10) : '',
     })
     setDialogOpen(true)
   }
@@ -442,10 +447,19 @@ export default function DriveLinesPage() {
                 <Label>{isRtl ? 'سعر المتر (ر.ع) *' : 'Price per Meter (OMR) *'}</Label>
                 <Input type="number" step="0.001" min="0" value={formData.pricePerMeter} onChange={(e) => setFormData({ ...formData, pricePerMeter: e.target.value })} required />
                 <p className="text-[11px] text-muted-foreground">
-                  {isRtl ? 'تُحسب التقارير اليومية لهذا الخط بهذا السعر — تغييره يعيد حساب التقارير القديمة تلقائياً' : 'Daily reports of this line are priced by this rate — changing it recalculates old reports'}
+                  {isRtl ? 'سعر المقاول المتفق عليه لكل متر حفر لهذا الخط — تُحسب به التقارير اليومية، ولا يجوز تغييره بعد بدء العمل إلا بتعديل معتمد مع سجل التغيير من نافذة مستحقات المقاولين في التكاليف' : 'Contractor agreed price per meter — changes after start need approved change log'}
                 </p>
               </div>
               )}
+              {/* v123: عقد المقاول عند إنشاء الخط — المواصفة توجب إدخال اسم المقاول وسعره قبل بدء احتساب المستحقات */}
+              <div className="space-y-1.5">
+                <Label>{isRtl ? 'اسم المقاول المنفذ' : 'Contractor name'}</Label>
+                <Input value={formData.contractorName} onChange={(e) => setFormData({ ...formData, contractorName: e.target.value })} placeholder={isRtl ? 'اسم شركة/مقاول الحفر' : 'Excavation contractor'} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>{isRtl ? 'تاريخ بدء العمل المخطط' : 'Planned start date'}</Label>
+                <Input type="date" value={formData.plannedStartDate} onChange={(e) => setFormData({ ...formData, plannedStartDate: e.target.value })} />
+              </div>
               <div className="space-y-1.5">
                 <Label>{isRtl ? 'القطر' : 'Diameter'}</Label>
                 <Select value={formData.diameter} onValueChange={(v) => setFormData({ ...formData, diameter: v })}>
