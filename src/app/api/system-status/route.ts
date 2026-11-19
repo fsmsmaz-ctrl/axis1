@@ -12,7 +12,7 @@ import { db } from '@/lib/db'
 
 export const dynamic = 'force-dynamic'
 
-var APP_VERSION = 'v120'
+var APP_VERSION = 'v121'
 
 // الجداول الحرجة لعمل الأقسام المتعثرة (السلامة + الموارد البشرية) وبقية الأقسام الأساسية
 var CRITICAL_TABLES = [
@@ -33,6 +33,9 @@ var CRITICAL_TABLES = [
   { name: 'LeavePolicy', label: 'سياسة الإجازات' },
   { name: 'LeaveAdjustment', label: 'تعديلات الرصيد' },
   { name: 'PersonalReminder', label: 'تذكيراتي (المهام الشخصية)' },
+  // v121: خطة عمل الماكينات
+  { name: 'MachinePlan', label: 'خطة عمل الماكينات' },
+  { name: 'MachinePlanVersion', label: 'إصدارات خطة الماكينات' },
 ]
 
 // الأعمدة الحرجة التي أُضيفت للنموذج بعد آخر migration وتُقرأ في مسارات فعّالة
