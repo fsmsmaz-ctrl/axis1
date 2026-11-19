@@ -158,10 +158,29 @@ model DriveLine {
   drillingStartDate DateTime?
   drillingEndDate   DateTime?
 
+  // ─── v123: مستحقات مقاولي الحفر النفقي ───
+  // عقد المقاول لهذا الخط: الاسم + تاريخ بدء العمل المخطط (تُدخل عند إنشاء الخط قبل بدء احتساب المستحقات)
+  contractorName   String?
+  plannedStartDate DateTime?
+  // دورة الاعتماد الفني: من قدم الخط للمراجعة ومن اعتمد الأطوال
+  submittedById    String?
+  submittedByName  String?
+  submittedAt      DateTime?
+  verifiedById     String?
+  verifiedByName   String?
+  verifiedAt       DateTime?
+  verificationNote String?
+  // ما سبق تسويته مالياً من فواتير المقاول القديمة (ترحيل v123) — لا يُعاد احتسابه أبداً
+  settledOldLength Float  @default(0)
+  settledOldAmount Float  @default(0)
+
   project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   dailyReports  DailyReport[]
   // v121: أعمال خطة الماكينات المرتبطة بهذا الخط — مصدر سحب الأمتار المنجزة فعلياً
   machinePlans  MachinePlan[] @relation("MachinePlanDriveLine")
+  // v123: سجل تغييرات عقد المقاول + فواتير المقاول الخاصة بهذا الخط
+  contractorChanges  ContractorLineChange[]
+  contractorInvoices ContractorInvoice[]
 
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -197,6 +216,8 @@ model DailyReport {
   pipePaid        Boolean  @default(false)
   // v102: مدة تشغيل الماكينة بالساعات — تُملأ فقط عند pipePaid=true
   machineRunningHours Float?
+  // v123: طول الأنابيب المدفوعة اليوم (م) — مستقل تماماً عن طول الحفر الفعلي؛ للمراجعة الفنية فقط ولا يدخل احتساب المستحقات
+  pipeJackedMeters Float?
   productionNotes String?
   problems        String?
 
@@ -365,6 +386,75 @@ model Cost {
   purchase      Purchase? @relation("PurchaseCost")
 
   createdAt     DateTime @default(now())
+}
+
+// ==================== v123: مستحقات مقاولي الحفر النفقي ====================
+// سجل تغييرات معتمدة على عقد المقاول (السعر/الطول المخطط) — كل تغيير بعد بدء العمل
+// لا يتم إلا بالإدارة مع السبب واسم المعتمد — لا تغيير صامت أبداً
+model ContractorLineChange {
+  id             String   @id @default(cuid())
+  driveLineId    String
+  changeType     String   // price, planned_length
+  oldValue       Float    @default(0)
+  newValue       Float    @default(0)
+  reason         String
+  approvedById   String?
+  approvedByName String?
+  createdAt      DateTime @default(now())
+
+  driveLine DriveLine @relation(fields: [driveLineId], references: [id], onDelete: Cascade)
+}
+
+// فاتورة المقاول — مسودة واحدة لكل خط مكتمل ومعتمد فنياً + تسويات مصرح بها فقط.
+// دورة الاعتماد: pending_financial → pending_final → approved (ثم partially_paid/paid بالدفعات)
+model ContractorInvoice {
+  id                       String   @id @default(cuid())
+  invoiceNo                String   @unique
+  driveLineId              String
+  contractorName           String
+  projectName              String
+  lineNumber               String
+  diameter                 String
+  approvedLength           Float    // الطول الفعلي المعتمد من المهندس لهذه الفاتورة
+  pricePerMeter            Float
+  totalAmount              Float    // إجمالي قيمة الأعمال (الطول × السعر)
+  previouslyApprovedAmount Float    @default(0) // ما سبق اعتماده لنفس الخط (فواتير قديمة/سابقة) — يُخصم إجبارياً
+  netAmount                Float    // صافي المبلغ المطلوب اعتماده
+  status                   String   @default("pending_financial") // pending_financial, pending_final, approved, partially_paid, paid, returned, rejected
+  techById                 String?
+  techByName               String?
+  techAt                   DateTime?
+  techNote                 String?
+  finById                  String?
+  finByName                String?
+  finAt                    DateTime?
+  finNote                  String?
+  finalById                String?
+  finalByName              String?
+  finalAt                  DateTime?
+  finalNote                String?
+  isSettlement             Boolean  @default(false) // فاتورة تسوية مالية مستقلة مصرّح بها (لا تُنشأ إلا بإذن خاص)
+  settlementReason         String?
+  createdById              String?
+  createdByName            String?
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  driveLine DriveLine                   @relation(fields: [driveLineId], references: [id], onDelete: Cascade)
+  payments  ContractorInvoicePayment[]
+}
+
+model ContractorInvoicePayment {
+  id        String   @id @default(cuid())
+  invoiceId String
+  amount    Float
+  paidAt    DateTime
+  note      String?
+  byId      String?
+  byName    String?
+  createdAt DateTime @default(now())
+
+  invoice ContractorInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
 }
 
 // ==================== Finishing / Handover ====================
