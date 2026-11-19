@@ -331,7 +331,9 @@ export default function ContractorDuesDialog(props: { open: boolean; onOpenChang
   return (
     <>
       <Dialog open={props.open} onOpenChange={props.onOpenChange}>
-        <DialogContent className="max-w-5xl">
+        {/* v124: حارس ارتفاع — على شاشات الهاتف القصيرة/العرضي كان محتوى النافذة
+            يتجاوز ارتفاع الشاشة فتُقتطع أعلى وأسفل ويصعب الوصول لزر الإغلاق */}
+        <DialogContent className="max-w-5xl max-h-[92vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Coins className="h-5 w-5 text-sky-600" />
