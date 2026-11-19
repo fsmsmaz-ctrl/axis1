@@ -949,3 +949,114 @@ export async function ensureMachinePlansSupport(): Promise<void> {
     console.error('v121: machine plans self-heal skipped (will retry):', e)
   }
 }
+
+// ─── v123: مستحقات مقاولي الحفر النفقي — جداول وأعمدة تُنشأ ذاتياً عند أول استخدام ───
+// نمط v121 المجرّب نفسه: أعمدة الجداول القائمة بـ ADD COLUMN IF NOT EXISTS،
+// والجداول الجديدة بـ CREATE TABLE IF NOT EXISTS ثم تحقق فعلي قبل تثبيت علم الشفاء.
+var v123ContractorChecked = false
+
+export async function ensureContractorDuesSupport(): Promise<void> {
+  if (v123ContractorChecked) return
+  try {
+    // أعمدة عقد المقاول ودورة الاعتماد الفني على خط الحفر
+    await db.$executeRawUnsafe('ALTER TABLE "DriveLine" ADD COLUMN IF NOT EXISTS "contractorName" TEXT')
+    await db.$executeRawUnsafe('ALTER TABLE "DriveLine" ADD COLUMN IF NOT EXISTS "plannedStartDate" TIMESTAMP(3)')
+    await db.$executeRawUnsafe('ALTER TABLE "DriveLine" ADD COLUMN IF NOT EXISTS "submittedById" TEXT')
+    await db.$executeRawUnsafe('ALTER TABLE "DriveLine" ADD COLUMN IF NOT EXISTS "submittedByName" TEXT')
+    await db.$executeRawUnsafe('ALTER TABLE "DriveLine" ADD COLUMN IF NOT EXISTS "submittedAt" TIMESTAMP(3)')
+    await db.$executeRawUnsafe('ALTER TABLE "DriveLine" ADD COLUMN IF NOT EXISTS "verifiedById" TEXT')
+    await db.$executeRawUnsafe('ALTER TABLE "DriveLine" ADD COLUMN IF NOT EXISTS "verifiedByName" TEXT')
+    await db.$executeRawUnsafe('ALTER TABLE "DriveLine" ADD COLUMN IF NOT EXISTS "verifiedAt" TIMESTAMP(3)')
+    await db.$executeRawUnsafe('ALTER TABLE "DriveLine" ADD COLUMN IF NOT EXISTS "verificationNote" TEXT')
+    await db.$executeRawUnsafe('ALTER TABLE "DriveLine" ADD COLUMN IF NOT EXISTS "settledOldLength" DOUBLE PRECISION NOT NULL DEFAULT 0')
+    await db.$executeRawUnsafe('ALTER TABLE "DriveLine" ADD COLUMN IF NOT EXISTS "settledOldAmount" DOUBLE PRECISION NOT NULL DEFAULT 0')
+    // عمود طول الأنابيب المدفوعة في التقرير اليومي (مستقل عن طول الحفر الفعلي)
+    await db.$executeRawUnsafe('ALTER TABLE "DailyReport" ADD COLUMN IF NOT EXISTS "pipeJackedMeters" DOUBLE PRECISION')
+
+    // جدول سجل التغييرات المعتمدة لعقد المقاول (السعر/الطول المخطط)
+    await db.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "ContractorLineChange" (
+      "id" TEXT NOT NULL,
+      "driveLineId" TEXT NOT NULL,
+      "changeType" TEXT NOT NULL DEFAULT 'price',
+      "oldValue" DOUBLE PRECISION NOT NULL DEFAULT 0,
+      "newValue" DOUBLE PRECISION NOT NULL DEFAULT 0,
+      "reason" TEXT NOT NULL,
+      "approvedById" TEXT,
+      "approvedByName" TEXT,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "ContractorLineChange_pkey" PRIMARY KEY ("id")
+    )`)
+
+    // جدول فواتير المقاول (مسودة واحدة لكل خط + تسويات مصرح بها فقط)
+    await db.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "ContractorInvoice" (
+      "id" TEXT NOT NULL,
+      "invoiceNo" TEXT NOT NULL,
+      "driveLineId" TEXT NOT NULL,
+      "contractorName" TEXT NOT NULL,
+      "projectName" TEXT NOT NULL,
+      "lineNumber" TEXT NOT NULL,
+      "diameter" TEXT NOT NULL DEFAULT '',
+      "approvedLength" DOUBLE PRECISION NOT NULL DEFAULT 0,
+      "pricePerMeter" DOUBLE PRECISION NOT NULL DEFAULT 0,
+      "totalAmount" DOUBLE PRECISION NOT NULL DEFAULT 0,
+      "previouslyApprovedAmount" DOUBLE PRECISION NOT NULL DEFAULT 0,
+      "netAmount" DOUBLE PRECISION NOT NULL DEFAULT 0,
+      "status" TEXT NOT NULL DEFAULT 'pending_financial',
+      "techById" TEXT,
+      "techByName" TEXT,
+      "techAt" TIMESTAMP(3),
+      "techNote" TEXT,
+      "finById" TEXT,
+      "finByName" TEXT,
+      "finAt" TIMESTAMP(3),
+      "finNote" TEXT,
+      "finalById" TEXT,
+      "finalByName" TEXT,
+      "finalAt" TIMESTAMP(3),
+      "finalNote" TEXT,
+      "isSettlement" BOOLEAN NOT NULL DEFAULT false,
+      "settlementReason" TEXT,
+      "createdById" TEXT,
+      "createdByName" TEXT,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "ContractorInvoice_pkey" PRIMARY KEY ("id")
+    )`)
+    await db.$executeRawUnsafe('CREATE UNIQUE INDEX IF NOT EXISTS "ContractorInvoice_invoiceNo_key" ON "ContractorInvoice"("invoiceNo")')
+
+    // جدول دفعات الفواتير
+    await db.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "ContractorInvoicePayment" (
+      "id" TEXT NOT NULL,
+      "invoiceId" TEXT NOT NULL,
+      "amount" DOUBLE PRECISION NOT NULL DEFAULT 0,
+      "paidAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "note" TEXT,
+      "byId" TEXT,
+      "byName" TEXT,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "ContractorInvoicePayment_pkey" PRIMARY KEY ("id")
+    )`)
+
+    // مفاتيح أجنبية — بمعزل كامل: فشل واحد لا يمنع البقية (والجداول القائمة بلا FK تعمل)
+    try {
+      await db.$executeRawUnsafe('CREATE INDEX IF NOT EXISTS "ContractorLineChange_driveLineId_idx" ON "ContractorLineChange"("driveLineId")')
+      await db.$executeRawUnsafe('ALTER TABLE "ContractorLineChange" ADD CONSTRAINT "ContractorLineChange_driveLineId_fkey" FOREIGN KEY ("driveLineId") REFERENCES "DriveLine"("id") ON DELETE CASCADE ON UPDATE CASCADE')
+    } catch (fkE) { console.warn('v123: ContractorLineChange FK deferred:', fkE) }
+    try {
+      await db.$executeRawUnsafe('CREATE INDEX IF NOT EXISTS "ContractorInvoice_driveLineId_idx" ON "ContractorInvoice"("driveLineId")')
+      await db.$executeRawUnsafe('ALTER TABLE "ContractorInvoice" ADD CONSTRAINT "ContractorInvoice_driveLineId_fkey" FOREIGN KEY ("driveLineId") REFERENCES "DriveLine"("id") ON DELETE CASCADE ON UPDATE CASCADE')
+    } catch (fkE) { console.warn('v123: ContractorInvoice FK deferred:', fkE) }
+    try {
+      await db.$executeRawUnsafe('CREATE INDEX IF NOT EXISTS "ContractorInvoicePayment_invoiceId_idx" ON "ContractorInvoicePayment"("invoiceId")')
+      await db.$executeRawUnsafe('ALTER TABLE "ContractorInvoicePayment" ADD CONSTRAINT "ContractorInvoicePayment_invoiceId_fkey" FOREIGN KEY ("invoiceId") REFERENCES "ContractorInvoice"("id") ON DELETE CASCADE ON UPDATE CASCADE')
+    } catch (fkE) { console.warn('v123: ContractorInvoicePayment FK deferred:', fkE) }
+
+    // تحقق فعلي قبل تثبيت العلم — نجاح الإنشاء وحده لا يكفي
+    await db.$queryRawUnsafe('SELECT "id" FROM "ContractorInvoice" LIMIT 1')
+    await db.$queryRawUnsafe('SELECT "id" FROM "ContractorInvoicePayment" LIMIT 1')
+    await db.$queryRawUnsafe('SELECT "id" FROM "ContractorLineChange" LIMIT 1')
+    v123ContractorChecked = true
+  } catch (e) {
+    console.error('v123: contractor-dues self-heal skipped (will retry):', e)
+  }
+}
