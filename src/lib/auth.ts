@@ -48,6 +48,10 @@ export const MODULE_PERMISSIONS = [
   // و«machine_plans_edit» صلاحية تعديل مرتبطة بالحساب شخصياً (User ID)
   // تُمنح من إدارة المستخدمين لحساب مدير الخطة فقط — لا تُمنح افتراضياً لأي رتبة.
   'machine_plans', 'machine_plans_edit',
+  // v123: مستحقات مقاولي الحفر النفقي — ثلاث صلاحيات دورة اعتماد مرتبطة بالحساب شخصياً
+  // (User ID) تُمنح من إدارة المستخدمين ولا تُمنح افتراضياً لأي رتبة:
+  // المراجعة الفنية للأطوال (المهندس) / الاعتماد المالي / الاعتماد النهائي (مالك الشركة)
+  'contractor_tech_review', 'contractor_finance_review', 'contractor_owner_final',
   // v62: حُذفت صلاحيتا «ملفي الوظيفي» و«الإجازات» مع القسمين — بيانات الموظف ورصيده في الملف الشخصي فقط
 ] as const
 
@@ -67,6 +71,10 @@ export const MODULE_PERMISSION_LABELS: Record<string, { ar: string; en: string }
   // v121: خطة عمل الماكينات — مشاهدة للجميع + صلاحية إدارة مرتبطة بالحساب
   machine_plans:      { ar: 'خطة عمل الماكينات',              en: 'Machines Work Plan' },
   machine_plans_edit: { ar: 'إدارة خطة الماكينات (إنشاء وتعديل)', en: 'Manage Machines Plan (Edit)' },
+  // v123: دورة اعتماد مستحقات المقاولين
+  contractor_tech_review:    { ar: 'مراجعة أطوال المقاول فنياً (المهندس)', en: 'Contractor Lengths Technical Review' },
+  contractor_finance_review: { ar: 'الاعتماد المالي لفواتير المقاولين',      en: 'Contractor Invoices Financial Approval' },
+  contractor_owner_final:    { ar: 'الاعتماد النهائي لفواتير المقاولين (مالك الشركة)', en: 'Contractor Invoices Final Approval (Owner)' },
   // v97: المكتبات
   libraries:      { ar: 'المكتبات',           en: 'Libraries' },
 }
@@ -579,6 +587,35 @@ export function canManageMachinePlans(user: { role?: string; email?: string; isS
   var email = (user.email || '').toLowerCase().trim()
   if (email === SYSTEM_ADMIN_EMAIL) return true
   return user.permissions?.machine_plans_edit === true
+}
+
+// ─── v123: دورة اعتماد مستحقات مقاولي الحفر النفقي ─────────────────────────
+// ثلاث صلاحيات منفصلة مرتبطة بالحساب شخصياً (User ID) عبر مفاتيح تُمنح من
+// إدارة المستخدمين — لا تُمنح لأي رتبة افتراضياً ولا عبر قاعدة '*'، فالمواصفة
+// تقصر كل مرحلة على حساب محدد (المهندس المراجع / الاعتماد المالي / مالك الشركة).
+// الواجهة تستخدمها لإخفاء الأزرار، والخادم يفرضها على كل مسارات القرارات.
+export function canReviewContractorTechnical(user: { email?: string; isSystemAdmin?: boolean; permissions?: Record<string, boolean> | null } | null | undefined): boolean {
+  if (!user) return false
+  if (user.isSystemAdmin === true) return true
+  var email = (user.email || '').toLowerCase().trim()
+  if (email === SYSTEM_ADMIN_EMAIL) return true
+  return user.permissions?.contractor_tech_review === true
+}
+
+export function canReviewContractorFinancial(user: { email?: string; isSystemAdmin?: boolean; permissions?: Record<string, boolean> | null } | null | undefined): boolean {
+  if (!user) return false
+  if (user.isSystemAdmin === true) return true
+  var email = (user.email || '').toLowerCase().trim()
+  if (email === SYSTEM_ADMIN_EMAIL) return true
+  return user.permissions?.contractor_finance_review === true
+}
+
+export function canFinalizeContractorInvoices(user: { email?: string; isSystemAdmin?: boolean; permissions?: Record<string, boolean> | null } | null | undefined): boolean {
+  if (!user) return false
+  if (user.isSystemAdmin === true) return true
+  var email = (user.email || '').toLowerCase().trim()
+  if (email === SYSTEM_ADMIN_EMAIL) return true
+  return user.permissions?.contractor_owner_final === true
 }
 
 // ─── v53: الموارد البشرية ──────────────────────────────────────
