@@ -139,6 +139,13 @@ export async function POST(req: NextRequest) {
           pricePerMeter: canViewPricing(user) && (body.pricePerMeter !== undefined && body.pricePerMeter !== null && String(body.pricePerMeter) !== '')
             ? parseNumber(body.pricePerMeter, 0)
             : null,
+          // v123: عقد المقاول عند إنشاء الخط — اسم المقاول + تاريخ بدء العمل المخطط.
+          // المواصفة: يجب إدخال سعر المقاول عند إنشاء الخط وقبل بدء احتساب مستحقاته،
+          // والسعر خاص بذلك الخط فقط ولا يُسحب من خطوط أخرى (pricePerMeter أعلاه).
+          contractorName: body.contractorName ? String(body.contractorName).trim().slice(0, 160) : null,
+          plannedStartDate: (body.plannedStartDate && String(body.plannedStartDate).trim() !== '' && !isNaN(new Date(String(body.plannedStartDate).trim()).getTime()))
+            ? new Date(String(body.plannedStartDate).trim())
+            : null,
           completedLength: 0, progress: 0, problems: body.problems ? String(body.problems) : null,
         },
       }), 'إنشاء خط الحفر'
