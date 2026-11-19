@@ -44,6 +44,10 @@ export const MODULE_PERMISSIONS = [
   // v97: «المكتبات» — قسم عام يظهر لكل الموظفين (كل رتبة عدا الزائر):
   // كل موظف يُنشئ مكتباته وأقسامه الخاصة/العامة ويرفع ملفاته
   'libraries',
+  // v121: «خطة عمل الماكينات» — مشاهدة للجميع (ومنهم الزائر)،
+  // و«machine_plans_edit» صلاحية تعديل مرتبطة بالحساب شخصياً (User ID)
+  // تُمنح من إدارة المستخدمين لحساب مدير الخطة فقط — لا تُمنح افتراضياً لأي رتبة.
+  'machine_plans', 'machine_plans_edit',
   // v62: حُذفت صلاحيتا «ملفي الوظيفي» و«الإجازات» مع القسمين — بيانات الموظف ورصيده في الملف الشخصي فقط
 ] as const
 
@@ -60,6 +64,9 @@ export const MODULE_PERMISSION_LABELS: Record<string, { ar: string; en: string }
   reports:        { ar: 'التقارير',           en: 'Reports' },
   notifications:  { ar: 'التنبيهات وسجل المراقبة', en: 'Notifications & Monitor' },
   oversight:      { ar: 'الرقابة العملية',   en: 'Operational Control' },
+  // v121: خطة عمل الماكينات — مشاهدة للجميع + صلاحية إدارة مرتبطة بالحساب
+  machine_plans:      { ar: 'خطة عمل الماكينات',              en: 'Machines Work Plan' },
+  machine_plans_edit: { ar: 'إدارة خطة الماكينات (إنشاء وتعديل)', en: 'Manage Machines Plan (Edit)' },
   // v97: المكتبات
   libraries:      { ar: 'المكتبات',           en: 'Libraries' },
 }
@@ -104,11 +111,13 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
     'projects', 'drive_lines', 'daily_reports', 'safety',
     'equipment', 'costs', 'finishings', 'tasks', 'reports', 'performance', 'notifications', 'oversight',
     'libraries', // v97
+    'machine_plans', // v121: خطة عمل الماكينات — مشاهدة للجميع
   ],
   site_engineer: [
     'projects', 'drive_lines', 'daily_reports', 'safety',
     'equipment', 'finishings', 'tasks', 'notifications',
     'libraries', // v97
+    'machine_plans', // v121: خطة عمل الماكينات — مشاهدة للجميع
   ],
   // v81: مسؤول السلامة (hse_officer) — أُضيفت صلاحية «خطوط الحفر» بقرار صاحب الموقع:
   // يرى القسم ويُدخل البيانات ويُنشئ خطوط حفر جديدة فقط (إنشاء بلا تعديل/حذف —
@@ -120,6 +129,7 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
   hse_officer: [
     'projects', 'drive_lines', 'equipment', 'safety', 'tasks', 'reports', 'notifications',
     'libraries', // v97
+    'machine_plans', // v121: خطة عمل الماكينات — مشاهدة للجميع
   ],
   // v83 (قرار صاحب الموقع): المشرف (الفورمان) يرى قسم المعدات ويسجّل معدات
   // وأصولاً جديدة بكافة بياناتها ومن ضمنها الأسعار.
@@ -130,6 +140,7 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
   foreman: [
     'projects', 'daily_reports', 'finishings', 'equipment', 'tasks', 'reports', 'notifications',
     'libraries', // v97
+    'machine_plans', // v121: خطة عمل الماكينات — مشاهدة للجميع
   ],
   // v85 (قرار صاحب الموقع): رتبة «عامل» — أدنى رتبة تشغيلية أسفل المشرف
   // (الفورمان). يرى المشاريع ومهامه المُكلَّف بها والتنبيهات بحسابه الشخصي،
@@ -142,6 +153,7 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
   worker: [
     'projects', 'daily_reports', 'safety', 'tasks', 'notifications',
     'libraries', // v97: قسم المكتبات عام — كل موظف (ومنهم العامل) يُنشئ مكتبته الخاصة
+    'machine_plans', // v121: خطة عمل الماكينات — مشاهدة للجميع
   ],
   // v89 (قرار صاحب الموقع): رتبة «حامل التصريح» (Permit Holder) — رتبة ميدانية
   // لحامل تصريح العمل (PTW). نفس الرؤية الافتراضية للعامل (مشاريع، تقارير يومية،
@@ -158,16 +170,21 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
   permit_holder: [
     'projects', 'drive_lines', 'daily_reports', 'safety', 'tasks', 'reports', 'notifications',
     'libraries', // v97
+    'machine_plans', // v121: خطة عمل الماكينات — مشاهدة للجميع
   ],
   accountant: [
     'projects', 'costs', 'tasks', 'reports', 'notifications',
     'libraries', // v97
+    'machine_plans', // v121: خطة عمل الماكينات — مشاهدة للجميع
   ],
   // v52: الزائر — يرى قسم خطوط الحفر للقراءة فقط:
   // ليس في WRITE_ROLES.drive_lines فلا أزرار إضافة/تعديل/حذف (والخادم يرفض كتاباته بـ 403)،
   // وليس في PRICING_ALLOWED_ROLES فلا يرى أي سعر إطلاقاً (حظر سرية صارم عميل وخادم).
+  // v121: خطة عمل الماكينات — مشاهدة للجميع ومنهم الزائر (لا بيانات مالية في القسم أصلاً،
+  // والتعديل محصور بحساب مدير الخطة الممنوح له صلاحية machine_plans_edit من إدارة المستخدمين).
   visitor: [
     'drive_lines',
+    'machine_plans',
   ],
 }
 
@@ -543,6 +560,25 @@ export function canViewPricing(user: { role?: string; email?: string; isSystemAd
   if (!email) return false
   // v63: تطبيع الدور قبل المقارنة
   return (PRICING_ALLOWED_ROLES as readonly string[]).includes(normalizeRole(user.role))
+}
+
+// ─── v121: خطة عمل الماكينات ─────────────────────────────────────
+// بوابة الإدارة (إنشاء/تعديل/حذف/إزاحة/ألوان/استرجاع إصدار) — مرتبطة
+// بالحساب شخصياً وليس بالاسم المكتوب:
+//   • مفتاح 'machine_plans_edit' في permissions الخاص بسجل المستخدم
+//     (يُمنح من إدارة المستخدمين لحساب مدير الخطة فقط).
+//   • مدير النظام (علم قاعدة البيانات أو البريد الرئيسي) يتجاوز دائماً
+//     — مسار تعافٍ إلزامي لا يفقد النظام أبدًا مدير خطة واحدًا على الأقل.
+// ملاحظة أمنية: لا تمر عبر hasPermission إطلاقاً — قاعدة '*'
+// (الإدارة العليا) كانت ستمنح التعديل لكل حسابات الإدارة العليا،
+// والمواصفة تقصر التعديل على حساب مدير الخطة وحساب مدير النظام فقط.
+// الواجهة تستخدمها لإخفاء الأزرار، والخادم يفرضها على كل مسارات الكتابة.
+export function canManageMachinePlans(user: { role?: string; email?: string; isSystemAdmin?: boolean; permissions?: Record<string, boolean> | null } | null | undefined): boolean {
+  if (!user) return false
+  if (user.isSystemAdmin === true) return true
+  var email = (user.email || '').toLowerCase().trim()
+  if (email === SYSTEM_ADMIN_EMAIL) return true
+  return user.permissions?.machine_plans_edit === true
 }
 
 // ─── v53: الموارد البشرية ──────────────────────────────────────
