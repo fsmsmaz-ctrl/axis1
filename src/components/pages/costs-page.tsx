@@ -17,7 +17,7 @@ import {
 } from 'recharts'
 // v117: أُزيل DollarSign وTrendingUp (كانا لبطاقتي الإيرادات وهامش الربح المحذوفتين)
 // وأُضيف Ruler وCalendarDays لمؤشرات التكلفة الجديدة
-import { Plus, TrendingDown, Wallet, BarChart3, Search, FileText, Filter, History, Upload, FileCheck, Ruler, CalendarDays } from 'lucide-react'
+import { Plus, TrendingDown, Wallet, BarChart3, Search, FileText, Filter, History, Upload, FileCheck, Ruler, CalendarDays, Coins } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { authedFetch } from '@/lib/api-client'
 // v117: canViewPricing حُذفت — لا يبقى في القسم أي عنصر تسعير/إيراد يحتاجها
@@ -26,6 +26,9 @@ import { localTodayISO } from '@/lib/utils'
 import { toast } from 'sonner'
 // v110: نافذة رفع ملف الفواتير — مكوّن مستقل تماماً (إضافة بحتة لا يمس أي منطق قائم)
 import InvoiceImportDialog from '@/components/costs/invoice-import-dialog'
+// v123: نافذة مستحقات مقاولي الحفر النفقي — المستحقات التراكمية + دورة الاعتماد الثلاثية
+// (استبدلت كلياً آلية «فاتورة لكل 10 أمتار» الملغاة في v123)
+import ContractorDuesDialog from '@/components/costs/contractor-dues-dialog'
 
 const categoryLabels: Record<string, { ar: string; en: string }> = {
   labor: { ar: 'أجور العمال', en: 'Labor' },
@@ -120,14 +123,9 @@ export default function CostsPage() {
   const [restoreProject, setRestoreProject] = useState<string>('none')
   // v35: حالة تطبيق ترقية قاعدة البيانات يدوياً
   const [migBusy, setMigBusy] = useState(false)
-  // v116: نافذة فواتير المقاول المنبثقة — توليد آلي + إدخال السعر يدوياً + موافقة قبل التسجيل
-  const [ciOpen, setCiOpen] = useState(false)
-  const [ciPending, setCiPending] = useState<any[]>([])
-  const [ciCount, setCiCount] = useState(0)
-  const [ciTruncated, setCiTruncated] = useState(false)
-  const [ciLoading, setCiLoading] = useState(false)
-  const [ciPrices, setCiPrices] = useState<Record<string, string>>({})
-  const [ciBusyToken, setCiBusyToken] = useState<string | null>(null)
+  // v123: نافذة مستحقات مقاولي الحفر النفقي — آلية الـ 10 أمتار أُلغيت كلياً،
+  // والمستحقات تُحتسب تلقائياً من أطوال الحفر الفعلية مع دورة اعتماد ثلاثية
+  const [cdOpen, setCdOpen] = useState(false)
 
   const [formData, setFormData] = useState({
     projectId: '', date: localTodayISO(),
@@ -272,79 +270,11 @@ export default function CostsPage() {
     setMigBusy(false)
   }
 
-  // v116: جلب مقترحات فواتير المقاول بانتظار الموافقة (قراءة فقط — لا تسجيل)
-  async function fetchPendingInvoices() {
-    setCiLoading(true)
-    try {
-      const res = await authedFetch('/api/contractor-invoices')
-      if (res.ok) {
-        const data = await res.json()
-        setCiPending(data.pending || [])
-        setCiCount(data.count || (data.pending ? data.pending.length : 0))
-        setCiTruncated(!!data.truncated)
-      } else {
-        setCiPending([])
-        setCiCount(0)
-        setCiTruncated(false)
-      }
-    } catch {
-      setCiPending([])
-      setCiCount(0)
-      setCiTruncated(false)
-    }
-    setCiLoading(false)
-  }
-
-  // v116: اعتماد مقترح فاتورة — السعر يُدخل يدوياً ولا تُسجل إلا بعد الموافقة
-  async function approvePendingInvoice(p: any) {
-    var priceStr = String(ciPrices[p.token] || '').trim()
-    if (!priceStr) {
-      toast.error(isRtl ? 'أدخل السعر المطلوب أولاً' : 'Enter the price first')
-      return
-    }
-    var amount = Number(priceStr)
-    if (!isFinite(amount) || amount <= 0) {
-      toast.error(isRtl ? 'السعر يجب أن يكون رقماً موجباً' : 'Price must be a positive number')
-      return
-    }
-    setCiBusyToken(p.token)
-    try {
-      var res = await authedFetch('/api/contractor-invoices', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: p.token, amount: amount }),
-      })
-      var data: any = null
-      try { data = await res.json() } catch { data = null }
-      if (res.ok && data && data.success) {
-        toast.success(data.duplicate
-          ? (isRtl ? 'كانت معتمدة مسبقاً — تم تحديث القائمة' : 'Already approved — list refreshed')
-          : (isRtl ? 'تم اعتماد الفاتورة وتسجيلها ضمن الفواتير' : 'Invoice approved and recorded'))
-        setCiPending(function(cur) { return cur.filter(function(x: any) { return x.token !== p.token }) })
-        setCiCount(function(n) { return Math.max(0, n - 1) })
-        setCiPrices(function(cur) { var n = Object.assign({}, cur); delete n[p.token]; return n })
-        fetchCosts()
-      } else {
-        toast.error((data && data.message) || (isRtl ? 'فشل اعتماد الفاتورة' : 'Approval failed'))
-        fetchPendingInvoices()
-      }
-    } catch {
-      toast.error(isRtl ? 'حدث خطأ' : 'Error')
-    }
-    setCiBusyToken(null)
-  }
-
   useEffect(function() {
     // v80 إصلاح: fetchCosts حُذفت من هنا — تأثير selectedProject أسفلها ينفذها أصلاً عند التحميل
     // فكانت تُستدعى مرتين متتاليتين عند فتح الصفحة
     fetchProjects()
   }, [])
-
-  // v116: مقترحات فواتير المقاول بانتظار الموافقة — تُجلب مسبقاً ليظهر
-  // العدد على الزر فوراً (وتتحدث تلقائياً إن تغيرت صلاحية المستخدم)
-  useEffect(function() {
-    if (canImport) fetchPendingInvoices()
-  }, [canImport])
 
   useEffect(function() {
     fetchCosts()
@@ -519,16 +449,12 @@ export default function CostsPage() {
               {isRtl ? 'رفع ملف فواتير' : 'Upload invoices file'}
             </Button>
           )}
-          {/* v116: نافذة فواتير المقاول — يقرأ الموظف المقترحات ويدخل السعر يدوياً ويعتمدها */}
+          {/* v123: مستحقات مقاولي الحفر النفقي — المستحقات التراكمية + دورة الاعتماد الثلاثية
+              (استبدلت زر «فواتير المقاول» القديم — آلية الـ 10 أمتار أُلغيت كلياً) */}
           {canImport && (
-            <Button variant="outline" onClick={function() { setCiOpen(true); fetchPendingInvoices() }} className="shadow-sm border-sky-600/40 text-sky-700 dark:text-sky-400 hover:bg-sky-500/10">
-              <FileCheck className="h-4 w-4 ml-2" />
-              {isRtl ? 'فواتير المقاول' : 'Contractor invoices'}
-              {ciCount > 0 && (
-                <span className="mr-1.5 inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-sky-600 text-white text-[11px] font-semibold">
-                  {ciCount}{ciTruncated ? '+' : ''}
-                </span>
-              )}
+            <Button variant="outline" onClick={function() { setCdOpen(true) }} className="shadow-sm border-sky-600/40 text-sky-700 dark:text-sky-400 hover:bg-sky-500/10">
+              <Coins className="h-4 w-4 ml-2" />
+              {isRtl ? 'مستحقات المقاولين' : 'Contractor dues'}
             </Button>
           )}
           <Button onClick={function() {
@@ -1014,82 +940,6 @@ export default function CostsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* v116 نافذة فواتير المقاول المنبثقة — توليد آلي + إدخال السعر يدوياً + موافقة قبل التسجيل */}
-      <Dialog open={ciOpen} onOpenChange={setCiOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>{isRtl ? 'فواتير المقاول — بانتظار الموافقة' : 'Contractor invoices — awaiting approval'}</DialogTitle>
-            <DialogDescription>
-              {isRtl
-                ? 'ولّد النظام فاتورة لكل 10 أمتار من كل خط حفر (شاملة الخطوط القديمة والمنتهية). اقرأ الفاتورة، أدخل السعر المطلوب يدوياً ثم اضغط «موافقة» — عندها فقط تُسجل ضمن الفواتير في هذا القسم. لن تُسجل أي فاتورة دون موافقتك، والمقترح الآلي مجرد إرشاد.'
-                : 'The system drafts one invoice per 10 meters of every drive line (old and completed lines included). Read each invoice, type the price manually, then press Approve — only then it is recorded in this section. Nothing is recorded without your approval; the suggested amount is only a hint.'}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2 max-h-[420px] overflow-y-auto">
-            {ciLoading ? (
-              <div className="h-24 bg-muted animate-pulse rounded-xl" />
-            ) : ciPending.length === 0 ? (
-              <div className="py-10 text-center text-muted-foreground text-sm">
-                <FileCheck className="h-10 w-10 mx-auto mb-3 opacity-30" />
-                {isRtl ? 'لا توجد فواتير بانتظار الموافقة' : 'No invoices awaiting approval'}
-              </div>
-            ) : (
-              ciPending.map(function(p: any) {
-                var suggested = Number(p.suggestedAmount) || 0
-                return (
-                  <div key={p.token} className="p-3 rounded-xl border space-y-2">
-                    <div className="flex items-start justify-between gap-2 flex-wrap">
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-sm truncate">
-                          {p.lineNumber ? (isRtl ? 'خط ' : 'Line ') + p.lineNumber : '-'}
-                          {p.projectName ? ' • ' + p.projectName : ''}
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          {p.segmentLabel} • {new Date(p.dateISO).toLocaleDateString(isRtl ? 'ar-EG' : 'en-US')} • {p.meters} {isRtl ? 'م' : 'm'}
-                        </p>
-                      </div>
-                      <Badge variant="secondary" className="text-xs shrink-0" style={{ backgroundColor: '#0ea5e918', color: '#0ea5e9', borderColor: '#0ea5e930' }}>
-                        {isRtl ? 'المقترح آلياً: ' + suggested.toLocaleString() + ' ر.ع' : 'Suggested: ' + suggested.toLocaleString() + ' OMR'}
-                      </Badge>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Input
-                        type="number"
-                        step="0.01"
-                        min="0.01"
-                        inputMode="decimal"
-                        placeholder={isRtl ? 'أدخل السعر (ر.ع)' : 'Enter price (OMR)'}
-                        value={ciPrices[p.token] || ''}
-                        onChange={function(e) {
-                          var next = Object.assign({}, ciPrices)
-                          next[p.token] = e.target.value
-                          setCiPrices(next)
-                        }}
-                      />
-                      <Button size="sm" className="shrink-0" disabled={ciBusyToken === p.token} onClick={function() { approvePendingInvoice(p) }}>
-                        {ciBusyToken === p.token ? (isRtl ? 'جارٍ التسجيل...' : 'Recording...') : (isRtl ? 'موافقة' : 'Approve')}
-                      </Button>
-                    </div>
-                  </div>
-                )
-              })
-            )}
-            {ciTruncated && ciPending.length > 0 && (
-              <p className="text-center text-[11px] text-muted-foreground pt-1 border-t">
-                {isRtl ? 'القائمة كبيرة — تُعرض أول 500 فاتورة، والباقي يظهر بعد اعتماد هذه.' : 'Large list — first 500 shown; the rest appear after approving these.'}
-              </p>
-            )}
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={function() { fetchPendingInvoices() }} disabled={ciLoading}>
-              {isRtl ? 'تحديث القائمة' : 'Refresh'}
-            </Button>
-            <Button type="button" variant="ghost" onClick={function() { setCiOpen(false) }}>
-              {isRtl ? 'إغلاق' : 'Close'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* v31 نافذة استرجاع الفواتير — مدير النظام فقط */}
       <Dialog open={restoreOpen} onOpenChange={setRestoreOpen}>
@@ -1182,6 +1032,16 @@ export default function CostsPage() {
         onOpenChange={setImportOpen}
         projects={projects}
         onImported={fetchCosts}
+      />
+
+      {/* v123: نافذة مستحقات مقاولي الحفر النفقي — المستحقات التراكمية من أطوال
+          الحفر الفعلية + دورة الاعتماد الثلاثية (مهندس ← مالي ← مالك الشركة)
+          + التصفية + الدفعات — مكوّن مستقل كامل بديلاً عن آلية الـ 10 أمتار الملغاة */}
+      <ContractorDuesDialog
+        open={cdOpen}
+        onOpenChange={setCdOpen}
+        projects={projects}
+        isRtl={isRtl}
       />
     </div>
   )
