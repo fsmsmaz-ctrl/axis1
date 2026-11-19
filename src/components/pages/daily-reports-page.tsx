@@ -118,6 +118,8 @@ export default function DailyReportsPage() {
     problems: '',
     // v102: هل تم دفع الأنبوب اليوم؟ + مدة تشغيل الماكينة (تُملأ فقط عند نعم)
     pipePaid: false, machineRunningHours: '',
+    // v123: طول الأنابيب المدفوعة اليوم (م) — مستقل عن طول الحفر الفعلي، للمراجعة الفنية فقط
+    pipeJackedMeters: '',
   })
 
   // Safety checklist state
@@ -281,6 +283,8 @@ export default function DailyReportsPage() {
       // v102: استرجاع قيمتي دفع الأنبوب + مدة تشغيل الماكينة عند فتح التعديل
       pipePaid: report.pipePaid === true,
       machineRunningHours: report.machineRunningHours != null ? String(report.machineRunningHours) : '',
+      // v123: استرجاع طول الأنابيب المدفوعة عند فتح التعديل
+      pipeJackedMeters: report.pipeJackedMeters != null ? String(report.pipeJackedMeters) : '',
       productionNotes: report.productionNotes || '',
       problems: report.problems || '',
     })
@@ -1009,6 +1013,16 @@ export default function DailyReportsPage() {
                         <Input type="number" value={formData.pipesInstalled} onChange={(e) => setFormData({ ...formData, pipesInstalled: e.target.value })} />
                       </div>
                     </div>
+                    {/* v123: طول الأنابيب المدفوعة اليوم (م) — مستقل عن طول الحفر الفعلي؛
+                        للحصول على «Actual Excavated Length» و«Pipe Jacked Length» بشكل منفصل
+                        — الاستخدام: المراجعة الفنية فقط ولا يدخل احتساب مستحقات المقاول إطلاقاً */}
+                    <div className="space-y-1.5">
+                      <Label>{isRtl ? 'طول الأنابيب المدفوعة اليوم (م) — اختياري' : 'Pipe jacked length today (m) — optional'}</Label>
+                      <Input type="number" step="0.01" min="0" value={formData.pipeJackedMeters} onChange={(e) => setFormData({ ...formData, pipeJackedMeters: e.target.value })} placeholder={isRtl ? 'يُسجل مستقلاً عن طول الحفر — للمراجعة الفنية فقط' : 'Recorded independently — technical review only'} />
+                      <p className="text-[11px] text-muted-foreground">
+                        {isRtl ? 'طول الحفر الفعلي يُحسب من قراءتي البداية والنهاية أعلاه — حقل الأنابيب للمراجعة الفنية فقط ولا يدخل مستحقات المقاول' : 'Actual excavation = end − start readings above; pipe jacked is for technical review only, never used in contractor dues'}
+                      </p>
+                    </div>
                     {/* v102: هل تم دفع الأنبوب اليوم؟ + مدة تشغيل الماكينة الشرطية */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 rounded-lg border bg-muted/20">
                       <div className="space-y-1.5">
@@ -1217,4 +1231,3 @@ function Stat({ label, value, color }: { label: string; value: string; color: st
     </div>
   )
 }
-
