@@ -259,6 +259,11 @@ export async function POST(req: NextRequest) {
           // v102: دفع الأنبوب + مدة تشغيل الماكينة
           pipePaid: pipePaid,
           machineRunningHours: machineRunningHours,
+          // v123: طول الأنابيب المدفوعة اليوم (م) — مستقل عن طول الحفر الفعلي،
+          // للمراجعة الفنية فقط ولا يدخل احتساب مستحقات المقاول إطلاقاً
+          pipeJackedMeters: (body.pipeJackedMeters !== undefined && body.pipeJackedMeters !== null && String(body.pipeJackedMeters).trim() !== '')
+            ? Math.max(0, parseNumber(body.pipeJackedMeters, 0))
+            : null,
           productionNotes: (body.productionNotes ? String(body.productionNotes).slice(0, 2000) : null),
           problems: (body.problems ? String(body.problems).slice(0, 2000) : null),
           // SECURITY FIX: قائمة سماح للحالة — كان يقبل 'approved'/'rejected' مباشرة
