@@ -67,6 +67,9 @@ export async function POST(req: NextRequest) {
   }
 
   // منع الازدواجية: الطول المطلوب لا يتجاوز غير المسوى على الخط
+  // v124: الأطوال المغطاة بفاتورة قيد الاعتماد (pending_financial/pending_final)
+  // تُحسب أيضاً ضمن «المحجوز» — كانت التسوية الجديدة تُنشأ فوق نفس أطوال
+  // الفاتورة الجارية فتحتجز كلتاهما عند بوابة الاعتماد المالي حتى رفض إحداهما
   var agg = await db.dailyReport.aggregate({
     where: { driveLineId: driveLineId, status: 'approved' },
     _sum: { dailyMeters: true },
@@ -74,18 +77,34 @@ export async function POST(req: NextRequest) {
   var excavated = round3(Math.max(0, Number(agg._sum.dailyMeters) || 0))
   var line = await db.driveLine.findUnique({ where: { id: driveLineId }, select: { id: true, lineNumber: true, settledOldLength: true, settledOldAmount: true } })
   if (!line) return NextResponse.json({ error: 'not_found', message: 'خط الحفر غير موجود' }, { status: 404 })
-  var settledInvoices = await db.contractorInvoice.findMany({
-    where: { driveLineId: driveLineId, status: { in: ['approved', 'partially_paid', 'paid'] } },
-    select: { approvedLength: true },
+  var occupiedInvoices = await db.contractorInvoice.findMany({
+    where: { driveLineId: driveLineId, status: { in: ['approved', 'partially_paid', 'paid', 'pending_financial', 'pending_final'] } },
+    select: { approvedLength: true, invoiceNo: true, status: true, isSettlement: true },
   })
   var newInvoiced = 0
-  for (var inv of settledInvoices) newInvoiced += Number(inv.approvedLength) || 0
+  var pendingInvoice: { invoiceNo: string; status: string } | null = null
+  for (var inv of occupiedInvoices) {
+    newInvoiced += Number(inv.approvedLength) || 0
+    if (!pendingInvoice && (inv.status === 'pending_financial' || inv.status === 'pending_final')) {
+      pendingInvoice = { invoiceNo: inv.invoiceNo, status: inv.status }
+    }
+  }
   var unsettled = round3(Math.max(0, excavated - (Number(line.settledOldLength) || 0) - newInvoiced))
+  if (pendingInvoice) {
+    return NextResponse.json({ error: 'pending_invoice_exists', message: 'لا يمكن إنشاء تسوية مالية الآن — الفاتورة ' + pendingInvoice.invoiceNo + ' قيد الاعتماد لهذا الخط (المرحلة: ' + (pendingInvoice.status === 'pending_financial' ? 'الاعتماد المالي' : 'الاعتماد النهائي') + '). أكمل دورة اعتماد الفاتورة الجارية أولاً أو رفضها، ثم أنشئ التسوية على ما يتبقى غير المسوى' }, { status: 409 })
+  }
   if (settlementLength > unsettled + 0.001) {
     return NextResponse.json({ error: 'duplicate', message: 'الطول المطلوب (' + settlementLength + ' م) يتجاوز غير المسوى (' + unsettled + ' م) — منع الازدواجية: لا احتساب لأطوال سبق اعتمادها' }, { status: 409 })
   }
 
-  var result = await createDraftInvoiceForLine(driveLineId, { id: me.id, name: me.name }, { isSettlement: true, reason: reason, settlementLength: settlementLength })
+  // v124: فشل الإنشاء غير المتوقع يعود برسالة واضحة بدل خطأ خادم صامت
+  var result
+  try {
+    result = await createDraftInvoiceForLine(driveLineId, { id: me.id, name: me.name }, { isSettlement: true, reason: reason, settlementLength: settlementLength })
+  } catch (cE: any) {
+    console.error('[contractor settlement] draft creation failed:', cE)
+    return NextResponse.json({ error: 'settlement_failed', message: 'فشل إنشاء فاتورة التسوية بخطأ غير متوقع — أعد المحاولة، وإذا تكرر الأمر أخبر مدير النظام' }, { status: 500 })
+  }
   if (!result.ok) {
     return NextResponse.json({ error: result.error || 'error', message: result.message || 'فشل إنشاء التسوية' }, { status: result.status || 500 })
   }
