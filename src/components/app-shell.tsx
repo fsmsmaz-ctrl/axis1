@@ -462,6 +462,8 @@ export default function AppShell() {
       case 'dashboard': return <DashboardPage onNavigate={setCurrentPage} />
       case 'projects': return <ProjectsPage />
       case 'driveLines': return <DriveLinesPage />
+      // v122: إصلاح — كان القسم يعرض لوحة التحكم لغياب حالته من مبدّل الصفحات
+      case 'machinePlans': return <MachinePlansPage />
       case 'dailyReports': return <DailyReportsPage />
       case 'safety': return <SafetyPage />
       case 'equipment': return <EquipmentPage />
@@ -544,7 +546,7 @@ export default function AppShell() {
 
         <div className="p-3 border-t border-sidebar-border">
           {/* v48: علامة الإصدار — إن لم تظهر هنا فالنشر الأخير لم يتم بعد */}
-          <p className="text-center text-[10px] text-muted-foreground/60 select-none">v101</p>
+          <p className="text-center text-[10px] text-muted-foreground/60 select-none">v122</p>
           {/* v48: بطاقة المستخدم قابلة للنقر — تفتح الملف الشخصي */}
           <div className="flex items-center gap-3 p-2 rounded-lg cursor-pointer hover:bg-sidebar-accent transition-colors"
             onClick={function() { setSidebarOpen(false); setCurrentPage('profile') }}
