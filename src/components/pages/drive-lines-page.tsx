@@ -451,14 +451,15 @@ export default function DriveLinesPage() {
                 </p>
               </div>
               )}
-              {/* v123: عقد المقاول عند إنشاء الخط — المواصفة توجب إدخال اسم المقاول وسعره قبل بدء احتساب المستحقات */}
+              {/* v123: عقد المقاول عند إنشاء الخط — المواصفة توجب إدخال اسم المقاول وسعره قبل بدء احتساب المستحقات
+                  v124: البند 2 من المواصفة — اسم المقاول وتاريخ بدء العمل إجباريان عند فتح الخط */}
               <div className="space-y-1.5">
-                <Label>{isRtl ? 'اسم المقاول المنفذ' : 'Contractor name'}</Label>
-                <Input value={formData.contractorName} onChange={(e) => setFormData({ ...formData, contractorName: e.target.value })} placeholder={isRtl ? 'اسم شركة/مقاول الحفر' : 'Excavation contractor'} />
+                <Label>{isRtl ? 'اسم المقاول المنفذ *' : 'Contractor name *'}</Label>
+                <Input required value={formData.contractorName} onChange={(e) => setFormData({ ...formData, contractorName: e.target.value })} placeholder={isRtl ? 'اسم شركة/مقاول الحفر' : 'Excavation contractor'} />
               </div>
               <div className="space-y-1.5">
-                <Label>{isRtl ? 'تاريخ بدء العمل المخطط' : 'Planned start date'}</Label>
-                <Input type="date" value={formData.plannedStartDate} onChange={(e) => setFormData({ ...formData, plannedStartDate: e.target.value })} />
+                <Label>{isRtl ? 'تاريخ بدء العمل المخطط *' : 'Planned start date *'}</Label>
+                <Input type="date" required value={formData.plannedStartDate} onChange={(e) => setFormData({ ...formData, plannedStartDate: e.target.value })} />
               </div>
               <div className="space-y-1.5">
                 <Label>{isRtl ? 'القطر' : 'Diameter'}</Label>
