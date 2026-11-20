@@ -101,7 +101,8 @@ export default function ReportsPage() {
       if (fromDate) params.set('from', fromDate)
       if (toDate) params.set('to', toDate)
       // Ask for a larger batch so period reports cover the whole range
-      params.set('limit', '500')
+      // v125: 500 → 5000 مع سقف الخادم الجديد — الفترات الطويلة لم تعد تُقصّ بصمت
+      params.set('limit', '5000')
       const qs = params.toString()
 
       let data: any = {}
@@ -1068,5 +1069,4 @@ function OperationalAveragesPreview({ report, isRtl }: { report: any; isRtl: boo
     </div>
   )
 }
-
 
