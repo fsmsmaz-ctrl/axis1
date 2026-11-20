@@ -29,7 +29,10 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const projectId = searchParams.get('projectId')
   const date = searchParams.get('date')
-  const limit = Math.min(parseInt(searchParams.get('limit') || '50'), 500)
+  // v125: السقف 500 كان يقصّ تقارير الفترات الطويلة بصمت — تقرير إيراد/ربح
+  // لفترة تفوق 500 تقرير يوماً كان يُبنى من أحدث 500 فقط دون أي تحذير فتنخفض
+  // المجاميع خطأً. 5000 يغطي ~13 سنة من التقارير اليومية (مطابق لسقف التكاليف).
+  const limit = Math.min(parseInt(searchParams.get('limit') || '50'), 5000)
 
   const where: any = {}
   // v59: فلتر الحالة — يقود قسم «تقارير بانتظار الاعتماد» في لوحة التحكم
