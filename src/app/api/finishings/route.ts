@@ -21,8 +21,10 @@ export async function GET(req: NextRequest) {
     const searchParams = new URL(req.url).searchParams
     const projectId = searchParams.get('projectId')
     // M-4 FIX: Pagination
+    // v125: السقف 200 كان يقصّ تقرير التسليم بصمت لفترات تجاوز 200 سجل
+    // (كان يطلب 500 فيعود 200 دون تحذير). 5000 يجعل التقرير يغطي الفترة كاملة.
     const page = parseInt(searchParams.get('page') || '1')
-    const limit = Math.min(parseInt(searchParams.get('limit') || '50'), 200)
+    const limit = Math.min(parseInt(searchParams.get('limit') || '50'), 5000)
     const where: any = {}
     if (projectId) where.projectId = projectId
 
