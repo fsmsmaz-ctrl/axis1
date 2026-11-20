@@ -166,7 +166,8 @@ export default function CostsPage() {
 
       var repParams = new URLSearchParams()
       if (selectedProject !== 'all') repParams.set('projectId', selectedProject)
-      repParams.set('limit', '500')
+      // v125: 500 → 5000 — عدّ أمتار الحفر المعتمدة يغطي كل الفترة (لا قصّ صامت)
+      repParams.set('limit', '5000')
       const repRes = await authedFetch('/api/daily-reports?' + repParams.toString())
       // v117: التقارير المعتمدة تُجلب فقط لعدّ أمتار الحفر (تكلفة المتر) — لا يُحسب أي إيراد أو ربح هنا
       if (!repRes.ok) {
