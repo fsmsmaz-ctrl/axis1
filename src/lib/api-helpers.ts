@@ -146,18 +146,33 @@ export function parseDate(value: any, defaultDaysFromNow: number = 0): Date {
 export function parseDateRange(from: string | null, to: string | null): { gte?: Date; lt?: Date } {
   const range: { gte?: Date; lt?: Date } = {}
   const iso = /^(\d{4})-(\d{2})-(\d{2})$/
+  // v125: تحقق صارم من صحة التاريخ نفسه — القاعدة النمطية وحدها كانت تقبل
+  // '2026-13-45' (شهر 13 / يوم 45) ثم يُدوّرها JS بصمت إلى تاريخ أبعد
+  // (فبراير 2027 مثلاً) فتصبح فترة التقرير خاطئة تماماً. الآن: الشهر 1-12
+  // واليوم موجود فعلاً في الشهر (تدوير مرفوض) — وإلا يُتجاهل الحدّ فتعود
+  // نقاط النهاية برسالة «صيغة التاريخ غير صالحة» أو بلا فلتر تاريخ كما لو
+  // حُذف، بدل تقرير مبني على فترة ملتوية.
+  function utcDateFromParts(y: number, m: number, d: number): Date | null {
+    const dt = new Date(Date.UTC(y, m - 1, d))
+    if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== d) return null
+    return dt
+  }
   if (from) {
     const m = iso.exec(from)
     if (m) {
-      range.gte = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])))
+      const dt = utcDateFromParts(Number(m[1]), Number(m[2]), Number(m[3]))
+      if (dt) range.gte = dt
     }
   }
   if (to) {
     const m = iso.exec(to)
     if (m) {
-      const end = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])))
-      end.setUTCDate(end.getUTCDate() + 1)
-      range.lt = end
+      const dt = utcDateFromParts(Number(m[1]), Number(m[2]), Number(m[3]))
+      if (dt) {
+        const end = new Date(dt.getTime())
+        end.setUTCDate(end.getUTCDate() + 1)
+        range.lt = end
+      }
     }
   }
   return range
